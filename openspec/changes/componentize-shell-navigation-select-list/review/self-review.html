@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>componentize-shell-navigation-select-list review</title>
+    <style>
+      body {
+        font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        line-height: 1.5;
+        margin: 32px;
+        max-width: 960px;
+        color: #0f172a;
+      }
+      table {
+        border-collapse: collapse;
+        width: 100%;
+      }
+      th,
+      td {
+        border: 1px solid #cbd5e1;
+        padding: 8px 10px;
+        text-align: left;
+        vertical-align: top;
+      }
+      th {
+        background: #e2e8f0;
+      }
+      code {
+        background: #f1f5f9;
+        padding: 1px 4px;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Shell Navigation Select List Review</h1>
+    <p>
+      The change converts Select Terminal row layout, multi-line selection, and bordered mouse hit testing into
+      app-owned OpenTUI primitives while preserving Terminal/Room projection ownership.
+    </p>
+
+    <h2>Evidence Matrix</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>Requirement</th>
+          <th>Evidence</th>
+          <th>Result</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>No redundant <code>running</code>; ordered fields remain distinct.</td>
+          <td><code>navigation-model.test.ts</code> and <code>terminal-selection-row.ts</code></td>
+          <td>Pass</td>
+        </tr>
+        <tr>
+          <td>Multi-line item selection and click confirmation are item-based.</td>
+          <td><code>selectable-wrapped-list.test.ts</code> and <code>navigation-app.test.ts</code></td>
+          <td>Pass</td>
+        </tr>
+        <tr>
+          <td>Bordered parent coordinate offset is centralized.</td>
+          <td><code>screen-region.ts</code></td>
+          <td>Pass</td>
+        </tr>
+        <tr>
+          <td>Shell controller composes UI primitives instead of owning list mechanics.</td>
+          <td><code>navigation-app.ts</code></td>
+          <td>Pass</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <h2>Verification Commands</h2>
+    <ul>
+      <li><code>bun test apps/shell/test/selectable-wrapped-list.test.ts apps/shell/test/navigation-app.test.ts apps/shell/test/navigation-model.test.ts</code>: 11 pass</li>
+      <li><code>bun run --filter 'agenter-app-shell' typecheck</code>: pass</li>
+      <li><code>bun run openspec:vision -- validate componentize-shell-navigation-select-list</code>: valid</li>
+      <li><code>git diff --check</code> on scoped files: pass</li>
+    </ul>
+  </body>
+</html>

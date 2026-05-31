@@ -30,11 +30,11 @@
 - [x] 4.3 Run `bun run --filter 'agenter-app-shell' typecheck`.
 - [x] 4.4 Run `bun run openspec:vision -- validate componentize-shell-navigation-select-list`.
 - [x] 4.5 Run `git diff --check`.
-- [ ] 4.6 Run `bun run openspec:vision -- check componentize-shell-navigation-select-list` before archive.
+- [x] 4.6 Run `bun run openspec:vision -- check componentize-shell-navigation-select-list` before archive.
 
 ## 5. Self-Review Loop
 
-- [ ] 5.1 Generate `review/self-review.md` comparing implementation against `plans/plan.md`, specs, and tasks.
-- [ ] 5.2 Generate `review/self-review.html` with structured command/test evidence.
-- [ ] 5.3 If self-review reopens tasks or changes specs/tasks, commit those artifact updates before the next apply loop.
+- [x] 5.1 Generate `review/self-review.md` comparing implementation against `plans/plan.md`, specs, and tasks.
+- [x] 5.2 Generate `review/self-review.html` with structured command/test evidence.
+- [x] 5.3 If self-review reopens tasks or changes specs/tasks, commit those artifact updates before the next apply loop.
 - [ ] 5.4 If review exits normally, archive the change and commit the archive result.
