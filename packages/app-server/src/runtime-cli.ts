@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { defineCommand } from "just-bash";
 
 import { createRootWorkspaceHelpcenterCommand } from "./cli-command-catalog";
+import { createNoteCommand } from "./note-system";
 import { buildRuntimeSkillsList } from "./runtime-skills";
 import {
   getRuntimeToolDescriptor,
@@ -418,6 +419,7 @@ export const createRuntimeShellCommands = (input: {
     baseUrl: input.baseUrl,
     privateKey: input.privateKey,
   });
+  const note = createNoteCommand();
   const helpcenter = createRootWorkspaceHelpcenterCommand();
 
   const tool = defineCommand("tool", async (args, ctx) => {
@@ -465,9 +467,9 @@ export const createRuntimeShellCommands = (input: {
     }
   });
 
-  return [...runtimeNamespaces, skill, helpcenter, tool];
+  return [...runtimeNamespaces, skill, note, helpcenter, tool];
 };
 
 export const listRuntimeShellCommandNames = (): string[] => [
-  ...new Set([...listRuntimeToolDescriptors().map((descriptor) => descriptor.namespace), "helpcenter", "tool"]),
+  ...new Set([...listRuntimeToolDescriptors().map((descriptor) => descriptor.namespace), "note", "helpcenter", "tool"]),
 ];

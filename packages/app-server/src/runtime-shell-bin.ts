@@ -22,6 +22,7 @@ const RUNTIME_SHELL_COMMANDS = [
   "terminal-manage",
   "mcp",
   "skill",
+  "note",
   "tool",
 ] as const;
 
@@ -160,7 +161,8 @@ export const createRuntimeShellWhichCommand = (rootWorkspacePath: string): Retur
   });
 
 /**
- * Root-workspace is the only shell surface that carries avatar-private runtime CLI/env by default.
+ * Root-workspace carries runtime CLI wiring while workspace instance env
+ * remains the authority for avatar-private capability variables.
  */
 export const buildRootWorkspaceShellEnvironment = (input: {
   rootWorkspacePath: string;

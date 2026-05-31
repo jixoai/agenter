@@ -191,7 +191,7 @@ export const createInProcessWorkspaceToolProvider = (
     const rootBashTool = toolDefinition({
       name: "root_bash",
       description:
-        "Execute runtime CLI commands inside the fixed root-workspace surface with root-exclusive runtime env/CLI semantics.",
+        "Execute runtime CLI commands inside the fixed root-workspace surface with runtime CLI wiring and workspace capability env.",
       inputSchema: z.object({
         command: z.string(),
         cwd: z.string().optional(),

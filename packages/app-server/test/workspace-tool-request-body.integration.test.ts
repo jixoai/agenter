@@ -6,6 +6,9 @@ import { SessionDb } from "@agenter/session-system";
 
 import { createMockKernelHarness } from "../test-support/mock-kernel-harness";
 import { createGaubeeRoom, runTwoRoomRelayScenario } from "../test-support/mock-loopbus-scenarios";
+import { createRuntimeText } from "../src/runtime-text";
+import type { RuntimeLocalApiHandlers } from "../src/runtime-tool-descriptors";
+import { createInProcessWorkspaceToolProvider } from "../src/workspace-tool-provider";
 
 const EXPECTED_DIRECT_TOOL_NAMES = ["workspace_list", "root_bash", "workspace_bash"] as const;
 
@@ -56,6 +59,21 @@ const readTraceToolNames = (responseBody: unknown): string[] => {
 };
 
 describe("Feature: workspace direct tool request-body contract", () => {
+  test("Scenario: Given capability projection changes When direct tools are inspected Then root_bash remains the visible shell name", () => {
+    const provider = createInProcessWorkspaceToolProvider({
+      handlers: {} as RuntimeLocalApiHandlers,
+      workspaceList: () => [],
+      rootWorkspacePath: "/tmp/agenter-root",
+    });
+
+    const tools = provider.createTools({
+      runtimeText: createRuntimeText(),
+      traceTool: async (_toolName, _toolInput, handler) => await handler(),
+    });
+
+    expect(tools.map((tool) => tool.name)).toEqual([...EXPECTED_DIRECT_TOOL_NAMES]);
+  });
+
   test(
     "Scenario: Given persisted ai_call facts When a mock loop completes Then requestBody keeps only workspace_list root_bash workspace_bash and tool traces keep the new shell names",
     async () => {

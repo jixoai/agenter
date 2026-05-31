@@ -22,18 +22,18 @@
 - [x] 2.9 Add skill BDD: Scenario: Given empty `AVATAR_HOME` and a PWD with local skills When skill list runs Then PWD skills are visible and avatar-private roots are not invented.
 - [x] 2.10 Add skill BDD: Scenario: Given generic and dot-agent skills with the same name When merged Then the later dot-agent source wins and the visible record reports its source path.
 - [x] 2.11 Add multi-workspace skill BDD: Scenario: Given two workspace groups When `SKILLS_HOME` is derived Then the order is `w1-pwd;w1-avatar-home;w2-pwd;w2-avatar-home`.
-- [ ] 2.12 Add NoteSystem BDD: Scenario: Given empty `AVATAR_HOME` When note CLI projection runs Then avatar-private note CLI is withheld.
-- [ ] 2.13 Add NoteSystem BDD: Scenario: Given non-empty `AVATAR_HOME` When a note is written Then it is stored as a note fact, not a memory projection.
-- [ ] 2.14 Add NoteSystem BDD: Scenario: Given notebook/section/page input When a note page is written Then a Markdown + frontmatter page is stored under that hierarchy.
-- [ ] 2.15 Add NoteSystem BDD: Scenario: Given unsafe note path segments When `note write` runs Then traversal/control/path separator names are rejected.
-- [ ] 2.16 Add NoteSystem BDD: Scenario: Given `note draft` When content is captured Then the special draft notebook uses date section and high-precision time plus short-id page naming.
-- [ ] 2.17 Add NoteSystem BDD: Scenario: Given a non-empty page When `note write` runs without append or override mode Then a conflict error is returned and content is unchanged.
-- [ ] 2.18 Add NoteSystem BDD: Scenario: Given a non-empty page When append mode is used Then content is appended and metadata is updated.
-- [ ] 2.19 Add NoteSystem BDD: Scenario: Given a non-empty page When override mode is used Then body content is replaced while page identity remains stable.
-- [ ] 2.20 Add NoteSystem BDD: Scenario: Given local notes When `note search` runs Then lightweight JS search returns notebook, section, page, score, and snippet metadata without external services.
-- [ ] 2.21 Add NoteSystem BDD: Scenario: Given another mounted workspace has notes When `note list/show/search` runs Then only the current workspace group is used by default.
-- [ ] 2.22 Add boundary BDD: Scenario: Given a workspace gains or loses projected CLIs When inspected Then the change is reported as a capability projection, not an external side effect.
-- [ ] 2.23 Add compatibility BDD: Scenario: Given this change applies When runtime tool descriptors are inspected Then existing `root_bash` visible naming is not renamed or removed.
+- [x] 2.12 Add NoteSystem BDD: Scenario: Given empty `AVATAR_HOME` When note CLI projection runs Then avatar-private note CLI is withheld.
+- [x] 2.13 Add NoteSystem BDD: Scenario: Given non-empty `AVATAR_HOME` When a note is written Then it is stored as a note fact, not a memory projection.
+- [x] 2.14 Add NoteSystem BDD: Scenario: Given notebook/section/page input When a note page is written Then a Markdown + frontmatter page is stored under that hierarchy.
+- [x] 2.15 Add NoteSystem BDD: Scenario: Given unsafe note path segments When `note write` runs Then traversal/control/path separator names are rejected.
+- [x] 2.16 Add NoteSystem BDD: Scenario: Given `note draft` When content is captured Then the special draft notebook uses date section and high-precision time plus short-id page naming.
+- [x] 2.17 Add NoteSystem BDD: Scenario: Given a non-empty page When `note write` runs without append or override mode Then a conflict error is returned and content is unchanged.
+- [x] 2.18 Add NoteSystem BDD: Scenario: Given a non-empty page When append mode is used Then content is appended and metadata is updated.
+- [x] 2.19 Add NoteSystem BDD: Scenario: Given a non-empty page When override mode is used Then body content is replaced while page identity remains stable.
+- [x] 2.20 Add NoteSystem BDD: Scenario: Given local notes When `note search` runs Then lightweight JS search returns notebook, section, page, score, and snippet metadata without external services.
+- [x] 2.21 Add NoteSystem BDD: Scenario: Given another mounted workspace has notes When `note list/show/search` runs Then only the current workspace group is used by default.
+- [x] 2.22 Add boundary BDD: Scenario: Given a workspace gains or loses projected CLIs When inspected Then the change is reported as a capability projection, not an external side effect.
+- [x] 2.23 Add compatibility BDD: Scenario: Given this change applies When runtime tool descriptors are inspected Then existing `root_bash` visible naming is not renamed or removed.
 
 ## 3. Platform Implementation
 
@@ -56,18 +56,18 @@
 
 ## 5. NoteSystem And System CLI Projection
 
-- [ ] 5.1 Define a typed system CLI projection contract over workspace instance env/capabilities.
+- [x] 5.1 Define a typed system CLI projection contract over workspace instance env/capabilities.
 - [ ] 5.2 Add workspace lifecycle hooks for created/updated/detached workspace instances to recompute CLI projections.
 - [ ] 5.3 Project skill CLI through the new contract while preserving SkillSystem's special PWD-local discovery law.
-- [ ] 5.4 Add NoteSystem storage primitives for Markdown + frontmatter pages under notebook / section / page paths.
-- [ ] 5.5 Add `note` CLI projection only when the active workspace group has non-empty `AVATAR_HOME`.
-- [ ] 5.6 Implement `note write --notebook --section --page --mode append|override`, including safe segment validation.
-- [ ] 5.7 Implement `note draft` to write into `_draft` with date section and high-precision time plus short-id page naming.
-- [ ] 5.8 Implement `note list`, `note show`, and current-workspace-group default read scope.
-- [ ] 5.9 Add strict write modes so non-empty page writes require append or override.
-- [ ] 5.10 Add lightweight local `note search`, using MiniSearch by default unless implementation evidence favors another local JS search library.
-- [ ] 5.11 Keep script capability as script source/home projection only, unless a later user decision promotes it to full System.
-- [ ] 5.12 Ensure capability projection changes are inspectable and do not create hidden messages, file writes, terminal input, or note entries.
+- [x] 5.4 Add NoteSystem storage primitives for Markdown + frontmatter pages under notebook / section / page paths.
+- [x] 5.5 Add `note` CLI projection only when the active workspace group has non-empty `AVATAR_HOME`.
+- [x] 5.6 Implement `note write --notebook --section --page --mode append|override`, including safe segment validation.
+- [x] 5.7 Implement `note draft` to write into `_draft` with date section and high-precision time plus short-id page naming.
+- [x] 5.8 Implement `note list`, `note show`, and current-workspace-group default read scope.
+- [x] 5.9 Add strict write modes so non-empty page writes require append or override.
+- [x] 5.10 Add lightweight local `note search`, using MiniSearch by default unless implementation evidence favors another local JS search library.
+- [x] 5.11 Keep script capability as script source/home projection only, unless a later user decision promotes it to full System.
+- [x] 5.12 Ensure capability projection changes are inspectable and do not create hidden messages, file writes, terminal input, or note entries.
 
 ## 6. Durable Specs / Docs
 

@@ -268,8 +268,10 @@ import {
 } from "./workspace-settings";
 import {
   AVATAR_HOME_ENV,
+  SKILLS_HOME_ENV,
   deriveMultiWorkspaceSkillsHome,
   parseEnvAvatarHome,
+  serializeEnvSkillsHome,
   RootWorkspaceShellWorld,
   createRootWorkspaceShellWorld,
   executeWorkspaceBash,
@@ -2322,6 +2324,14 @@ export class SessionRuntime {
       return [];
     }
     return deriveMultiWorkspaceSkillsHome({ workspaceGroups });
+  }
+
+  private getRootWorkspaceCapabilityEnv(): Record<string, string> {
+    const avatarRoot = this.listWorkspaceAuthorities().find((authority) => authority.mount.kind === "avatar-root");
+    return {
+      [AVATAR_HOME_ENV]: avatarRoot?.mount.env[AVATAR_HOME_ENV] ?? "",
+      [SKILLS_HOME_ENV]: serializeEnvSkillsHome(this.getRuntimeSkillHomeRoots()),
+    };
   }
 
   private ensureRuntimeSkillSystem(): RuntimeSkillSystem {
@@ -5158,7 +5168,10 @@ export class SessionRuntime {
         managedSeatAuthorityUrl: this.options.managedSeatAuthorityUrl,
         privateKey: this.options.avatarPrivateKey,
         principalId: this.options.avatarPrincipalId,
-        env: input.env,
+        env: {
+          ...(input.env ?? {}),
+          ...this.getRootWorkspaceCapabilityEnv(),
+        },
       }),
       stdin: input.stdin,
       mounts: [...this.getRootWorkspaceMounts()],
@@ -5226,7 +5239,7 @@ export class SessionRuntime {
         const rootBashTool = toolDefinition({
           name: "root_bash",
           description:
-            "Execute one-shot bash inside the fixed root-workspace with avatar-private runtime CLI/env access.",
+            "Execute one-shot bash inside the fixed root-workspace with runtime CLI wiring and workspace capability env.",
           inputSchema: z.object({
             command: z.string(),
             cwd: z.string().optional(),
