@@ -49,9 +49,9 @@
 		<h1>Self Review: define-workspace-env-capability-projection</h1>
 		<section>
 			<h2>Verdict</h2>
-			<p class="pass">Normal exit candidate.</p>
+			<p class="pass">Normal exit.</p>
 			<p>
-				The implementation now follows the Env-first law: workspace instance env projects
+				The implementation follows the Env-first law: workspace instance env projects
 				private capability, SkillSystem consumes <code>SKILLS_HOME</code>, NoteSystem
 				validates the basic <code>AVATAR_HOME</code> path, and existing
 				<code>root_bash</code> naming remains a compatibility surface.
@@ -89,8 +89,8 @@
 						<td class="pass">Passed</td>
 					</tr>
 					<tr>
-						<td>Studio surface</td>
-						<td><code>skill-browser-state.spec.ts</code>, <code>skills-workbench-location.spec.ts</code>, Studio typecheck</td>
+						<td>Studio and client SDK</td>
+						<td><code>runtime-store.test.ts</code>, <code>skill-browser-state.spec.ts</code>, <code>skills-workbench-location.spec.ts</code></td>
 						<td class="pass">Passed</td>
 					</tr>
 					<tr>
@@ -100,31 +100,26 @@
 					</tr>
 					<tr>
 						<td>OpenSpec</td>
-						<td><code>openspec:vision validate</code>, <code>openspec validate --specs --strict</code></td>
+						<td><code>openspec:vision validate</code>, <code>openspec:vision check</code>, <code>openspec validate --specs --strict</code></td>
 						<td class="pass">Passed</td>
 					</tr>
 				</tbody>
 			</table>
 		</section>
 		<section>
-			<h2>Observed Review Issue</h2>
+			<h2>Remaining Scope</h2>
 			<p>
-				Parallel execution of workspace shell and real shell suites produced transient
-				SQLite/temp-directory I/O failures. Serial rerun of the complete
-				<code>workspace-system.test.ts</code> passed with 28 tests.
-			</p>
-			<p>
-				The real issue found during this rerun was a canonical path fallback: ordinary
-				workspace avatar roots used <code>by-nickname</code> when an alias did not exist.
-				The resolver now uses the alias only when present and falls back to
-				<code>by-principal</code>.
+				No blocker remains for this change. A future product/runtime shell-surface change
+				should decide whether non-root <code>workspace_bash</code> surfaces with
+				non-empty <code>AVATAR_HOME</code> should expose private projected CLIs.
 			</p>
 		</section>
 		<section>
-			<h2>Archive Readiness</h2>
+			<h2>Archive</h2>
 			<p>
-				No user-blocking questions remain. The next action is the final
-				<code>openspec:vision check</code>, followed by archive and commit if the check is clean.
+				The active change has been archived to
+				<code>openspec/changes/archive/2026-05-31-define-workspace-env-capability-projection</code>.
+				The remaining action is committing the archive move.
 			</p>
 		</section>
 	</body>
