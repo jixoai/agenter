@@ -1,4 +1,15 @@
 export { executeWorkspaceBash, type WorkspaceBashExecInput, type WorkspaceBashExecResult } from "./exec";
+export {
+  AVATAR_HOME_ENV,
+  deriveEnvSkillsHome,
+  deriveMultiWorkspaceSkillsHome,
+  ENV_HOME_CANONICAL_DELIMITER,
+  parseEnvAvatarHome,
+  serializeEnvAvatarHome,
+  serializeEnvSkillsHome,
+  SKILLS_HOME_ENV,
+  type WorkspaceSkillsHomeGroup,
+} from "./env-home";
 export { GrantedWorkspaceFs, type GrantedWorkspaceFsOptions } from "./granted-fs";
 export {
   compileWorkspaceGrantRules,

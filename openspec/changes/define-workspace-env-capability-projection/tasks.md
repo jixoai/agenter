@@ -1,27 +1,27 @@
 ## 1. Alignment / Investigation
 
-- [ ] 1.1 Confirm `plans/plan.md` reflects the latest user Q&A, code survey, existing OpenSpec survey, and the decision to use a new change rather than extending `align-avatar-memory-scope-law`.
-- [ ] 1.2 Confirm the user-approved strict invalid `AVATAR_HOME` behavior is represented in specs and BDD.
-- [ ] 1.3 Confirm first apply does not rename, remove, or reimplement the visible `root_bash` tool surface.
-- [ ] 1.4 Confirm `scriptSystem` stays postponed as a script source/home projection rather than becoming a full System.
-- [ ] 1.5 Confirm `noteSystem` is included with SkillSystem as the basic capability projection validation target.
-- [ ] 1.6 Confirm NoteSystem uses Markdown + frontmatter, notebook -> section -> page hierarchy, special draft notebook, strict write modes, and lightweight JS search.
-- [ ] 1.7 Confirm final note-cli command shape: `note write`, `note draft`, `note list`, `note show`, and `note search`.
-- [ ] 1.8 Confirm each future task checkbox is updated only by the agent that completed and verified that task in the current working context.
+- [x] 1.1 Confirm `plans/plan.md` reflects the latest user Q&A, code survey, existing OpenSpec survey, and the decision to use a new change rather than extending `align-avatar-memory-scope-law`.
+- [x] 1.2 Confirm the user-approved strict invalid `AVATAR_HOME` behavior is represented in specs and BDD.
+- [x] 1.3 Confirm first apply does not rename, remove, or reimplement the visible `root_bash` tool surface.
+- [x] 1.4 Confirm `scriptSystem` stays postponed as a script source/home projection rather than becoming a full System.
+- [x] 1.5 Confirm `noteSystem` is included with SkillSystem as the basic capability projection validation target.
+- [x] 1.6 Confirm NoteSystem uses Markdown + frontmatter, notebook -> section -> page hierarchy, special draft notebook, strict write modes, and lightweight JS search.
+- [x] 1.7 Confirm final note-cli command shape: `note write`, `note draft`, `note list`, `note show`, and `note search`.
+- [x] 1.8 Confirm each future task checkbox is updated only by the agent that completed and verified that task in the current working context.
 
 ## 2. BDD Contract
 
-- [ ] 2.1 Add parser BDD: Scenario: Given empty `AVATAR_HOME` When parsed Then it returns `[]` and no filesystem side effect occurs.
-- [ ] 2.2 Add parser BDD: Scenario: Given semicolon-delimited absolute `AVATAR_HOME` When parsed Then entries preserve last-wins order.
-- [ ] 2.3 Add parser BDD: Scenario: Given non-Windows colon-delimited `AVATAR_HOME` When parsed Then it is accepted as compatibility input and serialized back with `;`.
-- [ ] 2.4 Add parser BDD: Scenario: Given a relative `AVATAR_HOME` entry When parsed or set Then the request is rejected before capability projection.
+- [x] 2.1 Add parser BDD: Scenario: Given empty `AVATAR_HOME` When parsed Then it returns `[]` and no filesystem side effect occurs.
+- [x] 2.2 Add parser BDD: Scenario: Given semicolon-delimited absolute `AVATAR_HOME` When parsed Then entries preserve last-wins order.
+- [x] 2.3 Add parser BDD: Scenario: Given non-Windows colon-delimited `AVATAR_HOME` When parsed Then it is accepted as compatibility input and serialized back with `;`.
+- [x] 2.4 Add parser BDD: Scenario: Given a relative `AVATAR_HOME` entry When parsed or set Then the request is rejected before capability projection.
 - [ ] 2.5 Add WorkspaceSystem BDD: Scenario: Given a workspace instance with inherited Avatar home When `getAvatarHome()` runs Then it returns normalized absolute paths.
 - [ ] 2.6 Add WorkspaceSystem BDD: Scenario: Given `setAvatarHome()` is called with duplicate paths When env is persisted Then the duplicate keeps the last occurrence and canonical `;` serialization.
 - [ ] 2.7 Add capability BDD: Scenario: Given a per-command env overlay includes `AVATAR_HOME` When workspace capabilities are inspected Then the overlay does not grant durable private CLI capability.
-- [ ] 2.8 Add skill BDD: Scenario: Given one workspace group with `PWD` and `AVATAR_HOME` When `SKILLS_HOME` is derived Then PWD roots appear before Avatar-home roots and Avatar-home conflicts win.
-- [ ] 2.9 Add skill BDD: Scenario: Given empty `AVATAR_HOME` and a PWD with local skills When skill list runs Then PWD skills are visible and avatar-private roots are not invented.
+- [x] 2.8 Add skill BDD: Scenario: Given one workspace group with `PWD` and `AVATAR_HOME` When `SKILLS_HOME` is derived Then PWD roots appear before Avatar-home roots and Avatar-home conflicts win.
+- [x] 2.9 Add skill BDD: Scenario: Given empty `AVATAR_HOME` and a PWD with local skills When skill list runs Then PWD skills are visible and avatar-private roots are not invented.
 - [ ] 2.10 Add skill BDD: Scenario: Given generic and dot-agent skills with the same name When merged Then the later dot-agent source wins and the visible record reports its source path.
-- [ ] 2.11 Add multi-workspace skill BDD: Scenario: Given two workspace groups When `SKILLS_HOME` is derived Then the order is `w1-pwd;w1-avatar-home;w2-pwd;w2-avatar-home`.
+- [x] 2.11 Add multi-workspace skill BDD: Scenario: Given two workspace groups When `SKILLS_HOME` is derived Then the order is `w1-pwd;w1-avatar-home;w2-pwd;w2-avatar-home`.
 - [ ] 2.12 Add NoteSystem BDD: Scenario: Given empty `AVATAR_HOME` When note CLI projection runs Then avatar-private note CLI is withheld.
 - [ ] 2.13 Add NoteSystem BDD: Scenario: Given non-empty `AVATAR_HOME` When a note is written Then it is stored as a note fact, not a memory projection.
 - [ ] 2.14 Add NoteSystem BDD: Scenario: Given notebook/section/page input When a note page is written Then a Markdown + frontmatter page is stored under that hierarchy.
@@ -37,9 +37,9 @@
 
 ## 3. Platform Implementation
 
-- [ ] 3.1 Run `bun run openspec:vision -- commit-check define-workspace-env-capability-projection --phase apply` before app-code work starts and commit ready OpenSpec artifacts.
-- [ ] 3.2 Add a pure env utility module with `parseEnvAvatarHome`, canonical `serializeEnvAvatarHome`, absolute path validation, last-wins dedupe, and platform-aware delimiter reading.
-- [ ] 3.3 Add pure `deriveEnvSkillsHome` / multi-workspace skill-home utilities that expand each workspace group as `pwd` roots before `avatarHome` roots, with `skills`, `.codex/skills`, `.claude/skills`, and `.agents/skills` expansion and no filesystem mutation.
+- [x] 3.1 Run `bun run openspec:vision -- commit-check define-workspace-env-capability-projection --phase apply` before app-code work starts and commit ready OpenSpec artifacts.
+- [x] 3.2 Add a pure env utility module with `parseEnvAvatarHome`, canonical `serializeEnvAvatarHome`, absolute path validation, last-wins dedupe, and platform-aware delimiter reading.
+- [x] 3.3 Add pure `deriveEnvSkillsHome` / multi-workspace skill-home utilities that expand each workspace group as `pwd` roots before `avatarHome` roots, with `skills`, `.codex/skills`, `.claude/skills`, and `.agents/skills` expansion and no filesystem mutation.
 - [ ] 3.4 Extend WorkspaceSystem data shape so workspace instances/mounts can persist capability env separately from exec-profile process env.
 - [ ] 3.5 Add `workspace.getAvatarHome()` and `workspace.setAvatarHome(paths)` on the workspace instance API boundary.
 - [ ] 3.6 Update workspace creation flows so inherited `AVATAR_HOME` is explicit and workspace instances can opt out with an empty value.
