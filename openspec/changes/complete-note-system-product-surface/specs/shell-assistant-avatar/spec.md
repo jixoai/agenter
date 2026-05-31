@@ -1,0 +1,124 @@
+## MODIFIED Requirements
+
+### Requirement: Cli-shell SHALL initialize shell-assistant as a dedicated terminal assistant Avatar
+
+When cli-shell is launched without an explicit `@avatar` mention, it SHALL ensure an Avatar with nickname `shell-assistant`. The ensure flow SHALL seed a missing `AGENTER.mdx` prompt source for terminal pair programming while leaving existing prompt and legacy user assets openly editable. New recording behavior SHALL use NoteSystem through projected `note` CLI capability rather than initializing a dedicated memory-file pack as the default recording surface.
+
+#### Scenario: Missing shell-assistant gets prompt defaults and note guidance
+- **GIVEN** no Avatar with nickname `shell-assistant` exists
+- **WHEN** a user runs `agenter shell`
+- **THEN** cli-shell ensures the `shell-assistant` Avatar through generic Avatar/app-extension APIs
+- **AND** it initializes missing `AGENTER.mdx` prompt source for that Avatar
+- **AND** the prompt teaches NoteSystem recording through projected `note` CLI
+- **AND** core launcher modules do not special-case that Avatar nickname
+
+#### Scenario: Existing shell-assistant resources remain open user truth
+- **GIVEN** Avatar `shell-assistant` already has user-edited `AGENTER.mdx` or legacy memory files
+- **WHEN** cli-shell runs its ensure flow
+- **THEN** it reads the existing prompt as current prompt truth
+- **AND** it does not lock, hide, delete, migrate, or automatically rewrite legacy memory files
+- **AND** advanced users may continue editing those low-level assets manually
+
+#### Scenario: Explicit Avatar bypasses shell-assistant defaults
+- **WHEN** a user runs `agenter shell @default`
+- **THEN** cli-shell selects Avatar `default`
+- **AND** it does not initialize or mutate `shell-assistant` prompt, note, or legacy memory assets as part of that explicit override
+
+### Requirement: Shell-assistant AGENTER.mdx SHALL describe flexible pair programming and self-evolution
+
+The default `shell-assistant` `AGENTER.mdx` SHALL bias the Avatar toward understanding the user and evolving fit over time. It SHALL avoid hard-coding one collaboration style, user seniority, model behavior, or managed-mode completion recipe. Self-evolution SHALL be orthogonal to managed mode, and raw recording SHALL use NoteSystem rather than dedicated memory files.
+
+#### Scenario: Non-managed mode is learning-oriented pair programming
+- **WHEN** `shell-assistant` is active and managed mode is off
+- **THEN** its prompt guidance emphasizes observing the user's terminal habits, preferences, corrections, constraints, and thinking style
+- **AND** it treats pair programming as an adaptive relationship rather than a fixed workflow
+- **AND** it asks, explains, or acts according to the learned user fit and current evidence
+
+#### Scenario: Managed mode is autonomous but not scripted
+- **WHEN** managed mode is on
+- **THEN** `AGENTER.mdx` guides the Avatar to take independent responsibility for the active hosting objective
+- **AND** it does not hard-code a universal rule for when takeover is complete
+- **AND** it tells the Avatar to decide whether to continue watching, report to chat, operate the terminal, ask for approval, record a note, or settle the obligation based on prompt, note history, user intent, and current evidence
+
+#### Scenario: Prompt avoids fixed user archetypes
+- **WHEN** the default prompt describes possible user relationships
+- **THEN** it allows users to be highly directive, exploratory, novice, senior, playful, or otherwise idiosyncratic
+- **AND** it instructs the Avatar to learn the actual user instead of assuming a preset archetype
+
+#### Scenario: Senior-led collaboration is learned from evidence
+- **WHEN** a senior engineer primarily leads the terminal work and uses `shell-assistant` for review, explanation, or bounded operation
+- **THEN** the assistant is guided to keep the user in control unless evidence or hosting attention asks for more autonomy
+- **AND** it may record durable collaboration evidence as notes under appropriate notebooks or draft notes
+- **AND** it does not treat senior-led behavior as a universal default for all users
+
+#### Scenario: Requirement-led collaboration is learned from evidence
+- **WHEN** a user mainly states needs and expects the assistant to drive more planning, implementation, and explanation
+- **THEN** the assistant is guided to take more initiative within app and TerminalSystem authority boundaries
+- **AND** it may record learned autonomy level and explanation needs as notes
+- **AND** it does not hard-code the user as novice or remove opportunities for the user to lead later
+
+#### Scenario: Playful collaboration preserves engineering boundaries
+- **WHEN** a user interacts with `shell-assistant` in a playful or companion-like style
+- **THEN** the assistant may adapt tone and cadence to the learned relationship
+- **AND** it still preserves terminal truth ownership, prompt/note discipline, TerminalSystem authority requirements, and durable engineering constraints
+- **AND** it records only operationally useful preferences rather than treating playfulness as a app mode
+
+#### Scenario: Self-evolution can run without managed mode through programmable attention
+- **WHEN** the user asks `shell-assistant` to compose a self-evolution loop such as a nightly reflection
+- **AND** managed mode is off
+- **THEN** `AGENTER.mdx` still guides the Avatar to use notes, skills, and minimal attention-cli compatible `commit/query/settle` operations to review recent work, record useful evidence, and improve skills when appropriate
+- **AND** it does not require a hosting AttentionItem or terminal takeover lease to evolve itself
+- **AND** dedicated watch or schedule primitives are deferred to `extend-attention-cli-self-evolution-runtime`
+- **AND** example names such as `auto-dream` are not treated as built-in core features, fixed score keys, or mandatory app commands
+
+### Requirement: Shell-assistant SHALL use NoteSystem recording guidance from AGENTER.mdx
+
+Shell-assistant SHALL use NoteSystem as the default durable raw-recording surface for terminal pair programming, self-evolution, and managed-mode continuity. `AGENTER.mdx` SHALL name the `note` CLI and the NoteSystem skill, and SHALL instruct the Avatar when to draft, search, show, append, or override notes so context compaction does not erase useful evidence.
+
+#### Scenario: Default recording surface is NoteSystem
+- **WHEN** cli-shell initializes missing shell-assistant prompt resources
+- **THEN** `AGENTER.mdx` teaches `note draft`, `note write`, `note list`, `note show`, and `note search`
+- **AND** it does not list `user-model.md`, `pairing-playbook.md`, `terminal-habits.md`, `self-evolution-log.md`, or `hosting-objective.md` as the default recording pack
+
+#### Scenario: User fit notes are recorded from durable corrections
+- **WHEN** the user gives a durable preference, correction, instruction, or repeated working pattern
+- **THEN** `shell-assistant` is guided to record raw evidence through NoteSystem when the evidence justifies persistence
+- **AND** it avoids dumping raw transcript into prompt text or pretending the note is already distilled memory
+
+#### Scenario: Hosting objective notes are refreshed on managed enable
+- **WHEN** the user enables managed mode
+- **THEN** `shell-assistant` is guided to record the active objective, resources, watch policy, progress, open risks, and known stop conditions through NoteSystem if continuity evidence is needed
+- **AND** this note history lets a later compacted context recover the hosting obligation through `note search` or `note show`
+
+#### Scenario: Self-evolution notes are not tied to hosting objective notes
+- **WHEN** `shell-assistant` records user preferences, learned habits, skill gaps, or scheduled reflection outcomes
+- **THEN** it records those facts as ordinary NoteSystem notes
+- **AND** it does not require or mutate hosting-specific notes unless the update is about an active hosting obligation
+
+### Requirement: Shell-assistant self-evolution SHALL be evaluated by real AI judge scenarios
+
+Shell-assistant self-evolution behavior SHALL have long-running real AI semantic evaluation coverage because deterministic tests cannot fully judge whether the assistant learned the correct user fit or evolved in the correct direction. The evaluation SHALL use the existing semantic judge infrastructure, model-response cache where available, and a structured scoring rubric. The rubric SHALL treat NoteSystem records as raw evidence and SHALL NOT require legacy memory-file diffs as the primary proof.
+
+#### Scenario: AI judge scores self-evolution quality
+- **WHEN** a real shell-assistant self-evolution scenario finishes
+- **THEN** the test submits the scenario trace, relevant note evidence, prompt guidance, and app facts to a semantic judge such as `SemanticJudge.judgeStructured`
+- **AND** the judge returns a numeric score using an explicit rubric
+- **AND** the rubric covers user-fit learning, note quality, self-evolution direction, orthogonality, hosting separation, programmable attention usage, and anti-overfit behavior
+
+#### Scenario: Low AI judge score retries before failing
+- **WHEN** the semantic judge score is below the configured threshold
+- **THEN** the evaluation may retry the scenario to account for model variance
+- **AND** the default policy allows at most two retries after the first failed score
+- **AND** if all attempts remain below threshold, the test fails as a app issue requiring prompt adjustment or bug repair
+
+#### Scenario: AI evaluation covers multiple collaboration styles
+- **WHEN** real AI evaluation scenarios are defined
+- **THEN** they include at least senior-led, requirement-led, and playful collaboration traces
+- **AND** the expected outcome is adaptive learning from evidence rather than matching a fixed archetype label
+- **AND** the assistant is judged on whether the resulting notes and future behavior remain useful across those styles
+
+#### Scenario: Long-running scripts validate learned behavior across time
+- **WHEN** validating prompt usefulness and self-evolution direction
+- **THEN** the test suite includes long-running real AI scripts that simulate many turns of terminal use, corrections, note updates, context compaction or restart, and later behavior
+- **AND** cached model responses may be used to reduce repeated local cost
+- **AND** normal CI may skip or gate the suite, but release or app acceptance uses it as the meaningful prompt validation path
