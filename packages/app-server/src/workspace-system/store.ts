@@ -4,6 +4,7 @@ import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 
 import { toWorkspacePath } from "../workspace-target";
+import { AVATAR_HOME_ENV, parseEnvAvatarHome, serializeEnvAvatarHome } from "./env-home";
 import { normalizeWorkspaceGrantPattern, sortWorkspaceGrantRecords } from "./grants";
 import type {
   WorkspaceExecProfileRecord,
@@ -96,7 +97,7 @@ export class WorkspaceSystemStore {
     return {
       version: 3,
       workspaces: this.snapshot.workspaces.map((item) => ({ ...item })),
-      mounts: this.snapshot.mounts.map((item) => ({ ...item })),
+      mounts: this.snapshot.mounts.map((item) => ({ ...item, env: { ...item.env } })),
       grants: this.snapshot.grants.map((item) => ({ ...item })),
       execProfiles: this.snapshot.execProfiles.map((item) => ({ ...item, env: { ...item.env } })),
     };
@@ -125,6 +126,7 @@ export class WorkspaceSystemStore {
     workspacePath: string;
     kind?: WorkspaceMountKind;
     alias?: string;
+    env?: Record<string, string>;
   }): WorkspaceMountRecord {
     const workspace = this.ensureWorkspace(input.workspacePath);
     const kind = input.kind ?? "workspace";
@@ -136,6 +138,10 @@ export class WorkspaceSystemStore {
         typeof item.detachedAt !== "string",
     );
     if (existing) {
+      if (input.env) {
+        existing.env = { ...input.env };
+        existing.updatedAt = nowIso();
+      }
       if (typeof input.alias === "string" && input.alias.trim().length > 0 && existing.alias !== input.alias.trim()) {
         existing.alias = input.alias.trim();
         existing.updatedAt = nowIso();
@@ -156,6 +162,9 @@ export class WorkspaceSystemStore {
     const alias = input.alias?.trim() || detached?.alias || buildDefaultWorkspaceAlias(workspace.workspacePath, kind);
     if (detached) {
       detached.alias = alias;
+      if (input.env) {
+        detached.env = { ...input.env };
+      }
       detached.detachedAt = undefined;
       detached.updatedAt = createdAt;
       this.flush();
@@ -169,6 +178,7 @@ export class WorkspaceSystemStore {
       alias,
       workspacePath: workspace.workspacePath,
       kind,
+      env: { ...(input.env ?? {}) },
       createdAt,
       updatedAt: createdAt,
     };
@@ -222,11 +232,13 @@ export class WorkspaceSystemStore {
     workspacePath: string;
     grants: WorkspaceGrantInput[];
     kind?: WorkspaceMountKind;
+    env?: Record<string, string>;
   }): WorkspaceGrantRecord[] {
     const mount = this.attachRuntime({
       runtimeId: input.runtimeId,
       workspacePath: input.workspacePath,
       kind: input.kind ?? "workspace",
+      env: input.env,
     });
     const appliedAt = nowIso();
     for (const current of this.snapshot.grants) {
@@ -299,6 +311,35 @@ export class WorkspaceSystemStore {
     return mount;
   }
 
+  getRuntimeWorkspaceAvatarHome(input: {
+    runtimeId: string;
+    runtimeWorkspaceId: number;
+  }): string[] {
+    const mount = this.getRuntimeMountByWorkspaceId(input);
+    if (!mount) {
+      return [];
+    }
+    return parseEnvAvatarHome(mount.env[AVATAR_HOME_ENV]);
+  }
+
+  setRuntimeWorkspaceAvatarHome(input: {
+    runtimeId: string;
+    runtimeWorkspaceId: number;
+    paths: readonly string[];
+  }): WorkspaceMountRecord | null {
+    const mount = this.getRuntimeMountByWorkspaceId(input);
+    if (!mount) {
+      return null;
+    }
+    mount.env = {
+      ...mount.env,
+      [AVATAR_HOME_ENV]: serializeEnvAvatarHome(input.paths),
+    };
+    mount.updatedAt = nowIso();
+    this.flush();
+    return mount;
+  }
+
   upsertExecProfile(input: {
     runtimeId: string;
     workspacePath: string;
@@ -345,6 +386,7 @@ export class WorkspaceSystemStore {
           mounts: (parsed.mounts ?? []).map((mount) => ({
             ...mount,
             kind: mount.kind ?? "workspace",
+            env: { ...(mount.env ?? {}) },
           })),
           grants: sortWorkspaceGrantRecords(
             (parsed.grants ?? []).map((grant, index) => ({
@@ -363,6 +405,7 @@ export class WorkspaceSystemStore {
           mounts: (parsed.mounts ?? []).map((mount) => ({
             ...mount,
             kind: mount.kind ?? "workspace",
+            env: { ...(mount.env ?? {}) },
             runtimeWorkspaceId:
               typeof mount.runtimeWorkspaceId === "number"
                 ? mount.runtimeWorkspaceId
@@ -392,6 +435,7 @@ export class WorkspaceSystemStore {
           mounts: (parsed.mounts ?? []).map((mount) => ({
             ...mount,
             kind: mount.kind ?? "workspace",
+            env: {},
             runtimeWorkspaceId:
               (mount.kind ?? "workspace") === "avatar-root"
                 ? 0

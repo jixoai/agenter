@@ -15,8 +15,8 @@
 - [x] 2.2 Add parser BDD: Scenario: Given semicolon-delimited absolute `AVATAR_HOME` When parsed Then entries preserve last-wins order.
 - [x] 2.3 Add parser BDD: Scenario: Given non-Windows colon-delimited `AVATAR_HOME` When parsed Then it is accepted as compatibility input and serialized back with `;`.
 - [x] 2.4 Add parser BDD: Scenario: Given a relative `AVATAR_HOME` entry When parsed or set Then the request is rejected before capability projection.
-- [ ] 2.5 Add WorkspaceSystem BDD: Scenario: Given a workspace instance with inherited Avatar home When `getAvatarHome()` runs Then it returns normalized absolute paths.
-- [ ] 2.6 Add WorkspaceSystem BDD: Scenario: Given `setAvatarHome()` is called with duplicate paths When env is persisted Then the duplicate keeps the last occurrence and canonical `;` serialization.
+- [x] 2.5 Add WorkspaceSystem BDD: Scenario: Given a workspace instance with inherited Avatar home When `getAvatarHome()` runs Then it returns normalized absolute paths.
+- [x] 2.6 Add WorkspaceSystem BDD: Scenario: Given `setAvatarHome()` is called with duplicate paths When env is persisted Then the duplicate keeps the last occurrence and canonical `;` serialization.
 - [ ] 2.7 Add capability BDD: Scenario: Given a per-command env overlay includes `AVATAR_HOME` When workspace capabilities are inspected Then the overlay does not grant durable private CLI capability.
 - [x] 2.8 Add skill BDD: Scenario: Given one workspace group with `PWD` and `AVATAR_HOME` When `SKILLS_HOME` is derived Then PWD roots appear before Avatar-home roots and Avatar-home conflicts win.
 - [x] 2.9 Add skill BDD: Scenario: Given empty `AVATAR_HOME` and a PWD with local skills When skill list runs Then PWD skills are visible and avatar-private roots are not invented.
@@ -40,9 +40,9 @@
 - [x] 3.1 Run `bun run openspec:vision -- commit-check define-workspace-env-capability-projection --phase apply` before app-code work starts and commit ready OpenSpec artifacts.
 - [x] 3.2 Add a pure env utility module with `parseEnvAvatarHome`, canonical `serializeEnvAvatarHome`, absolute path validation, last-wins dedupe, and platform-aware delimiter reading.
 - [x] 3.3 Add pure `deriveEnvSkillsHome` / multi-workspace skill-home utilities that expand each workspace group as `pwd` roots before `avatarHome` roots, with `skills`, `.codex/skills`, `.claude/skills`, and `.agents/skills` expansion and no filesystem mutation.
-- [ ] 3.4 Extend WorkspaceSystem data shape so workspace instances/mounts can persist capability env separately from exec-profile process env.
-- [ ] 3.5 Add `workspace.getAvatarHome()` and `workspace.setAvatarHome(paths)` on the workspace instance API boundary.
-- [ ] 3.6 Update workspace creation flows so inherited `AVATAR_HOME` is explicit and workspace instances can opt out with an empty value.
+- [x] 3.4 Extend WorkspaceSystem data shape so workspace instances/mounts can persist capability env separately from exec-profile process env.
+- [x] 3.5 Add `workspace.getAvatarHome()` and `workspace.setAvatarHome(paths)` on the workspace instance API boundary.
+- [x] 3.6 Update workspace creation flows so inherited `AVATAR_HOME` is explicit and workspace instances can opt out with an empty value.
 - [ ] 3.7 Update capability projection consumers without renaming/removing `root_bash`; any root bash law cleanup must be proposed separately.
 
 ## 4. SkillSystem Migration

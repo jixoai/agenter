@@ -216,11 +216,13 @@ import {
   saveWorkspaceSettingsLayer,
 } from "./workspace-settings";
 import {
+  AVATAR_HOME_ENV,
   executeWorkspaceBash,
   hasWorkspaceGrantRootAccess,
   resolveWorkspaceAvatarAssetRoot,
   resolveWorkspaceGrantModeFromAbsolutePath,
   resolveWorkspacePublicAssetRoot,
+  serializeEnvAvatarHome,
   WorkspaceSystemStore,
   type WorkspaceAssetRoots,
   type WorkspaceBashExecResult,
@@ -2087,6 +2089,7 @@ export class AppKernel {
       runtimeId: input.runtimeId,
       workspacePath,
       grants: input.grants,
+      env: this.buildInheritedWorkspaceInstanceEnv(input.runtimeId),
     });
   }
 
@@ -2673,6 +2676,9 @@ export class AppKernel {
       runtimeId: input.runtimeId,
       workspacePath: rootWorkspacePath,
       kind: "avatar-root",
+      env: {
+        [AVATAR_HOME_ENV]: serializeEnvAvatarHome([rootWorkspacePath]),
+      },
     });
     const grants = this.workspaceSystem.listRuntimeWorkspaceGrants({
       runtimeId: input.runtimeId,
@@ -2687,6 +2693,23 @@ export class AppKernel {
       });
     }
     return rootWorkspacePath;
+  }
+
+  private buildInheritedWorkspaceInstanceEnv(runtimeId: string): Record<string, string> {
+    const avatarRootMount = this.workspaceSystem
+      .listRuntimeMounts(runtimeId)
+      .find((mount) => mount.kind === "avatar-root");
+    if (!avatarRootMount) {
+      return {};
+    }
+    const avatarHome = this.workspaceSystem.getRuntimeWorkspaceAvatarHome({
+      runtimeId,
+      runtimeWorkspaceId: avatarRootMount.runtimeWorkspaceId,
+    });
+    const inheritedAvatarHome = avatarHome.length > 0 ? avatarHome : [avatarRootMount.workspacePath];
+    return {
+      [AVATAR_HOME_ENV]: serializeEnvAvatarHome(inheritedAvatarHome),
+    };
   }
 
   listWorkspaceSessions(input: {

@@ -21,6 +21,7 @@ export interface WorkspaceMountRecord {
   alias: string;
   workspacePath: string;
   kind: WorkspaceMountKind;
+  env: Record<string, string>;
   createdAt: string;
   updatedAt: string;
   detachedAt?: string;

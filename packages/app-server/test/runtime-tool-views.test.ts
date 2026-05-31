@@ -193,6 +193,7 @@ describe("Feature: runtime tool public views", () => {
         alias: "workspace-1",
         workspacePath: "/tmp/workspace",
         kind: "workspace",
+        env: {},
         createdAt: "2026-04-11T00:00:00.000Z",
         updatedAt: "2026-04-11T00:00:00.000Z",
       },
