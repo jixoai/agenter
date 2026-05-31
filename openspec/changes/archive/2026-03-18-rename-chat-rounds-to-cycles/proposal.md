@@ -1,6 +1,6 @@
 ## Why
 
-The chat projection still exposes the core conversation unit as `round` across app-server, client-sdk, realtime events, and TRPC. That conflicts with the rest of the kernel, which already uses `cycle` as the durable LoopBus unit. The mixed vocabulary creates avoidable confusion in product, API, and implementation layers.
+The chat projection still exposes the core conversation unit as `round` across app-server, client-sdk, realtime events, and TRPC. That conflicts with the rest of the kernel, which already uses `cycle` as the durable LoopBus unit. The mixed vocabulary creates avoidable confusion in app, API, and implementation layers.
 
 ## What Changes
 

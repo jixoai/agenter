@@ -13,7 +13,7 @@ Mouse and keyboard semantics for terminal panes SHALL remain owned by the termin
 - **GIVEN** terminal selection depends on viewport and scrollback truth
 - **WHEN** shell-next processes terminal mouse or keyboard selection gestures
 - **THEN** the scroll-aware selection state is owned below the app layer
-- **AND** the app layer remains a product router only
+- **AND** the app layer remains a app router only
 
 #### Scenario: Terminal-specific behavior is not duplicated in multiple layers
 - **WHEN** the terminal input audit runs

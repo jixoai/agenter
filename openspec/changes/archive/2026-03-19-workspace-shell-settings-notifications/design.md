@@ -67,7 +67,7 @@ Unread should clear only when the user can actually see the conversation.
 - App-server consumes notifications up to a message id when Chat is visible and the browser window is focused
 - Opening Devtools or Settings for the same session does not clear unread
 
-This matches the product goal: background session replies should remain surfaced until the user actually sees the chat.
+This matches the app goal: background session replies should remain surfaced until the user actually sees the chat.
 
 ## Risks / Trade-offs
 

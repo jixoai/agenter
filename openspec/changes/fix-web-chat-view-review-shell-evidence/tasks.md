@@ -10,7 +10,7 @@
 - [x] 2.1 Fix Framework7 icon/resource loading or markup so icon glyph names are not visible as text.
 - [x] 2.2 Fix mobile child route/page state so source detail is a complete Framework7 child page on iPhone 14.
 - [x] 2.3 Fix inline-token and resource-tile activation labels used by overlay screenshot automation.
-- [x] 2.4 Review B: self-review implementation against Framework7 ownership law and room/source/domain product direction.
+- [x] 2.4 Review B: self-review implementation against Framework7 ownership law and room/source/domain app direction.
 
 ## 3. Verification And Evidence
 

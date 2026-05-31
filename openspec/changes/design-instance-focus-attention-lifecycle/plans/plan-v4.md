@@ -41,11 +41,11 @@
 | ---- | ------- | ---------------- | ---------------- |
 | 1 | User | Open a vision-driven OpenSpec change to discuss large-scale focused `attentionContext` behavior. | This round is investigation and architecture alignment, not implementation. |
 | 1 | User | Find the recent proposal where killed terminals mute their bound `attentionContext`. | Must verify prior law before proposing new behavior. |
-| 1 | User | Find the older proposal for a URI format that globally identifies terminal, room, and similar instances; inspect code completion. | Must distinguish existing global identity law from missing product binding law. |
+| 1 | User | Find the older proposal for a URI format that globally identifies terminal, room, and similar instances; inspect code completion. | Must distinguish existing global identity law from missing app binding law. |
 | 1 | User | Consider shell-next binding `terminalInstance` to `roomInstance`: terminal killed -> terminal context muted as kernel behavior -> room archived as shell-next app behavior -> room context muted as kernel behavior. | Need map current atoms, identify missing contracts, and avoid cross-system coupling. |
 | 2 | User | Adopt Option A. Discuss whether `msg:` should split into `msg:` + `room:` now that roomManagement is separated from messageSystem. | Specs must decide source namespace meaning before any new instance-ref law. |
 | 2 | User | shell-next needs true `roomInstance` and `terminalInstance` memory instances, and their lifecycle + API logic should be hard-bound if the APIs exist or designed if missing. | Must review current in-memory instance/API availability instead of only SDK projections. |
-| 2 | User | Code may only link binding state; the deeper terminal-room relationship must come from `AGENTER.mdx` prompt/Avatar reasoning, because one Avatar handles multiple rooms and terminals and associations can be user-directed. | Product binding must not encode semantic conversation routing or task-specific room-terminal intent. |
+| 2 | User | Code may only link binding state; the deeper terminal-room relationship must come from `AGENTER.mdx` prompt/Avatar reasoning, because one Avatar handles multiple rooms and terminals and associations can be user-directed. | App binding must not encode semantic conversation routing or task-specific room-terminal intent. |
 | 3 | User | Correct the earlier claim that `msg:<chatId>/<messageId>` should simply mean a transcript row; messageSystem currently means "who can send a message to whom", closer to contact/delivery capability. | `msg:` cannot be assigned to room transcript truth without rethinking the messageSystem / roomManagement boundary. |
 | 3 | User | Consider whether `msg:from/to` is a better shape, while leaving usefulness open for discussion. | Treat `msg:from/to` as a candidate delivery-route/contact ref, not as a committed source law. |
 | 3 | User | Explain the model in plain words and in the user's system language. | Avoid abstract namespace jargon when communicating decisions. |
@@ -56,19 +56,19 @@
 | ------ | ---- | -------------- |
 | `openspec/changes/archive/2026-05-25-rework-terminal-live-registry-and-history-projection/specs/attention-context-state/spec.md` | Contains `Terminal death SHALL mute the bound attention context through durable lifecycle consequence`. | This confirms the remembered proposal exists and was archived this week. |
 | `openspec/specs/attention-context-state/spec.md` | The terminal-death mute requirement is now in durable specs. | The law is not only a stale change artifact; it became long-term spec truth. |
-| `openspec/changes/archive/2026-05-25-rework-terminal-live-registry-and-history-projection/design.md` | Rejects isolated helper calls and says terminal death should publish lifecycle facts, then the runtime/adapter commits the attention consequence. | Confirms the intended architecture is event/fact causality, not product-side focus flipping. |
+| `openspec/changes/archive/2026-05-25-rework-terminal-live-registry-and-history-projection/design.md` | Rejects isolated helper calls and says terminal death should publish lifecycle facts, then the runtime/adapter commits the attention consequence. | Confirms the intended architecture is event/fact causality, not app-side focus flipping. |
 | `packages/app-server/src/session-runtime.ts` | `handleKilledRuntimeTerminal(...)` enqueues a `terminal_killed` lifecycle attention commit for `ctx-terminal-<terminalId>`. | Code completion exists for the terminal killed source fact path. |
 | `packages/app-server/src/session-runtime.ts` | `handleCommittedAttentionCommit(...)` detects lifecycle commits tagged `terminal_killed` and calls `applyAttentionFocusState(contextId, "muted")`. | Code completion exists for terminal killed -> terminal context muted. |
 | `packages/app-server/src/session-runtime.ts` | `applyAttentionFocusState(...)` calls `syncCompanionRoomArchiveProjection(...)`. | Current generic companion law is context muted -> room archived, not necessarily room archived -> context muted. |
 | `packages/app-server/src/session-runtime.ts` | `archiveMessageChannel(...)` archives the room and enqueues a lifecycle attention item, but does not set the room context focus state to `muted`. | This is a gap against the user's proposed room archive -> room context muted kernel behavior. |
-| `openspec/changes/archive/2026-05-08-add-cli-shell-product/design.md` | Defines product extension runtime planes, including `productId + resourceKey` resource binding APIs for terminal and room resources. | This is the closest completed law to the remembered global instance identity proposal. |
-| `openspec/specs/product-extension-runtime/spec.md` | Durable spec says products provide `productId` and `resourceKey`, while owning systems remain authorities for terminal, room, AvatarRuntime, attention, and actor truth. | Current identity law is product-owned key plus owner-system metadata, not one universal URI string. |
-| `openspec/changes/realign-cli-shell-with-core-system-boundaries/design.md` | Product binding must expose current product key, terminal id, room id, AvatarRuntime identity, and attention hosting context id. | This describes the needed binding projection, but not yet a durable binding graph with lifecycle reactions. |
-| `openspec/changes/realign-cli-shell-with-core-system-boundaries/tasks.md` | Some binding-related SDK/context tasks remain unchecked. | Product binding work is partially complete; the current chain should not assume all planned binding surfaces landed. |
-| `packages/client-sdk/src/product-extension-runtime.ts` | `ensureTerminalBinding` and `ensureRoomBinding` match resources by binding metadata and return `bindingMetadata`; product resource keys are explicitly not TerminalSystem ids. | Code implements metadata-based binding lookup and creation. |
-| `extensions/shell-next/src/product/bootstrap.ts` | shell-next creates terminal and room with the same `productId=shell-next` and `resourceKey=<shellName>`, then returns a projection containing terminal id, room id, runtime id, avatar actor id, and hosting context id. | shell-next already has a runtime projection of the desired relationship during bootstrap. |
-| `extensions/shell-next/src/product/runtime.ts` | Terminal source `terminateTerminal` only calls `stopGlobalTerminal({ terminalId })`. | There is no visible shell-next lifecycle controller here that archives the bound room after terminal death. |
-| `extensions/shell-next/src/product/cleanup.ts` | Cleanup can find product resources by metadata and delete rooms/terminals, but it is a manual cleanup action. | Cleanup is not the automatic terminal killed -> room archived chain. |
+| `openspec/changes/archive/2026-05-08-add-cli-shell-app/design.md` | Defines app runtime planes, including `appId + resourceKey` resource binding APIs for terminal and room resources. | This is the closest completed law to the remembered global instance identity proposal. |
+| `openspec/specs/app-runtime/spec.md` | Durable spec says products provide `appId` and `resourceKey`, while owning systems remain authorities for terminal, room, AvatarRuntime, attention, and actor truth. | Current identity law is app-owned key plus owner-system metadata, not one universal URI string. |
+| `openspec/changes/realign-cli-shell-with-core-system-boundaries/design.md` | App binding must expose current app key, terminal id, room id, AvatarRuntime identity, and attention hosting context id. | This describes the needed binding projection, but not yet a durable binding graph with lifecycle reactions. |
+| `openspec/changes/realign-cli-shell-with-core-system-boundaries/tasks.md` | Some binding-related SDK/context tasks remain unchecked. | App binding work is partially complete; the current chain should not assume all planned binding surfaces landed. |
+| `packages/client-sdk/src/app-runtime.ts` | `ensureTerminalBinding` and `ensureRoomBinding` match resources by binding metadata and return `bindingMetadata`; app resource keys are explicitly not TerminalSystem ids. | Code implements metadata-based binding lookup and creation. |
+| `apps/shell-next/src/app/bootstrap.ts` | shell-next creates terminal and room with the same `appId=shell-next` and `resourceKey=<shellName>`, then returns a projection containing terminal id, room id, runtime id, avatar actor id, and hosting context id. | shell-next already has a runtime projection of the desired relationship during bootstrap. |
+| `apps/shell-next/src/app/runtime.ts` | Terminal source `terminateTerminal` only calls `stopGlobalTerminal({ terminalId })`. | There is no visible shell-next lifecycle controller here that archives the bound room after terminal death. |
+| `apps/shell-next/src/app/cleanup.ts` | Cleanup can find app resources by metadata and delete rooms/terminals, but it is a manual cleanup action. | Cleanup is not the automatic terminal killed -> room archived chain. |
 | `packages/app-server/src/attention-src.ts` and `loopbus-plugin-runtime.ts` | Runtime source refs currently use protocol-native namespaces such as `msg:<chatId>/<messageId>`, `tty:<terminalId>[/eventId]`, and `task:<subjectId>`. | Existing `msg:` usage is evidence of current implementation, not proof that this is the right future meaning after room-management separation. |
 | `SPEC.md` | Long-term law says LoopBus/source adapter refs must keep protocol-native `src` law and not reopen metadata escape hatches. | Any new global instance reference must not smuggle semantics through arbitrary metadata. |
 | `SPEC.md` | Room durability belongs to the `room-management` boundary; `message-system` is the messaging authority/runtime and may still contain local room-management code in the same package. | The `msg:` namespace currently mixes room-scope, row-like, and delivery/contact meanings even though room-management is now the durable room owner. |
@@ -82,7 +82,7 @@
 
 | Checkpoint | Expected commit evidence | Current status |
 | ---------- | ------------------------ | -------------- |
-| OpenSpec artifacts before apply | Commit containing `plans/plan.md`, specs, and `tasks.md` before product-code work starts | Not ready; this round is research-plan only. |
+| OpenSpec artifacts before apply | Commit containing `plans/plan.md`, specs, and `tasks.md` before app-code work starts | Not ready; this round is research-plan only. |
 | Task-progress commits | Commit containing current-context task checkbox updates plus matching code/BDD evidence | Not started. |
 | Self-review updates | Commit containing review output and any reopened or added OpenSpec tasks before the next apply loop | Not started. |
 | Normal archive | Commit containing `openspec archive <change>` result | Not started. |
@@ -94,10 +94,10 @@
 | ------------- | ----------------------- | ----------------------- |
 | `archive/2026-05-25-rework-terminal-live-registry-and-history-projection` | Terminal killed is a lifecycle fact that mutes the bound terminal attention context. | Reuse. The terminal half of the user's proposed chain is already law. |
 | `openspec/specs/attention-context-state/spec.md` | Focus state is durable and terminal death mutes bound context. | Reuse; extend with room archive -> room context muted if confirmed. |
-| `openspec/specs/product-extension-runtime/spec.md` | Product resources bind through `productId + resourceKey + resourceKind + ownerSystem`. | Reuse as current binding law; consider whether to upgrade it into a first-class instance-ref/URI law. |
-| `archive/2026-05-08-add-cli-shell-product` | Product binding APIs ensure terminal and room resources through owners; product metadata links stable product key to backend ids. | Reuse; shell-next should use the same product-extension runtime law. |
-| `realign-cli-shell-with-core-system-boundaries` | Product binding should expose terminal id, room id, AvatarRuntime identity, and attention context ids. | Extend; this is close to the needed shell-next binding projection but not enough for automatic lifecycle reactions. |
-| `openspec/specs/workspace-resource-ownership/spec.md` | Rooms and terminals are global resources referenced by shells; WorkspaceSystem does not own them. | Reuse; product binding must not make workspace own room/terminal lifecycle. |
+| `openspec/specs/app-runtime/spec.md` | App resources bind through `appId + resourceKey + resourceKind + ownerSystem`. | Reuse as current binding law; consider whether to upgrade it into a first-class instance-ref/URI law. |
+| `archive/2026-05-08-add-cli-shell-app` | App binding APIs ensure terminal and room resources through owners; app metadata links stable app key to backend ids. | Reuse; shell-next should use the same app-extension runtime law. |
+| `realign-cli-shell-with-core-system-boundaries` | App binding should expose terminal id, room id, AvatarRuntime identity, and attention context ids. | Extend; this is close to the needed shell-next binding projection but not enough for automatic lifecycle reactions. |
+| `openspec/specs/workspace-resource-ownership/spec.md` | Rooms and terminals are global resources referenced by shells; WorkspaceSystem does not own them. | Reuse; app binding must not make workspace own room/terminal lifecycle. |
 | `openspec/specs/runtime-system-boundary-law/spec.md` | Source facts preserve Avatar-authored context unless explicit context mutation is intended. | Reuse; lifecycle facts must not rewrite context summaries while changing focus state. |
 
 ### User Language System
@@ -105,13 +105,13 @@
 | User phrase | Working meaning | Plain-language translation when needed |
 | ----------- | --------------- | -------------------------------------- |
 | `成吨的focus attentionContext的问题` | Current focus/mute/background behavior is accumulating broad architectural debt. | Many contexts are staying active or focused when their owning resource lifecycle says they should no longer compete for attention. |
-| `terminalInstance` | A concrete durable terminal instance owned by TerminalSystem. | Not a product key and not a UI pane. |
+| `terminalInstance` | A concrete durable terminal instance owned by TerminalSystem. | Not a app key and not a UI pane. |
 | `roomInstance` | A concrete durable room owned by the room-management boundary, even if current code still lives inside the message-system package. | Not a shell name, not an attention context, and not a generic "message". |
-| `内核行为` | Cross-product platform consequence owned by runtime/kernel adapters and durable systems. | Should work for any product, not only shell-next. |
-| `shell-next的应用行为` | Product-specific policy that connects shell-next's terminal and room resources. | shell-next decides its bound room should archive when its bound terminal dies. |
+| `内核行为` | Cross-app platform consequence owned by runtime/kernel adapters and durable systems. | Should work for any app, not only shell-next. |
+| `shell-next的应用行为` | App-specific policy that connects shell-next's terminal and room resources. | shell-next decides its bound room should archive when its bound terminal dies. |
 | `uri的格式` | A stable global reference format for instances across systems. | May correspond to future instance refs; current code mainly has `msg:`/`tty:` source refs and metadata binding. |
 | `真正的roomInstance、terminalInstance内存实例` | shell-next should bind to lifecycle-capable runtime/control-plane instances, not just ids in a stale list. | Today app-server has real instances; shell-next process mostly has SDK/store projections. |
-| `编码只联动绑定状态` | Product code may record/propagate structural binding and lifecycle state only. | It must not decide that room X is semantically "the terminal's discussion room" for all future Avatar reasoning. |
+| `编码只联动绑定状态` | App code may record/propagate structural binding and lifecycle state only. | It must not decide that room X is semantically "the terminal's discussion room" for all future Avatar reasoning. |
 | `底层房间与终端的关键，需要从AGENTER.mdx这个提示词出发` | The AI's semantic choice of which room/terminal to use belongs to prompt-guided reasoning and explicit user instruction. | The platform provides refs and bindings; Avatar decides operational association in context. |
 | `到 shell-181 聊统一吧` | A user can redirect conversation/work to a different shell room/terminal association at runtime. | Hard-coded room-terminal semantic coupling would be wrong. |
 
@@ -125,14 +125,14 @@
 
 | Question | Why this is the real question | Current inference before user answers |
 | -------- | ----------------------------- | ------------------------------------- |
-| Should the product binding be a durable first-class graph, or is reconstructing it from owner metadata acceptable for now? | Automatic lifecycle reactions need a reliable terminal -> room relation even after restart and possibly when shell-next UI is not running. | Recommend first-class durable binding graph or typed binding index, not ad hoc metadata scans. |
-| Should terminal killed -> room archived run even when the shell-next process is already closed? | If yes, the controller cannot live only inside the local shell-next TUI process. | Recommend daemon-side product lifecycle controller or extension-runtime host for product bindings. |
-| Do we want a new canonical instance URI/ref format now? | User remembers a URI proposal, but current durable law landed as product metadata and source refs. | Recommend defining a typed `InstanceRef`/URI law only if it replaces metadata escape hatches and becomes reusable across systems. |
+| Should the app binding be a durable first-class graph, or is reconstructing it from owner metadata acceptable for now? | Automatic lifecycle reactions need a reliable terminal -> room relation even after restart and possibly when shell-next UI is not running. | Recommend first-class durable binding graph or typed binding index, not ad hoc metadata scans. |
+| Should terminal killed -> room archived run even when the shell-next process is already closed? | If yes, the controller cannot live only inside the local shell-next TUI process. | Recommend daemon-side app lifecycle controller or extension-runtime host for app bindings. |
+| Do we want a new canonical instance URI/ref format now? | User remembers a URI proposal, but current durable law landed as app metadata and source refs. | Recommend defining a typed `InstanceRef`/URI law only if it replaces metadata escape hatches and becomes reusable across systems. |
 | Should manual room archive also mute the room attention context? | User's proposed chain says room archived -> room context muted is kernel behavior, but current code does not do that. | Recommend yes for non-protected room-backed contexts, with explicit protection rules for default/built-in rooms. |
 | Should the source namespace split be `room:` for room lifecycle/scope and `msg:` for delivery/contact routes? | This changes the meaning of attention source identity after room-management separation. | `room:` naturally names room lifecycle/state. `msg:` should not be assigned to transcript rows without proof; `msg:from/to` remains an open candidate for delivery capability. |
 | If transcript rows need their own source ref, should they be a child of `room:` rather than `msg:`? | A row in room history belongs to room-management, not necessarily messageSystem's delivery/contact capability. | Prefer a room-owned child ref such as `room:<roomId>#entry/<entryId>` or a named `room-entry:` family if row-level addressing is needed. |
-| Should shell-next direct in-memory instance access mean direct imports or a daemon-side product controller? | A local product process cannot safely import app-server's singleton instances without collapsing process boundaries. | Recommend daemon-side product controller gets real instances; shell-next process consumes typed lifecycle API/projections. |
-| What exactly may be hard-bound in code? | User forbids semantic hard association between terminal and room. | Only product binding lifecycle state and cleanup/archive reaction may be hard-bound; task routing remains prompt/Avatar-driven. |
+| Should shell-next direct in-memory instance access mean direct imports or a daemon-side app controller? | A local app process cannot safely import app-server's singleton instances without collapsing process boundaries. | Recommend daemon-side app controller gets real instances; shell-next process consumes typed lifecycle API/projections. |
+| What exactly may be hard-bound in code? | User forbids semantic hard association between terminal and room. | Only app binding lifecycle state and cleanup/archive reaction may be hard-bound; task routing remains prompt/Avatar-driven. |
 
 ## Intent
 
@@ -146,7 +146,7 @@ The pressure is not one more shell-next cleanup hook. The system needs a clean l
 
 1. resource-owning systems emit durable lifecycle facts;
 2. kernel/runtime adapters map those facts to attention focus consequences;
-3. product-specific bindings express cross-resource policy without making TerminalSystem import MessageSystem or AttentionSystem;
+3. app-specific bindings express cross-resource policy without making TerminalSystem import MessageSystem or AttentionSystem;
 4. UI/app processes are projections, not the only place where durable lifecycle effects can happen.
 5. code links structural binding state, while semantic room-terminal association remains a prompt/Avatar decision.
 
@@ -162,17 +162,17 @@ This must not mean "the Avatar can only discuss that terminal in that room". If 
   - TerminalSystem owns terminal durable lifecycle and live/history/archive projections.
   - room-management owns room durable lifecycle and archive/delete projections, even if the current implementation still lives in `packages/message-system`.
   - AttentionContext owns durable focus state: `focused | background | muted`.
-  - Runtime/kernel adapters commit source facts and focus consequences; product code should not silently flip unrelated kernel state.
-  - Product extension runtime currently binds resources through `productId + resourceKey + resourceKind + ownerSystem` metadata.
+  - Runtime/kernel adapters commit source facts and focus consequences; app code should not silently flip unrelated kernel state.
+  - App extension runtime currently binds resources through `appId + resourceKey + resourceKind + ownerSystem` metadata.
   - Runtime source refs already use protocol-native `msg:`, `tty:`, and `task:` namespaces for source reading, but `msg:` is now under design pressure because messageSystem and room-management are different concepts.
   - Room durability is now the `room-management` boundary, while current code still implements local room-management inside `packages/message-system`.
 - Does this fit as a regular atom:
   - Partly. Terminal killed -> terminal context muted fits existing kernel law and code.
-  - shell-next terminal -> room archive fits as a product atom only if the terminal-room relation is explicit and durable enough.
+  - shell-next terminal -> room archive fits as a app atom only if the terminal-room relation is explicit and durable enough.
   - room archive -> room context muted is a missing kernel law if we accept the user's proposed chain.
   - `msg:` split into `room:` + a more precise message/contact namespace is a namespace law upgrade, not a shell-next-only change.
 - Does this require law upgrade:
-  - Yes, if automatic product lifecycle reaction must survive shell-next process exit/restart.
+  - Yes, if automatic app lifecycle reaction must survive shell-next process exit/restart.
   - Yes, if the remembered URI law should become a canonical cross-system instance identity instead of metadata conventions.
   - Yes, if room-management separation should be reflected in attention source refs.
 - Breaking update stance:
@@ -198,7 +198,7 @@ TerminalSystem: terminalInstance.processPhase = killed
 Runtime kernel: ctx-terminal-<terminalId>.focusState = muted
         |
         v
-shell-next product policy: bound roomInstance is archived
+shell-next app policy: bound roomInstance is archived
         |
         v
 Runtime/message kernel: ctx-<roomId>.focusState = muted
@@ -209,17 +209,17 @@ LoopBus no longer wakes from that terminal/room's ordinary unresolved debt
 
 ### Interface Shape
 
-The product-facing contract should be phrased in product terms:
+The app-facing contract should be phrased in app terms:
 
-- shell-next has one active binding for `productId=shell-next`, `resourceKey=<shellName>`.
+- shell-next has one active binding for `appId=shell-next`, `resourceKey=<shellName>`.
 - That binding names:
   - `terminalInstance`: `{ ownerSystem: "terminal-system", id: <terminalId> }`
   - `roomInstance`: `{ ownerSystem: "room-management", id: <roomId> }`
   - `runtimeInstance`: current AvatarRuntime/session identity
   - `attentionContexts`: terminal context id, room context id, hosting context id
-- The product can express a lifecycle reaction:
+- The app can express a lifecycle reaction:
   - when `terminalInstance` reaches `killed`, archive `roomInstance`.
-- The product cannot express semantic routing:
+- The app cannot express semantic routing:
   - "terminal A belongs to room B for all task conversation" is not a platform fact.
   - "shell-next binding X contains terminal A and room B" is a platform fact.
   - "this task should be discussed in shell-181" is an Avatar/user-directed operational choice.
@@ -234,9 +234,9 @@ Do not confuse these facts:
 - `terminalId`: durable TerminalSystem instance id.
 - `roomId`: durable room-management room id. Current code may still call it `chatId`, but the concept is no longer "messageSystem owns the room".
 - `contextId`: durable AttentionSystem context id.
-- `resourceKey`: product-local stable key such as `shell-20`; not a terminal id and not a room id.
-- `sourceRef.src`: source-read address such as `tty:<terminalId>` or the current legacy `msg:<chatId>/<messageId>` shape; useful for attention facts, but not enough by itself to encode a product terminal-room binding.
-- Product binding metadata: current reconstruction surface; useful but too implicit for automatic lifecycle reaction if no durable index/controller owns it.
+- `resourceKey`: app-local stable key such as `shell-20`; not a terminal id and not a room id.
+- `sourceRef.src`: source-read address such as `tty:<terminalId>` or the current legacy `msg:<chatId>/<messageId>` shape; useful for attention facts, but not enough by itself to encode a app terminal-room binding.
+- App binding metadata: current reconstruction surface; useful but too implicit for automatic lifecycle reaction if no durable index/controller owns it.
 
 Plain-language namespace model:
 
@@ -257,7 +257,7 @@ Benefits:
 
 - Makes room-management separation visible in the source namespace law.
 - Stops overloading `msg:` with room lifecycle, room transcript, and delivery/contact meaning at the same time.
-- Gives product binding a natural instance ref for room lifecycle: `room:<roomId>`.
+- Gives app binding a natural instance ref for room lifecycle: `room:<roomId>`.
 - Leaves `msg:` free to model messageSystem's real authority: who can send to whom and through what route.
 - Makes future RPC/pub-sub room-management exposure easier because it can own `room:` independently from messageSystem contact runtime.
 
@@ -276,55 +276,55 @@ Recommended platform split:
 2. room-management remains pure. It owns room lifecycle and archive/delete facts.
 3. AttentionSystem remains pure. It stores context focus state and commits.
 4. Runtime/kernel adapters map owner-system lifecycle facts to attention focus state.
-5. Product extension runtime owns product bindings as a generic platform surface.
-6. shell-next owns the product policy: terminal killed archives bound room.
+5. App extension runtime owns app bindings as a generic platform surface.
+6. shell-next owns the app policy: terminal killed archives bound room.
 7. Prompt/Avatar runtime owns semantic routing between rooms and terminals for actual work.
 
 Forbidden couplings:
 
 - TerminalSystem must not import MessageSystem, AttentionSystem, or shell-next.
 - room-management / messageSystem must not know shell-next or terminal ids.
-- AttentionSystem must not know product metadata or resourceKey semantics.
+- AttentionSystem must not know app metadata or resourceKey semantics.
 - shell-next should not directly mutate AttentionSystem focus as a substitute for owner-system lifecycle facts.
-- shell-next product code must not hard-code semantic conversation routing between one terminal and one room.
+- shell-next app code must not hard-code semantic conversation routing between one terminal and one room.
 - AGENTER.mdx/prompt guidance may teach the Avatar how to use binding facts, but must preserve the freedom to choose another room/terminal when the user directs it.
 
 ### User Confirmation Gates
 
 | Gate | Why confirmation is required | Default until user answers |
 | ---- | ---------------------------- | -------------------------- |
-| Instance URI/ref format | A new URI/ref law may affect source refs, product metadata, specs, tests, and future products. | Keep current metadata/source-ref facts in research; do not implement a new URI yet. |
-| Lifecycle controller location | If the controller must run after shell-next exits, it belongs in daemon/product-extension runtime, not local TUI. | Assume durable daemon-side controller is the architecturally correct target. |
+| Instance URI/ref format | A new URI/ref law may affect source refs, app metadata, specs, tests, and future products. | Keep current metadata/source-ref facts in research; do not implement a new URI yet. |
+| Lifecycle controller location | If the controller must run after shell-next exits, it belongs in daemon/app-extension runtime, not local TUI. | Assume durable daemon-side controller is the architecturally correct target. |
 | Room archive -> muted law | Current code does not do it directly. This is a kernel behavior change. | Treat as desired law for non-protected room-backed contexts, pending confirmation. |
 | `msg:` split | This affects source registry, notification grouping, and message follow-up refs. | Prefer `room:<roomId>` for room lifecycle/scope; keep `msg:from/to` as a delivery-route candidate; do not assign transcript rows to `msg:` without a spec decision. |
-| Direct instance access | Direct shell-next imports would collapse extension/process boundaries. | Put real instance hard-binding in daemon-side product lifecycle controller; shell-next receives typed projections/API. |
+| Direct instance access | Direct shell-next imports would collapse extension/process boundaries. | Put real instance hard-binding in daemon-side app lifecycle controller; shell-next receives typed projections/API. |
 
 ## Options
 
 ### Option A: Law Upgrade, Recommended
 
-Create a first-class product binding/lifecycle reaction law:
+Create a first-class app binding/lifecycle reaction law:
 
 - Define typed instance refs, either as structured `{ system, id }` objects or canonical URI strings.
 - Optionally align source refs with the instance law: `tty:<terminalId>`, `room:<roomId>`, and a separately designed message/contact or room-entry ref.
-- Persist or index product bindings so shell-next's terminal -> room relation is inspectable after restart.
-- Add a generic daemon-side product lifecycle reaction host that can observe real terminal/room control-plane lifecycle facts and invoke product policies.
+- Persist or index app bindings so shell-next's terminal -> room relation is inspectable after restart.
+- Add a generic daemon-side app lifecycle reaction host that can observe real terminal/room control-plane lifecycle facts and invoke app policies.
 - Add room archive -> room context muted in the runtime/message adapter boundary.
-- Keep semantic terminal-room work routing out of product code and in AGENTER.mdx/Avatar reasoning.
+- Keep semantic terminal-room work routing out of app code and in AGENTER.mdx/Avatar reasoning.
 
-Why this is the durable path: it keeps all core systems orthogonal, makes shell-next an ordinary product policy, and lets future products bind terminal/room/task/browser resources without copying shell-next-specific glue.
+Why this is the durable path: it keeps all core systems orthogonal, makes shell-next an ordinary app policy, and lets future products bind terminal/room/task/browser resources without copying shell-next-specific glue.
 
 ### Option B: Metadata Watcher, Transitional Only
 
-Have shell-next subscribe to runtime store changes, find terminals and rooms with matching `productId=shell-next` and `resourceKey`, and call room archive when a terminal becomes killed.
+Have shell-next subscribe to runtime store changes, find terminals and rooms with matching `appId=shell-next` and `resourceKey`, and call room archive when a terminal becomes killed.
 
-Why this is weaker: it only works while the shell-next process is alive, reconstructs causal binding from metadata each time, and risks becoming another product-specific watcher pattern. It can be acceptable as a narrow stepping stone only if the durable binding law is still written first.
+Why this is weaker: it only works while the shell-next process is alive, reconstructs causal binding from metadata each time, and risks becoming another app-specific watcher pattern. It can be acceptable as a narrow stepping stone only if the durable binding law is still written first.
 
 ### Option C: Direct Shell-Next Imports Of Core Instances, Rejected
 
 Let the shell-next process import or receive raw `MessageControlPlane` / `TerminalControlPlane` objects and bind them itself.
 
-Rejected because shell-next is an extension/product process. Direct imports would make process-local implementation shape the platform boundary, and it would not naturally survive daemon restart or remote product hosting. The correct place for true memory instances is inside the daemon/app-server product lifecycle controller; shell-next should consume typed lifecycle APIs and projections.
+Rejected because shell-next is an extension/app process. Direct imports would make process-local implementation shape the platform boundary, and it would not naturally survive daemon restart or remote app hosting. The correct place for true memory instances is inside the daemon/app-server app lifecycle controller; shell-next should consume typed lifecycle APIs and projections.
 
 ## Intent-Driven Plan
 
@@ -338,28 +338,28 @@ Rejected because shell-next is an extension/product process. Direct imports woul
 
 | Question | Why it matters | Default assumption until user answers |
 | -------- | -------------- | ------------------------------------- |
-| Is there a specific remembered URI proposal name/date that should override the metadata-binding evidence found here? | Search found source refs and product metadata binding, but no exact `agenter://`, `terminal://`, or `room://` law. | Treat URI as a missing or renamed proposal unless more evidence appears. |
+| Is there a specific remembered URI proposal name/date that should override the metadata-binding evidence found here? | Search found source refs and app metadata binding, but no exact `agenter://`, `terminal://`, or `room://` law. | Treat URI as a missing or renamed proposal unless more evidence appears. |
 | Should archived shell-next rooms remain send-capable but inactive, matching existing room archive semantics? | Archive is reversible and not delete; shell-next UX must not imply data loss. | Yes, archive means visibility/focus lifecycle, not destructive dissolve. |
 | Should built-in/default rooms be protected from archive -> muted? | Current code protects default/built-in rooms from companion archive projection. | Preserve protection until a broader room law is explicitly upgraded. |
-| Should terminal archive, not only terminal killed, have any room effect? | User named killed; terminal archive is history visibility over already-killed evidence. | No extra room effect beyond killed-triggered product policy. |
-| Is `room:<roomId>` the canonical instance ref, or should a new URI such as `agenter://room/<roomId>` wrap it? | Source refs and product instance refs may be separate layers. | Prefer protocol-native short refs for LoopBus/source identity and structured `InstanceRef` for product binding; avoid overloading one string with every role. |
+| Should terminal archive, not only terminal killed, have any room effect? | User named killed; terminal archive is history visibility over already-killed evidence. | No extra room effect beyond killed-triggered app policy. |
+| Is `room:<roomId>` the canonical instance ref, or should a new URI such as `agenter://room/<roomId>` wrap it? | Source refs and app instance refs may be separate layers. | Prefer protocol-native short refs for LoopBus/source identity and structured `InstanceRef` for app binding; avoid overloading one string with every role. |
 | Does `msg:from/to` deserve to be an attention source, or only a messageSystem route/ref? | A delivery route is not the same thing as room history changing. | Treat it as a route/contact ref until we find a concrete source-read or attention use case. |
-| How should AGENTER.mdx present binding facts? | The prompt must enable Avatar reasoning without making product code decide conversation routing. | Teach that shell-next binding exposes available room/terminal refs, but user instruction and current task context decide which room/terminal to use. |
+| How should AGENTER.mdx present binding facts? | The prompt must enable Avatar reasoning without making app code decide conversation routing. | Teach that shell-next binding exposes available room/terminal refs, but user instruction and current task context decide which room/terminal to use. |
 
 ## Rejected Paths
 
 | Path | Why rejected |
 | ---- | ------------ |
-| TerminalSystem directly archives room-management rooms when a terminal dies. | Violates orthogonal atoms; TerminalSystem would own product topology. |
+| TerminalSystem directly archives room-management rooms when a terminal dies. | Violates orthogonal atoms; TerminalSystem would own app topology. |
 | shell-next directly calls AttentionSystem to mute terminal and room contexts. | Hides causality and duplicates kernel behavior that should follow lifecycle facts. |
-| Use `resourceKey` as the terminal id or room id. | Existing product-extension runtime explicitly rejects that because product keys collide with killed/history recovery and backend allocation laws. |
-| Treat `msg:` / `tty:` source refs as the complete product binding format. | They address source reads or system-local identities, not multi-resource product ownership or lifecycle reactions. |
-| Encode "this terminal's discussion must happen in this room" in product binding. | Violates the user's constraint: one Avatar handles many rooms and terminals, and user-directed routing may choose another shell room. |
+| Use `resourceKey` as the terminal id or room id. | Existing app-extension runtime explicitly rejects that because app keys collide with killed/history recovery and backend allocation laws. |
+| Treat `msg:` / `tty:` source refs as the complete app binding format. | They address source reads or system-local identities, not multi-resource app ownership or lifecycle reactions. |
+| Encode "this terminal's discussion must happen in this room" in app binding. | Violates the user's constraint: one Avatar handles many rooms and terminals, and user-directed routing may choose another shell room. |
 | Give shell-next direct in-process ownership of app-server control-plane instances. | Collapses extension boundary and makes daemon-side lifecycle durability depend on a local UI process. |
 
 ## Exit Conditions
 
 - Default max review iterations: 3
 - Issue recurrence threshold: if the same missing-boundary question repeats twice, move it into specs/tasks instead of continuing prose discussion.
-- Custom exit condition from intent: before implementation, the change must state whether it is creating a new instance URI/ref law or extending existing product metadata binding, and must state where the shell-next lifecycle reaction runs.
+- Custom exit condition from intent: before implementation, the change must state whether it is creating a new instance URI/ref law or extending existing app metadata binding, and must state where the shell-next lifecycle reaction runs.
 - Additional exit condition: before implementation, specs must state whether room-scope source identity is `room:<roomId>`, what `msg:` means after messageSystem/room-management separation, and must state that code binds lifecycle state only while semantic room-terminal routing remains Avatar/prompt-owned.

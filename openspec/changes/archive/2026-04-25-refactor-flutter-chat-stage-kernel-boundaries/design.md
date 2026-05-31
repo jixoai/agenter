@@ -1,6 +1,6 @@
 ## Context
 
-The current package has the correct kernel/shell direction, but its internal atoms are too large. `ChatViewController` still directly imports websocket and HTTP implementations, and the main widgets carry multiple responsibilities. This change upgrades the internal platform law without introducing new product behavior.
+The current package has the correct kernel/shell direction, but its internal atoms are too large. `ChatViewController` still directly imports websocket and HTTP implementations, and the main widgets carry multiple responsibilities. This change upgrades the internal platform law without introducing new app behavior.
 
 ## Decisions
 
@@ -31,7 +31,7 @@ This is an internal refactor with compatibility tests. Existing public exports c
 
 ### Decision: Apple platform primitives replace iOS-version-branded glue
 
-The product shell now treats Apple design as a platform law rather than an `ios26` styling layer. App-level surfaces use Apple semantic primitives for sidebar, content, inspector, tab bar, icon actions, and content-unavailable states. Version-branded compatibility shims were removed from the example shell so future code cannot keep importing a stale visual law.
+The app shell now treats Apple design as a platform law rather than an `ios26` styling layer. App-level surfaces use Apple semantic primitives for sidebar, content, inspector, tab bar, icon actions, and content-unavailable states. Version-branded compatibility shims were removed from the example shell so future code cannot keep importing a stale visual law.
 
 Spacing and radius are now governed as one Apple rhythm system: compact viewports stay edge-to-edge under Cupertino bars, while regular/expanded viewports use edge-to-edge split-view panels, 1px system dividers, and role-specific contained radii from `ApplePlatformTokens`. This prevents feature widgets from tuning background, radius, and padding independently into a generic dashboard-card aesthetic.
 

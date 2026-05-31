@@ -1,6 +1,6 @@
 ## Context
 
-The current repository still follows the law introduced by the earlier terminal-control-plane work: a terminal can be stopped without being deleted, and the stopped record remains part of the default durable terminal catalog until an explicit delete occurs. That law is encoded in both durable specs and implementations. It also leaks into runtime and AI surfaces: `terminal list` shows stopped terminals by default, runtime recovery treats stale running rows as stopped/killed rows that remain queryable as live catalog entries, and product surfaces can keep targeting the wrong dead instance because the dead instance still looks like part of the normal terminal universe.
+The current repository still follows the law introduced by the earlier terminal-control-plane work: a terminal can be stopped without being deleted, and the stopped record remains part of the default durable terminal catalog until an explicit delete occurs. That law is encoded in both durable specs and implementations. It also leaks into runtime and AI surfaces: `terminal list` shows stopped terminals by default, runtime recovery treats stale running rows as stopped/killed rows that remain queryable as live catalog entries, and app surfaces can keep targeting the wrong dead instance because the dead instance still looks like part of the normal terminal universe.
 
 The user now wants a different platform law:
 
@@ -26,7 +26,7 @@ This is a cross-cutting change: it affects terminal-system lifecycle semantics, 
 - Do not implement the change in this round.
 - Do not preserve backward compatibility for old `terminal list` semantics.
 - Do not create a second `terminal_history` table.
-- Do not make cli-shell or any other product the owner of terminal lifecycle truth.
+- Do not make cli-shell or any other app the owner of terminal lifecycle truth.
 - Do not solve every future transcript archival policy in this one change; only define the core history/archive/delete law needed by terminal instances.
 
 ## Decisions
@@ -70,11 +70,11 @@ That means cold-start compensation must:
 - run the same killed pipeline with a distinct reason such as `daemon_recovery_killed`
 - emit the same lifecycle invalidation and attention effects as a live death
 
-Alternative considered: treat daemon compensation as a storage-only migration. Rejected because it leaves runtime attention, live registry cleanup, and product projections inconsistent.
+Alternative considered: treat daemon compensation as a storage-only migration. Rejected because it leaves runtime attention, live registry cleanup, and app projections inconsistent.
 
 ### Decision 4: Attention mutation is a consequence of terminal death, not a side-channel patch
 
-Terminal death is a core-system event with attention consequences. The owning runtime must not silently flip attention state in product code or ad hoc cache code. Instead, terminal death should publish the relevant terminal lifecycle fact, and the runtime/adapter path should commit the attention consequence so the associated context settles into `muted` durably.
+Terminal death is a core-system event with attention consequences. The owning runtime must not silently flip attention state in app code or ad hoc cache code. Instead, terminal death should publish the relevant terminal lifecycle fact, and the runtime/adapter path should commit the attention consequence so the associated context settles into `muted` durably.
 
 This preserves the platform law the user called out: visible state changes must be attributable to a committed action source.
 
@@ -133,7 +133,7 @@ The implementation may solve this through instance-stable ids, monotonic version
 3. Refactor terminal death handling into one shared killed pipeline and route explicit stop, natural exit, and daemon cold-start compensation through it.
 4. Update runtime adapters and app-server recovery so terminal death emits the correct lifecycle/attention consequences and removes dead instances from live runtime views.
 5. Add runtime CLI descriptors and built-in skill guidance for `terminal history`, `terminal archive`, and the new live-only `terminal list` law.
-6. Rework terminal-system UI and any product consumers so killed terminals leave live routes and remain manageable through explicit history/archive surfaces.
+6. Rework terminal-system UI and any app consumers so killed terminals leave live routes and remain manageable through explicit history/archive surfaces.
 7. Add BDD coverage for normal kill, natural exit, daemon restart compensation, history/archive/delete operations, and attention-context muting.
 
 ## Open Questions

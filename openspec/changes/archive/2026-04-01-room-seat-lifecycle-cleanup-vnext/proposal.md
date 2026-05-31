@@ -7,7 +7,7 @@ The current room collaboration flow still leaks legacy modeling into the new glo
 - room admin UI only archives channels through a misleading delete path and cannot truly dissolve a room
 - auth-backed avatars currently render as black fallback icons because the profile fallback raster path is not producing usable artwork
 
-These issues block realistic dogfooding of the room product and keep legacy assumptions alive in the new orthogonal architecture.
+These issues block realistic dogfooding of the room app and keep legacy assumptions alive in the new orthogonal architecture.
 
 ## What Changes
 

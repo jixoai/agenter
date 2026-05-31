@@ -16,7 +16,7 @@ The active Svelte WebUI SHALL model primary content, navigation, secondary conte
 #### Scenario: WebUI route consumes shared structural package
 - **WHEN** a WebUI route or shell needs scrolling or scaffold-family layout
 - **THEN** it composes the shared primitives from `@agenter/svelte-components`
-- **THEN** `@agenter/webui` stays a product assembly layer instead of becoming the source of truth for shared layout law
+- **THEN** `@agenter/webui` stays a app assembly layer instead of becoming the source of truth for shared layout law
 
 ### Requirement: Workbench routes SHALL derive right-detail compact fallback from container width
 Workbench routes that expose a persistent `main + right detail` relationship SHALL derive compact fallback from the split container width and the shared split-detail minimum-width law rather than from route-local viewport breakpoints. Routes SHALL consume the shared split-detail geometry primitive plus the shared WebUI visibility host instead of reimplementing `detailMode + Sheet` state or desktop detail visibility locally.

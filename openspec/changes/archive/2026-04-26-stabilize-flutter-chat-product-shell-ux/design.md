@@ -25,7 +25,7 @@ Observed problems:
 **Non-Goals:**
 
 - Do not introduce a new router package.
-- Do not move product shell route state into `lib/`.
+- Do not move app shell route state into `lib/`.
 - Do not fake iOS 26 Liquid Glass, drag handles, or native detent APIs unavailable in Flutter stable.
 - Do not redesign transcript bubbles, transport, upload, or markdown rendering.
 

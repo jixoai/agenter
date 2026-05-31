@@ -31,7 +31,7 @@ Why: explicit cursors keep TRPC contracts inspectable and type-safe.
 ### Cycles stay current-branch scoped
 Cycle pagination still walks only the current branch reachable from `session_head.head_cycle_id`. The server materializes that branch window, applies the reverse-time cursor inside that branch, and returns results oldest-to-newest.
 
-Why: the approved product decision is current-branch semantics, not all-branch history.
+Why: the approved app decision is current-branch semantics, not all-branch history.
 
 ### LoopBus state logs become persisted facts
 `loopbus_state_log` becomes a real session-db table with timestamped rows, not an in-memory-only compatibility buffer.

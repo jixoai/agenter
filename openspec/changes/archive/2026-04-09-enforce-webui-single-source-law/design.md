@@ -7,7 +7,7 @@ The repository currently has two WebUI asset locations with runtime significance
 
 `agenter web` serves `packages/cli/assets/webui`, while normal SvelteKit build verification exercises `packages/webui/build`. That means the default runtime path and the current build path can drift apart. During this investigation, the fresh build already contained the room deep-link and attention search fixes, but the default CLI entry still showed older behavior until `build:assets` manually recopied the bundle.
 
-This is not a product-level attention bug. A fresh current-code server confirmed that the real Avatar input path (`chat.send -> pushUserChat`) still generates non-empty `scoreMap` facts, and the runtime attention page renders those scores correctly. The durable bug is the delivery law itself: two competing WebUI truths make runtime verification unreliable.
+This is not a app-level attention bug. A fresh current-code server confirmed that the real Avatar input path (`chat.send -> pushUserChat`) still generates non-empty `scoreMap` facts, and the runtime attention page renders those scores correctly. The durable bug is the delivery law itself: two competing WebUI truths make runtime verification unreliable.
 
 ## Goals / Non-Goals
 

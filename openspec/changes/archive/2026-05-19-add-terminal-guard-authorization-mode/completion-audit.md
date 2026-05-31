@@ -2,7 +2,7 @@
 
 ## Objective
 
-Complete and apply the guard authorization change so cli-shell Shell Assistant can collaborate with the user on the current terminal through prompt guidance and TerminalSystem authority, then validate the behavior with real AI walkthrough coverage where terminal-1 is the shell truth terminal and terminal-2 is the room/product surface.
+Complete and apply the guard authorization change so cli-shell Shell Assistant can collaborate with the user on the current terminal through prompt guidance and TerminalSystem authority, then validate the behavior with real AI walkthrough coverage where terminal-1 is the shell truth terminal and terminal-2 is the room/app surface.
 
 ## Prompt-To-Artifact Checklist
 
@@ -16,20 +16,20 @@ Complete and apply the guard authorization change so cli-shell Shell Assistant c
 - Apply the change in code and durable specs.
   - Evidence: TerminalSystem guard role, approval request lifecycle, subscription filtering, stale request invalidation, and composed-surface opacity in `packages/terminal-system/src/terminal-control-plane.ts`, `packages/terminal-system/src/terminal-control-plane.types.ts`, and `packages/terminal-system/src/terminal-db.ts`.
   - Evidence: Runtime/API/client guard approval contracts in `packages/app-server/src/runtime-tool-descriptors.ts`, `packages/app-server/src/trpc/router.ts`, `packages/client-sdk/src/runtime-store.ts`, and `packages/client-sdk/src/types.ts`.
-  - Evidence: Product-extension delegation removal in `packages/product-extension-runtime/src/index.ts`, deletion of `packages/product-extension-runtime/src/delegation.ts`, and deletion of `packages/app-server/src/product-extension-delegation-store.ts`.
+  - Evidence: App-extension delegation removal in `packages/app-runtime/src/index.ts`, deletion of `packages/app-runtime/src/delegation.ts`, and deletion of `packages/app-server/src/app-extension-delegation-store.ts`.
   - Evidence: cli-shell managed/hosting and cleanup implementation in `packages/cli-shell/src/managed.ts`, `packages/cli-shell/src/cleanup.ts`, and `packages/cli-shell/src/run-cli-shell.ts`.
   - Evidence: durable specs updated in `openspec/specs/*/spec.md` and package `SPEC.md` files.
 
-- Make the architecture reasonable and product/core boundaries explicit.
-  - Evidence: `design.md` states guard is TerminalSystem authority, managed/hosting is product attention, product delegation is removed, and TerminalSystem composed surfaces are product-opaque frames.
+- Make the architecture reasonable and app/core boundaries explicit.
+  - Evidence: `design.md` states guard is TerminalSystem authority, managed/hosting is app attention, app delegation is removed, and TerminalSystem composed surfaces are app-opaque frames.
   - Evidence: boundary comments and tests prevent cli-shell chrome or delegation authority from re-entering core packages.
-  - Evidence: `rg "ProductDelegation|product delegation|productDelegation|delegation" openspec/specs packages` leaves only negative/removal language, tests, or unrelated third-party generated code.
+  - Evidence: `rg "ProductDelegation|app delegation|productDelegation|delegation" openspec/specs packages` leaves only negative/removal language, tests, or unrelated third-party generated code.
 
 - Use prompt guidance to make Shell Assistant focus on the bound cli-shell terminal.
   - Evidence: `packages/cli-shell/src/shell-assistant-seeds.ts` says MessageRoom conversation defaults to the bound TerminalSystem instance, root workspace is hidden as an entry environment, terminal actions go through terminal APIs, guard approval is pending terminal work, deny/expiry do not authorize fallback execution, and managed mode does not change write authority.
 
 - Validate that Shell Assistant can collaborate with the user to control the terminal.
-  - Evidence: `packages/cli-shell/test/real-cli-shell-guard-authorization.integration.test.ts` creates real cli-shell fixtures, sends user room messages, waits for model calls, approves through TerminalSystem, checks terminal-1 shell truth output, checks terminal-2 remains composed product surface, and requires message-system replies.
+  - Evidence: `packages/cli-shell/test/real-cli-shell-guard-authorization.integration.test.ts` creates real cli-shell fixtures, sends user room messages, waits for model calls, approves through TerminalSystem, checks terminal-1 shell truth output, checks terminal-2 remains composed app surface, and requires message-system replies.
 
 - Validate terminal-1 / terminal-2 split.
   - Evidence: real AI scenario checks `fixture.readShellTruthTerminal(...)` contains the approved marker and verifies visible terminal metadata has `terminalRuntimeKind === "composed"` plus `composedShellTerminalId` pointing at the shell truth terminal.
@@ -61,7 +61,7 @@ Complete and apply the guard authorization change so cli-shell Shell Assistant c
 - `bun test packages/cli-shell/test/cli-shell-startup.test.ts --timeout 120000 --test-name-pattern "cleanup mode|default session|default"`: passed, 1 test.
 - `bun test packages/cli-shell/test/cli-shell.integration.test.ts --timeout 120000`: passed, 7 tests.
 - `bun test packages/cli-shell/test/cli-shell-tui.test.ts --timeout 120000 --test-name-pattern "permission|approval|TopLayer|guard"`: passed, 5 tests.
-- `bun test packages/product-extension-runtime/test/product-extension-runtime.test.ts --timeout 120000`: passed, 8 tests.
+- `bun test packages/app-runtime/test/app-runtime.test.ts --timeout 120000`: passed, 8 tests.
 - `bun test packages/cli-shell/test/real-cli-shell-guard-authorization.integration.test.ts --timeout 120000`: current environment skipped both real-AI scenarios as expected without `AGENTER_RUN_REAL_LOOPBUS=1`.
 - Forced real AI walkthrough evidence from this change run: DeepSeek `deepseek-chat` with `AGENTER_RUN_REAL_LOOPBUS=1` passed the main room-terminal/admin-approval scenario, including terminal-1 marker, terminal-2 composed surface, and semantic judge acceptance.
 - `bun packages/cli/src/bin/agenter.ts shell cleanup`: dry-run reported `targets: 0`.

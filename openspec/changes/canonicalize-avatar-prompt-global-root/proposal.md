@@ -7,8 +7,8 @@ That mixes two different authorities: a workspace is a place where an Avatar wor
 ## What Changes
 
 - Make `AGENTER.mdx` prompt source resolution global-only: `~/.agenter/avatars/by-principal/<principalId>/AGENTER.mdx`.
-- Remove workspace-local prompt root precedence from session config and product prompt seed paths.
-- Remove `workspacePath` from product prompt seed contracts so products cannot express a workspace-scoped prompt seed.
+- Remove workspace-local prompt root precedence from session config and app prompt seed paths.
+- Remove `workspacePath` from app prompt seed contracts so products cannot express a workspace-scoped prompt seed.
 - Keep `Slot` semantics unchanged; it remains a syntax/composition tool and must not branch on `AGENTER.mdx`.
 - Keep memory pack, skill workspace behavior, and workspace-private asset strategy out of this change except where tests need to prove they are not prompt authority.
 - Audit the runtime identity path so prompt root uses the global Avatar principal, not an accidental workspace seat principal.
@@ -19,29 +19,29 @@ That mixes two different authorities: a workspace is a place where an Avatar wor
 ### Modified Capabilities
 
 - `avatar-runtime-topology`: Clarify that Avatar-authored prompt root is only the global principal-address Avatar root, and workspace-local `AGENTER.mdx` files cannot shadow it.
-- `product-extension-runtime`: Clarify product prompt seed APIs seed only the global Avatar prompt and do not accept workspace-scoped prompt roots.
+- `app-runtime`: Clarify app prompt seed APIs seed only the global Avatar prompt and do not accept workspace-scoped prompt roots.
 
 ## Impact
 
 - OpenSpec truth:
   - `openspec/specs/avatar-runtime-topology/spec.md`
-  - `openspec/specs/product-extension-runtime/spec.md`
+  - `openspec/specs/app-runtime/spec.md`
   - `packages/app-server/SPEC.md`
-  - `packages/product-extension-runtime/SPEC.md`
+  - `packages/app-runtime/SPEC.md`
 - Likely implementation areas:
   - `packages/app-server/src/session-config.ts`
   - `packages/app-server/src/app-kernel.ts`
-  - `packages/product-extension-runtime/src/assistant-init.ts`
+  - `packages/app-runtime/src/assistant-init.ts`
   - `packages/client-sdk/src/runtime-store.ts`
-  - `packages/client-sdk/src/product-extension-runtime.ts`
-  - `extensions/cli-shell/src/bootstrap.ts`
+  - `packages/client-sdk/src/app-runtime.ts`
+  - `apps/cli-shell/src/bootstrap.ts`
 - Likely tests:
   - `packages/app-server/test/session-config.test.ts`
-  - `packages/app-server/test/product-extension-runtime.test.ts`
+  - `packages/app-server/test/app-runtime.test.ts`
   - `packages/app-server/test/app-kernel.test.ts`
   - `packages/app-server/test/prompt-store.test.ts`
-  - `packages/client-sdk/test/product-extension-runtime.test.ts`
-  - `extensions/cli-shell/test/fake-cli-shell-store.ts`
+  - `packages/client-sdk/test/app-runtime.test.ts`
+  - `apps/cli-shell/test/fake-cli-shell-store.ts`
 - Local operator cleanup scope:
   - `~/Dev/GitHub/jixoai-labs/agenter/.agenter`
   - `~/.agenter`

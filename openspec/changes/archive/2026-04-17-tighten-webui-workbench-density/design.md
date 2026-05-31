@@ -14,7 +14,7 @@ One avatar-specific debt still remains: the page has too many small rounded/bord
 
 After that pass, the remaining issue changes shape again: the page is now visually calmer, but an operator who uses it every day still sees too many repeated facts. Counts in the toolbar, repeated running-state chrome, multiple `HelpHint` triggers, always-open long paths, and secondary actions that duplicate top-level navigation all become muscle-memory noise rather than help. The next step is therefore a familiar-user noise-removal pass: keep the page legible for first-time users, but stop defaulting low-frequency detail into the first viewport.
 
-After the familiar-user pass, one last quality gap remains when judged as an enterprise product surface rather than just a de-framed route. The page still keeps a second title band below the workbench toolbar, the desktop content stretches too far for how little structured information it actually contains, and the catalog rows still feel like soft highlighted blocks instead of disciplined operational list items. The next pass should therefore tighten structure, not just decoration: remove repeated top chrome, give the page an intentional content measure on desktop, and turn the catalog into a clearer scan-first list.
+After the familiar-user pass, one last quality gap remains when judged as an enterprise app surface rather than just a de-framed route. The page still keeps a second title band below the workbench toolbar, the desktop content stretches too far for how little structured information it actually contains, and the catalog rows still feel like soft highlighted blocks instead of disciplined operational list items. The next pass should therefore tighten structure, not just decoration: remove repeated top chrome, give the page an intentional content measure on desktop, and turn the catalog into a clearer scan-first list.
 
 ## Goals / Non-Goals
 
@@ -197,7 +197,7 @@ Alternative considered:
 
 ### Treat the avatar page like an enterprise workbench, not a soft showcase panel
 
-The next refinement should follow a more IBM-like product instinct:
+The next refinement should follow a more IBM-like app instinct:
 
 - repeated route titles should disappear once the workbench tab + toolbar already establish location
 - content should use a deliberate readable measure instead of stretching one small facts panel across the whole canvas
@@ -250,7 +250,7 @@ The avatar catalog is not a generic CRUD screen. Inside the existing `chrome-win
 - the right lens answers "what is the next best action for this identity right now?"
 - low-frequency provenance and branching facts stay reachable, but they should not compete with launch actions in the first viewport
 
-This means the route should optimize for repeated operational use, not first-visit explanation. The primary product story is:
+This means the route should optimize for repeated operational use, not first-visit explanation. The primary app story is:
 
 1. choose an avatar identity
 2. confirm it is the correct one
@@ -268,7 +268,7 @@ Alternative considered:
 - Keep treating the right side as a mini details page with all actions and facts equally visible.
   - Rejected because it obscures the primary launch story and turns the route into a noisy staging surface instead of an operational control tower.
 
-### Replace raw borders with seam language that matches product structure
+### Replace raw borders with seam language that matches app structure
 
 The current issue is not simply "too many borders". It is that all separations are expressed with the same primitive `border-*`, so the interface only feels cut apart, not intentionally organized.
 
@@ -283,17 +283,17 @@ These seams should be implemented through alignment, inset hairlines, and gutter
 Alternative considered:
 
 - Keep the same layout and only reduce border opacity.
-  - Rejected because it would still leave the page with engineer-style dividers instead of product-level structure cues.
+  - Rejected because it would still leave the page with engineer-style dividers instead of app-level structure cues.
 
 ### Dock handoff actions to the selected identity and name facts semantically
 
-After the control-tower pass, one small but meaningful product gap still remains: the secondary actions are present, but they still read slightly like adjacent links rather than branches from the currently selected identity. At the same time, the first canonical fact is still labeled like an implementation field (`Runtime ID`) instead of a user-facing product fact.
+After the control-tower pass, one small but meaningful app gap still remains: the secondary actions are present, but they still read slightly like adjacent links rather than branches from the currently selected identity. At the same time, the first canonical fact is still labeled like an implementation field (`Runtime ID`) instead of a user-facing app fact.
 
 The next refinement should therefore:
 
 - dock contextual handoff actions closer to the selected identity on desktop while keeping mobile stacking simple
 - keep runtime launch as the primary CTA pair
-- rename the first durable fact around product meaning (`canonical runtime`) while still showing the underlying id value
+- rename the first durable fact around app meaning (`canonical runtime`) while still showing the underlying id value
 - further align inset seams so the launch lens feels composed rather than merely divided
 
 Alternative considered:
@@ -301,25 +301,25 @@ Alternative considered:
 - Keep the current control-tower structure and stop because it is already "good enough".
   - Rejected because this page is acting as a reference surface; if the semantic hierarchy still leaks implementation naming and slightly detached secondary actions, that debt will spread to adjacent workbench pages.
 
-### Promote the first runtime fact into product-led typography
+### Promote the first runtime fact into app-led typography
 
-After the semantic rename, one final layout debt remains on desktop: the first durable fact still borrows the same all-caps field-label treatment as the debugging facts below it. That keeps the wording better, but the visual contract still says "implementation field" instead of "primary product fact".
+After the semantic rename, one final layout debt remains on desktop: the first durable fact still borrows the same all-caps field-label treatment as the debugging facts below it. That keeps the wording better, but the visual contract still says "implementation field" instead of "primary app fact".
 
 The next refinement should therefore:
 
 - keep the control-tower structure and seam language unchanged
-- promote the first durable runtime fact into its own product-led label/value rhythm
+- promote the first durable runtime fact into its own app-led label/value rhythm
 - keep lower facts (`Global source`, `Private slot`) in the existing audit-style field language
 - avoid introducing a new route-local visual dialect; the result should still feel native to the repository's current toolbar/list language
 
 Alternative considered:
 
 - Move the canonical runtime into the hero row beside the title and launch actions.
-  - Rejected because it would overload the first viewport again and force the product fact to compete directly with launch decisions instead of reinforcing them underneath.
+  - Rejected because it would overload the first viewport again and force the app fact to compete directly with launch decisions instead of reinforcing them underneath.
 
 ### Attach the primary fact to the identity lane instead of the audit grid
 
-After the typography pass, one subtle but still visible debt remains: the first runtime fact reads better, but it is still laid out inside the same desktop two-column field grid as the lower debug facts. That means the wording says "product fact" while the layout still says "audit table row".
+After the typography pass, one subtle but still visible debt remains: the first runtime fact reads better, but it is still laid out inside the same desktop two-column field grid as the lower debug facts. That means the wording says "app fact" while the layout still says "audit table row".
 
 The next refinement should therefore:
 

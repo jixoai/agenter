@@ -2,7 +2,7 @@
 
 The package already models reverse paging through canonical `page` client actions and `page` server events. The controller exposes `requestOlderPage`, and transcript entries include `ChatLoadOlderEntry` when `hasMoreBefore` is true. The missing law is scroll ownership: the transcript viewport needs to decide when to anchor to latest and when to ask the controller for older rows.
 
-This belongs in `FlutterChatView` / transcript stage, not the host product shell. Profile routing, room inspector, and Apple sheet chrome should not know how transcript pagination works.
+This belongs in `FlutterChatView` / transcript stage, not the host app shell. Profile routing, room inspector, and Apple sheet chrome should not know how transcript pagination works.
 
 ## Goals / Non-Goals
 

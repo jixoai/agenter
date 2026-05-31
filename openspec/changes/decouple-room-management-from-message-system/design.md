@@ -47,7 +47,7 @@ Why:
 
 - rooms must outlive any one message-system runtime instance
 - multiple message systems must be able to participate in the same room truth
-- this is closer to a database/pub-sub backend than to a superadmin-owned product system
+- this is closer to a database/pub-sub backend than to a superadmin-owned app system
 
 Rejected alternative:
 
@@ -214,7 +214,7 @@ Those assumptions are no longer valid.
 
 Required frontend direction:
 
-- `web-chat-view` remains the ordinary-user-facing chat product
+- `web-chat-view` remains the ordinary-user-facing chat app
 - Studio wraps that surface and adds superadmin-only room/domain/source controls outside the main transcript focus path
 - room detail must separate:
   - room domain/source capability via `superKey`
@@ -224,7 +224,7 @@ Required frontend direction:
 - composer disable state must not imply "you cannot manage this room"
 - workbench/catalog surfaces should be ready to reveal room provenance and later multi-system participation instead of pretending all rooms belong to one unnamed local instance
 
-The "superKey but no seat" state is not a special product mode. It is the straightforward result of independent capabilities:
+The "superKey but no seat" state is not a special app mode. It is the straightforward result of independent capabilities:
 
 - can manage room because `superKey` is present
 - can read transcript because room-domain authority allows reading
@@ -254,7 +254,7 @@ Current repo truth:
 - that candidate branch does contain a Framework7-based review shell baseline and expanded `@agenter/web-chat-view` surface, but it is not merged into this worktree yet
 - the candidate worktree currently also carries uncommitted changes, so it cannot be treated as a clean drop-in merge source without another review step
 
-Iframe embedding remains a candidate direction for stronger product isolation, but it should be evaluated against resize, auth, read-state, action callback, and theme-sync costs before being frozen as law.
+Iframe embedding remains a candidate direction for stronger app isolation, but it should be evaluated against resize, auth, read-state, action callback, and theme-sync costs before being frozen as law.
 
 Current merge implication:
 

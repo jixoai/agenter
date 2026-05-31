@@ -10,7 +10,7 @@
 ## 3. Stage widget atoms
 
 - [x] 3.1 Split transcript viewport, stage notices, and row rendering into smaller package-owned primitives.
-- [x] 3.2 Keep product shell plugin/profile/navigation behavior host-owned and compatible.
+- [x] 3.2 Keep app shell plugin/profile/navigation behavior host-owned and compatible.
 
 ## 4. Verification
 
@@ -20,7 +20,7 @@
 ## 5. Apple platform redesign
 
 - [x] 5.1 Add Apple platform design law and replace iOS-version-branded primitives with stable `Apple*` primitives.
-- [x] 5.2 Redesign product shell surfaces as sidebar/content/inspector/tab primitives instead of floating web cards.
+- [x] 5.2 Redesign app shell surfaces as sidebar/content/inspector/tab primitives instead of floating web cards.
 - [x] 5.3 Replace conversation empty-state hero card with `AppleContentUnavailable`.
 - [x] 5.4 Run package and example Flutter analyzer/tests, then verify wasm web in desktop and iPhone 14 viewports.
 - [x] 5.5 Codify Apple spacing/radius rhythm as platform tokens and remove compact route-level card wrapping.

@@ -135,7 +135,7 @@ The change should be implemented behind a small runtime-owned timing bridge now.
 
 Why:
 
-- the product need exists now
+- the app need exists now
 - the long-term scheduler law belongs elsewhere
 - separating contract from implementation avoids another future rename or behavior break
 

@@ -2,7 +2,7 @@
 
 The current WebUI still mixes entry flows, chat flows, and workspace/session management in a way that feels like a pile of features instead of a coherent application. The input experience is also too limited for an AI IDE workflow because it still depends on textarea-style editing, has no durable attachment pipeline, and cannot reliably express path completion or image context.
 
-This change is needed now because the agreed product direction is already clear: Quick Start must become a first-class entry, Chat must behave like a professional session-based workspace, and multimodal input must work end-to-end instead of being simulated in the UI.
+This change is needed now because the agreed app direction is already clear: Quick Start must become a first-class entry, Chat must behave like a professional session-based workspace, and multimodal input must work end-to-end instead of being simulated in the UI.
 
 ## What Changes
 

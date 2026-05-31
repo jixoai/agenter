@@ -1,10 +1,10 @@
 ## Why
 
-The current scaffold-family law is implemented, but it still lives inside `@agenter/webui`, while `ScrollView` lives in the old `@agenter/svelte-primitives` package. That splits one structural platform law across two packages and prevents other Svelte consumers such as `@agenter/web-chat-view` from reusing the same shell contract without reaching back into product-local WebUI source.
+The current scaffold-family law is implemented, but it still lives inside `@agenter/webui`, while `ScrollView` lives in the old `@agenter/svelte-primitives` package. That splits one structural platform law across two packages and prevents other Svelte consumers such as `@agenter/web-chat-view` from reusing the same shell contract without reaching back into app-local WebUI source.
 
 This is a package-boundary problem, not a page bug.
 
-- Shared Svelte structural primitives should not live in the product package that consumes them.
+- Shared Svelte structural primitives should not live in the app package that consumes them.
 - Lit durable atoms in `@agenter/web-components` should not absorb Svelte-only layout law.
 - `@agenter/web-chat-view` needs the same scroll + shell law, but must not depend on `@agenter/webui`.
 

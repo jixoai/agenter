@@ -1,6 +1,6 @@
 ## Why
 
-Even after the runtime loop is contained, the product still pays too much memory and interaction cost because performance fixes are fragmented across one-off traces, per-panel loading shells, ad-hoc list state, and unstable heavy renderers. We need one explicit platform change that turns performance from anecdotal complaint handling into shared contracts, shared tools, and repeatable verification.
+Even after the runtime loop is contained, the app still pays too much memory and interaction cost because performance fixes are fragmented across one-off traces, per-panel loading shells, ad-hoc list state, and unstable heavy renderers. We need one explicit platform change that turns performance from anecdotal complaint handling into shared contracts, shared tools, and repeatable verification.
 
 ## What Changes
 

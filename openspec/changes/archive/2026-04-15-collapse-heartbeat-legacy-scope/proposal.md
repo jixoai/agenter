@@ -6,7 +6,7 @@ Heartbeat was already specified as one ledger-backed `message_part` stream, but 
 - `scope=request_aux` for deduplicated bootstrap facts
 - `scope=heartbeat` for older chat-wrapper ingress rows and some persisted projections
 
-That split is no longer acceptable. It leaves the runtime with two internal Heartbeat semantics even though the product contract only has one, and it kept cold restore, chat-cycle projection, and browser hydration partially attached to the wrong storage law.
+That split is no longer acceptable. It leaves the runtime with two internal Heartbeat semantics even though the app contract only has one, and it kept cold restore, chat-cycle projection, and browser hydration partially attached to the wrong storage law.
 
 ## What Changes
 

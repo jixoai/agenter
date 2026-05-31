@@ -14,10 +14,10 @@ The platform SHALL expose one structured workspace CLI catalog for the current w
 - **THEN** the catalog returns separate groups for public and private workspace tool commands
 - **AND** each returned row identifies the callable command label derived from that tool file
 
-#### Scenario: Arbitrary PATH binaries stay out of the product command catalog
+#### Scenario: Arbitrary PATH binaries stay out of the app command catalog
 - **WHEN** a binary is available on PATH but is not a builtin, runtime CLI command, or workspace tool command
 - **THEN** the workspace CLI catalog omits that binary
-- **AND** the page remains a product/runtime truth surface instead of a generic system binary browser
+- **AND** the page remains a app/runtime truth surface instead of a generic system binary browser
 
 ### Requirement: Workspace tool metadata SHALL support structured description registration
 Workspace file-backed tool commands SHALL support a sidecar metadata manifest so command discovery does not depend on parsing ad hoc help text. The minimum structured metadata SHALL be `name` plus `description`.
@@ -43,4 +43,4 @@ The shell-level `helpcenter` command and the browser-facing workspace CLI query 
 #### Scenario: Builtin detail points back to builtin help
 - **WHEN** the shell or browser inspects one builtin command entry such as `cd`
 - **THEN** the entry includes `help cd` as its detail hint
-- **AND** the catalog does not pretend that builtin detail text is owned by the product registry
+- **AND** the catalog does not pretend that builtin detail text is owned by the app registry

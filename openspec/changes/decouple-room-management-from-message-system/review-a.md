@@ -73,7 +73,7 @@
 - 已通过：
   - `bun run --filter '@agenter/web-chat-view' typecheck`
   - `bun run --filter '@agenter/web-chat-view' test:unit`
-  - `bun run --filter 'agenter-ext-studio' typecheck`
+  - `bun run --filter 'agenter-app-studio' typecheck`
   - `git diff --check`
 - 当前还没有做的事情：
   - 还没有开始 Studio 外层 room-management 壳层改造

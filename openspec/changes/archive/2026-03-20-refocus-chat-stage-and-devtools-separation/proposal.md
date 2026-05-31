@@ -1,6 +1,6 @@
 ## Why
 
-The current workspace Chat route still exposes too much kernel and debugging detail by default, so the UI reads like an internal operator console instead of a chat-first application. We need to restore a clear product hierarchy where Chat is the primary interaction surface, Devtools owns technical inspection, and status surfaces tell the user one actionable truth at a time.
+The current workspace Chat route still exposes too much kernel and debugging detail by default, so the UI reads like an internal operator console instead of a chat-first application. We need to restore a clear app hierarchy where Chat is the primary interaction surface, Devtools owns technical inspection, and status surfaces tell the user one actionable truth at a time.
 
 ## What Changes
 

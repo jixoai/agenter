@@ -17,7 +17,7 @@
 
 - [x] 4.1 Migrate stateful `main + right detail` consumers (`terminals`, `workspaces`, `workspace start`, `avatar catalog`, `workspace settings panel`, story harnesses) to the unified visibility law.
 - [x] 4.2 Migrate static sidebar consumers (`admin route`, `workspace settings route`, `message room manage dialog`, `ui-studio`, shared stories) to `SidebarScaffold`.
-- [x] 4.3 Remove remaining `SplitView` references from product code, shared package demos, tests, and layout contracts.
+- [x] 4.3 Remove remaining `SplitView` references from app code, shared package demos, tests, and layout contracts.
 
 ## 5. Verification
 

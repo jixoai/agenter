@@ -2,13 +2,13 @@
 
 ### Requirement: Cli-shell SHALL provide an explicit TUI dialogue panel
 
-Cli-shell SHALL provide an Agenter dialogue panel for the product room. The panel SHALL be an explicit opened state, not a default pane and not part of the collapsed one-line toolbar. The dialogue message list SHALL use host-native scroll container semantics in native cli-shell and SHALL read durable room history through MessageRoom snapshot, page, and incremental update contracts.
+Cli-shell SHALL provide an Agenter dialogue panel for the app room. The panel SHALL be an explicit opened state, not a default pane and not part of the collapsed one-line toolbar. The dialogue message list SHALL use host-native scroll container semantics in native cli-shell and SHALL read durable room history through MessageRoom snapshot, page, and incremental update contracts.
 
 #### Scenario: Dialogue panel opens on the right side
 - **WHEN** the user invokes the configured dialogue-open gesture
-- **THEN** cli-shell renders the product room conversation as a right-side dialogue panel
+- **THEN** cli-shell renders the app room conversation as a right-side dialogue panel
 - **AND** the panel contains visible conversation structure such as user messages, Avatar replies, and a message input area
-- **AND** the visible shell surface remains the single active product-terminal surface
+- **AND** the visible shell surface remains the single active app-terminal surface
 
 #### Scenario: Dialogue panel toolbar exposes placement and close actions
 - **WHEN** the dialogue panel is open
@@ -17,7 +17,7 @@ Cli-shell SHALL provide an Agenter dialogue panel for the product room. The pane
 
 #### Scenario: Dialogue panel reads from backend room truth
 - **WHEN** the dialogue panel is open for `shell-1`
-- **THEN** it renders messages from the durable product room for `shell-1`
+- **THEN** it renders messages from the durable app room for `shell-1`
 - **AND** it does not keep a separate local transcript as authoritative truth
 
 #### Scenario: Dialogue panel closes back to one-line default
@@ -29,7 +29,7 @@ Cli-shell SHALL provide an Agenter dialogue panel for the product room. The pane
 #### Scenario: Dialogue panel is not default chrome
 - **WHEN** cli-shell renders the dialogue panel
 - **THEN** it is visible only while explicitly opened
-- **AND** it does not reduce the product to a dashboard layout
+- **AND** it does not reduce the app to a dashboard layout
 
 #### Scenario: Dialogue message list renders Markdown with gutters and host-native scrollbar
 - **WHEN** the dialogue panel renders messages in native cli-shell

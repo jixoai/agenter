@@ -11,11 +11,11 @@ When a room instance is archived through the room-management lifecycle, the runt
 - **THEN** the bound attention context is moved to `muted`
 - **AND** later LoopBus scheduling treats that context according to normal muted law
 
-#### Scenario: Built-in protected room context is not archived by product policy
+#### Scenario: Built-in protected room context is not archived by app policy
 
 - **GIVEN** a room or context is protected by built-in/default room policy
 - **WHEN** shell-next reacts to a bound terminal death
-- **THEN** shell-next SHALL NOT archive that protected room as a product cleanup side effect
+- **THEN** shell-next SHALL NOT archive that protected room as a app cleanup side effect
 - **AND** unrelated protected attention contexts keep their current focus state
 
 #### Scenario: Room archive does not rewrite context summary

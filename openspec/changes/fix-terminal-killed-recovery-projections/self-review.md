@@ -16,12 +16,12 @@ The original lifecycle requirement for this change is:
 
 | Requirement | Code path | Test evidence | UI / real-flow evidence | Drift |
 | --- | --- | --- | --- | --- |
-| Killed terminals leave live surfaces | `packages/terminal-system/src/terminal-control-plane.ts`, `packages/app-server/src/app-kernel.ts`, `packages/app-server/src/trpc/router.ts`, `packages/client-sdk/src/runtime-store.ts`, `extensions/studio/src/lib/features/terminals/terminal-history-route.svelte` | `packages/terminal-system/test/control-plane.test.ts`, `packages/app-server/test/trpc-router.test.ts`, `packages/client-sdk/test/runtime-store.test.ts`, `packages/cli/test/cli.e2e.test.ts` | `packages/cli/test/cli.e2e.test.ts` abrupt-daemon-death smoke proves a recovered terminal leaves live projection and enters killed history/index | Low |
+| Killed terminals leave live surfaces | `packages/terminal-system/src/terminal-control-plane.ts`, `packages/app-server/src/app-kernel.ts`, `packages/app-server/src/trpc/router.ts`, `packages/client-sdk/src/runtime-store.ts`, `apps/studio/src/lib/features/terminals/terminal-history-route.svelte` | `packages/terminal-system/test/control-plane.test.ts`, `packages/app-server/test/trpc-router.test.ts`, `packages/client-sdk/test/runtime-store.test.ts`, `packages/cli/test/cli.e2e.test.ts` | `packages/cli/test/cli.e2e.test.ts` abrupt-daemon-death smoke proves a recovered terminal leaves live projection and enters killed history/index | Low |
 | Daemon restart replays killed workflow | `TerminalControlPlane.replayRecoveredLifecycle()`, `AppKernel.start()`, `SessionRuntime.start()` | `packages/terminal-system/test/control-plane.test.ts`, `packages/app-server/test/session-runtime.attention-system.test.ts`, `packages/cli/test/cli.e2e.test.ts` | `packages/cli/test/cli.e2e.test.ts` kills the daemon process and restarts it against the same home root | Low |
 | AttentionContext muting is caused by lifecycle ingress | `packages/app-server/src/session-runtime.ts`, `packages/app-server/src/runtime-system-kernel-adapters/terminal-adapter.ts` | `packages/app-server/test/session-runtime.attention-system.test.ts`, `packages/app-server/test/runtime-terminal-kernel-adapter.test.ts` | In-process runtime recovery smoke confirms the bound terminal context is muted and the commit meta carries terminal lifecycle ingress details | Low |
-| Products do not reuse killed shells as live candidates | `extensions/cli-shell/src/navigation-model.ts`, `packages/client-sdk/src/product-extension-runtime.ts`, `extensions/cli-shell/src/run-cli-shell.ts` | `extensions/cli-shell/test/navigation-model.test.ts`, `packages/client-sdk/test/product-extension-runtime.test.ts`, `extensions/cli-shell/test/cli-shell.test.ts` | CLI startup chooser tests only see live Shells; killed terminals remain historical and only affect numbering / explicit recovery | Low |
-| History/index/archive remain projections over terminal_instance | `packages/app-server/src/app-kernel.ts`, `packages/app-server/src/trpc/router.ts`, `packages/client-sdk/src/runtime-store.ts`, `extensions/studio/src/lib/features/terminals/terminal-history-route.svelte`, `extensions/studio/src/routes/(app)/terminals/+page.svelte` | `packages/app-server/test/trpc-router.test.ts`, `packages/client-sdk/test/runtime-store.test.ts`, `extensions/studio/src/lib/features/terminals/terminal-history-route-contract.spec.ts`, `extensions/studio/src/lib/features/terminals/terminals-root-route-contract.spec.ts` | Studio route contracts now treat `/terminals` as live-only entry and `/terminals/history` as index/history surface | Low |
-| Self-review stays out of runtime product behavior | This file and `openspec/changes/fix-terminal-killed-recovery-projections/tasks.md` only | N/A | N/A | None |
+| Products do not reuse killed shells as live candidates | `apps/cli-shell/src/navigation-model.ts`, `packages/client-sdk/src/app-runtime.ts`, `apps/cli-shell/src/run-cli-shell.ts` | `apps/cli-shell/test/navigation-model.test.ts`, `packages/client-sdk/test/app-runtime.test.ts`, `apps/cli-shell/test/cli-shell.test.ts` | CLI startup chooser tests only see live Shells; killed terminals remain historical and only affect numbering / explicit recovery | Low |
+| History/index/archive remain projections over terminal_instance | `packages/app-server/src/app-kernel.ts`, `packages/app-server/src/trpc/router.ts`, `packages/client-sdk/src/runtime-store.ts`, `apps/studio/src/lib/features/terminals/terminal-history-route.svelte`, `apps/studio/src/routes/(app)/terminals/+page.svelte` | `packages/app-server/test/trpc-router.test.ts`, `packages/client-sdk/test/runtime-store.test.ts`, `apps/studio/src/lib/features/terminals/terminal-history-route-contract.spec.ts`, `apps/studio/src/lib/features/terminals/terminals-root-route-contract.spec.ts` | Studio route contracts now treat `/terminals` as live-only entry and `/terminals/history` as index/history surface | Low |
+| Self-review stays out of runtime app behavior | This file and `openspec/changes/fix-terminal-killed-recovery-projections/tasks.md` only | N/A | N/A | None |
 
 ### Apply Round 1 Notes
 
@@ -36,7 +36,7 @@ The original lifecycle requirement for this change is:
 
 - The restart smoke is now stronger than the earlier in-process evidence: `packages/cli/test/cli.e2e.test.ts` kills the real daemon process, restarts it on the same authority, and checks that the live list no longer contains the dead terminal while history/index do.
 - `packages/app-server/test/trpc-router.test.ts` proves the server projection split after a cold-start recovery seed.
-- `extensions/studio/src/lib/features/terminals/*.spec.ts` and route contracts keep the live/history/archive surfaces separated at the source level.
+- `apps/studio/src/lib/features/terminals/*.spec.ts` and route contracts keep the live/history/archive surfaces separated at the source level.
 - `packages/client-sdk/test/runtime-store.test.ts` proves the store keeps the live cache, the killed history cache, the combined index cache, and the archive cache independent.
 
 ### Apply Round 3 Notes
@@ -52,25 +52,25 @@ The original lifecycle requirement for this change is:
 
 ### Apply Round 4 Failed Review Finding
 
-The previous "Low" risk judgment for cli-shell startup navigation was wrong. It proved only the positive contract "killed terminals are not selectable" and missed the stronger product contract "only user-resumable Shell roots are selectable".
+The previous "Low" risk judgment for cli-shell startup navigation was wrong. It proved only the positive contract "killed terminals are not selectable" and missed the stronger app contract "only user-resumable Shell roots are selectable".
 
 The missed counterexamples are:
 
-- `not_started` terminal rows: live from the platform perspective because they are not killed, but not resumable product Shells.
+- `not_started` terminal rows: live from the platform perspective because they are not killed, but not resumable app Shells.
 - Legacy `shell-N:terminal-M` resource keys: evidence of old sub-binding layout, not a canonical Shell root to show in the chooser.
 - Non-canonical verification/test resource keys: useful during tests or migrations, but not user-facing startup Shell choices.
 
 The repaired self-review rule is:
 
 - First name the platform projection being consumed.
-- Then name the product projection being displayed.
+- Then name the app projection being displayed.
 - Then test at least one negative dirty-data row for every projection boundary before marking user-facing alignment complete.
 
 This is a development workflow rule only. It must not add runtime UI, daemon state, public API, or database state.
 
 ### Apply Round 5 Repaired Gate Result
 
-The repaired gate is now backed by a failing-then-passing BDD scenario in `extensions/cli-shell/test/navigation-model.test.ts`.
+The repaired gate is now backed by a failing-then-passing BDD scenario in `apps/cli-shell/test/navigation-model.test.ts`.
 
 The scenario builds a dirty platform-live projection containing:
 
@@ -79,7 +79,7 @@ The scenario builds a dirty platform-live projection containing:
 - a non-canonical `shell-verify-shell-frame` cli-shell row,
 - and a canonical running `shell-14` row.
 
-The expected product projection is:
+The expected app projection is:
 
 - selectable existing Shells only include `shell-14`,
 - New Shell chooses `shell-2`, because `shell-1` is known and `shell-3` is reserved by the legacy root,
@@ -87,8 +87,8 @@ The expected product projection is:
 
 The implementation now separates:
 
-- `readCanonicalShellRoot(...)`: selectable product Shell root, exact `shell-N` only;
+- `readCanonicalShellRoot(...)`: selectable app Shell root, exact `shell-N` only;
 - `readKnownShellRoot(...)`: numbering evidence, exact `shell-N` or legacy `shell-N:terminal-M`;
 - `isCliShellTerminal(...)`: selectable rows must be `processPhase === "running"`.
 
-The default `agenter-ext-shell` test script now includes `test/navigation-model.test.ts`, so this regression is part of the package-level BDD gate instead of a one-off command.
+The default `agenter-app-shell` test script now includes `test/navigation-model.test.ts`, so this regression is part of the package-level BDD gate instead of a one-off command.

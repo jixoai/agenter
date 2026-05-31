@@ -1,6 +1,6 @@
 ## Why
 
-The current workspace shell regressed away from the conversation-first contract: Chat exposes cycle structure again, compact layouts waste the first viewport on secondary chrome, unread counts are amplified by repeated mock replies, and hot runtime updates are pushing too much work through the shell. We need to restore the intended product shape before adding more surface area.
+The current workspace shell regressed away from the conversation-first contract: Chat exposes cycle structure again, compact layouts waste the first viewport on secondary chrome, unread counts are amplified by repeated mock replies, and hot runtime updates are pushing too much work through the shell. We need to restore the intended app shape before adding more surface area.
 
 ## What Changes
 

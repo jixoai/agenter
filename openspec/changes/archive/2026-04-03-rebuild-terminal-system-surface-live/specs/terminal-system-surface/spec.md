@@ -1,6 +1,6 @@
 ## MODIFIED Requirements
 
-### Requirement: Terminal-system SHALL present global terminals as a standalone product surface
+### Requirement: Terminal-system SHALL present global terminals as a standalone app surface
 The WebUI SHALL expose a dedicated terminal-system route that lists global terminals, renders the selected terminal transcript, and provides terminal-specific actions and user/access management without requiring workspace ownership.
 
 #### Scenario: Global terminal navigation

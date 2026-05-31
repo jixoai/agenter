@@ -1,6 +1,6 @@
 ## MODIFIED Requirements
 
-### Requirement: Terminal-system SHALL present global terminals as a standalone product surface
+### Requirement: Terminal-system SHALL present global terminals as a standalone app surface
 
 The WebUI SHALL expose a dedicated terminal-system route that lists global terminals, renders the selected terminal transcript, and provides terminal-specific actions and user/access management without requiring workspace ownership. The route SHALL use shared scaffold primitives for pane interiors and the shared split-detail workbench shell law so the terminal viewport, tool composer, and collaboration rail each keep explicit layout ownership on desktop while compact widths reuse the shared right-sheet fallback.
 
@@ -35,7 +35,7 @@ The WebUI SHALL expose a dedicated terminal-system route that lists global termi
 - **THEN** the route injects terminal-local toolbar content through the shared `WorkbenchPageToolbar` host instead of relying on static shell subtitle copy
 - **THEN** the toolbar identity reflects the active terminal facts such as the terminal label and cwd
 - **THEN** the toolbar status reflects authoritative runtime facts such as `running/stopped` and `busy/idle`
-- **THEN** explanatory product copy is available through help affordance instead of occupying the primary identity row
+- **THEN** explanatory app copy is available through help affordance instead of occupying the primary identity row
 - **THEN** the help popup remains readable above compact shell chrome instead of rendering underneath navigation layers
 
 #### Scenario: Terminal users management lives behind a toolbar dialog

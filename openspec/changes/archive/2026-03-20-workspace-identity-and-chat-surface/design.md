@@ -1,6 +1,6 @@
 ## Context
 
-The remaining product gaps are no longer isolated component bugs. They span shell navigation, Chat media input, Session and Avatar identity, Devtools readability, and layout contracts across desktop and mobile viewports. The current repository already has workspace-scoped settings, conversation-first Chat, and explicit overflow primitives, but it does not yet distinguish global user settings from workspace settings, does not provide a durable identity-media pipeline, and still allows page-local headers to carry global-entry concerns.
+The remaining app gaps are no longer isolated component bugs. They span shell navigation, Chat media input, Session and Avatar identity, Devtools readability, and layout contracts across desktop and mobile viewports. The current repository already has workspace-scoped settings, conversation-first Chat, and explicit overflow primitives, but it does not yet distinguish global user settings from workspace settings, does not provide a durable identity-media pipeline, and still allows page-local headers to carry global-entry concerns.
 
 ## Goals / Non-Goals
 

@@ -2,7 +2,7 @@
 
 The current `YamlPreview / JsonView` surface in WebUI is still a Lit custom element wrapped by a thin Svelte host. That splits visual ownership across shadow DOM and route-level Tailwind surfaces, so menu chrome, spacing, framing, and typography cannot converge with the rest of the shadcn-svelte workbench.
 
-We need to replace that now because structured payload inspection has become a first-class operator workflow inside Heartbeat, tool payloads, and cycle inspection. As long as the viewer remains a shadow-private Lit atom, WebUI cannot apply the same menu primitives, framing law, and CodeMirror-based rendering strategy used by the rest of the product.
+We need to replace that now because structured payload inspection has become a first-class operator workflow inside Heartbeat, tool payloads, and cycle inspection. As long as the viewer remains a shadow-private Lit atom, WebUI cannot apply the same menu primitives, framing law, and CodeMirror-based rendering strategy used by the rest of the app.
 
 ## What Changes
 

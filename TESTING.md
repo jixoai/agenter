@@ -19,7 +19,7 @@
 - `@agenter/tui`
   - unit/integration：ws 消息解析契约（snapshot/updated/deleted/chat）。
   - 不做脆弱的渲染细节断言。
-- `agenter-ext-studio`
+- `agenter-app-studio`
   - DOM contract：Storybook v10 + Vitest 真实组件交互（输入、弹层、列表、消息渲染）。
   - contract：html shell 包含 viewport/ws/bootstrap 关键标记。
 - `@agenter/terminal-system`
@@ -47,8 +47,8 @@ bun run test
 ## Storybook DOM Baseline
 
 ```bash
-bun run --filter "agenter-ext-studio" storybook
-bun run --filter "agenter-ext-studio" test:dom
+bun run --filter "agenter-app-studio" storybook
+bun run --filter "agenter-app-studio" test:dom
 ```
 
 - Storybook stories 是 Studio 组件状态与交互夹具的单一真源。
@@ -58,7 +58,7 @@ bun run --filter "agenter-ext-studio" test:dom
 ## Browser Performance Evidence
 
 ```bash
-pnpm --filter "agenter-ext-studio" perf:reverse-flow-conversation
+pnpm --filter "agenter-app-studio" perf:reverse-flow-conversation
 ```
 
 - 该工作流对 `Heartbeat` 与 shared room chat 采集同一组 desktop + iPhone 14 Chromium traces。

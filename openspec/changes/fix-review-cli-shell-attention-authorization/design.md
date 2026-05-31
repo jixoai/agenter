@@ -1,14 +1,14 @@
 > Boundary note:
 > This design remains relevant for terminal authorization lifecycle and attention-item causality.
-> But any references to cli-shell-visible terminal identity must now be read through the boundary in `realign-cli-shell-with-core-system-boundaries`: cli-shell projects one bound TerminalSystem terminal rather than reviving a product-specific `terminal-2` truth.
+> But any references to cli-shell-visible terminal identity must now be read through the boundary in `realign-cli-shell-with-core-system-boundaries`: cli-shell projects one bound TerminalSystem terminal rather than reviving a app-specific `terminal-2` truth.
 
 ## Context
 
-The current implementation already covers many product-level surfaces:
+The current implementation already covers many app-level surfaces:
 
 - cli-shell parses `--avatar`, `--create-avatar`, `--clear-avatar`, and `--session` separately.
-- cli-shell needs one current bound TerminalSystem terminal for the current product session, and Shell Assistant terminal tools must target that bound terminal rather than guessing from historical residue.
-- native cli-shell product surfaces subscribe to permission requests for the current bound terminal only.
+- cli-shell needs one current bound TerminalSystem terminal for the current app session, and Shell Assistant terminal tools must target that bound terminal rather than guessing from historical residue.
+- native cli-shell app surfaces subscribe to permission requests for the current bound terminal only.
 - TerminalSystem enforces `readonly`, `writer`, `guard`, and `admin` roles, stores approval request history, supports approval/denial, and emits approval request events.
 - session runtime can turn terminal observations into attention history through the terminal adapter path.
 
@@ -34,7 +34,7 @@ That explains the user-visible delay after approval. The UI is not merely slow; 
   - `guard` write waits for manager decision, then returns approved result, denial warning, or timeout action id.
 - Ensure authorization popup creation, approval, denial, timeout, cancel, and final result are committed as attention-item facts.
 - Keep live authorization authority bound to the live TerminalInstance, not a long-lived database row that can survive kill/bootstrap as actionable authority.
-- Keep cli-shell product code out of core laws. cli-shell only projects current-bound-terminal requests and calls generic terminal APIs.
+- Keep cli-shell app code out of core laws. cli-shell only projects current-bound-terminal requests and calls generic terminal APIs.
 - Keep WebUI and cli-shell independent products over shared terminal-view/TerminalSystem primitives.
 
 **Non-Goals:**
@@ -112,7 +112,7 @@ Pending guard actions are bound to the live TerminalInstance. Stop, kill, bootst
 
 Attention history remains durable, but it is history. It must not be enough to approve and execute a command against a new live PTY instance.
 
-### 6. cli-shell stays a product projection
+### 6. cli-shell stays a app projection
 
 cli-shell should:
 
@@ -123,7 +123,7 @@ cli-shell should:
 - never mutate managed/hosting state when rendering or deciding authorization
 - never subscribe to internal/hidden terminals to make the popup appear
 
-This keeps the product from polluting the platform and keeps WebUI independent.
+This keeps the app from polluting the platform and keeps WebUI independent.
 
 ## Risks / Trade-offs
 
@@ -140,8 +140,8 @@ This keeps the product from polluting the platform and keeps WebUI independent.
 3. Change approval/denial/cancel APIs to update action state and wake any waiters.
 4. Add attention-item commits for all action transitions through the terminal runtime adapter.
 5. Add `terminal wait` and `terminal cancel` descriptors, SDK methods, and CLI command coverage.
-6. Update cli-shell native product surfaces to use the new action payloads while keeping current-bound-terminal-only subscriptions.
-7. Update terminal-view component contracts and any other product hosts independently, without coupling WebUI to cli-shell.
+6. Update cli-shell native app surfaces to use the new action payloads while keeping current-bound-terminal-only subscriptions.
+7. Update terminal-view component contracts and any other app hosts independently, without coupling WebUI to cli-shell.
 8. Remove or demote old lease-only approval behavior from guard action approval.
 
 ## Open Questions

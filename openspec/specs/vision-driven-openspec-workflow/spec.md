@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Define Agenter's project-local OpenSpec workflow where visible/product intent drives specs, BDD tasks, implementation, and self-review loops.
+Define Agenter's project-local OpenSpec workflow where visible/app intent drives specs, BDD tasks, implementation, and self-review loops.
 
 ## Requirements
 
@@ -95,7 +95,7 @@ The `vision-driven` workflow SHALL require Git evidence when durable work change
 
 - **GIVEN** a `vision-driven` change has research-plan, specs, and tasks ready for apply
 - **WHEN** implementation is about to start
-- **THEN** the agent records a Git commit containing the OpenSpec artifacts before changing product code
+- **THEN** the agent records a Git commit containing the OpenSpec artifacts before changing app code
 
 #### Scenario: Task progress is committed by the agent that performed it
 

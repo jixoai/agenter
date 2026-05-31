@@ -2,32 +2,32 @@
 
 > Boundary note:
 > This review still captures the real authorization-lifecycle gap, but any old cli-shell topology language must now be read through `realign-cli-shell-with-core-system-boundaries`.
-> In particular, `extensions/cli-shell` is the current product package, Shell truth is the TerminalSystem terminal bound to the product session, and WebUI remains an independent product rather than a cli-shell host mode.
+> In particular, `apps/cli-shell` is the current app package, Shell truth is the TerminalSystem terminal bound to the app session, and WebUI remains an independent app rather than a cli-shell host mode.
 
 This review covers the active cli-shell-related OpenSpec/code surface after landing the ChatTUI v9 work on `main`.
 
 Reviewed OpenSpec surfaces:
 
 - Archived `add-terminal-guard-authorization-mode`
-- Active `separate-cli-shell-product-from-terminal-view-components`
+- Active `separate-cli-shell-app-from-terminal-view-components`
 - Active `complete-cli-shell-avatar-session-reset`
-- Durable specs in `extensions/cli-shell/SPEC.md`, `packages/terminal-system/SPEC.md`, and `packages/app-server/SPEC.md`
-- Current code/tests in `packages/terminal-system`, `packages/app-server`, `packages/client-sdk`, `packages/terminal-view`, and `extensions/cli-shell`
+- Durable specs in `apps/cli-shell/SPEC.md`, `packages/terminal-system/SPEC.md`, and `packages/app-server/SPEC.md`
+- Current code/tests in `packages/terminal-system`, `packages/app-server`, `packages/client-sdk`, `packages/terminal-view`, and `apps/cli-shell`
 
 ## Completion Matrix
 
 | Area | Evidence reviewed | Completion | Current assessment | Gap to address in this change |
 | --- | --- | ---: | --- | --- |
 | Worktree hygiene and ChatTUI v9 merge | commits `cebd17d9`, `76beac26`; `cli-shell-tui`, `cli-shell-web-host`, `termless`, terminal-system composed tests | 100% | v9 work is merged and the worktree was clean before this review change started. | None for merge; remaining manual-native acceptance stays in the older active change. |
-| Product/core boundary | `extensions/cli-shell/SPEC.md`, `package-boundary.test.ts`, v9 metadata projection | 90% | cli-shell no longer needs platform types for bottom/dialogue state; product state is projected through metadata and product code. | Add regression tasks so future fixes do not push cli-shell state into TerminalSystem/core types. |
+| App/core boundary | `apps/cli-shell/SPEC.md`, `package-boundary.test.ts`, v9 metadata projection | 90% | cli-shell no longer needs platform types for bottom/dialogue state; app state is projected through metadata and app code. | Add regression tasks so future fixes do not push cli-shell state into TerminalSystem/core types. |
 | Avatar/session reset | `complete-cli-shell-avatar-session-reset`, `cli-shell.test.ts`, real daemon integration | 95% | `--avatar`, `--create-avatar`, `--clear-avatar`, and `--session` are separated and tested. | Real AI behavior remains gated; no new action required in this change. |
-| Shell Assistant current-terminal prompt law | prompt seed, real prompt integration test, package SPEC | 60% | The intended law is that MessageRoom conversation targets the current bound terminal and avoids root/workspace substitution. | `extensions/cli-shell/src/shell-assistant-seeds.ts` still says the visible terminal surface is the tmux session attached to the room, which conflicts with the current boundary and must be rewritten before implementation resumes. |
+| Shell Assistant current-terminal prompt law | prompt seed, real prompt integration test, package SPEC | 60% | The intended law is that MessageRoom conversation targets the current bound terminal and avoids root/workspace substitution. | `apps/cli-shell/src/shell-assistant-seeds.ts` still says the visible terminal surface is the tmux session attached to the room, which conflicts with the current boundary and must be rewritten before implementation resumes. |
 | Native cli-shell authorization popup | `cli-shell-tui.test.ts` approval overlay scenarios | 70% | Popup renders, custom handler suppression works, approve/deny calls TerminalSystem for the current terminal. | It is UI/permission-request driven, not yet action/wait/attention-item driven. |
 | TerminalSystem guard ACL | `terminal-collaboration-access-control`, `control-plane.test.ts` guard/readonly/lease/history/subscription cases | 65% | Roles, request history, subscriptions, duplicate pending coalescing, stale request invalidation, and transport blocking are covered. | Approval only mints a lease; the original action is not resumed immediately. |
 | Terminal action lifecycle | code trace through `enqueueAutomationInput`, `approveRequestAuthorized`, runtime tool descriptors | 20% | There is no first-class pending/executing/succeeded/failed/cancelled/denied terminal action state for guard writes. | Add action id, wait, cancel, bounded timeout, and state machine tests. |
 | Attention-item causality for authorization | `session-runtime.ts` terminal approval listener, attention adapter specs/tests | 35% | Some approval updates enqueue terminal lifecycle attention commits for relevant actors. | Creation, approve, deny, timeout, wait, cancel, execution start, and execution result are not one coherent attention-item causal chain. |
 | Real AI guard behavior | `real-cli-shell-guard-authorization.integration.test.ts` | 50% | A real AI test exists and checks no root/workspace bash substitution plus approval behavior. | It is gated by `AGENTER_RUN_REAL_LOOPBUS=1`; it currently compensates by asking the model to retry after approval, which should become unnecessary. |
-| WebUI relationship | Product/spec review only | 40% | WebUI is correctly treated as an independent product. | Generic terminal-view/action lifecycle integration still needs BDD/DOM coverage outside cli-shell. |
+| WebUI relationship | App/spec review only | 40% | WebUI is correctly treated as an independent app. | Generic terminal-view/action lifecycle integration still needs BDD/DOM coverage outside cli-shell. |
 
 ## BDD Boundary Coverage Matrix
 
@@ -43,7 +43,7 @@ Reviewed OpenSpec surfaces:
 | Attention-item causal chain | App-server commits some approval request lifecycle facts. | Weak | Add tests proving request, approve, deny, timeout, cancel, execution start, and result all go through the shared adapter commit path. |
 | Native cli-shell popup | Native tests cover TopLayer rendering, current-bound-terminal filtering, approve/deny callback, and managed-state isolation. | Medium | Update from request-row UI to action-state UI and assert approve resumes original action. |
 | Real AI behavior | Gated real-AI tests cover no root/workspace bash substitution and approval awareness. | Medium | Remove the compensating second user prompt after approval; approval should wake/resume the original terminal action. |
-| Product/core isolation | Package specs and tests protect cli-shell-specific chrome from TerminalSystem types. | Medium | Add regression around action lifecycle so cli-shell remains a projection and cannot become the authority store. |
+| App/core isolation | Package specs and tests protect cli-shell-specific chrome from TerminalSystem types. | Medium | Add regression around action lifecycle so cli-shell remains a projection and cannot become the authority store. |
 
 ## Code Evidence Anchors
 
@@ -52,9 +52,9 @@ Reviewed OpenSpec surfaces:
 - `packages/terminal-system/test/control-plane.test.ts` contains the clearest old-behavior proof: after approval, the test calls `plane.write(...)` a second time and expects that retry to succeed through the lease.
 - `packages/app-server/src/session-runtime.ts` forwards `approvalRequest` facts from terminal write/input results and commits partial lifecycle attention for approval request events, but it does not model one coherent terminal action lifecycle.
 - `packages/app-server/src/runtime-system-kernel-adapters/terminal-adapter.ts` can commit lifecycle ingress and wake LoopBus, but it has no terminal action transition vocabulary yet.
-- `extensions/cli-shell/src/tui/shell-terminal-view.ts` renders request rows and approve/deny regions; it does not render action state, timeout, wait, cancel, or denial reason.
-- `extensions/cli-shell/src/managed.ts` correctly documents that managed/takeover is hosting attention and must not become TerminalSystem authority. This boundary must be preserved while fixing guard actions.
-- `extensions/cli-shell/src/shell-assistant-seeds.ts` still describes the visible terminal surface as a tmux session attached to the MessageRoom. That prompt seed is now a boundary bug because shell truth must come from TerminalSystem binding, not tmux topology.
+- `apps/cli-shell/src/tui/shell-terminal-view.ts` renders request rows and approve/deny regions; it does not render action state, timeout, wait, cancel, or denial reason.
+- `apps/cli-shell/src/managed.ts` correctly documents that managed/takeover is hosting attention and must not become TerminalSystem authority. This boundary must be preserved while fixing guard actions.
+- `apps/cli-shell/src/shell-assistant-seeds.ts` still describes the visible terminal surface as a tmux session attached to the MessageRoom. That prompt seed is now a boundary bug because shell truth must come from TerminalSystem binding, not tmux topology.
 
 ## Key Findings
 

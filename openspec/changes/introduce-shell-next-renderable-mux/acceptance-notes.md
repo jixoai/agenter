@@ -19,7 +19,7 @@ Observed in a real PTY session:
 - `F1` opened the OpenTUI-native Help renderable inside the layout tree and showed shell-next shortcuts.
 - `Ctrl+Q` exited shell-next, restored terminal modes, and the process returned exit code `0`.
 
-The first smoke run exposed a cleanup bug: after `Ctrl+Q`, late Bun PTY exit callbacks tried to update a destroyed statusbar and triggered `TextBuffer is destroyed`. The implementation now treats dispose as the terminal source lifecycle boundary and ignores late frame/exit callbacks after app destruction. Regression coverage was added in `extensions/shell-next/test/shell-next-app.test.ts` under:
+The first smoke run exposed a cleanup bug: after `Ctrl+Q`, late Bun PTY exit callbacks tried to update a destroyed statusbar and triggered `TextBuffer is destroyed`. The implementation now treats dispose as the terminal source lifecycle boundary and ignores late frame/exit callbacks after app destruction. Regression coverage was added in `apps/shell-next/test/shell-next-app.test.ts` under:
 
 ```txt
 Scenario: Given shell-next is destroyed When a pane exits later Then cleanup remains idempotent
@@ -29,38 +29,38 @@ Scenario: Given shell-next is destroyed When a pane exits later Then cleanup rem
 
 Acceptance state:
 
-- `bun agenter shell` remains descriptor-routed to `agenter-ext-shell`.
-- `bun agenter shell2` is descriptor-routed to local workspace package `agenter-ext-shell-next`.
+- `bun agenter shell` remains descriptor-routed to `agenter-app-shell`.
+- `bun agenter shell2` is descriptor-routed to local workspace package `agenter-app-shell-next`.
 - `shell2` has `allowInstalled: false` and `allowRemote: false`, so it remains local incubation only.
-- No `extensions/cli-shell` rename happened in this change.
+- No `apps/cli-shell` rename happened in this change.
 - No stable `shell` package name, bin name, or command was replaced by shell-next.
 
 Verification commands:
 
 ```bash
 openspec validate introduce-shell-next-renderable-mux --strict
-bun test extensions/shell-next/test/*.test.ts
-bun test packages/cli/test/product-command-launcher.test.ts
-bun run --filter 'agenter-ext-shell-next' typecheck
+bun test apps/shell-next/test/*.test.ts
+bun test packages/cli/test/app-command-launcher.test.ts
+bun run --filter 'agenter-app-shell-next' typecheck
 bun run agenter shell2 --command /bin/sh
 ```
 
-### 8. Product Completion Correction
+### 8. App Completion Correction
 
-The earlier 45/45 task state represented mux/layout foundation acceptance only. Product completion now adds the missing terminal projection and product-surface corrections:
+The earlier 45/45 task state represented mux/layout foundation acceptance only. App completion now adds the missing terminal projection and app-surface corrections:
 
-- `ShellNextMuxRenderable` accepts a product-free terminal pane factory, so mux/layout does not hardcode the plain text terminal renderer.
-- shell-next product wiring defaults to `ShellNextFrameBufferTerminalPane`, which reuses cli-shell's `BackendTerminalFrameRenderable -> ShellTerminalViewRenderable -> FrameBufferRenderable` projection stack.
+- `ShellNextMuxRenderable` accepts a app-free terminal pane factory, so mux/layout does not hardcode the plain text terminal renderer.
+- shell-next app wiring defaults to `ShellNextFrameBufferTerminalPane`, which reuses cli-shell's `BackendTerminalFrameRenderable -> ShellTerminalViewRenderable -> FrameBufferRenderable` projection stack.
 - `LocalBunTerminalProtocolSource` now exposes rich-line, cursor, viewport, and scrollback facts from Termless/Ghostty via structured rendering.
 - `CliShellLiveTerminalProtocolSource` adapts real cli-shell/TerminalSystem transport channels through `createCliShellLiveTerminalMirror` into shell-next's normalized terminal source contract.
-- Help and Chat are both visible product actions; `F1` toggles Help and `F3` toggles a direct OpenTUI Chat surface.
+- Help and Chat are both visible app actions; `F1` toggles Help and `F3` toggles a direct OpenTUI Chat surface.
 
 Verification commands run after this correction:
 
 ```bash
-bun test extensions/shell-next/test/*.test.ts
-bun run --filter 'agenter-ext-shell-next' typecheck
-bun test packages/cli/test/product-command-launcher.test.ts
+bun test apps/shell-next/test/*.test.ts
+bun run --filter 'agenter-app-shell-next' typecheck
+bun test packages/cli/test/app-command-launcher.test.ts
 openspec validate introduce-shell-next-renderable-mux --strict
 ```
 

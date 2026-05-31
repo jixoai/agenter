@@ -4,8 +4,8 @@
 
 ## 1. OpenSpec And Documentation
 
-- [x] 1.1 Record the settled product decisions: use `--create-avatar` / `--clear-avatar`, clear only runtime session context, keep selected/created Avatars ordinary, and do not couple WebUI to cli-shell.
-- [x] 1.2 Update durable package specs after implementation: `extensions/cli-shell/SPEC.md` and `packages/product-extension-runtime/SPEC.md`.
+- [x] 1.1 Record the settled app decisions: use `--create-avatar` / `--clear-avatar`, clear only runtime session context, keep selected/created Avatars ordinary, and do not couple WebUI to cli-shell.
+- [x] 1.2 Update durable package specs after implementation: `apps/cli-shell/SPEC.md` and `packages/app-runtime/SPEC.md`.
 - [x] 1.3 Update user-facing README/help text for `--avatar`, `--create-avatar`, `--clear-avatar`, and the difference from `--session`.
 - [x] 1.4 Run `openspec validate complete-cli-shell-avatar-session-reset --strict`.
 
@@ -17,10 +17,10 @@
 - [x] 2.4 Reject `--test-avatar` and keep it out of help because the system has only ordinary Avatar selection for this flow.
 - [x] 2.5 Update startup output so non-interactive attach prints selected Avatar, created/reused state, and cleared/not-cleared state.
 
-## 3. Product-Safe Avatar Create And Clear
+## 3. App-Safe Avatar Create And Clear
 
 - [x] 3.1 Resolve selected Avatar from global catalog before terminal or room mutation.
-- [x] 3.2 If missing and `--create-avatar` is true, create the ordinary Avatar through generic product-extension/global Avatar APIs.
+- [x] 3.2 If missing and `--create-avatar` is true, create the ordinary Avatar through generic app-extension/global Avatar APIs.
 - [x] 3.3 If missing and `--create-avatar` is false, fail before creating runtime, terminal, or room resources.
 - [x] 3.4 Implement selected Avatar runtime-session clear through generic session deletion/reset before `ensureRuntime`.
 - [x] 3.5 Preserve canonical Avatar assets during clear: principal, nickname alias, `AGENTER.mdx`, memory files, profile media, and workspace files.
@@ -48,7 +48,7 @@
 
 - [x] 6.1 Add BDD parser tests for `--avatar`, `--create-avatar`, `--clear-avatar`, selector conflicts, missing Avatar errors, and rejected `--test-avatar`.
 - [x] 6.2 Add bootstrap tests for create-if-missing, fail-if-missing-without-create, clear-before-runtime-start, default shell-assistant seed-if-missing behavior, and ordinary explicit Avatar prompt/memory preservation.
-- [x] 6.3 Add product-extension tests proving clear uses generic session authority and does not delete Avatar assets.
+- [x] 6.3 Add app-extension tests proving clear uses generic session authority and does not delete Avatar assets.
 - [x] 6.4 Add native cli-shell tests where a current-opened-terminal permission request appears on the visible surface.
 - [x] 6.5 Preserve host-level permission popover coverage as historical evidence without making browser-host behavior current cli-shell truth.
 - [x] 6.6 Add terminal-view tests for terminal-local permission filtering, host callback replacement, default TopLayer UI, approve, deny, and coalesced updates.
@@ -58,8 +58,8 @@
 
 - [x] 7.1 Run focused cli-shell unit and startup tests.
 - [x] 7.2 Run focused terminal-view tests.
-- [x] 7.3 Run focused product-extension/client-sdk tests for session clear and permission subscriptions.
+- [x] 7.3 Run focused app-extension/client-sdk tests for session clear and permission subscriptions.
 - [x] 7.4 Run real cli-shell startup smoke with a new named ordinary Avatar.
 - [x] 7.5 Run real-AI validation with the cleared ordinary Avatar runtime session.
-- [x] 7.6 Run `bun run --filter 'agenter-ext-shell' typecheck`.
+- [x] 7.6 Run `bun run --filter 'agenter-app-shell' typecheck`.
 - [x] 7.7 Run `openspec validate --changes --strict` and `openspec validate --specs --strict`.

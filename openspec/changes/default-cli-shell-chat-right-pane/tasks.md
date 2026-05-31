@@ -1,11 +1,11 @@
 ## 1. Specs And Documentation
 
-- [x] 1.1 Update durable cli-shell product spec with default-right, default-open, and popup/status-bar modal behavior.
-- [x] 1.2 Update `extensions/cli-shell/SPEC.md`, README, and Help panel copy so user-facing docs match the product law.
+- [x] 1.1 Update durable cli-shell app spec with default-right, default-open, and popup/status-bar modal behavior.
+- [x] 1.2 Update `apps/cli-shell/SPEC.md`, README, and Help panel copy so user-facing docs match the app law.
 
 ## 2. Implementation
 
-- [x] 2.1 Set built-in product settings default Chat layout to `right`.
+- [x] 2.1 Set built-in app settings default Chat layout to `right`.
 - [x] 2.2 Make tmux attach auto-open/reuse the singleton Chat right pane.
 - [x] 2.3 Normalize missing runtime tmux Chat default layout to `right`, not `cover`.
 - [x] 2.4 Remove dead or misleading tmux plan roles introduced by the change.

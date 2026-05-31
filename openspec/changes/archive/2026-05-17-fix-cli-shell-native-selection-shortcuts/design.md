@@ -59,7 +59,7 @@ Rationale:
 Rejected alternative:
 
 - Emit repeated Shift+Arrow escape sequences and hope the child shell/editor selects.
-  - Rejected because the current product law says selected range/copy belongs to backend owners, not a host-local or child-editor guess.
+  - Rejected because the current app law says selected range/copy belongs to backend owners, not a host-local or child-editor guess.
 
 ### 3. Debug traces must expose both capture and routing
 
@@ -83,7 +83,7 @@ Rationale:
   Mitigation: only use it as the fallback when the terminal host did not provide a native Home/End sequence; preserve native sequence when present.
 
 - **Risk: Option+Shift selection is selection-range semantics, not child shell editor highlight.**  
-  Mitigation: this matches the product law and copy behavior. Child editor-native selection can be a future backend capability if needed.
+  Mitigation: this matches the app law and copy behavior. Child editor-native selection can be a future backend capability if needed.
 
 ## Migration Plan
 

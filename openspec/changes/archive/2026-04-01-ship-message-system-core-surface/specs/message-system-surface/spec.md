@@ -1,6 +1,6 @@
 ## ADDED Requirements
 
-### Requirement: Message-system SHALL present rooms as a standalone product surface
+### Requirement: Message-system SHALL present rooms as a standalone app surface
 The WebUI SHALL expose a dedicated message-system route that lists global rooms, renders one selected room transcript, and shows room users/access controls without depending on workspace or session ownership.
 
 #### Scenario: Room catalog navigation

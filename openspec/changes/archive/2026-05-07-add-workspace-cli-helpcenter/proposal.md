@@ -8,7 +8,7 @@ The current runtime teaches AI to discover shell contracts through `<command> --
 - Add a browser-facing workspace CLI catalog query so WebUI can render the current workspace/avatar command surface without reconstructing shell truth in feature code.
 - Add a new `CLI` mode inside the Workspace workbench beside `Explorer`, `Rules`, and `Private`.
 - Let workspace file-backed tools optionally register `name + description` through a sidecar manifest, while still surfacing legacy callable tools with an explicit fallback description so the catalog does not hide usable commands.
-- Keep arbitrary PATH binaries out of the product command catalog, while explicitly including `just-bash` builtins because they are part of the real shell contract.
+- Keep arbitrary PATH binaries out of the app command catalog, while explicitly including `just-bash` builtins because they are part of the real shell contract.
 
 ## Capabilities
 

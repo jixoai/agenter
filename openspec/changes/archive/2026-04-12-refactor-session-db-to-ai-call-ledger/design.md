@@ -18,7 +18,7 @@ The runtime kernel has already crossed a paradigm boundary:
 - `loopbus_trace`
 - `terminal_activity`
 
-That older schema made sense when the product mental model was “conversation + cycles + devtools traces”. It is now oversized and conceptually wrong for the current core law. The new kernel primarily needs two kinds of durable facts:
+That older schema made sense when the app mental model was “conversation + cycles + devtools traces”. It is now oversized and conceptually wrong for the current core law. The new kernel primarily needs two kinds of durable facts:
 
 1. what the model actually saw or produced as message-like payload;
 2. what each AI call objectively sent and received.

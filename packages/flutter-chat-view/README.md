@@ -2,7 +2,7 @@
 
 `flutter-chat-view` is the Flutter-side room chat package for Agenter.
 
-Phase 1 is Web-first, but the package is intentionally renderer-neutral: the controller, models, merge logic, and composer plugin contract are shared laws that later Android, iOS, and macOS shells can reuse without inheriting any `extensions/studio` coupling.
+Phase 1 is Web-first, but the package is intentionally renderer-neutral: the controller, models, merge logic, and composer plugin contract are shared laws that later Android, iOS, and macOS shells can reuse without inheriting any `apps/studio` coupling.
 
 ## Current scope
 
@@ -13,7 +13,7 @@ Phase 1 is Web-first, but the package is intentionally renderer-neutral: the con
 - Upload room attachments through the canonical room asset API before send.
 - Render a host-composable Flutter chat stage with transcript/composer primitives and explicit plugin hooks.
 - Provide package-level localizations for durable stage copy such as retry, composer actions, recalled state, and empty transcript states.
-- Ship a standalone Flutter Web product shell under `example/` with persistent connection profiles and share-link hydration.
+- Ship a standalone Flutter Web app shell under `example/` with persistent connection profiles and share-link hydration.
 
 ## Canonical transport contract
 
@@ -25,7 +25,7 @@ The package does not invent a second transport protocol. It follows the same roo
 
 ## Phase 1 non-goals
 
-- No `extensions/studio` embed
+- No `apps/studio` embed
 - No native Android / iOS / macOS packaging yet
 - No final anchored virtualization runtime yet
 - No full plugin runtime beyond explicit trigger-plugin hooks
@@ -38,7 +38,7 @@ The package does not invent a second transport protocol. It follows the same roo
 - composer plugin contracts
 - host-owned `FlutterChatView` stage widgets
 
-## Example product shell
+## Example app shell
 
 Run the standalone demo:
 

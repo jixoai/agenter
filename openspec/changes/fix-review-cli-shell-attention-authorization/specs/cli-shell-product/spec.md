@@ -2,7 +2,7 @@
 
 ### Requirement: Cli-shell SHALL project current-bound-terminal attention-backed authorization actions
 
-Cli-shell SHALL render authorization actions for the TerminalSystem terminal currently bound to the product session. The rendered popup is a product projection over TerminalSystem action state and attention-item facts; it is not a second authorization store and it does not decide terminal authority locally.
+Cli-shell SHALL render authorization actions for the TerminalSystem terminal currently bound to the app session. The rendered popup is a app projection over TerminalSystem action state and attention-item facts; it is not a second authorization store and it does not decide terminal authority locally.
 
 #### Scenario: Current-terminal pending action appears in native cli-shell
 - **GIVEN** cli-shell session `shell-4` is currently bound to terminal `T`
@@ -13,7 +13,7 @@ Cli-shell SHALL render authorization actions for the TerminalSystem terminal cur
 #### Scenario: Approval uses TerminalSystem action API
 - **WHEN** the user approves a cli-shell authorization popup
 - **THEN** cli-shell calls the generic TerminalSystem approval API for that terminal action
-- **AND** it does not directly write bytes to the terminal from product UI code
+- **AND** it does not directly write bytes to the terminal from app UI code
 - **AND** it does not mutate managed/hosting attention
 
 #### Scenario: Denial can carry a reason
@@ -48,7 +48,7 @@ Managed/hosting mode SHALL remain attention scheduling state only. It SHALL NOT 
 
 ### Requirement: Cli-shell BDD SHALL cover authorization boundary behavior
 
-Cli-shell SHALL include BDD coverage for authorization behavior at the product boundary, including native TUI and real AI acceptance where semantic behavior matters.
+Cli-shell SHALL include BDD coverage for authorization behavior at the app boundary, including native TUI and real AI acceptance where semantic behavior matters.
 
 #### Scenario: Native approval resumes terminal action
 - **WHEN** a native cli-shell authorization popup is approved while the original guard write is waiting

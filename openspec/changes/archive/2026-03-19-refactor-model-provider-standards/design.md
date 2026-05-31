@@ -2,7 +2,7 @@
 
 The repository already exposes multiple provider labels in settings, but `ModelClient` still branches on `kind` and mixes together three distinct concerns: protocol format, vendor compatibility quirks, and optional vendor-only enhancements. This has already produced DeepSeek-specific paths and makes future support for Kimi, GLM, Doubao, or other compatible vendors fragile.
 
-A second constraint is that the current `@tanstack/ai-openai` text adapter internally uses OpenAI Responses semantics even though our product still needs to reason about `openai-chat`, `openai-completion`, and `openai-responses` as separate compatibility declarations. The product therefore needs its own standard layer instead of leaking SDK naming into user-facing configuration.
+A second constraint is that the current `@tanstack/ai-openai` text adapter internally uses OpenAI Responses semantics even though our app still needs to reason about `openai-chat`, `openai-completion`, and `openai-responses` as separate compatibility declarations. The app therefore needs its own standard layer instead of leaking SDK naming into user-facing configuration.
 
 ## Goals / Non-Goals
 
@@ -61,7 +61,7 @@ Runtime draft resolution, model debug payloads, and model-call metadata will exp
 
 ## Risks / Trade-offs
 
-- [Risk] OpenAI naming conflicts with TanStack adapter naming → Mitigation: keep product-level `apiStandard` names explicit and map them to underlying adapter factories internally.
+- [Risk] OpenAI naming conflicts with TanStack adapter naming → Mitigation: keep app-level `apiStandard` names explicit and map them to underlying adapter factories internally.
 - [Risk] Legacy config compatibility may mask invalid assumptions → Mitigation: normalize centrally, add tests for every legacy mapping, and remove runtime reliance on `kind`.
 - [Risk] `openai-completion` has fewer capabilities than chat/responses → Mitigation: capability resolution must explicitly disable unsupported features and compact paths.
 - [Risk] UI/tests may drift after payload changes → Mitigation: update client-sdk/webui contracts in the same change and add BDD tests for debug payload shape.

@@ -2,7 +2,7 @@
 
 ## Why This Exists
 
-This change is interaction-sensitive. If the interaction is vague, the architecture drifts into the wrong shape: persistent product delegation, WebUI-only permission screens, or cli-shell-specific kernel rules. The product story is the source of the architecture.
+This change is interaction-sensitive. If the interaction is vague, the architecture drifts into the wrong shape: persistent app delegation, WebUI-only permission screens, or cli-shell-specific kernel rules. The app story is the source of the architecture.
 
 ## Story 1: Web Terminal Inline Approval
 
@@ -56,7 +56,7 @@ terminalPermissionRequests(filter: all)
 
 The user is inside cli-shell native mode. The visible surface is `shell-terminal-view`, backed by OpenTUI. Shell Assistant tries a guarded terminal write. The same TerminalInstance request appears through a terminal-id filtered subscription.
 
-`shell-terminal-view` has the same conceptual contract as `web-terminal-view`: it can call `onRequestPermissions` for product customization, otherwise it renders a default OpenTUI TopLayer overlay. The overlay is nested above the terminal renderable and does not mutate shell scrollback or product-managed state.
+`shell-terminal-view` has the same conceptual contract as `web-terminal-view`: it can call `onRequestPermissions` for app customization, otherwise it renders a default OpenTUI TopLayer overlay. The overlay is nested above the terminal renderable and does not mutate shell scrollback or app-managed state.
 
 ```text
 cli-shell native host
@@ -97,16 +97,16 @@ pending request R1
         +--> deny/expire: no PTY write, no fallback shell execution
 ```
 
-## Story 6: Another Product Embeds Terminal View
+## Story 6: Another App Embeds Terminal View
 
-A future product embeds `web-terminal-view` or `shell-terminal-view` without any cli-shell managed/takeover concept. It should still get the same guard approval affordance because the component observes TerminalSystem permission facts. It should not inherit cli-shell hosting labels, managed state, or product delegation behavior.
+A future app embeds `web-terminal-view` or `shell-terminal-view` without any cli-shell managed/takeover concept. It should still get the same guard approval affordance because the component observes TerminalSystem permission facts. It should not inherit cli-shell hosting labels, managed state, or app delegation behavior.
 
-This confirms the ownership split: terminal-view owns a reusable UI affordance, TerminalSystem owns authorization, and cli-shell owns only cli-shell product interpretation.
+This confirms the ownership split: terminal-view owns a reusable UI affordance, TerminalSystem owns authorization, and cli-shell owns only cli-shell app interpretation.
 
-## Product Rules
+## App Rules
 
 - Permission requests are terminal-instance state, not cli-shell state.
-- Permission requests are not product delegation.
+- Permission requests are not app delegation.
 - Approval creates terminal-native write authority only for the approved actor/request.
 - Deny and expiry leave the PTY unchanged and do not authorize fallback execution in another shell.
 - `terminal-view` components provide the interaction affordance, not the authority.
@@ -117,7 +117,7 @@ This confirms the ownership split: terminal-view owns a reusable UI affordance, 
 ## Architecture Derived From The Story
 
 - TerminalSystem exposes a subscription for permission request events with an optional `terminalId` filter.
-- The subscription is live, access-controlled, and TerminalInstance-bound. It is not a new product database.
+- The subscription is live, access-controlled, and TerminalInstance-bound. It is not a new app database.
 - TerminalSystem owns equivalence and lifecycle rules for pending requests; UI clients do not deduplicate by inventing local authority state.
 - Client SDK exposes both:
   - global retain/subscribe path for app notifications

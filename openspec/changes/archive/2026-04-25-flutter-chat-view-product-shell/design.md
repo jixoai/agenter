@@ -21,7 +21,7 @@
 
 ### Decision: 维持 `kernel / shell` 二分
 
-`packages/flutter-chat-view` 继续持有 transport、message model、composer plugin、stage-level transcript/composer law；`example` 负责 app-level navigation、profile persistence、product IA。这样 Web 首发不会把 app-shell 状态污染到可移植 package 中。
+`packages/flutter-chat-view` 继续持有 transport、message model、composer plugin、stage-level transcript/composer law；`example` 负责 app-level navigation、profile persistence、app IA。这样 Web 首发不会把 app-shell 状态污染到可移植 package 中。
 
 Alternatives considered:
 - 继续把 app-level 状态堆进 `FlutterChatView`：会让 package 退化成产品页面，而不是可移植 stage primitive。
@@ -50,7 +50,7 @@ package 内部的 `FlutterChatView` 不再强占 app-level header，而是向 ho
 Alternatives considered:
 - 保留 package 自带 header 并在外层再套一层产品 header：会造成重复 chrome。
 
-### Decision: transcript affordance 先做 product semantics，再做完整 scroll runtime
+### Decision: transcript affordance 先做 app semantics，再做完整 scroll runtime
 
 本轮先补足时间分隔、message selection、return-to-latest、selected-detail projection 等产品级语义；anchored virtualization 继续作为下一次 scroll-runtime 范式升级处理。这样可以先把 IA 和 interaction shell 建立起来，而不是被底层 scroll runtime 卡死。
 
@@ -62,7 +62,7 @@ Alternatives considered:
 
 ## Migration Plan
 
-1. 新建 `flutter-chat-view-product-shell` OpenSpec change。
+1. 新建 `flutter-chat-view-app-shell` OpenSpec change。
 2. 在 `example` 内引入 app-shell controller、profile store 和响应式壳层。
 3. 调整 `packages/flutter-chat-view`，让 chat stage 能被 host shell 组合。
 4. 添加/更新 widget tests，验证 compact 与 desktop shell。

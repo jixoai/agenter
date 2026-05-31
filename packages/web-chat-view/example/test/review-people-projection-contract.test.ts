@@ -79,7 +79,7 @@ const peopleEnvelope = (): ReviewPeopleEnvelope => ({
       sourceId: "remote-lab",
       remoteContactId: "auth:mira",
       remoteLabel: "Mira",
-      remoteSubtitle: "Product reviewer",
+      remoteSubtitle: "App reviewer",
       message: "Requesting access to the mobile review room.",
       state: "pending",
       createdAt: NOW,

@@ -1,24 +1,24 @@
 ## ADDED Requirements
 
-### Requirement: Cli-shell SHALL render native and web hosts from the same terminal-2 product screen
+### Requirement: Cli-shell SHALL render native and web hosts from the same terminal-2 app screen
 
-Cli-shell SHALL make native mode and `--web` mode render the same terminal-2 final product screen. `--web` SHALL be an equivalent host for the cli-shell product surface, not a shell-only, reduced, or debugging-only projection.
+Cli-shell SHALL make native mode and `--web` mode render the same terminal-2 final app screen. `--web` SHALL be an equivalent host for the cli-shell app surface, not a shell-only, reduced, or debugging-only projection.
 
-#### Scenario: Native and web show the same product screen
-- **GIVEN** native cli-shell and `cli-shell --web` attach to the same product session
-- **WHEN** terminal-2 publishes the final product screen
+#### Scenario: Native and web show the same app screen
+- **GIVEN** native cli-shell and `cli-shell --web` attach to the same app session
+- **WHEN** terminal-2 publishes the final app screen
 - **THEN** both hosts render the same shell content, dialogue state, bottom/status chrome, cursor ownership, selection visuals, and layout state from terminal-2 truth
-- **AND** neither host supplies an accepted product state that the other host cannot observe
+- **AND** neither host supplies an accepted app state that the other host cannot observe
 
-#### Scenario: Web mode is suitable for product E2E
+#### Scenario: Web mode is suitable for app E2E
 - **WHEN** browser-driven E2E opens `cli-shell --web`
-- **THEN** it can verify the same final product behaviors expected in native mode
+- **THEN** it can verify the same final app behaviors expected in native mode
 - **AND** it does not need a separate Web-only acceptance target that differs from Ghostty native behavior
 
 #### Scenario: Web mode does not attach directly to shell-only truth
 - **WHEN** `cli-shell --web` starts
-- **THEN** it binds to terminal-2 final product screen truth
-- **AND** it does not render terminal-1 directly as the official product surface
+- **THEN** it binds to terminal-2 final app screen truth
+- **AND** it does not render terminal-1 directly as the official app surface
 
 ### Requirement: Cli-shell SHALL model terminal-chat as an independent OpenTUI dialogue backend
 
@@ -53,10 +53,10 @@ Cli-shell SHALL model terminal-chat as an independent OpenTUI dialogue backend t
 
 ### Requirement: Cli-shell shell offscreen renderer SHALL own shell scrollbar focus selection cursor and wrapping
 
-Cli-shell SHALL render shell content through a shell offscreen renderer that owns shell scrollbar, focus, selection, cursor, and wrapping as part of the same rendered shell frame. Terminal-2 SHALL compose this complete shell frame and MUST NOT reconstruct those concerns as external product decorations.
+Cli-shell SHALL render shell content through a shell offscreen renderer that owns shell scrollbar, focus, selection, cursor, and wrapping as part of the same rendered shell frame. Terminal-2 SHALL compose this complete shell frame and MUST NOT reconstruct those concerns as external app decorations.
 
 #### Scenario: Shell renderer emits complete shell frame
-- **WHEN** terminal-1 shell truth is projected into the cli-shell product screen
+- **WHEN** terminal-1 shell truth is projected into the cli-shell app screen
 - **THEN** the shell offscreen renderer SHALL emit one frame containing shell cells, shell scrollbar, shell focus, shell selection, shell cursor, and shell wrapping
 - **AND** terminal-2 SHALL place that complete frame without splitting shell interaction visuals into separate owner state
 
@@ -68,11 +68,11 @@ Cli-shell SHALL render shell content through a shell offscreen renderer that own
 #### Scenario: Shell scrollbar interaction returns through shell owner
 - **WHEN** the user wheels, drags, or clicks the shell scrollbar
 - **THEN** cli-shell SHALL route that event to the shell owner path
-- **AND** the visible result SHALL return through the next terminal-2 final product screen
+- **AND** the visible result SHALL return through the next terminal-2 final app screen
 
 ### Requirement: Cli-shell SHALL keep terminal roles precise
 
-Cli-shell SHALL preserve three distinct backend roles: terminal-1 as the PTY-backed shell backend, terminal-chat as the OpenTUI dialogue backend, and terminal-2 as the composed final product terminal backend. The product SHALL NOT collapse these roles into one terminal identity or split them into host-local visible truths.
+Cli-shell SHALL preserve three distinct backend roles: terminal-1 as the PTY-backed shell backend, terminal-chat as the OpenTUI dialogue backend, and terminal-2 as the composed final app terminal backend. The app SHALL NOT collapse these roles into one terminal identity or split them into host-local visible truths.
 
 #### Scenario: Terminal-1 remains shell PTY truth
 - **WHEN** shell commands run inside cli-shell
@@ -84,7 +84,7 @@ Cli-shell SHALL preserve three distinct backend roles: terminal-1 as the PTY-bac
 - **THEN** terminal-chat SHALL own that dialogue state
 - **AND** terminal-1 shell PTY scrollback SHALL NOT be used as dialogue truth
 
-#### Scenario: Terminal-2 remains final product truth
+#### Scenario: Terminal-2 remains final app truth
 - **WHEN** cli-shell publishes visible output for native or Web hosts
-- **THEN** terminal-2 SHALL own the final composed product screen
-- **AND** native and Web hosts SHALL render terminal-2 rather than assembling their own accepted product surface
+- **THEN** terminal-2 SHALL own the final composed app screen
+- **AND** native and Web hosts SHALL render terminal-2 rather than assembling their own accepted app surface

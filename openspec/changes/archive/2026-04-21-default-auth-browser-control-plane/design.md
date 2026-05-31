@@ -130,4 +130,4 @@ Alternative rejected:
 
 ## Open Questions
 
-- None for this slice. The remaining open work is implementation and verification, not product semantics.
+- None for this slice. The remaining open work is implementation and verification, not app semantics.

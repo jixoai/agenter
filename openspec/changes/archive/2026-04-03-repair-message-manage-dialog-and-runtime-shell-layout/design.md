@@ -13,7 +13,7 @@ For the runtime shell, the page currently renders a top hero, one large content 
 - Give the room-management dialog one explicit rail and one explicit detail stage
 - Ensure all stretchable dialog sections and runtime rails are owned by `ScrollView`
 - Rebuild runtime tabs so the selected tab has a strong primary surface and the right rail stays secondary
-- Preserve current product capabilities and routes while improving layout lawfulness
+- Preserve current app capabilities and routes while improving layout lawfulness
 
 **Non-Goals**
 

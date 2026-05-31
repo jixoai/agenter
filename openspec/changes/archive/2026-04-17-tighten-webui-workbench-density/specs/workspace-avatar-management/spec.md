@@ -34,7 +34,7 @@ The fixed `Avatars / Catalog` surface SHALL remain list-first and density-aware 
 - **THEN** those separations follow distinct aligned seam roles
 - **THEN** the page no longer depends on one repeated raw `border-*` treatment to explain every structural relationship
 
-#### Scenario: Avatar control tower names canonical facts by product meaning
+#### Scenario: Avatar control tower names canonical facts by app meaning
 
 - **WHEN** the operator scans the first durable fact in the runtime lens
 - **THEN** the page frames it as the canonical runtime identity rather than only as an implementation-flavored field label
@@ -43,7 +43,7 @@ The fixed `Avatars / Catalog` surface SHALL remain list-first and density-aware 
 #### Scenario: Avatar control tower gives the primary runtime fact distinct hierarchy
 
 - **WHEN** the operator scans the runtime lens on desktop after selecting an avatar
-- **THEN** the first durable runtime fact reads as a product-led fact with its own label/value hierarchy
+- **THEN** the first durable runtime fact reads as a app-led fact with its own label/value hierarchy
 - **THEN** lower runtime details keep the tighter audit/debug field treatment instead of visually competing with that primary fact
 
 #### Scenario: Avatar control tower keeps the primary runtime fact attached to the selected identity lane

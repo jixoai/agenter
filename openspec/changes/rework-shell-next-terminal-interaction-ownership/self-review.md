@@ -6,8 +6,8 @@
 - What changed:
   - Terminal host input ownership moved into `packages/termless-core/src/terminal-host-input.ts`.
   - Local BunPTY and live transport sources now instantiate that controller directly and own the state machine at the source boundary.
-  - The old `extensions/shell-next/src/terminal-engine/*` path was deleted.
-  - The renderer-side semantic selection behavior was isolated into `extensions/shell-next/src/renderable-mux/renderer-selection.ts`.
+  - The old `apps/shell-next/src/terminal-engine/*` path was deleted.
+  - The renderer-side semantic selection behavior was isolated into `apps/shell-next/src/renderable-mux/renderer-selection.ts`.
   - That behavior is only installed by renderer panes that explicitly opt in.
   - No new terminal-specific selection behavior was added back into generic pane composition.
 - Result:
@@ -36,7 +36,7 @@
 - What changed:
   - The new behavior stays inside shell-next-local files.
   - No OpenCompose API was widened for terminal/editor-specific mouse semantics.
-  - The neutral-path proof lives in `extensions/shell-next/test/renderer-grid-demo.test.ts`.
+  - The neutral-path proof lives in `apps/shell-next/test/renderer-grid-demo.test.ts`.
 - Result:
   - This round preserved the generic pane law.
   - Semantic selection stayed at the content-family layer, not the pane-layout layer.
@@ -52,4 +52,4 @@
 - `ScrollBox`-hosted transcript rows needed explicit event-to-local coordinate projection. Naive `screenY` math was not enough.
 - Renderer double-click timing through the higher app shell was flaky for BDD. Surface-level event injection was more reliable and matched the architectural seam better.
 - Middle-click selection preservation had to stay explicit without inventing a second clipboard track. The final behavior kept the single-path rule.
-- `Run in Background` originally destroyed product-bound terminal sources because UI shutdown and source disposal were coupled. The runtime needed an explicit preserve-source path so background continuation and terminal termination became different actions.
+- `Run in Background` originally destroyed app-bound terminal sources because UI shutdown and source disposal were coupled. The runtime needed an explicit preserve-source path so background continuation and terminal termination became different actions.

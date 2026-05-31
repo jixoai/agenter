@@ -1,6 +1,6 @@
 ## Why
 
-Agenter's current OpenSpec workflow can describe proposal/spec/design/tasks, but it does not preserve the user's original intent as the single truth or force the review loop back through that intent. The user requested a new project-specific schema where visual/product intent drives specs, BDD tasks, implementation, and self-review.
+Agenter's current OpenSpec workflow can describe proposal/spec/design/tasks, but it does not preserve the user's original intent as the single truth or force the review loop back through that intent. The user requested a new project-specific schema where visual/app intent drives specs, BDD tasks, implementation, and self-review.
 
 ## What Changes
 

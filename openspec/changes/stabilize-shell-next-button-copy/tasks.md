@@ -1,9 +1,9 @@
 ## 1. OpenSpec And Reference Audit
 
 - [x] 1.1 Validate `stabilize-shell-next-button-copy` artifacts before implementation.
-- [x] 1.2 Confirm `git diff -- extensions/cli-shell` is empty and keep cli-shell read-only.
+- [x] 1.2 Confirm `git diff -- apps/cli-shell` is empty and keep cli-shell read-only.
 - [x] 1.3 Read legacy cli-shell selection/copy/paste paths and record the shell-next code that must copy the behavior.
-- [x] 1.4 Record why OpenTUI does not give us a product Button and why shell-next needs its own Button primitive.
+- [x] 1.4 Record why OpenTUI does not give us a app Button and why shell-next needs its own Button primitive.
 
 ## 2. BDD Regression Coverage
 
@@ -45,8 +45,8 @@
 
 - [x] 7.1 Run `openspec validate stabilize-shell-next-button-copy --strict`.
 - [x] 7.2 Run focused BDD tests for shell-next button, copy/paste, resize, statusbar, and top-layer behavior.
-- [x] 7.3 Run `bun run --filter 'agenter-ext-shell-next' test`.
-- [x] 7.4 Run `bun run --filter 'agenter-ext-shell-next' typecheck`.
+- [x] 7.3 Run `bun run --filter 'agenter-app-shell-next' test`.
+- [x] 7.4 Run `bun run --filter 'agenter-app-shell-next' typecheck`.
 - [x] 7.5 Run `git diff --check`.
 - [x] 7.6 Commit OpenSpec artifacts separately from implementation.
 - [x] 7.7 Resolve any pre-existing unrelated dirty workspace state explicitly so final `git status --short` is clean.
@@ -55,7 +55,7 @@
 
 - [x] 8.1 Record the 2026-05-28 manual acceptance failures in proposal, design, spec, and audit artifacts.
 - [x] 8.2 Re-validate `stabilize-shell-next-button-copy` after reopening the change.
-- [x] 8.3 Confirm `extensions/cli-shell` remains read-only before rework implementation.
+- [x] 8.3 Confirm `apps/cli-shell` remains read-only before rework implementation.
 
 ## 9. BDD Rework Coverage
 
@@ -79,8 +79,8 @@
 - [x] 11.2 Self review round 4: compare implementation against prior Button/copy/paste/resize requirements and record remaining environment-dependent risks.
 - [x] 11.3 Run `openspec validate stabilize-shell-next-button-copy --strict`.
 - [x] 11.4 Run focused BDD tests for button chrome, host copy/primary selection, terminal key selection, source resize scheduling, and resize handle clicks.
-- [x] 11.5 Run `bun run --filter 'agenter-ext-shell-next' test`.
-- [x] 11.6 Run `bun run --filter 'agenter-ext-shell-next' typecheck`.
+- [x] 11.5 Run `bun run --filter 'agenter-app-shell-next' test`.
+- [x] 11.6 Run `bun run --filter 'agenter-app-shell-next' typecheck`.
 - [x] 11.7 Run `git diff --check`.
 - [x] 11.8 Commit the completed rework and leave `git status --short` clean.
 
@@ -115,10 +115,10 @@
 - [x] 15.1 Self review round 5: compare implementation against the second manual acceptance feedback and architecture boundary correction.
 - [x] 15.2 Run `openspec validate stabilize-shell-next-button-copy --strict`.
 - [x] 15.3 Run focused BDD tests for Terminal Engine input transaction, follow-cursor, selection preservation, primary capability, and Room-backed Chat chrome.
-- [x] 15.4 Run `bun run --filter 'agenter-ext-shell-next' test`.
-- [x] 15.5 Run `bun run --filter 'agenter-ext-shell-next' typecheck`.
+- [x] 15.4 Run `bun run --filter 'agenter-app-shell-next' test`.
+- [x] 15.5 Run `bun run --filter 'agenter-app-shell-next' typecheck`.
 - [x] 15.6 Run `git diff --check`.
-- [x] 15.7 Confirm `git diff -- extensions/cli-shell` is empty.
+- [x] 15.7 Confirm `git diff -- apps/cli-shell` is empty.
 - [x] 15.8 Commit the completed second rework and leave `git status --short` clean.
 
 ## 16. Third Rework Reopen And BDD
@@ -131,7 +131,7 @@
 
 ## 17. Third Rework Implementation
 
-- [x] 17.1 Introduce a product-facing resize send scheduler with `200ms` debounce above terminal source/backend conflation.
+- [x] 17.1 Introduce a app-facing resize send scheduler with `200ms` debounce above terminal source/backend conflation.
 - [x] 17.2 Keep bottom-layer latest-only resize conflation at the backend boundary and verify the two layers do not collapse into one responsibility.
 - [x] 17.3 Move remaining ShellPane selection gesture/state ownership out of the Shell/OpenTUI frame layer and into shell-next terminal-kernel-owned modules.
 - [x] 17.4 Fix shared Button rendering so hover/active styling decorates inner content only while brackets remain plain.
@@ -146,10 +146,10 @@
 - [x] 18.5 Self review round 5: merge the round notes into one drift list and one encountered-problems list.
 - [x] 18.6 Run `openspec validate stabilize-shell-next-button-copy --strict`.
 - [x] 18.7 Run focused shell-next BDD covering resize, button rendering, and selection ownership.
-- [x] 18.8 Run `bun run --filter 'agenter-ext-shell-next' test`.
-- [x] 18.9 Run `bun run --filter 'agenter-ext-shell-next' typecheck`.
+- [x] 18.8 Run `bun run --filter 'agenter-app-shell-next' test`.
+- [x] 18.9 Run `bun run --filter 'agenter-app-shell-next' typecheck`.
 - [x] 18.10 Run `git diff --check`.
-- [x] 18.11 Confirm `git diff -- extensions/cli-shell` is empty.
+- [x] 18.11 Confirm `git diff -- apps/cli-shell` is empty.
 - [x] 18.12 Commit spec updates separately from implementation and leave `git status --short` clean after the final implementation commit.
 
 ## 19. Fourth Rework Reopen And BDD
@@ -172,8 +172,8 @@
 - [x] 21.1 Self review: compare the implementation against the latest five manual acceptance bullets in plain language.
 - [x] 21.2 Run `openspec validate stabilize-shell-next-button-copy --strict`.
 - [x] 21.3 Run focused shell-next BDD for button click commitment, statusbar active underline, and semantic double/triple click selection.
-- [x] 21.4 Run `bun run --filter 'agenter-ext-shell-next' test`.
-- [x] 21.5 Run `bun run --filter 'agenter-ext-shell-next' typecheck`.
+- [x] 21.4 Run `bun run --filter 'agenter-app-shell-next' test`.
+- [x] 21.5 Run `bun run --filter 'agenter-app-shell-next' typecheck`.
 - [x] 21.6 Run `git diff --check`.
-- [x] 21.7 Confirm `git diff -- extensions/cli-shell` is empty.
+- [x] 21.7 Confirm `git diff -- apps/cli-shell` is empty.
 - [x] 21.8 Commit spec updates separately from implementation and leave `git status --short` clean again.

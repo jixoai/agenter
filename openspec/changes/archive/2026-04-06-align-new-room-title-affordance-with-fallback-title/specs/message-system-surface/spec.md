@@ -1,6 +1,6 @@
 ## MODIFIED Requirements
 
-### Requirement: Message-system SHALL present rooms as a standalone product surface
+### Requirement: Message-system SHALL present rooms as a standalone app surface
 
 The `New room` surface SHALL describe empty-title behavior objectively. If the control plane falls back to `Room` when the title field is blank, the route SHALL not imply a different default title through placeholder or helper copy.
 

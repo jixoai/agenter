@@ -1,6 +1,6 @@
 ## MODIFIED Requirements
 
-### Requirement: Message-system SHALL present rooms as a standalone product surface
+### Requirement: Message-system SHALL present rooms as a standalone app surface
 
 The WebUI SHALL expose a dedicated message-system route that lists global rooms, renders one selected room through the shared workbench chrome, and keeps the selected room body focused on one primary content mode at a time. The Room toolbar SHALL present the current viewer identity, room-local actions, and body-mode chips inside the fixed shared toolbar slot, while room administration remains in a dedicated management surface.
 

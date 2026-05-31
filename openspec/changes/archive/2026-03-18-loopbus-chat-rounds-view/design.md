@@ -22,7 +22,7 @@ This change spans persistence, realtime runtime state, TRPC, client-side project
 ### 1. Historical rounds are projected from cycle facts
 - Decision: build `ChatRound` from `session_cycle.collectedInputs`, `session_block.cycleId`, and `model_call.cycleId`.
 - Rationale: these tables are already the durable facts for what each cycle collected and produced. They express the round boundary directly and avoid reconstructing it from trace logs.
-- Alternative considered: derive rounds from loopbus traces or replay the flat chat list. Rejected because traces are diagnostic, not product-facing truth, and flat messages lose the cycle boundary.
+- Alternative considered: derive rounds from loopbus traces or replay the flat chat list. Rejected because traces are diagnostic, not app-facing truth, and flat messages lose the cycle boundary.
 
 ### 2. Live streaming stays in runtime, not in the database
 - Decision: `SessionRuntime` keeps an `activeRound` object with `pending/collecting/streaming/applying` states and emits `runtime.round.updated` events.

@@ -2,17 +2,17 @@
 
 ### Requirement: Offscreen terminal interaction enhancements SHALL be configurable
 
-The offscreen terminal projection layer SHALL expose configurable interaction enhancements for behavior that a backend may not provide natively. Product runtime SHALL enable an enhancement only when the backend recommendation says the backend is missing that behavior.
+The offscreen terminal projection layer SHALL expose configurable interaction enhancements for behavior that a backend may not provide natively. App runtime SHALL enable an enhancement only when the backend recommendation says the backend is missing that behavior.
 
 #### Scenario: Backend recommendation enables only missing behavior
 - **WHEN** cli-shell resolves the interaction profile for a backend
 - **THEN** each enhancement SHALL be enabled only when the backend recommendation marks that behavior as missing
 - **AND** capable backend-native behavior SHALL NOT be overridden by default
 
-#### Scenario: Enhancement profile stays product-local
+#### Scenario: Enhancement profile stays app-local
 - **WHEN** cli-shell configures offscreen interaction behavior
 - **THEN** the configuration SHALL remain inside `@agenter/cli-shell`
-- **AND** core terminal-system modules SHALL NOT import cli-shell product policy
+- **AND** core terminal-system modules SHALL NOT import cli-shell app policy
 
 ### Requirement: Offscreen terminal key input SHALL follow backend cursor after successful navigation
 
@@ -51,7 +51,7 @@ When word-navigation enhancement is enabled, Option+Left and Option+Right SHALL 
 
 #### Scenario: Option Up and Option Down stay backend native
 - **WHEN** the user presses Option+Up or Option+Down
-- **THEN** cli-shell SHALL NOT invent product-specific word navigation semantics
+- **THEN** cli-shell SHALL NOT invent app-specific word navigation semantics
 - **AND** it SHALL pass through backend/native terminal input when a native sequence is available
 
 ### Requirement: Supported terminal key behavior SHALL be covered by BDD matrix tests

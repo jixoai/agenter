@@ -44,7 +44,7 @@ The user also made the migration policy explicit:
   - remote message-system instances must eventually expose the same room-management contract over RPC/pub-sub
 - Record frontend impact explicitly:
   - room management UI must separate "room control identity" from "send/view as participant"
-  - Studio is the superadmin-facing product, so `superKey` / `systemId` / domain-source metadata should stay available but low-emphasis, usually inside metadata/manage surfaces rather than the main chat focus path
+  - Studio is the superadmin-facing app, so `superKey` / `systemId` / domain-source metadata should stay available but low-emphasis, usually inside metadata/manage surfaces rather than the main chat focus path
   - `web-chat-view` remains the ordinary-user-focused transcript/composer surface and should not be polluted with superadmin-heavy room-management chrome
   - room detail remains readable when the operator holds `superKey` control but does not hold a sending seat
 - Reset local message durability instead of carrying forward the old schema.
@@ -67,7 +67,7 @@ The user also made the migration policy explicit:
 
 ## Impact
 
-- Affected packages: `@agenter/message-system`, `@agenter/app-server`, `agenter-ext-studio`
+- Affected packages: `@agenter/message-system`, `@agenter/app-server`, `agenter-app-studio`
 - New package/spec surface likely required for room durability ownership, even if the first implementation still lands inside existing package boundaries
 - Existing local message databases will be intentionally invalidated/reset
 - Existing remote assumptions around managed-seat / follow-up transport should be treated as obsolete and redesigned from the new room-management boundary upward

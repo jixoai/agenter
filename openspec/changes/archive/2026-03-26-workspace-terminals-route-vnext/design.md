@@ -1,6 +1,6 @@
 ## Context
 
-The product direction already accepts multi-message channels and multi-terminals as first-class runtime concepts, but the workspace shell still gives chats a primary route while burying terminals inside secondary tooling. The codebase already contains a dedicated `TerminalPanel` and terminal activity inspection path, so the problem is not missing atoms; it is that the shell hierarchy does not expose them directly.
+The app direction already accepts multi-message channels and multi-terminals as first-class runtime concepts, but the workspace shell still gives chats a primary route while burying terminals inside secondary tooling. The codebase already contains a dedicated `TerminalPanel` and terminal activity inspection path, so the problem is not missing atoms; it is that the shell hierarchy does not expose them directly.
 
 ## Goals / Non-Goals
 

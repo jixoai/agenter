@@ -11,7 +11,7 @@
 
 ## 3. Implementation
 
-- [ ] 3.1 Run `bun run openspec:vision -- commit-check <change> --phase apply` before product-code work starts and commit ready OpenSpec artifacts.
+- [ ] 3.1 Run `bun run openspec:vision -- commit-check <change> --phase apply` before app-code work starts and commit ready OpenSpec artifacts.
 - [ ] 3.2 Implement the smallest platform-law change or atom needed by the spec.
 - [ ] 3.3 Add concise intent comments at critical effect points derived from `plans/plan.md`.
 - [ ] 3.4 Implement any required migration / cleanup / reset helper that the approved breaking update needs.

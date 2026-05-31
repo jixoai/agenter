@@ -1,7 +1,7 @@
 ## ADDED Requirements
 
 ### Requirement: Shared structural package SHALL export the workbench split-detail primitive
-`@agenter/svelte-components` SHALL expose the shared workbench split-detail primitive and its ratio-source types from the structural package itself. Shared consumers SHALL compose this primitive from `@agenter/svelte-components` instead of rebuilding resize, clamp, and compact right-detail behavior inside product code.
+`@agenter/svelte-components` SHALL expose the shared workbench split-detail primitive and its ratio-source types from the structural package itself. Shared consumers SHALL compose this primitive from `@agenter/svelte-components` instead of rebuilding resize, clamp, and compact right-detail behavior inside app code.
 
 #### Scenario: Shared consumer imports the split-detail primitive from one package
 - **WHEN** a Svelte route or shared client needs a persistent `main + right detail` shell

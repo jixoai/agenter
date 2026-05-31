@@ -1,6 +1,6 @@
 ## 1. Change And Spec Sync
 
-- [x] 1.1 Add this change and sync the durable cli-shell product spec summary for product config, textarea composer, slash panels, and cursor reliability.
+- [x] 1.1 Add this change and sync the durable cli-shell app spec summary for app config, textarea composer, slash panels, and cursor reliability.
 
 ## 2. Cursor Reliability
 
@@ -9,9 +9,9 @@
 - [x] 2.3 Add a regression test for non-zero screen origin proving native cursor placement still uses 1-based screen coordinates from renderable screen origin.
 - [x] 2.4 Keep an explicit code comment at the native cursor commit site documenting the historical `(-1,-1)` offset failure and why the `+1` belongs only there.
 
-## 3. Product Config
+## 3. App Config
 
-- [x] 3.1 Add cli-shell product config loading/saving under `~/.agenter/cli-shell/settings.json`.
+- [x] 3.1 Add cli-shell app config loading/saving under `~/.agenter/cli-shell/settings.json`.
 - [x] 3.2 Add cli-shell keybinding loading under `~/.agenter/cli-shell/keybindings.json`.
 - [x] 3.3 Persist Chat default layout and use it when reopening Chat from the bottom bar singleton toggle.
 - [x] 3.4 Add tests for default config, missing files, empty files, and persisted Chat layout.
@@ -34,5 +34,5 @@
 ## 6. Validation
 
 - [x] 6.1 Run focused cli-shell tests.
-- [x] 6.2 Run `bun run --filter 'agenter-ext-shell' typecheck`.
+- [x] 6.2 Run `bun run --filter 'agenter-app-shell' typecheck`.
 - [x] 6.3 Run `openspec validate finish-cli-shell-room-composer-and-cursor-reliability --strict`.

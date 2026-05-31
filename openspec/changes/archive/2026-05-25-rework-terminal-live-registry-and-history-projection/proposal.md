@@ -28,6 +28,6 @@ We need one cleaner law: live terminal instances and terminal history are two pr
 
 ## Impact
 
-- Affected code: `packages/terminal-system`, `packages/app-server`, runtime CLI descriptors, terminal-system UI surfaces, and any cli-shell/product code that currently assumes killed terminals remain in the default live list.
+- Affected code: `packages/terminal-system`, `packages/app-server`, runtime CLI descriptors, terminal-system UI surfaces, and any cli-shell/app code that currently assumes killed terminals remain in the default live list.
 - Affected durable data: terminal catalog/state fields, daemon recovery normalization, attention-context updates tied to terminal death, and history/archive/delete management over terminal output directories.
 - Affected AI/runtime behavior: `terminal list` and terminal skill guidance now bias toward truly live terminals only, reducing stale-terminal interference in model reasoning.

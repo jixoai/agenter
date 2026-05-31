@@ -1,6 +1,6 @@
 ## Context
 
-`@agenter/web-components` owns framework-agnostic UI atoms implemented with Lit. Those atoms should carry structure and minimal fallback styling, but product clients such as the Svelte WebUI need a stable way to apply their own skin without forking component internals.
+`@agenter/web-components` owns framework-agnostic UI atoms implemented with Lit. Those atoms should carry structure and minimal fallback styling, but app clients such as the Svelte WebUI need a stable way to apply their own skin without forking component internals.
 
 The current `help-hint` implementation violates that separation because:
 
@@ -32,7 +32,7 @@ The same structural problem also exists, with different severity, in the other d
 
 ### Lit atoms expose stable visual slots through `css-part`
 
-Any Lit component with internal visual surfaces must publish stable `part` names for those surfaces. Product clients can then style them through `::part(...)` or Tailwind part selectors without depending on internal class names.
+Any Lit component with internal visual surfaces must publish stable `part` names for those surfaces. App clients can then style them through `::part(...)` or Tailwind part selectors without depending on internal class names.
 
 For the current rollout, each high-value atom must at minimum expose its top-level semantic surfaces:
 
@@ -59,9 +59,9 @@ The same rule applies to other atoms when the outside world needs factual themin
 - `markdown-document`: resolved surface / overflow / mode facts
 - `tool-invocation-card`: invocation status
 
-### HelpHint keeps fallback styles, WebUI owns the product skin
+### HelpHint keeps fallback styles, WebUI owns the app skin
 
-The Lit element keeps minimal fallback styles so it remains legible in isolation. The Svelte WebUI applies the richer product theme through `::part(trigger)` and `::part(popup)`.
+The Lit element keeps minimal fallback styles so it remains legible in isolation. The Svelte WebUI applies the richer app theme through `::part(trigger)` and `::part(popup)`.
 
 ## Risks / Trade-offs
 

@@ -113,11 +113,11 @@
 
 | Source | Fact | Why it matters |
 | ------ | ---- | -------------- |
-| `openspec/changes/archive/2026-05-30-fix-studio-web-chat-view-embedding-style` | Previous change established app-view iframe as the product boundary and archived the work. | This change should fix app-view internals, not Studio iframe outer CSS. |
+| `openspec/changes/archive/2026-05-30-fix-studio-web-chat-view-embedding-style` | Previous change established app-view iframe as the app boundary and archived the work. | This change should fix app-view internals, not Studio iframe outer CSS. |
 | `packages/message-system/src/message-control-plane.ts` | `TRUSTED_BOOTSTRAP_LABEL = "Trusted bootstrap"` and `resolveAuthorizedSender(...)` can use grant label as `from` after participant lookup. | This explains why a bootstrap/admin grant label can leak into sender display. |
 | `packages/message-system/src/types.ts` | `MessageParticipant` has `id` and `label`, but no avatar/icon field. | Avatar cannot be solved by participant records alone; app-view needs a presentation directory/API projection. |
 | `packages/web-chat-view/example/src/lib/review-example.api.ts` | Room-mode `fetchReviewChannel` calls `/trpc/message.globalSnapshot` and builds `actorDirectory` only from viewer profile, participants, and seat states. | App-view room mode currently lacks Studio/AuthSystem profile icon resolver. |
-| `extensions/studio/src/lib/features/messages/message-room-route.svelte` | Studio has `describeActor(...)`, `buildActorDirectory(...)`, and `controller.runtimeStore.profileIconUrl(...)`. | Studio already has canonical avatar knowledge, but iframe app-view does not receive it through the snapshot contract. |
+| `apps/studio/src/lib/features/messages/message-room-route.svelte` | Studio has `describeActor(...)`, `buildActorDirectory(...)`, and `controller.runtimeStore.profileIconUrl(...)`. | Studio already has canonical avatar knowledge, but iframe app-view does not receive it through the snapshot contract. |
 | `packages/web-chat-view/src/message-row.svelte` | `.message-card-with-actions` adds `padding-inline-end`, including compact override `1.12rem`; `.bubble-actions` is always `inset-inline-end`. | The current action affordance reserves the same logical end side regardless of message ownership; this is the user's padding concern. |
 | `packages/web-chat-view/src/comment-anchor-badge.svelte` | Component still imports `MessageSquareMore`, displays `No comment body yet.`, and has user-modified `.comment-anchor-serial span` style. | Replace icon/empty behavior while preserving user's style change. |
 | `packages/web-chat-view/src/comment-inspector.svelte` | Inspector imports `MessageSquareMore`, displays `No comment body yet.`, and uses text `Cancel`/`Save` links in the edit sheet. | Comment panel needs icon/action cleanup beyond only the source editor. |
@@ -136,7 +136,7 @@
 
 | Checkpoint | Expected commit evidence | Current status |
 | ---------- | ------------------------ | -------------- |
-| OpenSpec artifacts before apply | Commit containing `plans/plan.md`, specs, and `tasks.md` before product-code work starts | Pending this round; product code not started. |
+| OpenSpec artifacts before apply | Commit containing `plans/plan.md`, specs, and `tasks.md` before app-code work starts | Pending this round; app code not started. |
 | Task-progress commits | Commit containing current-context task checkbox updates plus matching code/BDD evidence | Pending after BDD + implementation. |
 | Self-review updates | Commit containing review output and any reopened or added OpenSpec tasks before the next apply loop | Pending. |
 | Normal archive | Commit containing `openspec archive <change>` result | Pending after user-visible review. |
@@ -146,7 +146,7 @@
 
 | File / change | Existing law or pattern | Reuse, extend, or break |
 | ------------- | ----------------------- | ----------------------- |
-| `openspec/changes/archive/2026-05-30-fix-studio-web-chat-view-embedding-style/specs/web-chat-view-embedded-style/spec.md` | App-view partial room mode is the iframe/product boundary; app-view owns Framework7 shell and app styles. | Reuse. This change fixes the app-view internals inside that boundary. |
+| `openspec/changes/archive/2026-05-30-fix-studio-web-chat-view-embedding-style/specs/web-chat-view-embedded-style/spec.md` | App-view partial room mode is the iframe/app boundary; app-view owns Framework7 shell and app styles. | Reuse. This change fixes the app-view internals inside that boundary. |
 | `openspec/changes/archive/2026-05-30-fix-studio-web-chat-view-embedding-style/specs/message-system-surface/spec.md` | Studio loads Web Chat app-view through iframe; Studio should keep superadmin controls outside. | Reuse. Do not solve these issues by Studio outer CSS. |
 | `openspec/specs/web-chat-view/spec.md` | Shared package owns transcript/composer and canonical avatar rendering. | Extend with sender/contact presentation and comment resource rules. |
 | `openspec/specs/web-chat-view-framework7-visual-law/spec.md` | Framework7 topology is the visual law for chat surfaces. | Extend with PageContent padding ownership and safe-area override discipline. |
@@ -166,7 +166,7 @@
 | `有图标就不要文字了` | Dense toolbar affordances should be icon-only visually. | Keep text only in `aria-label` / `title`, not in the rendered toolbar row. |
 | `评论如果为空，自动删除` | Empty body means the comment resource should be removed at save time. | Empty save deletes the local anchor or pending resource without confirmation. |
 | `点击保存按钮或者点击关闭按钮（或者是因为Model关闭触发的回调）` | Empty-body delete must be triggered by every way the edit lifecycle ends. | Save, close/cancel, and Framework7 sheet-close callbacks should call the same finalizer. |
-| `官方版本的风格` | Framework7 Sheet should look like its official component family, not a host-local glass panel. | Preserve F7 Sheet/Toolbar/PageContent ownership and only style inner content for product details. |
+| `官方版本的风格` | Framework7 Sheet should look like its official component family, not a host-local glass panel. | Preserve F7 Sheet/Toolbar/PageContent ownership and only style inner content for app details. |
 | `删除后，无法关闭` | The visual close state and framework lifecycle are out of sync. | Business deletion must not directly remove the Sheet component before Framework7 receives `opened=false` and emits closed. |
 | `swipeToClose / closeByBackdropClick undefined` | Framework7 handlers are reading a destroyed Sheet instance. | Retain the Svelte Sheet component through the close lifecycle and disable unused backdrop-click handler registration for no-backdrop sheets. |
 | `评论会在发送按钮的旁边` | Dynamic comment resource insertion is rendering in the toolbar action row. | Pending resources must be owned by `messagebar-area` as the attachment/resource rail above the draft, not by the send button toolbar pane. |
@@ -198,7 +198,7 @@ The issue is a boundary-law problem plus leaf UI debt:
 - Identity projection must be canonical. Access-token provenance such as `Trusted bootstrap` is not the message author identity.
 - App-view is self-contained. It should receive identity presentation through backend/app-view contracts, not by reaching into Studio stores through the iframe.
 - Framework7 owns `PageContent` layout offsets. Web Chat can add spacing, but it must do so through Framework7 variables or inner content shells, not by overwriting `.page-content` padding.
-- Framework7 owns `Sheet` and `Toolbar` chrome. Web Chat can provide title/action content and inner body spacing, but should not repaint Sheet/Toolbar backgrounds, auto heights, or safe-area math when the product intent is the official Framework7 sheet style.
+- Framework7 owns `Sheet` and `Toolbar` chrome. Web Chat can provide title/action content and inner body spacing, but should not repaint Sheet/Toolbar backgrounds, auto heights, or safe-area math when the app intent is the official Framework7 sheet style.
 - Framework7 owns modal chrome across the whole temporary-view family, not only comment edit Sheets. Web Chat can adapt action data, popup page content, and messagebar tool items, but business components should not repaint `.popup`, `.messagebar-sheet`, `.actions-modal`, `.toolbar`, or `.sheet-modal` directly.
 - Comment resources should be real resources. Empty drafts are not resources.
 
@@ -222,7 +222,7 @@ When the operator opens a Studio room embedded app-view:
 
 ## Platform Diagnosis
 
-- Current platform laws: Studio owns outer operator chrome; app-view owns chat product UI; message-system stores room/message facts; AuthSystem/profile runtime owns canonical profile avatar facts; Framework7 owns Page/View/PageContent/Toolbar/Sheet layout offsets and chrome.
+- Current platform laws: Studio owns outer operator chrome; app-view owns chat app UI; message-system stores room/message facts; AuthSystem/profile runtime owns canonical profile avatar facts; Framework7 owns Page/View/PageContent/Toolbar/Sheet layout offsets and chrome.
 - Does this fit as a regular atom: partly. Comment icon/action polish is a regular UI atom.
 - Does this require law upgrade: yes. Sender/avatar presentation and PageContent safe-area handling are platform-law fixes because they cross app-view/backend and framework-shell boundaries.
 - Breaking update stance: no durable data migration is needed; API shape can be extended. Do not preserve `No comment body yet` as compatibility because it is a wrong visible state.
@@ -242,7 +242,7 @@ The operator reads a room. Sender names look like people/contacts, not grants. A
 - Framework7 edit sheets keep `Toolbar` and `PageContent` as siblings and use `--f7-page-content-extra-padding-*` or inner shell padding for custom spacing.
 - Empty comment edit termination is one finalizer: if the trimmed draft is empty, delete the local comment artifact and close the owning panel; if non-empty, save or cancel according to the explicit action.
 - Temporary action menus are created through one Framework7 Actions adapter that owns `convertToPopover`, target anchoring, close lifecycle, and non-runtime test fallback. Leaf components only provide action data.
-- Messagebar tool tray is created through one composer tool-sheet wrapper that stays mounted inside `Messagebar` and uses Framework7 `MessagebarSheet` / `MessagebarSheetItem`; custom product style belongs inside each item, not on the sheet chrome.
+- Messagebar tool tray is created through one composer tool-sheet wrapper that stays mounted inside `Messagebar` and uses Framework7 `MessagebarSheet` / `MessagebarSheetItem`; custom app style belongs inside each item, not on the sheet chrome.
 
 ### Data Shape
 
@@ -256,7 +256,7 @@ The operator reads a room. Sender names look like people/contacts, not grants. A
 - App-view should remain iframe self-sufficient: no Studio store imports, no event bridge for identity, no DOM reach-through.
 - Web Chat should expose reusable Svelte components with package-owned CSS, but Framework7 framework primitives remain the shell owner.
 - Comment UI fixes stay inside `packages/web-chat-view`, not in Studio route CSS.
-- Framework7 Sheet visuals should come from official Sheet/Toolbar defaults; Web Chat should avoid custom translucent sheet backgrounds unless a future design law explicitly authorizes a different product family.
+- Framework7 Sheet visuals should come from official Sheet/Toolbar defaults; Web Chat should avoid custom translucent sheet backgrounds unless a future design law explicitly authorizes a different app family.
 - Framework7 Sheet lifecycle must stay framework-owned. Web Chat may delete comment data immediately, but it must retain the Sheet component until the Framework7 close lifecycle reaches `onSheetClosed`.
 - Framework7 Actions visuals should come from official `Actions` / popover conversion; Web Chat may centralize action data mapping, but individual message/source components should not own separate modal factories or blurred fallback panels.
 - Framework7 Messagebar sheet visuals should come from official `MessagebarSheet` and Framework7 variables; Web Chat may choose compact height through variables, but should not conditionally mount the sheet after initialization, absolutely position it, or repaint the sheet chrome.

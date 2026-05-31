@@ -1,6 +1,6 @@
 ## Purpose
 
-Define the generic terminal projection law that separates raw terminal transport from backend-authored screen projection without hard-coding one product's composed terminal topology.
+Define the generic terminal projection law that separates raw terminal transport from backend-authored screen projection without hard-coding one app's composed terminal topology.
 ## Requirements
 ### Requirement: Terminal projection SHALL distinguish raw transport from backend screen projection
 
@@ -56,7 +56,7 @@ When a projected screen includes multiple interactive regions, each region SHALL
 
 #### Scenario: Dialogue backend owns dialogue interaction law
 
-- **WHEN** a projected product includes a dialogue or room region backed by an offscreen renderer
+- **WHEN** a projected app includes a dialogue or room region backed by an offscreen renderer
 - **THEN** that backend owns dialogue selection, copy, scroll, cursor, and wrapping
 - **AND** the compositor consumes the region frame instead of reimplementing dialogue algorithms
 
@@ -67,13 +67,13 @@ When a projected screen includes multiple interactive regions, each region SHALL
 
 ### Requirement: Screen projection identities SHALL remain generic
 
-The screen-projection law MAY support backend-authored composed screens, but it SHALL NOT hard-code one product-specific terminal identity such as cli-shell `terminal-2` as universal truth. Product-specific composed-screen topology belongs in product specs, not in the generic projection law.
+The screen-projection law MAY support backend-authored composed screens, but it SHALL NOT hard-code one app-specific terminal identity such as cli-shell `terminal-2` as universal truth. App-specific composed-screen topology belongs in app specs, not in the generic projection law.
 
-#### Scenario: Product composition does not become global terminal law
+#### Scenario: App composition does not become global terminal law
 
-- **WHEN** one product composes multiple backend-authored regions into a final visible screen
+- **WHEN** one app composes multiple backend-authored regions into a final visible screen
 - **THEN** the generic projection law describes only how composed projection stays derived from backend truth
-- **AND** it does not canonize that product's local terminal names or topology as shared platform law
+- **AND** it does not canonize that app's local terminal names or topology as shared platform law
 
 ### Requirement: Host events SHALL route to the backend region that owns interaction truth
 
@@ -113,13 +113,13 @@ The offscreen frame projection component SHALL route terminal-like semantic sele
 - **THEN** the projection layer routes a backend row-selection request to the active owner
 - **AND** the backend interaction owner computes and publishes the selected row range
 
-### Requirement: Offscreen terminal interaction enhancements SHALL remain product-local policy
+### Requirement: Offscreen terminal interaction enhancements SHALL remain app-local policy
 
-The offscreen terminal projection layer MAY expose configurable interaction enhancements for behavior that a backend may not provide natively. Product runtime may enable an enhancement only when the backend recommendation says the behavior is missing. This policy SHALL remain product-local rather than becoming shared terminal-system law.
+The offscreen terminal projection layer MAY expose configurable interaction enhancements for behavior that a backend may not provide natively. App runtime may enable an enhancement only when the backend recommendation says the behavior is missing. This policy SHALL remain app-local rather than becoming shared terminal-system law.
 
 #### Scenario: Backend recommendation enables only missing behavior
 
-- **WHEN** a product resolves the interaction profile for a backend
+- **WHEN** a app resolves the interaction profile for a backend
 - **THEN** each enhancement is enabled only when the backend recommendation marks that behavior as missing
 - **AND** capable backend-native behavior is not overridden by default
 
@@ -142,11 +142,11 @@ When shell input is sent through an offscreen terminal projection, the projectio
 
 ### Requirement: Supported terminal key behavior SHALL be covered by BDD matrix tests
 
-Any product that adds terminal-side input encoding or cursor-follow enhancements SHALL maintain a BDD key matrix for supported terminal key behavior. Unknown keys MAY remain unsupported, but they MUST NOT be silently treated as verified behavior.
+Any app that adds terminal-side input encoding or cursor-follow enhancements SHALL maintain a BDD key matrix for supported terminal key behavior. Unknown keys MAY remain unsupported, but they MUST NOT be silently treated as verified behavior.
 
 #### Scenario: Supported key matrix is tested
 
-- **WHEN** a product changes terminal input encoding
+- **WHEN** a app changes terminal input encoding
 - **THEN** tests cover printable text, arrows, Home, End, Delete, PageUp, PageDown, Backspace, Tab, Enter, Escape, and supported modifier combinations
 - **AND** the tests verify whether each supported key routes to backend input and cursor follow
 

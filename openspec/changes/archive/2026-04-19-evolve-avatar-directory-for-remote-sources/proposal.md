@@ -12,8 +12,8 @@ This needs to be formalized now because the wrong move is easy: adding `isRemote
 - Keep `My Avatars` as the default `Avatars` landing surface and preserve runtime-first operation there.
 - Define install as the default durable acquisition flow: remote packages install into the local avatar catalog, default to the remote name, and require rename only on local conflict.
 - Require installed avatars to retain provenance facts such as source, package, and revision while remaining operationally equivalent to purely local avatars.
-- Keep transient direct-launch of remote packages out of the default product path; it may exist later as an optional capability, but it is not the primary durable workflow for this change.
-- Record the user interview and Q&A verbatim inside this change so future implementation work does not lose the original product intent.
+- Keep transient direct-launch of remote packages out of the default app path; it may exist later as an optional capability, but it is not the primary durable workflow for this change.
+- Record the user interview and Q&A verbatim inside this change so future implementation work does not lose the original app intent.
 
 ## Capabilities
 
@@ -28,4 +28,4 @@ This needs to be formalized now because the wrong move is easy: adding `isRemote
 - WebUI avatar information architecture, routing, and workbench tab composition
 - Client/runtime store contracts for avatar sources, discover results, install operations, and provenance projection
 - Backend avatar/source installation contracts and durable avatar metadata storage
-- Avatar-related durable specs and OpenSpec product/design records
+- Avatar-related durable specs and OpenSpec app/design records

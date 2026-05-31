@@ -1,8 +1,8 @@
 ## ADDED Requirements
 
-### Requirement: Cli-shell SHALL use normalized tmux product actions for status clicks
+### Requirement: Cli-shell SHALL use normalized tmux app actions for status clicks
 
-Cli-shell SHALL normalize tmux status-bar mouse range payloads before dispatching product actions. The action boundary SHALL accept both direct action names such as `help` and user-range forms such as `user|help` for known product actions. Unknown range payloads SHALL fail as unknown actions without mutating Chat surface state.
+Cli-shell SHALL normalize tmux status-bar mouse range payloads before dispatching app actions. The action boundary SHALL accept both direct action names such as `help` and user-range forms such as `user|help` for known app actions. Unknown range payloads SHALL fail as unknown actions without mutating Chat surface state.
 
 #### Scenario: Help click normalizes user range
 

@@ -1,12 +1,12 @@
 ## Reference Audit
 
-- `git diff -- extensions/cli-shell` is empty. Legacy cli-shell stayed read-only.
+- `git diff -- apps/cli-shell` is empty. Legacy cli-shell stayed read-only.
 - Legacy paths used as reference only:
-  - `extensions/cli-shell/legacy/terminal2/src/tui/backend-terminal-frame.ts`
-  - `extensions/cli-shell/legacy/terminal2/src/tui/core-app.ts`
-  - `extensions/cli-shell/legacy/terminal2/src/tui/live-terminal-mirror.ts`
+  - `apps/cli-shell/legacy/terminal2/src/tui/backend-terminal-frame.ts`
+  - `apps/cli-shell/legacy/terminal2/src/tui/core-app.ts`
+  - `apps/cli-shell/legacy/terminal2/src/tui/live-terminal-mirror.ts`
 - The copied behavior is the backend-owned terminal law: pane-local selection events go to the terminal source, copy requests ask backend selected text, async selection text is delivered through OSC52, and paste is owned by the focused terminal frame.
-- OpenTUI gives low-level renderables/events but no shell-next product Button. Shell-next now owns a Button primitive for bracket labels, hit regions, hover, active, disabled, and event resolution.
+- OpenTUI gives low-level renderables/events but no shell-next app Button. Shell-next now owns a Button primitive for bracket labels, hit regions, hover, active, disabled, and event resolution.
 
 ## BDD Feedback Loop
 
@@ -26,7 +26,7 @@
 
 ## Self Review Round 2
 
-- `extensions/cli-shell` was not modified or imported. Shell-next copied the needed behavior into its own modules.
+- `apps/cli-shell` was not modified or imported. Shell-next copied the needed behavior into its own modules.
 - The old pane chrome helper is no longer the only button law; `renderable-mux/button.ts` is the shared primitive.
 - Tests cover Button behavior, ShellPane selection/copy/paste, renderer primary selection, statusbar active/hover, top-layer hover, and resize conflation.
 - The remaining completion gate is workspace hygiene: unrelated pre-existing dirty files still need explicit resolution before final status can be clean.
@@ -34,7 +34,7 @@
 ## Drift List
 
 - I previously treated local titlebar/statusbar helpers as "the Button solution". That was too weak; they did not prevent each surface from inventing its own hover behavior.
-- The earlier statusbar test checked bold but missed the yellow hover color, so it allowed a visible product bug to survive.
+- The earlier statusbar test checked bold but missed the yellow hover color, so it allowed a visible app bug to survive.
 - The paste path had two ownership points: the terminal frame and the ShellPane global paste listener/bridge behavior. The correct law is one focused terminal frame owner.
 - Renderer primary copy was modeled as "emit OSC52 only", but the real behavior also had to protect OpenTUI's visible selection from middle-click clearing.
 - The previous change was over-claimed as complete before manual acceptance caught these interaction gaps.
@@ -43,7 +43,7 @@
 
 - Run manual TTY acceptance for ShellPane drag selection, OSC52 clipboard, and primary clipboard across the terminal emulators the team actually uses.
 - After shell-next is accepted, extract the mux/layout/Button/terminal-frame laws into the future `opencompose` package boundary.
-- Keep `cli-shell` read-only until it is deleted; do not add compatibility hooks back into the legacy product.
+- Keep `cli-shell` read-only until it is deleted; do not add compatibility hooks back into the legacy app.
 
 ## Rework Trigger 2026-05-28
 
@@ -57,7 +57,7 @@ Manual acceptance found the previous pass was still incomplete:
 - Shell resize still feels blocked; debounce plus conflated behavior must be proven at the terminal source/backend boundary.
 - Resize handle click micro-adjustment only moves one way instead of following the clicked glyph.
 
-Decision: reopen this change as rework, write BDD for the missing behavior first, and keep all implementation inside `extensions/shell-next` unless evidence proves a lower package needs a separate discussed change.
+Decision: reopen this change as rework, write BDD for the missing behavior first, and keep all implementation inside `apps/shell-next` unless evidence proves a lower package needs a separate discussed change.
 
 ## Rework BDD Evidence
 
@@ -80,8 +80,8 @@ Decision: reopen this change as rework, write BDD for the missing behavior first
 
 ## Rework Self Review Round 4
 
-- `extensions/cli-shell` remains read-only. The legacy behavior was used as a reference, but the new controller/source code lives under `extensions/shell-next`.
-- The Button law is still centralized in shell-next's primitive. Product surfaces should continue migrating any future ad-hoc bracketed actions to that primitive instead of hand-rendering labels.
+- `apps/cli-shell` remains read-only. The legacy behavior was used as a reference, but the new controller/source code lives under `apps/shell-next`.
+- The Button law is still centralized in shell-next's primitive. App surfaces should continue migrating any future ad-hoc bracketed actions to that primitive instead of hand-rendering labels.
 - Clipboard target handling does not import `@opentui/core` private subpaths. OpenTUI's internal target enum is not publicly exported in the current dependency, so shell-next uses local typed constants based on the public `copyToClipboardOSC52` signature.
 - Resize debounce plus conflation now belongs to the source/backend boundary. The pane view only routes geometry changes to the source.
 - Primary clipboard and rapid resize still require manual TTY acceptance because terminal emulator OSC52 primary support and real ghostty-native resize pressure are environment-dependent.
@@ -104,9 +104,9 @@ Decision: reopen this change as rework, write BDD for the missing behavior first
 ## Rework Verification
 
 - `openspec validate stabilize-shell-next-button-copy --strict`: pass.
-- `bun test extensions/shell-next/test/shell-next-app.test.ts extensions/shell-next/test/pane-source.test.ts extensions/shell-next/test/conflated-resize-dispatcher.test.ts`: 50 pass, 0 fail.
-- `bun run --filter 'agenter-ext-shell-next' test`: 110 pass, 0 fail.
-- `bun run --filter 'agenter-ext-shell-next' typecheck`: pass.
+- `bun test apps/shell-next/test/shell-next-app.test.ts apps/shell-next/test/pane-source.test.ts apps/shell-next/test/conflated-resize-dispatcher.test.ts`: 50 pass, 0 fail.
+- `bun run --filter 'agenter-app-shell-next' test`: 110 pass, 0 fail.
+- `bun run --filter 'agenter-app-shell-next' typecheck`: pass.
 - `git diff --check`: pass.
 
 ## Second Rework Trigger 2026-05-28
@@ -123,11 +123,11 @@ The remaining failures are now treated as architecture-boundary failures:
 - primary clipboard must remain a single host clipboard/OSC52 capability path, not an app-owned primary register or dual fallback path;
 - OpenCompose stays terminal-agnostic and continues to provide only pane composition primitives.
 
-Decision: reopen the change for a second rework. Keep `extensions/cli-shell` read-only, copy the relevant `legacy/terminal2` laws into shell-next-owned terminal-engine modules, and make BDD target the real product paths that failed manual acceptance.
+Decision: reopen the change for a second rework. Keep `apps/cli-shell` read-only, copy the relevant `legacy/terminal2` laws into shell-next-owned terminal-engine modules, and make BDD target the real app paths that failed manual acceptance.
 
 ## Second Rework Completion
 
-- Shell-next now has an internal `terminal-engine` boundary under `extensions/shell-next/src/terminal-engine`.
+- Shell-next now has an internal `terminal-engine` boundary under `apps/shell-next/src/terminal-engine`.
 - Normal terminal input, bracketed paste, Option word motion, Shift cell selection, and Shift+Option word selection now all route through one input transaction law: clear backend selection unless explicitly preserving, write once, and follow cursor only after accepted input.
 - `TerminalProtocolPaneSource.writeInput(...)` now returns an accepted/rejected boolean, so shell-next no longer lies about whether backend input was accepted.
 - Room-backed Chat host chrome now uses `ShellNextPaneChromeController`, so hover and active rendering match direct Chat panes instead of relying on string-only border titles.
@@ -139,21 +139,21 @@ Decision: reopen the change for a second rework. Keep `extensions/cli-shell` rea
 - Manual feedback about normal input clearing selection and rejected input not following the cursor is now covered by focused BDD and implemented in the transaction layer.
 - Manual feedback about Shift/Option selection preservation is now handled by explicit `preserveSelectionAnchor` routing instead of app-level ad-hoc state changes.
 - Manual feedback about Room-backed Chat titlebar behavior is now closed; attached Room uses the same hover/underline overlay law as direct Chat panes.
-- Manual feedback about primary clipboard staying KISS is now closed at the product layer: shell-next uses one host clipboard/OSC52 primary capability path and does not maintain a local primary register.
+- Manual feedback about primary clipboard staying KISS is now closed at the app layer: shell-next uses one host clipboard/OSC52 primary capability path and does not maintain a local primary register.
 - The remaining residual risk is environment-only: a terminal emulator may ignore OSC52 primary even though shell-next emits the correct request.
 
 ## Second Rework Verification
 
-- `bun test extensions/shell-next/test/shell-next-app.test.ts`: 48 pass, 0 fail.
-- `bun run --filter 'agenter-ext-shell-next' test`: 115 pass, 0 fail.
-- `bun run --filter 'agenter-ext-shell-next' typecheck`: pass.
+- `bun test apps/shell-next/test/shell-next-app.test.ts`: 48 pass, 0 fail.
+- `bun run --filter 'agenter-app-shell-next' test`: 115 pass, 0 fail.
+- `bun run --filter 'agenter-app-shell-next' typecheck`: pass.
 - `openspec validate stabilize-shell-next-button-copy --strict`: pass.
 - `git diff --check`: pass.
-- `git diff -- extensions/cli-shell`: empty.
+- `git diff -- apps/cli-shell`: empty.
 
 ## Third Rework Trigger 2026-05-29
 
-The user clarified the remaining product law in plain terms and required that this wording remain the anchor for the next implementation round:
+The user clarified the remaining app law in plain terms and required that this wording remain the anchor for the next implementation round:
 
 1. `Shell的selection仍然有问题，你不能在Shell这一层做selection，得到内核层去做，你因为你在Shell这里考虑不到滚动的问题`
 2. `Shell移动关闭可以自动滚动到合适的位置了`
@@ -179,7 +179,7 @@ Interpretation for this rework:
 
 ## Third Rework Progress
 
-- The upper resize layer is now explicit in `extensions/shell-next/src/terminal-projection/resize-send-scheduler.ts` with a product-default `200ms` debounce.
+- The upper resize layer is now explicit in `apps/shell-next/src/terminal-projection/resize-send-scheduler.ts` with a app-default `200ms` debounce.
 - The lower resize layer remains explicit in source implementations through `ConflatedResizeDispatcher`, so blocked backend resize only retains the newest pending size.
 - Shared button rendering now decorates only inner content. `[` and `]` stay plain while hover uses bold and active uses underline on the inner text cells only.
 - Shell terminal drag selection no longer keeps durable truth in `OpenComposeFrameRenderable`. The generic frame is now `selectable = false`, and shell-next owns terminal drag-selection state through `terminal-engine/drag-selection-controller.ts`, attached in `OpenComposeTerminalViewRenderable`.
@@ -216,7 +216,7 @@ Interpretation for this rework:
 
 ### Drift List
 
-- I previously treated passing behavior tests as enough proof that selection ownership was correct. That was wrong because the generic frame was still carrying terminal drag state even while product behavior looked mostly right.
+- I previously treated passing behavior tests as enough proof that selection ownership was correct. That was wrong because the generic frame was still carrying terminal drag state even while app behavior looked mostly right.
 - I previously over-trusted the first 200ms debounce test failure as an implementation bug. It was a bad test window.
 - I previously left terminal-view selection callback types piggybacking on the generic frame options. That blurred the boundary after selection ownership moved out of the generic frame.
 - I previously reported the third rework as "mostly about resize and button law", but the real unresolved core was still selection ownership.
@@ -231,15 +231,15 @@ Interpretation for this rework:
 ## Third Rework Verification
 
 - `openspec validate stabilize-shell-next-button-copy --strict`: pass.
-- `bun test extensions/shell-next/test/resize-send-scheduler.test.ts extensions/shell-next/test/conflated-resize-dispatcher.test.ts extensions/shell-next/test/statusbar.test.ts extensions/shell-next/test/shell-next-app.test.ts`: 63 pass, 0 fail.
-- `bun run --filter 'agenter-ext-shell-next' test`: 121 pass, 0 fail.
-- `bun run --filter 'agenter-ext-shell-next' typecheck`: pass.
+- `bun test apps/shell-next/test/resize-send-scheduler.test.ts apps/shell-next/test/conflated-resize-dispatcher.test.ts apps/shell-next/test/statusbar.test.ts apps/shell-next/test/shell-next-app.test.ts`: 63 pass, 0 fail.
+- `bun run --filter 'agenter-app-shell-next' test`: 121 pass, 0 fail.
+- `bun run --filter 'agenter-app-shell-next' typecheck`: pass.
 - `git diff --check`: pass.
-- `git diff -- extensions/cli-shell`: empty.
+- `git diff -- apps/cli-shell`: empty.
 
 ## Fourth Rework Trigger 2026-05-29
 
-Latest manual acceptance after the third rework clarified five still-open product failures:
+Latest manual acceptance after the third rework clarified five still-open app failures:
 
 1. `resize通过了`
 2. `help/chat这组按钮仍然没有“激活态”的样式（下划线）`
@@ -274,9 +274,9 @@ Decision: reopen the same change again. Treat resize as accepted, then focus thi
 ## Fourth Rework Verification
 
 - `openspec validate stabilize-shell-next-button-copy --strict`: pass.
-- `bun test extensions/shell-next/test/button-press-controller.test.ts extensions/shell-next/test/statusbar.test.ts extensions/shell-next/test/terminal-view-renderable.test.ts`: pass.
-- `bun test extensions/shell-next/test/shell-next-app.test.ts extensions/shell-next/test/top-layer-surface.test.ts`: pass.
-- `bun run --filter 'agenter-ext-shell-next' test`: 126 pass, 0 fail.
-- `bun run --filter 'agenter-ext-shell-next' typecheck`: pass.
+- `bun test apps/shell-next/test/button-press-controller.test.ts apps/shell-next/test/statusbar.test.ts apps/shell-next/test/terminal-view-renderable.test.ts`: pass.
+- `bun test apps/shell-next/test/shell-next-app.test.ts apps/shell-next/test/top-layer-surface.test.ts`: pass.
+- `bun run --filter 'agenter-app-shell-next' test`: 126 pass, 0 fail.
+- `bun run --filter 'agenter-app-shell-next' typecheck`: pass.
 - `git diff --check`: pass.
-- `git diff -- extensions/cli-shell`: empty.
+- `git diff -- apps/cli-shell`: empty.

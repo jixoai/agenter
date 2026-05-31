@@ -7,7 +7,7 @@ When cli-shell is launched without an explicit `@avatar` mention, it SHALL ensur
 #### Scenario: Missing shell-assistant gets prompt and memory defaults
 - **GIVEN** no Avatar with nickname `shell-assistant` exists
 - **WHEN** a user runs `agenter shell`
-- **THEN** cli-shell ensures the `shell-assistant` Avatar through generic Avatar/product-extension APIs
+- **THEN** cli-shell ensures the `shell-assistant` Avatar through generic Avatar/app-extension APIs
 - **AND** it initializes missing `AGENTER.mdx` prompt source for that Avatar
 - **AND** it initializes the default shell-assistant memory pack in the Avatar-private memory domain
 - **AND** core launcher modules do not special-case that Avatar nickname
@@ -16,7 +16,7 @@ When cli-shell is launched without an explicit `@avatar` mention, it SHALL ensur
 - **GIVEN** Avatar `shell-assistant` already has user-edited `AGENTER.mdx` or memory files
 - **WHEN** cli-shell runs its ensure flow
 - **THEN** it reads those existing resources as the current prompt and memory truth
-- **AND** it does not lock, hide, or automatically rewrite them back to product defaults
+- **AND** it does not lock, hide, or automatically rewrite them back to app defaults
 - **AND** advanced users may continue editing those low-level files manually
 
 #### Scenario: Explicit Avatar bypasses shell-assistant defaults
@@ -53,7 +53,7 @@ The default `shell-assistant` `AGENTER.mdx` SHALL bias the Avatar toward underst
 
 #### Scenario: Requirement-led collaboration is learned from evidence
 - **WHEN** a user mainly states needs and expects the assistant to drive more planning, implementation, and explanation
-- **THEN** the assistant is guided to take more initiative within product and delegation boundaries
+- **THEN** the assistant is guided to take more initiative within app and delegation boundaries
 - **AND** it records the learned autonomy level and explanation needs in `pairing-playbook`
 - **AND** it does not hard-code the user as novice or remove opportunities for the user to lead later
 
@@ -61,7 +61,7 @@ The default `shell-assistant` `AGENTER.mdx` SHALL bias the Avatar toward underst
 - **WHEN** a user interacts with `shell-assistant` in a playful or companion-like style
 - **THEN** the assistant may adapt tone and cadence to the learned relationship
 - **AND** it still preserves terminal truth ownership, prompt/memory discipline, delegation requirements, and durable engineering constraints
-- **AND** it records only operationally useful preferences rather than treating playfulness as a product mode
+- **AND** it records only operationally useful preferences rather than treating playfulness as a app mode
 
 #### Scenario: Self-evolution can run without managed mode through programmable attention
 - **WHEN** the user asks `shell-assistant` to compose a self-evolution loop such as a nightly reflection
@@ -69,7 +69,7 @@ The default `shell-assistant` `AGENTER.mdx` SHALL bias the Avatar toward underst
 - **THEN** `AGENTER.mdx` still guides the Avatar to use memory, skills, and minimal attention-cli compatible `commit/query/settle` operations to review recent work, update memory, and improve skills when appropriate
 - **AND** it does not require a hosting AttentionItem or terminal takeover lease to evolve itself
 - **AND** dedicated watch or schedule primitives are deferred to `extend-attention-cli-self-evolution-runtime`
-- **AND** example names such as `auto-dream` are not treated as built-in core features, fixed score keys, or mandatory product commands
+- **AND** example names such as `auto-dream` are not treated as built-in core features, fixed score keys, or mandatory app commands
 
 ### Requirement: Shell-assistant SHALL keep dedicated memory roles linked from AGENTER.mdx
 
@@ -102,7 +102,7 @@ Shell-assistant self-evolution behavior SHALL have long-running real AI semantic
 
 #### Scenario: AI judge scores self-evolution quality
 - **WHEN** a real shell-assistant self-evolution scenario finishes
-- **THEN** the test submits the scenario trace, relevant memory diff, prompt guidance, and product facts to a semantic judge such as `SemanticJudge.judgeStructured`
+- **THEN** the test submits the scenario trace, relevant memory diff, prompt guidance, and app facts to a semantic judge such as `SemanticJudge.judgeStructured`
 - **AND** the judge returns a numeric score using an explicit rubric
 - **AND** the rubric covers user-fit learning, memory quality, self-evolution direction, orthogonality, hosting separation, programmable attention usage, and anti-overfit behavior
 
@@ -110,7 +110,7 @@ Shell-assistant self-evolution behavior SHALL have long-running real AI semantic
 - **WHEN** the semantic judge score is below the configured threshold
 - **THEN** the evaluation may retry the scenario to account for model variance
 - **AND** the default policy allows at most two retries after the first failed score
-- **AND** if all attempts remain below threshold, the test fails as a product issue requiring prompt adjustment or bug repair
+- **AND** if all attempts remain below threshold, the test fails as a app issue requiring prompt adjustment or bug repair
 
 #### Scenario: AI evaluation covers multiple collaboration styles
 - **WHEN** real AI evaluation scenarios are defined
@@ -122,11 +122,11 @@ Shell-assistant self-evolution behavior SHALL have long-running real AI semantic
 - **WHEN** validating prompt usefulness and self-evolution direction
 - **THEN** the test suite includes long-running real AI scripts that simulate many turns of terminal use, corrections, memory updates, context compaction or restart, and later behavior
 - **AND** cached model responses may be used to reduce repeated local cost
-- **AND** normal CI may skip or gate the suite, but release or product acceptance uses it as the meaningful prompt validation path
+- **AND** normal CI may skip or gate the suite, but release or app acceptance uses it as the meaningful prompt validation path
 
 ### Requirement: Shell-assistant prompt evolution SHALL NOT overfit AI evaluation fixtures
 
-Prompt and memory changes made to improve shell-assistant evaluation SHALL preserve the orthogonal design laws in this change. Passing a narrow test fixture SHALL NOT justify product/core coupling, hidden hosting behavior, fixed user archetypes, or named self-evolution kernel features.
+Prompt and memory changes made to improve shell-assistant evaluation SHALL preserve the orthogonal design laws in this change. Passing a narrow test fixture SHALL NOT justify app/core coupling, hidden hosting behavior, fixed user archetypes, or named self-evolution kernel features.
 
 #### Scenario: Prompt fix preserves orthogonal design law
 - **WHEN** a shell-assistant evaluation fails and developers adjust `AGENTER.mdx`
@@ -135,17 +135,17 @@ Prompt and memory changes made to improve shell-assistant evaluation SHALL prese
 
 #### Scenario: Development contradiction is recorded instead of hidden
 - **WHEN** a prompt, implementation, or test rubric change would pass a specific evaluation while weakening this change's orthogonal design
-- **THEN** the contradiction is recorded under `.chat/add-cli-shell-product/` with the evidence, observed pain point, and suspected idealized assumption
+- **THEN** the contradiction is recorded under `.chat/add-cli-shell-app/` with the evidence, observed pain point, and suspected idealized assumption
 - **AND** the OpenSpec law, implementation, or evaluation rubric is revised explicitly rather than hiding the conflict in test-specific prompt wording
 
 ### Requirement: Managed mode SHALL create a hosting AttentionItem instead of hard-coded takeover workflow
 
-Cli-shell managed mode SHALL create or refresh a product-scoped AttentionItem for the selected Avatar. The AttentionItem SHALL use the literal fixed score key `scores: {"hosting": 1000}`. The score represents unresolved hosting obligation. Cli-shell SHALL force `hosting` to `0` when the user disables managed mode; the Avatar may also lower it to `0` after it decides the obligation is actually settled.
+Cli-shell managed mode SHALL create or refresh a app-scoped AttentionItem for the selected Avatar. The AttentionItem SHALL use the literal fixed score key `scores: {"hosting": 1000}`. The score represents unresolved hosting obligation. Cli-shell SHALL force `hosting` to `0` when the user disables managed mode; the Avatar may also lower it to `0` after it decides the obligation is actually settled.
 
 #### Scenario: Managed on commits hosting attention
 - **WHEN** the user enables managed mode from cli-shell
 - **THEN** cli-shell commits an AttentionItem for the selected Avatar with `scores: {"hosting": 1000}`
-- **AND** the item content identifies the product, shell name, terminal id, room id, granting user, and current user-visible objective if known
+- **AND** the item content identifies the app, shell name, terminal id, room id, granting user, and current user-visible objective if known
 - **AND** the attention item is the scheduling fact, not a local toolbar boolean
 
 #### Scenario: Managed off forces hosting settlement

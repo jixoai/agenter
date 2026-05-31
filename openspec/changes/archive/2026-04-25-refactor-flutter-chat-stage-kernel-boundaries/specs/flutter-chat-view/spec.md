@@ -16,7 +16,7 @@ The Flutter chat view package SHALL keep websocket transport and room asset uplo
 
 ### Requirement: Flutter chat view SHALL treat protocol codec behavior as a platform law
 
-The Flutter chat view package SHALL centralize room transport frame parsing and encoding in a protocol codec boundary. Malformed payloads and unsupported event types SHALL fail as protocol facts that can be tested independently from widgets and product-shell code.
+The Flutter chat view package SHALL centralize room transport frame parsing and encoding in a protocol codec boundary. Malformed payloads and unsupported event types SHALL fail as protocol facts that can be tested independently from widgets and app-shell code.
 
 #### Scenario: Malformed transport payload is rejected by the codec
 - **WHEN** an incoming websocket frame is not a valid room transport event object
@@ -28,7 +28,7 @@ The Flutter chat view package SHALL centralize room transport frame parsing and 
 The public `FlutterChatView` SHALL remain the package stage entrypoint, but its implementation SHALL compose transcript viewport, stage notices, composer surface, and row primitives instead of concentrating all stage behavior in one widget body.
 
 #### Scenario: Host embeds the same stage entrypoint after refactor
-- **WHEN** the product shell embeds `FlutterChatView`
+- **WHEN** the app shell embeds `FlutterChatView`
 - **THEN** the host-owned profile/navigation/detail chrome remains outside the package
 - **THEN** transcript, notices, composer, and row affordances still render through package-owned stage primitives
 

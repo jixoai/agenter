@@ -2,7 +2,7 @@
 
 ### Requirement: Shared chat surfaces SHALL follow Framework7 mobile density
 
-Composer, source-inspection, and comment-detail surfaces SHALL read as the same Framework7/iOS product family as the app-view shell. Framework7 `Page`, `Toolbar`, `Sheet`, `Popup`, and `PageContent` components SHALL retain their official layout responsibilities. Custom Web Chat spacing MAY be applied through Framework7 extension variables such as `--f7-page-content-extra-padding-*` or through inner content shells, but Web Chat SHALL NOT overwrite `.page-content` whole `padding` in a way that disables Framework7 navbar, toolbar, searchbar, or safe-area offset formulas.
+Composer, source-inspection, and comment-detail surfaces SHALL read as the same Framework7/iOS app family as the app-view shell. Framework7 `Page`, `Toolbar`, `Sheet`, `Popup`, and `PageContent` components SHALL retain their official layout responsibilities. Custom Web Chat spacing MAY be applied through Framework7 extension variables such as `--f7-page-content-extra-padding-*` or through inner content shells, but Web Chat SHALL NOT overwrite `.page-content` whole `padding` in a way that disables Framework7 navbar, toolbar, searchbar, or safe-area offset formulas.
 
 #### Scenario: Composer remains a compact messagebar-style surface
 
@@ -26,7 +26,7 @@ Composer, source-inspection, and comment-detail surfaces SHALL read as the same 
 - **AND** tool entries use Framework7 `MessagebarSheetItem` semantics
 - **AND** the sheet remains mounted as a `Messagebar` child so Framework7 can hoist it during messagebar initialization while `sheetVisible` controls visibility
 - **AND** Web Chat does not directly repaint `.messagebar-sheet` with absolute positioning, custom blur, custom background, custom radius, or custom shadow
-- **AND** compact product sizing is expressed through Framework7 variables or inner item layout rather than replacing sheet chrome
+- **AND** compact app sizing is expressed through Framework7 variables or inner item layout rather than replacing sheet chrome
 
 #### Scenario: Comment detail remains quiet and readable
 
@@ -41,7 +41,7 @@ Composer, source-inspection, and comment-detail surfaces SHALL read as the same 
 - **WHEN** it needs cancel/save toolbar actions and editable content
 - **THEN** the component uses the official direct-child `Sheet -> Toolbar -> PageContent` topology
 - **AND** Web Chat does not repaint `.sheet-modal` or `.toolbar` with host-local translucent backgrounds or custom blur chrome
-- **AND** custom product spacing is limited to Framework7 variables or inner shells below `PageContent`
+- **AND** custom app spacing is limited to Framework7 variables or inner shells below `PageContent`
 
 #### Scenario: Framework7 Sheet close lifecycle is not bypassed
 
@@ -58,7 +58,7 @@ Composer, source-inspection, and comment-detail surfaces SHALL read as the same 
 - **THEN** the surface is created through one shared Web Chat adapter for Framework7 `Actions`
 - **AND** the adapter owns action button mapping, `convertToPopover`, target anchoring, and close lifecycle
 - **AND** leaf components do not each call `app.f7.actions.create(...)`
-- **AND** non-runtime test fallback does not emulate product modal chrome with custom blur/glass panels
+- **AND** non-runtime test fallback does not emulate app modal chrome with custom blur/glass panels
 
 #### Scenario: Popup shells keep official popup and toolbar chrome
 

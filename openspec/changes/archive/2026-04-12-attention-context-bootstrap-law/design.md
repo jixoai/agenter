@@ -78,7 +78,7 @@ Alternative considered:
 - make split `yaml+attention-item` blocks a new hard platform law.
 
 Why not:
-- that would turn a serialization preference into architecture. Right now there is no demonstrated product advantage large enough to justify more migration work.
+- that would turn a serialization preference into architecture. Right now there is no demonstrated app advantage large enough to justify more migration work.
 
 ### 4. Active-guide resolution is the only extension path
 

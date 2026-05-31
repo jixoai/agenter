@@ -1,12 +1,12 @@
 ## Context
 
-The WebUI now presents `Contexts / Cycles / Systems / Observability`, but the server and client protocol still publish `loopbusStateLogs`, `loopbusTraces`, `runtime.loopbus.*`, and `loopbus-trace`. That means the product shell changed vocabulary while the platform contract underneath did not. The result is avoidable translation code, orphan API surface such as `modelDebug`, and a protocol that keeps teaching the wrong architecture.
+The WebUI now presents `Contexts / Cycles / Systems / Observability`, but the server and client protocol still publish `loopbusStateLogs`, `loopbusTraces`, `runtime.loopbus.*`, and `loopbus-trace`. That means the app shell changed vocabulary while the platform contract underneath did not. The result is avoidable translation code, orphan API surface such as `modelDebug`, and a protocol that keeps teaching the wrong architecture.
 
 ## Goals / Non-Goals
 
 **Goals:**
 - Make the frontend-facing runtime publication contract scheduler/observability-first.
-- Remove orphan protocol surface that no longer has a product owner, especially `modelDebug` and related client helpers.
+- Remove orphan protocol surface that no longer has a app owner, especially `modelDebug` and related client helpers.
 - Keep transport inspection intact through canonical model-call and API-call records.
 - Align long-history paging resource ids with the new observability contract.
 

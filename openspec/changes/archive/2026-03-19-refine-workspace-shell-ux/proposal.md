@@ -1,6 +1,6 @@
 ## Why
 
-The route-driven shell landed, but the UI contract is still inconsistent: running sessions are hard to reach, loading behavior drifts from panel to panel, and the page chrome exposes too many actions at once. This makes the application feel like stacked demos instead of one coherent workspace-oriented product.
+The route-driven shell landed, but the UI contract is still inconsistent: running sessions are hard to reach, loading behavior drifts from panel to panel, and the page chrome exposes too many actions at once. This makes the application feel like stacked demos instead of one coherent workspace-oriented app.
 
 ## What Changes
 

@@ -87,7 +87,7 @@ The terminal adapter MUST NOT restore `terminal_idle_ready` as a model-visible t
 
 ### Requirement: Runtime terminal focus hydration SHALL attach already-focused TerminalSystem terminals
 
-When a runtime starts or receives a terminal focus synchronization, it SHALL normalize the focused terminal ids through the same attachment path used by explicit runtime terminal focus changes. A TerminalSystem terminal that is already focused before the runtime begins MUST be attached to `SessionRuntime` before the runtime relies on terminal snapshot/status hooks. This preserves shell2/product-bound terminal reuse without requiring a new focus event.
+When a runtime starts or receives a terminal focus synchronization, it SHALL normalize the focused terminal ids through the same attachment path used by explicit runtime terminal focus changes. A TerminalSystem terminal that is already focused before the runtime begins MUST be attached to `SessionRuntime` before the runtime relies on terminal snapshot/status hooks. This preserves shell2/app-bound terminal reuse without requiring a new focus event.
 
 #### Scenario: Runtime starts with an already-focused terminal
 

@@ -1,6 +1,6 @@
 ## Why
 
-The current WebUI is a React/Vite application that accumulated session-centric routing, custom UI primitives, and scroll/layout rules that no longer match the product's system-first direction. We need a breaking replatform so the frontend obeys the same platform laws as the backend: orthogonal systems, static delivery, and durable contracts instead of patchwork feature wiring.
+The current WebUI is a React/Vite application that accumulated session-centric routing, custom UI primitives, and scroll/layout rules that no longer match the app's system-first direction. We need a breaking replatform so the frontend obeys the same platform laws as the backend: orthogonal systems, static delivery, and durable contracts instead of patchwork feature wiring.
 
 ## What Changes
 

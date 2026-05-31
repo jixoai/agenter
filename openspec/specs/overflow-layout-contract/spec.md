@@ -72,12 +72,12 @@ Studio feature surfaces SHALL express one-dimensional layout with `flex` and two
 The Studio source tree SHALL fail contract verification if raw `overflow-hidden` appears outside the approved primitive or animation-mask files, and it SHALL also fail if raw `bg-*` classes are introduced on non-semantic layout wrappers outside the approved allowlist.
 
 #### Scenario: Unauthorized raw overflow-hidden is introduced
-- **WHEN** a source file in `extensions/studio` uses raw `overflow-hidden` outside the approved allowlist
+- **WHEN** a source file in `apps/studio` uses raw `overflow-hidden` outside the approved allowlist
 - **THEN** the overflow source-contract test fails
 - **THEN** the regression is blocked before merge
 
 #### Scenario: Unauthorized raw background ownership is introduced
-- **WHEN** a source file in `extensions/studio` adds raw `bg-*` ownership to a non-semantic layout wrapper outside the approved allowlist
+- **WHEN** a source file in `apps/studio` adds raw `bg-*` ownership to a non-semantic layout wrapper outside the approved allowlist
 - **THEN** the surface-contract test fails
 - **THEN** the regression is blocked before merge
 

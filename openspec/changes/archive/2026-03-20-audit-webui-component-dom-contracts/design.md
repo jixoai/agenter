@@ -1,6 +1,6 @@
 ## Context
 
-The repository already uses Storybook v10 plus Vitest browser tests as the preferred DOM contract layer for WebUI. The current dirty surface has good route-level coverage, but some high-interaction subcomponents still sit inside large files (`ChatConversationRows`, `LoopBusPanel`) or only inherit coverage indirectly through parent stories. This change keeps the product behavior stable while making those surfaces independently testable and easier to evolve.
+The repository already uses Storybook v10 plus Vitest browser tests as the preferred DOM contract layer for WebUI. The current dirty surface has good route-level coverage, but some high-interaction subcomponents still sit inside large files (`ChatConversationRows`, `LoopBusPanel`) or only inherit coverage indirectly through parent stories. This change keeps the app behavior stable while making those surfaces independently testable and easier to evolve.
 
 ## Goals / Non-Goals
 

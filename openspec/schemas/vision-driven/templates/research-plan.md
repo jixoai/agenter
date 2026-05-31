@@ -39,7 +39,7 @@
 
 | Checkpoint | Expected commit evidence | Current status |
 | ---------- | ------------------------ | -------------- |
-| OpenSpec artifacts before apply | Commit containing `plans/plan.md`, specs, and `tasks.md` before product-code work starts | |
+| OpenSpec artifacts before apply | Commit containing `plans/plan.md`, specs, and `tasks.md` before app-code work starts | |
 | Task-progress commits | Commit containing current-context task checkbox updates plus matching code/BDD evidence | |
 | Self-review updates | Commit containing review output and any reopened or added OpenSpec tasks before the next apply loop | |
 | Normal archive | Commit containing `openspec archive <change>` result | |
@@ -77,7 +77,7 @@ What the user asked for in their own language.
 
 ### Underlying Drive
 
-The deeper product/architecture pressure inferred from the user's language, prior decisions, and current repo facts.
+The deeper app/architecture pressure inferred from the user's language, prior decisions, and current repo facts.
 
 ### Final Visible Effect
 
@@ -99,7 +99,7 @@ Describe the ideal observed flow before naming implementation details.
 
 ### Interface Shape
 
-Describe the contracts in product language first.
+Describe the contracts in app language first.
 
 ### Data Shape
 

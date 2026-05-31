@@ -14,7 +14,7 @@ The current semantic judge platform already separates generic judge primitives f
 
 **Non-Goals:**
 
-- Do not change runtime product behavior just to satisfy a test-only phrase.
+- Do not change runtime app behavior just to satisfy a test-only phrase.
 - Do not introduce a second semantic-test provider contract outside inherited settings.
 - Do not replace deliberate exact-protocol assertions where the test is validating a literal contract by design.
 
@@ -75,4 +75,4 @@ Rejected alternative:
 - [Risk] Redundant judging increases real-provider token usage and latency. → Mitigation: keep targeted fast-paths, use low-token outputs, and reserve higher-cost structured fallbacks for ambiguous cases only.
 - [Risk] Majority vote can hide a provider’s instability if disagreement is never surfaced. → Mitigation: emit per-attempt diagnostics when quorum fails or when invalid outputs appear.
 - [Risk] Overusing semantic AI assertions can make tests too permissive. → Mitigation: preserve exact assertions for explicit protocol literals and combine semantic checks with structural/tool-trace assertions.
-- [Risk] Weather/interleaved scenarios may reveal real runtime issues, not only assertion brittleness. → Mitigation: inspect scenario evidence first and only broaden assertions when the actual behavior still satisfies the product contract.
+- [Risk] Weather/interleaved scenarios may reveal real runtime issues, not only assertion brittleness. → Mitigation: inspect scenario evidence first and only broaden assertions when the actual behavior still satisfies the app contract.

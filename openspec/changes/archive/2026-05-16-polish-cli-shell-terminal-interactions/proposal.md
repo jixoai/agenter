@@ -37,7 +37,7 @@ The following user statements are copied as acceptance anchors for this change:
 ### Modified Capabilities
 
 - `terminal-screen-projection-law`: Adds offscreen interaction-layer requirements for cursor-follow input, semantic double/triple click selection, bounded region ownership, and scrollbar progress projection.
-- `cli-shell-product`: Adds cli-shell product requirements for shell input after scroll, terminal-like word/line selection gestures, and visible shell scrollbar progress.
+- `cli-shell-app`: Adds cli-shell app requirements for shell input after scroll, terminal-like word/line selection gestures, and visible shell scrollbar progress.
 
 ## Impact
 
@@ -49,4 +49,4 @@ The following user statements are copied as acceptance anchors for this change:
 - `packages/cli-shell/test/cli-shell-tui.test.ts`
 - `packages/cli-shell/test/live-terminal-mirror.test.ts`
 - `openspec/specs/terminal-screen-projection-law/spec.md`
-- `openspec/specs/cli-shell-product/spec.md`
+- `openspec/specs/cli-shell-app/spec.md`

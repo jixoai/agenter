@@ -5,7 +5,7 @@ Shell-next currently owns an embedded OpenTUI mux with pane layout, pane chrome,
 The important platform boundary is:
 
 - `renderable-mux` / `opencompose` define reusable compositor laws: pane chrome, hit regions, resize handles, layout sync, and source-agnostic pane mounting.
-- product surfaces such as Chat and Help provide content and surface actions, but do not invent separate button or hit-test behavior.
+- app surfaces such as Chat and Help provide content and surface actions, but do not invent separate button or hit-test behavior.
 - terminal projection owns expensive backend resize delivery, because only terminal panes know which layout changes affect PTY/VT dimensions.
 
 ## Goals / Non-Goals
@@ -18,12 +18,12 @@ The important platform boundary is:
 - Coalesce terminal backend resize requests so layout drag does not overload the terminal renderer/backend.
 - Align close-confirm hit regions with visible cells.
 - Cover ShellPane and renderer-pane copy behavior with BDD tests.
-- Keep all implementation under `extensions/shell-next`.
+- Keep all implementation under `apps/shell-next`.
 
 **Non-Goals:**
 
 - Extract `opencompose` into a published package.
-- Modify `extensions/cli-shell`.
+- Modify `apps/cli-shell`.
 - Replace the existing terminal backend, OpenTUI renderer, or room implementation.
 - Add tmux/psmux/native addon paths.
 
@@ -39,7 +39,7 @@ The important platform boundary is:
 
    The resize controller already computes handles from adjacent panes. The click behavior belongs there: pointer down starts possible drag, pointer up without drag applies one-cell delta. This keeps layout pure and lets future vertical/horizontal containers reuse the same controller.
 
-   Alternative considered: expose direct `resizeLeftPane()` helpers from product Room. That would couple product surfaces to pane geometry and break the embedded compositor boundary.
+   Alternative considered: expose direct `resizeLeftPane()` helpers from app Room. That would couple app surfaces to pane geometry and break the embedded compositor boundary.
 
 3. Terminal backend resize is debounced inside terminal panes
 

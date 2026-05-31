@@ -10,7 +10,7 @@ The system SHALL provide one shared diagnostics surface for performance investig
 
 #### Scenario: Diagnostics do not alter production behavior
 - **WHEN** diagnostics are enabled for investigation
-- **THEN** the observed runtime and UI behavior remains semantically identical to the normal product flow
+- **THEN** the observed runtime and UI behavior remains semantically identical to the normal app flow
 - **THEN** diagnostics add only the lightweight counters and evidence needed for inspection
 
 ### Requirement: Performance regression workflow SHALL produce reproducible evidence

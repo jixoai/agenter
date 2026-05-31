@@ -1,12 +1,12 @@
 ## Why
 
-Manual acceptance showed that `shell-next` still fails the core interaction contract: button hover/active styles drift by surface, ShellPane selection/copy/paste is not usable, resize delivery does not yet behave as debounce plus conflated delivery, and Chat primary selection still cannot be trusted. The previous change passed mock-heavy BDD but did not match the real terminal behavior, so this follow-up change makes those interactions explicit product laws instead of local patches.
+Manual acceptance showed that `shell-next` still fails the core interaction contract: button hover/active styles drift by surface, ShellPane selection/copy/paste is not usable, resize delivery does not yet behave as debounce plus conflated delivery, and Chat primary selection still cannot be trusted. The previous change passed mock-heavy BDD but did not match the real terminal behavior, so this follow-up change makes those interactions explicit app laws instead of local patches.
 
 ## What Changes
 
 - Introduce a shared shell-next Button primitive because OpenTUI provides low-level renderables but no built-in button component.
 - Replace ad-hoc pane-title, statusbar, and dialog button rendering with the shared Button primitive so hover is bold-only and active is underline-only everywhere.
-- Re-read `extensions/cli-shell` legacy terminal selection/copy/paste behavior as a source reference, copy the needed logic into `extensions/shell-next`, and keep `extensions/cli-shell` unchanged.
+- Re-read `apps/cli-shell` legacy terminal selection/copy/paste behavior as a source reference, copy the needed logic into `apps/shell-next`, and keep `apps/cli-shell` unchanged.
 - Fix ShellPane selection so mouse drag reaches the terminal projection with correct pane-local coordinates and selection overlays remain visible.
 - Fix ShellPane paste so a single paste event reaches the terminal backend once and only once.
 - Fix ShellPane copy so host copy shortcuts use backend-owned selected text and OSC52 clipboard delivery without stealing normal terminal input.
@@ -25,9 +25,9 @@ Manual acceptance showed that `shell-next` still fails the core interaction cont
 
 ## Impact
 
-- Affects `extensions/shell-next` implementation and tests.
+- Affects `apps/shell-next` implementation and tests.
 - Adds OpenSpec artifacts under `openspec/changes/stabilize-shell-next-button-copy`.
-- Uses `extensions/cli-shell` only as read-only reference material; this change must not modify cli-shell source or tests.
+- Uses `apps/cli-shell` only as read-only reference material; this change must not modify cli-shell source or tests.
 - Does not change stable `agenter shell` routing, tmux/psmux/native-addon decisions, or OpenTUI upstream code.
 
 ## Rework Trigger: Manual Acceptance 2026-05-28
@@ -52,7 +52,7 @@ Manual acceptance after `f4b7a687` showed only resize glyph direction and Option
 - The terminal behavior must not be promoted into an OpenCompose terminal kernel yet. It belongs inside shell-next and the project-owned terminal rendering engine that consumes OpenCompose custom panes.
 - Primary clipboard must stay KISS: one explicit primary-copy path, no app-owned primary register, and no dual fallback behavior.
 
-This second rework adds a shell-next-internal Terminal Engine boundary and moves the legacy `terminal2` interaction laws there while keeping `extensions/cli-shell` read-only.
+This second rework adds a shell-next-internal Terminal Engine boundary and moves the legacy `terminal2` interaction laws there while keeping `apps/cli-shell` read-only.
 
 ## Third Rework Trigger: Selection Ownership And Dual-Layer Resize 2026-05-29
 
@@ -67,15 +67,15 @@ Manual acceptance after `d277bb79` clarified two remaining platform-law failures
 
 This third rework keeps the existing architecture decisions:
 
-- `extensions/cli-shell` remains read-only reference material;
-- terminal-specific law stays inside `extensions/shell-next`, not OpenCompose;
+- `apps/cli-shell` remains read-only reference material;
+- terminal-specific law stays inside `apps/shell-next`, not OpenCompose;
 - OpenCompose remains terminal-agnostic;
 - the rework is BDD-first and must include multi-round self-review aligned to the user's original wording;
 - implementation is bounded to at most five explicit iteration rounds, with a final merged drift list and encountered-problems list.
 
 ## Fourth Rework Trigger: Button Click Law And Semantic Selection 2026-05-29
 
-Manual acceptance after the third rework closed resize, but it found that several interaction laws are still wrong in the real shell-next product path:
+Manual acceptance after the third rework closed resize, but it found that several interaction laws are still wrong in the real shell-next app path:
 
 1. `resize通过了`
 2. `help/chat这组按钮仍然没有“激活态”的样式（下划线）`
@@ -88,4 +88,4 @@ This fourth rework keeps the current architecture direction but tightens two law
 - shared shell-next Buttons must commit actions on `mouseup` after a matching `mousedown`, instead of firing on press-down;
 - ShellPane semantic double/triple click selection must stay backend-owned and must not be immediately cleared by a Shell-view drag-selection lifecycle.
 
-The rework stays inside `extensions/shell-next` and OpenSpec artifacts. `extensions/cli-shell` remains read-only reference material.
+The rework stays inside `apps/shell-next` and OpenSpec artifacts. `apps/cli-shell` remains read-only reference material.

@@ -1,8 +1,8 @@
 # flutter_chat_view_demo
 
-Standalone Flutter Web product shell for `packages/flutter-chat-view`.
+Standalone Flutter Web app shell for `packages/flutter-chat-view`.
 
-This app is the phase-1 delivery surface for the Flutter chat track. It is intentionally outside `extensions/studio`, persists room connection profiles locally, and connects directly to the canonical room transport using saved profiles or share-link import parameters.
+This app is the phase-1 delivery surface for the Flutter chat track. It is intentionally outside `apps/studio`, persists room connection profiles locally, and connects directly to the canonical room transport using saved profiles or share-link import parameters.
 
 The current shell visual law follows an iOS 26 inspired Liquid Glass hierarchy: floating navigation / function layers use glass, while transcript and room detail content stay on stable material surfaces for readability.
 
@@ -44,7 +44,7 @@ The shell can copy a shareable link for the active profile.
 
 ## Scope
 
-- no `extensions/studio` embed
+- no `apps/studio` embed
 - responsive `profiles / chat / details` shell
 - room websocket hydration and paging
 - room attachment upload via the canonical HTTP API

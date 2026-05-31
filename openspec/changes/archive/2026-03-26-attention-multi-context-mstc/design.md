@@ -1,6 +1,6 @@
 ## Context
 
-The attention-system is the architectural kernel of Agenter. All external inputs (user messages, terminal output, task events) are transformed into attention items before the LoopBus decides whether to start a model cycle. Currently this kernel is a flat scored-fact list that cannot express the multi-dimensional, multi-context, relationship-tracking semantics required by the product vision.
+The attention-system is the architectural kernel of Agenter. All external inputs (user messages, terminal output, task events) are transformed into attention items before the LoopBus decides whether to start a model cycle. Currently this kernel is a flat scored-fact list that cannot express the multi-dimensional, multi-context, relationship-tracking semantics required by the app vision.
 
 Existing building blocks:
 - `AttentionEngine` provides add/list/query/remark/update with single-score semantics.

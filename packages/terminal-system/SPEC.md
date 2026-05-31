@@ -135,7 +135,7 @@ Debug 约束（用于定位 resize 问题）：
   - client 按自身 pacing 发送 `pullFrame`
   - 本地传输默认返回 viewport-sized row-cache frame：后端仍直接序列化当前 viewport 行，但通过每个 WebSocket attachment 私有的行 `cid` 缓存复用已知行，减少重复传输和解析
   - `cid=0` 固定表示空白无样式行；未知非零 `cid` 且未携带行内容时必须视为协议错误/重置条件
-  - row-cache / not-modified 类优化只能属于 transport codec/patch 层，不允许在 product、viewport 或 frontend render 逻辑里通过可见 frame 对象比较来跳过工作
+  - row-cache / not-modified 类优化只能属于 transport codec/patch 层，不允许在 app、viewport 或 frontend render 逻辑里通过可见 frame 对象比较来跳过工作
   - diff 只作为显式 `transport.framePatchMode: "diff"` 的远程/低带宽优化，不是本地默认路径
   - `pullFrame` 只表达 last applied frame 与当前 geometry；viewport 变化必须通过显式 `viewportDelta` / `viewportTarget` 先进入 backend truth
   - frame transport 必须拆成三个正交循环：
@@ -149,7 +149,7 @@ Debug 约束（用于定位 resize 问题）：
   - dirty 判断以 backend `getText()` 为主要优化比较源，同时附加 viewport/cursor facts，确保纯滚动和光标移动能触发可见帧 dirty
   - 当前 JS 运行时依赖事件循环顺序保证 queued input 与 `pullFrame` 的垂直同步；不需要额外 pre-pull flush。若未来迁移到多线程运行时，必须重新审查这个同步边界
   - WebSocket 仍然是 transport control plane：负责 bootstrap、credential、lifecycle close 与 fallback；同 Bun 进程/同 pid 客户端可以在 `hello`/`helloAck` 后升级到 same-process direct data plane
-  - same-process direct data plane 只用函数调用承载同一套 semantic terminal messages，消息仍进入 backend input drain；它不是第二个 terminal truth、不是 product-layer shortcut，也不绑定 BroadcastChannel
+  - same-process direct data plane 只用函数调用承载同一套 semantic terminal messages，消息仍进入 backend input drain；它不是第二个 terminal truth、不是 app-layer shortcut，也不绑定 BroadcastChannel
   - direct upgrade token 必须一次性 claim；未来如果扩展到 worker/thread/cross-process，可以替换底层 broker，但必须保留 WebSocket control-plane 与 direct data-plane 的边界
 - 落盘链路必须是 **ANSI-first**：
   - 先从 xterm buffer 生成结构化快照（`richLines` + cursor + rows/cols）
@@ -286,7 +286,7 @@ git-log 约束：
   - direct write
   - raw write
   - websocket transport input bytes
-- product-managed autonomy 也必须回到同一 gate：ordinary-user product 只能通过 TerminalSystem grant、guard approval request、timeboxed write lease 或等价 terminal authority fact 获得 terminal write authority，不能绕过 terminal-system 自己发明 hidden write path。
+- app-managed autonomy 也必须回到同一 gate：ordinary-user app 只能通过 TerminalSystem grant、guard approval request、timeboxed write lease 或等价 terminal authority fact 获得 terminal write authority，不能绕过 terminal-system 自己发明 hidden write path。
 - websocket transport 是独立的 live terminal session protocol，不承载 automation durable truth：
   - live websocket `inputBytes` 归属真人交互 forwarding，必须经过同一 write policy gate，但授权后低延迟直写 PTY，不创建 pending file、approval request 或 `terminal_write` activity
   - automation `terminal.write` / `terminal.input` 继续走 control-plane durable path，保留 pending inbox、approval request 与 `terminal_write` activity
@@ -315,7 +315,7 @@ git-log 约束：
 - approval history 必须保留 `pending | approved | denied | expired` 的 durable 状态转移；审批查询读取的是历史事实，而不是只看当前 pending 队列。
 - approved request 必须 mint timeboxed write lease。
 - lease 过期后，所有输入路径立即恢复拒绝。
-- product hosting attention 本身不得替代 TerminalSystem lease、approval 或 grant。
+- app hosting attention 本身不得替代 TerminalSystem lease、approval 或 grant。
 - autonomous terminal write 的 activity / effect ledger 必须保留 Avatar actor identity 与 terminal authority provenance，不能把 superadmin bootstrap actor 当成 hidden writer。
 
 ### 7.4 Session Projection and UI Contract

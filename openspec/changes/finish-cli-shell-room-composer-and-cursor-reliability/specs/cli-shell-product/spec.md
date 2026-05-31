@@ -29,7 +29,7 @@ The cli-shell Room composer SHALL be a multiline textarea host. It SHALL support
 - **THEN** cli-shell shows an inline confirmation panel in the composer area
 - **AND** the user can either replace the current draft or keep it and insert the history item at the current cursor position
 
-### Requirement: cli-shell Chat SHALL persist its default layout as product config
+### Requirement: cli-shell Chat SHALL persist its default layout as app config
 
 cli-shell SHALL persist the preferred default Chat layout in `~/.agenter/cli-shell/settings.json`. That persisted layout SHALL control how the singleton Chat surface reopens when currently closed.
 
@@ -48,7 +48,7 @@ cli-shell SHALL model room-message send success separately from any follow-up sn
 - **WHEN** the room message send succeeds
 - **AND** the follow-up room refresh fails
 - **THEN** cli-shell clears the draft and preserves the successful send result
-- **AND** it surfaces the refresh failure as a separate recoverable product notice
+- **AND** it surfaces the refresh failure as a separate recoverable app notice
 
 ### Requirement: cli-shell native cursor projection SHALL retain the historical offset fix
 

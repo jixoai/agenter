@@ -25,7 +25,7 @@
 ## Evidence
 
 - `bun run openspec:vision -- commit-check fix-shell-next-pty-aware-selection-routing --phase apply`: passed, latest spec commit `d5698f30`; `bun.lock` reported as unrelated dirty.
-- `bun test packages/termless-backend-utils/test/terminal-host-input.test.ts packages/termless-core/test/terminal-interaction.test.ts packages/terminal-transport-protocol/test/terminal-transport-protocol.test.ts packages/terminal-system/test/control-plane.test.ts extensions/shell-next/test/terminal-view-renderable.test.ts extensions/shell-next/test/shell-next-app.test.ts --test-name-pattern "mouse|selection|drag|primary|interaction|scrollRows|row-cache|PTY|pty"`: 54 pass, 0 fail.
+- `bun test packages/termless-backend-utils/test/terminal-host-input.test.ts packages/termless-core/test/terminal-interaction.test.ts packages/terminal-transport-protocol/test/terminal-transport-protocol.test.ts packages/terminal-system/test/control-plane.test.ts apps/shell-next/test/terminal-view-renderable.test.ts apps/shell-next/test/shell-next-app.test.ts --test-name-pattern "mouse|selection|drag|primary|interaction|scrollRows|row-cache|PTY|pty"`: 54 pass, 0 fail.
 - `bun run --filter '@agenter/termless-backend-utils' typecheck`: passed.
 - `bun run --filter '@agenter/terminal-transport-protocol' typecheck`: passed.
 - `bun run --filter '@agenter/terminal-system' typecheck`: passed.
@@ -36,7 +36,7 @@
 
 ## Known External Drift
 
-- `bun run --filter 'agenter-ext-shell-next' typecheck` is blocked by current branch Room/MessageRecord type drift: `senderActorId`, `readActorIds`, and missing `MessageControlPlaneEntry.superKey/createdBySystemId`. These errors are outside the Shell-Next terminal selection/mouse path and were not introduced by this change.
+- `bun run --filter 'agenter-app-shell-next' typecheck` is blocked by current branch Room/MessageRecord type drift: `senderActorId`, `readActorIds`, and missing `MessageControlPlaneEntry.superKey/createdBySystemId`. These errors are outside the Shell-Next terminal selection/mouse path and were not introduced by this change.
 - `bun.lock` remains dirty and is intentionally excluded from staging.
 
 ## Remaining Risk

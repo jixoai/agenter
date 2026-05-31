@@ -17,7 +17,7 @@ The change is intentionally breaking. Backward compatibility is out of scope; co
 - Re-establish a clean boundary between runtime execution and catalog/access/projection state.
 - Make `terminal_read` / `terminal_snapshot` pure inspection primitives by default.
 - Move terminal surface projection to one authoritative server/store path so the WebUI stops rebuilding seat truth locally.
-- Reduce `terminal-view` to a viewport primitive and move product chrome to the host surface.
+- Reduce `terminal-view` to a viewport primitive and move app chrome to the host surface.
 - Replace low-signal source-string tests with BDD integration and Storybook DOM contracts.
 
 **Non-Goals:**
@@ -71,7 +71,7 @@ Why:
 Alternative considered:
 - keep the route merge logic and only add more tests. Rejected because the duplicated projection is itself the architecture defect.
 
-### 4. Move product chrome out of `terminal-view`
+### 4. Move app chrome out of `terminal-view`
 `@agenter/terminal-view` becomes a viewport primitive only:
 - xterm lifecycle
 - snapshot hydration
@@ -81,11 +81,11 @@ Alternative considered:
 Titlebar, footer, metadata text, and decorative shell visuals move to WebUI host components.
 
 Why:
-- viewport rendering is reusable infrastructure; product chrome is not
-- the current component reads xterm private internals while also owning product presentation, which couples unrelated changes
+- viewport rendering is reusable infrastructure; app chrome is not
+- the current component reads xterm private internals while also owning app presentation, which couples unrelated changes
 
 Alternative considered:
-- keep the current shell inside the WebComponent and make it configurable. Rejected because it still couples renderer and product chrome.
+- keep the current shell inside the WebComponent and make it configurable. Rejected because it still couples renderer and app chrome.
 
 ### 5. Drive the change with BDD-first vertical slices
 Implementation order:

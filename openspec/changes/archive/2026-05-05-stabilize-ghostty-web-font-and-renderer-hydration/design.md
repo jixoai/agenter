@@ -96,7 +96,7 @@ Rationale:
 
 Alternative considered:
 - Remove `wterm` from the UI entirely.
-- Rejected because experimentation remains an intentional product goal.
+- Rejected because experimentation remains an intentional app goal.
 
 ### 6. `@font-face` declaration is not renderer-ready truth
 

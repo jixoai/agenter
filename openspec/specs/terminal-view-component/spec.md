@@ -70,7 +70,7 @@ The terminal renderer SHALL preserve ANSI rendering fidelity and stable fit-driv
 
 ### Requirement: Terminal-view SHALL support terminal-local presentation controls
 
-The integrated terminal viewport SHALL expose terminal-local presentation controls including `fit` and `cover`, while leaving non-terminal product chrome to the host.
+The integrated terminal viewport SHALL expose terminal-local presentation controls including `fit` and `cover`, while leaving non-terminal app chrome to the host.
 
 #### Scenario: Switch between fit and cover modes
 - **WHEN** the host toggles between `fit` and `cover`
@@ -79,11 +79,11 @@ The integrated terminal viewport SHALL expose terminal-local presentation contro
 
 ### Requirement: Terminal-view SHALL behave as a viewport primitive
 
-The standalone `terminal-view` component SHALL own terminal renderer lifecycle, renderer resolution, snapshot hydration, live transport updates, and viewport sizing only. Product-level chrome such as titlebars, metadata footers, and decorative backgrounds MUST remain in the host surface.
+The standalone `terminal-view` component SHALL own terminal renderer lifecycle, renderer resolution, snapshot hydration, live transport updates, and viewport sizing only. App-level chrome such as titlebars, metadata footers, and decorative backgrounds MUST remain in the host surface.
 
-#### Scenario: Host owns product chrome
+#### Scenario: Host owns app chrome
 - **WHEN** a host embeds `terminal-view`
-- **THEN** the component renders the terminal viewport without product-level title or footer chrome
+- **THEN** the component renders the terminal viewport without app-level title or footer chrome
 - **THEN** the host remains responsible for surrounding shell visuals and metadata placement
 
 #### Scenario: Renderer-private helpers stay inside the viewport primitive
@@ -151,7 +151,7 @@ The standalone `terminal-view` component SHALL report renderer-owned native cont
 
 ### Requirement: The system SHALL provide `web-terminal-view` and `shell-terminal-view` as one component family over the same termless substrate
 
-The system SHALL provide `web-terminal-view` for Web hosts and `shell-terminal-view` for native terminal hosts. Both roles SHALL sit on the same termless substrate: raw terminal transport is shared, while shell-native protocol-2 decoding/rendering consumes backend-authored screen-projection truth built on top of that same substrate. `web-terminal-view` SHALL NOT be treated as debugging-only, and `shell-terminal-view` SHALL NOT be used as the product name.
+The system SHALL provide `web-terminal-view` for Web hosts and `shell-terminal-view` for native terminal hosts. Both roles SHALL sit on the same termless substrate: raw terminal transport is shared, while shell-native protocol-2 decoding/rendering consumes backend-authored screen-projection truth built on top of that same substrate. `web-terminal-view` SHALL NOT be treated as debugging-only, and `shell-terminal-view` SHALL NOT be used as the app name.
 
 #### Scenario: Web host embeds `web-terminal-view`
 - **WHEN** a Web host instantiates `web-terminal-view` with a valid terminal projection target
@@ -159,17 +159,17 @@ The system SHALL provide `web-terminal-view` for Web hosts and `shell-terminal-v
 - **AND** the host does not need cli-shell-specific internals just to consume the component
 
 #### Scenario: Native host embeds `shell-terminal-view`
-- **WHEN** a native terminal product such as `cli-shell` instantiates `shell-terminal-view`
+- **WHEN** a native terminal app such as `cli-shell` instantiates `shell-terminal-view`
 - **THEN** the component renders the same backend terminal truth back into the native terminal host
-- **AND** the component contract remains reusable outside that single product
+- **AND** the component contract remains reusable outside that single app
 
 #### Scenario: Native protocol-2 rendering stays derived from the raw substrate
-- **WHEN** a native terminal product such as `cli-shell` instantiates `shell-terminal-view`
+- **WHEN** a native terminal app such as `cli-shell` instantiates `shell-terminal-view`
 - **THEN** it decodes/renders backend-authored terminal projection truth built on top of the raw transport substrate
 - **AND** it does not redefine a second independent transport contract
 
 #### Scenario: Future Web products reuse the same Web component family
-- **WHEN** a future product such as `agenter shell --web` wants to embed the shared terminal projection
+- **WHEN** a future app such as `agenter shell --web` wants to embed the shared terminal projection
 - **THEN** it can consume `web-terminal-view`
 - **AND** the component is not blocked by a "debug-only" classification
 
@@ -267,7 +267,7 @@ Terminal-view components SHALL capture pointer, drag, wheel, keyboard, paste, co
 #### Scenario: Renderable drag stays inside one owner
 - **WHEN** a drag starts inside shell or dialogue and moves across another owner region
 - **THEN** `shell-terminal-view` SHALL keep the selection owner from the drag start
-- **AND** it SHALL NOT merge shell, dialogue, scrollbar, or product chrome into one host-local range
+- **AND** it SHALL NOT merge shell, dialogue, scrollbar, or app chrome into one host-local range
 
 #### Scenario: Selection overlay follows backend content through scroll round trip
 - **WHEN** a backend owner has selected text and the user scrolls the viewport down and back up

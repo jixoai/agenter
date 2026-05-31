@@ -7,7 +7,7 @@ The repository now has two conflicting layout laws: route-level `main + right de
 - Upgrade the shared split-detail law so one `detailOpen` state drives desktop persistent detail visibility and compact right-sheet visibility without route-local hacks.
 - Add a dedicated shared host for split-detail page assembly so `WorkbenchPageContent` and feature routes stop half-implementing visibility, close ownership, and compact transitions on their own.
 - Introduce `SidebarScaffold` as the only static `sidebar + content` shell and migrate all remaining `SplitView` consumers to it.
-- **BREAKING** Remove the `SplitView` export, its unused multi-variant API, and all product/test/doc references after consumers are migrated.
+- **BREAKING** Remove the `SplitView` export, its unused multi-variant API, and all app/test/doc references after consumers are migrated.
 - Update durable docs and OpenSpec contracts so the repository has one explicit law for stateful main-detail surfaces and one explicit law for static sidebar shells.
 - Add regression coverage that prevents `SplitView` from reappearing and locks `SidebarScaffold` plus unified split-detail visibility into place.
 

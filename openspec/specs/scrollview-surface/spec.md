@@ -32,7 +32,7 @@ User-facing frontend surfaces SHALL delegate scroll ownership to shared scroll p
 #### Scenario: Shared Svelte package consumes shared scroll law
 - **WHEN** a shared Svelte package needs durable scroll ownership
 - **THEN** it imports the appropriate shared scroll primitive from `@agenter/svelte-components`
-- **THEN** host packages do not need a product-local wrapper to recover the shared scroll law
+- **THEN** host packages do not need a app-local wrapper to recover the shared scroll law
 
 #### Scenario: Insert motion does not create a second writer
 - **WHEN** a shared transcript surface applies insert motion or virtualization-driven reconciliation
@@ -67,7 +67,7 @@ The shared `ScrollView` primitive SHALL derive its virtual-mode type surface fro
 #### Scenario: Shared package typechecks after dependency evolution
 - **WHEN** the installed TanStack virtualizer package changes exported helper types or callback instance shapes
 - **THEN** `@agenter/svelte-components` still typechecks by deriving its public virtual-mode contract from the dependency's durable exported structures
-- **THEN** downstream Svelte consumers such as `agenter-ext-studio` do not fail typecheck because `ScrollView` shadowed an outdated callback or key type
+- **THEN** downstream Svelte consumers such as `agenter-app-studio` do not fail typecheck because `ScrollView` shadowed an outdated callback or key type
 
 #### Scenario: Virtual rows render from non-null normalized data
 - **WHEN** `ScrollView` renders virtual items in Svelte templates

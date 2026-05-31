@@ -1,4 +1,4 @@
-# add-cli-shell-product runtime progress
+# add-cli-shell-app runtime progress
 
 ## Objective facts
 
@@ -15,39 +15,39 @@
 
 ## Remaining platform gaps
 
-- `cli-shell` does not yet consume product attention and product delegation APIs in product code.
+- `cli-shell` does not yet consume app attention and app delegation APIs in app code.
 - Managed/takeover state is not yet projected from platform truth on reconnect.
-- Managed/takeover enable/disable does not yet commit hosting attention or create/revoke product delegations.
+- Managed/takeover enable/disable does not yet commit hosting attention or create/revoke app delegations.
 - Real daemon integration coverage for repeated attach / `@default` / `--session=2` is still missing.
 - TUI group is not started yet.
 
 ## Evidence and blockers
 
 - Current targeted `cli-shell` and launcher tests are green.
-- `openspec validate add-cli-shell-product --strict` is green.
+- `openspec validate add-cli-shell-app --strict` is green.
 - Package-level `bunx tsc --noEmit -p packages/cli/tsconfig.json` is still blocked by pre-existing drift in `packages/tui/src/run-tui.tsx` (`ChatMessageRole` includes `system` while the local consumer expects only `user | assistant`).
 
 ## Runtime tensions observed during managed/integration closure
 
 - Real daemon room grants keep the bootstrap superadmin membership alongside the summoned Avatar grants. The durable contract for cli-shell is "selected Avatar grants are ensured", not "the room contains only cli-shell avatars".
 - Global terminal and room catalog order is not a stable contract. Integration assertions should sort by durable keys (`terminalId`, `metadata.resourceKey`) instead of assuming creation order.
-- The cli-shell package boundary stayed clean during managed-mode implementation: product code consumed `@agenter/client-sdk` and `@agenter/product-extension-runtime` only. The remaining cross-package typecheck blocker lives in pre-existing `packages/tui/src/run-tui.tsx`, which should not be misattributed to cli-shell runtime work.
+- The cli-shell package boundary stayed clean during managed-mode implementation: app code consumed `@agenter/client-sdk` and `@agenter/app-runtime` only. The remaining cross-package typecheck blocker lives in pre-existing `packages/tui/src/run-tui.tsx`, which should not be misattributed to cli-shell runtime work.
 
 ## TUI substrate notes
 
-- The collapsed shell-terminal TUI can stay product-orthogonal by reading only runtime-store projections: `focusedTerminalId`, `terminalSnapshots`, `heartbeatGroups`, and `unreadBySession`. No `@agenter/tui` dashboard/session-list reuse is needed.
+- The collapsed shell-terminal TUI can stay app-orthogonal by reading only runtime-store projections: `focusedTerminalId`, `terminalSnapshots`, `heartbeatGroups`, and `unreadBySession`. No `@agenter/tui` dashboard/session-list reuse is needed.
 - This workspace needed an explicit `bun install` before `@opentui/core` and `@opentui/react` became resolvable in `packages/cli-shell`. The package declarations were correct, but the local install state was missing.
-- `@opentui/react/test-utils` currently leaves a React `act(...)` warning on renderer teardown even though the collapsed TUI assertions pass. This is test-harness noise, not a product-contract failure, and should not be confused with a cli-shell runtime regression.
+- `@opentui/react/test-utils` currently leaves a React `act(...)` warning on renderer teardown even though the collapsed TUI assertions pass. This is test-harness noise, not a app-contract failure, and should not be confused with a cli-shell runtime regression.
 
 ## Next steps
 
-1. Add product-side managed runtime helpers around hosting attention and product delegation.
+1. Add app-side managed runtime helpers around hosting attention and app delegation.
 2. Add real daemon integration tests for repeated attach / avatar override / session isolation.
 3. Use those helpers as the substrate for the bottom-only TUI instead of inventing local managed state.
 
 ## Interactive TUI closure facts
 
-- The interactive TUI now routes product interaction through a controller layer instead of a renderer-heavy test harness. This was necessary because the Bun + OpenTUI test renderer teardown kept producing unstable behavior unrelated to cli-shell product contracts.
+- The interactive TUI now routes app interaction through a controller layer instead of a renderer-heavy test harness. This was necessary because the Bun + OpenTUI test renderer teardown kept producing unstable behavior unrelated to cli-shell app contracts.
 - The cli-shell frame now renders as a styled cell grid, including gray user-message rows and gray focused input rows, while preserving deterministic column accounting for CJK and emoji glyphs.
 - Focused TUI tests now cover:
   - toolbar status / heartbeat summaries
@@ -60,7 +60,7 @@
 
 ## Remaining gap after TUI closure
 
-- Task 4.21 is intentionally still open. Cli-shell now creates and projects product delegations correctly, but the remaining acceptance requirement is stronger: confirm that autonomous terminal writes in managed execution use the Avatar actor identity and preserve delegation/lease provenance in the real write path, rather than only in cli-shell's own projection state.
+- Task 4.21 is intentionally still open. Cli-shell now creates and projects app delegations correctly, but the remaining acceptance requirement is stronger: confirm that autonomous terminal writes in managed execution use the Avatar actor identity and preserve delegation/lease provenance in the real write path, rather than only in cli-shell's own projection state.
 - Real local walkthrough (`5.5`) and long-running real AI semantic validation (`5.7`-`5.11`) remain pending after the TUI task group.
 
 ## 2026-05-08 real walkthrough closure facts for 5.5
@@ -162,8 +162,8 @@
     - model-response cache file observation
 
 - The semantic suite input path was corrected to follow durable platform law.
-  - Earlier assumption: cli-shell product room could be used as the conversational wake source.
-  - Verified correction: self-evolution chat turns must use the session primary room path, not the product room metadata room.
+  - Earlier assumption: cli-shell app room could be used as the conversational wake source.
+  - Verified correction: self-evolution chat turns must use the session primary room path, not the app room metadata room.
   - Real fixture change:
     - attach the session primary room before chat sends
     - read back assistant-visible replies from the attached primary room rather than from optimistic chat-only projections
@@ -171,7 +171,7 @@
 - Deterministic verification for the semantic suite scaffolding is green:
   - `bunx tsc --noEmit -p packages/cli-shell/tsconfig.json`
   - `bun test packages/cli-shell/test/cli-shell.test.ts packages/cli-shell/test/cli-shell.integration.test.ts packages/cli-shell/test/cli-shell-tui.test.tsx packages/cli-shell/test/package-boundary.test.ts packages/cli-shell/test/real-cli-shell-semantic.integration.test.ts`
-  - `openspec validate add-cli-shell-product --strict`
+  - `openspec validate add-cli-shell-app --strict`
 
 - Real-provider acceptance remains objectively blocked on this machine as of 2026-05-08:
   - `glm` (`https://api.z.ai/api/anthropic`)
@@ -190,7 +190,7 @@
 
 - Because the long-running suite cannot complete a full real semantic pass with any currently available provider on this machine:
   - `5.7` and `5.8` are supportable as implemented suite capability
-  - `5.9` and `5.11` remain blocked as real acceptance tasks, not as missing cli-shell product code
+  - `5.9` and `5.11` remain blocked as real acceptance tasks, not as missing cli-shell app code
 
 ## 2026-05-08 semantic acceptance reopen and closure for 5.9 / 5.11
 
@@ -200,7 +200,7 @@
   - `AGENTER_REAL_AI_MODEL=deepseek-chat`
   - `AGENTER_REAL_AI_VENDOR=deepseek`
 
-- Real acceptance failures after that switch were suite/fixture law mismatches, not missing cli-shell product behavior:
+- Real acceptance failures after that switch were suite/fixture law mismatches, not missing cli-shell app behavior:
   - room-reply wait originally used chat timestamp ordering against primary-room durable messages; real runtime ordering is not guaranteed across those two surfaces
   - assistant-room detection originally required `senderActorId` only; real primary-room snapshots are more stable when `from` is also accepted as Avatar identity evidence
   - model-call wait originally used recent-array length, which is not durable because the debug list is a sliding window; stable `modelCall.id` is the correct anchor
@@ -212,7 +212,7 @@
 
 - Closure evidence on the current suite revision:
   - `bunx tsc --noEmit -p packages/cli-shell/tsconfig.json`
-  - `openspec validate add-cli-shell-product --strict`
+  - `openspec validate add-cli-shell-app --strict`
   - `bun test packages/cli-shell/test/real-cli-shell-semantic.integration.test.ts --test-name-pattern "senior-led"`
     - pass in ~75s
   - `bun test packages/cli-shell/test/real-cli-shell-semantic.integration.test.ts --test-name-pattern "requirement-led"`
@@ -223,7 +223,7 @@
 - These three passing real-AI traces now support `5.9`:
   - `senior-led`: result-first / terse preference learned from correction and reused after compact+reconnect
   - `requirement-led`: strict `result:` / `next:` format learned from evidence instead of role archetype
-  - `playful`: relaxed companion-like tone learned without turning playfulness into a product mode or breaking engineering boundaries
+  - `playful`: relaxed companion-like tone learned without turning playfulness into a app mode or breaking engineering boundaries
 
 - The same suite now supports `5.11` because each passing scenario includes the required long-script behaviors:
   - many-turn terminal-adjacent exchange
@@ -240,12 +240,12 @@
 
 ## 2026-05-08 publish-surface closure facts
 
-- The product implementation had already closed functionally; the remaining work was npm publish-surface hardening for `agenter` and `@agenter/cli-shell`.
+- The app implementation had already closed functionally; the remaining work was npm publish-surface hardening for `agenter` and `@agenter/cli-shell`.
 
 - The `agenter` public wrapper now avoids loading daemon/runtime chunks for pure metadata flows:
   - `packages/cli/src/run-cli.ts` moved daemon/auth-service startup imports behind dynamic boundaries
-  - descriptor-launched product metadata argv (`--help`, `--version`, `help`, `version`) now skip daemon bootstrap
-  - objective effect: `agenter shell --help` no longer triggers daemon/runtime side effects just to print product help
+  - descriptor-launched app metadata argv (`--help`, `--version`, `help`, `version`) now skip daemon bootstrap
+  - objective effect: `agenter shell --help` no longer triggers daemon/runtime side effects just to print app help
 
 - The bundled prompt/i18n asset blocker was closed without adding ad-hoc package-root file copying:
   - `packages/i18n-en/src/index.ts` and `packages/i18n-zh-Hans/src/index.ts` now use bundled JSON payloads as the non-workspace fallback while preserving live `prompts/` dir loading in the workspace
@@ -256,7 +256,7 @@
   - `packages/terminal-system/src/xterm-bridge.ts` now uses that static module boundary instead of `createRequire("@xterm/headless")`
   - objective effect: `agenter` dist now carries the already-validated headless terminal implementation inside the bundle, so installed tarballs can start the daemon without missing-module failure
 
-- The `@agenter/cli-shell` help/runtime blocker was closed in product code:
+- The `@agenter/cli-shell` help/runtime blocker was closed in app code:
   - `packages/cli-shell/src/run-cli-shell.ts` now short-circuits metadata-only argv and lazy-loads the TUI runner only for real TTY attach flows
   - `packages/cli-shell/scripts/build.ts` now enables chunk splitting so the OpenTUI platform code stays out of help/non-TTY startup
   - objective effect: `agenter-cli-shell --help` and `agenter shell --help` both exit cleanly without resolving OpenTUI platform modules early

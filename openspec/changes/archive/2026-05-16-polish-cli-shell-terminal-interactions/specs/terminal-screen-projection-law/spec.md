@@ -18,7 +18,7 @@ The offscreen frame projection component SHALL own terminal-like semantic select
 #### Scenario: Semantic selection uses the normal copy path
 - **WHEN** a word or row is selected by double-click or triple-click
 - **THEN** copy extraction SHALL return text through the same selected-text path as drag selection
-- **AND** product code SHALL NOT implement a separate copy algorithm for semantic selections
+- **AND** app code SHALL NOT implement a separate copy algorithm for semantic selections
 
 ### Requirement: Offscreen terminal input SHALL request backend cursor follow
 

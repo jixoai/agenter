@@ -36,10 +36,10 @@ This change therefore treats terminal interaction as a platform-law correction, 
 
 - Promote this behavior into OpenCompose itself.
 - Change renderer-pane copy/selection behavior that is already correct unless it is directly touched by the new plugin contract.
-- Modify `extensions/cli-shell`.
+- Modify `apps/cli-shell`.
 - Introduce tmux/psmux/native-addon work.
 
-## Original Product Intent
+## Original App Intent
 
 The design and self-review for this change must stay aligned to these exact user statements:
 
@@ -70,7 +70,7 @@ The Shell/OpenCompose view path only does:
 The concrete owner after this rework is:
 
 - `packages/termless-core/src/terminal-host-input.ts` for host-side keyboard and pointer gesture law;
-- `extensions/shell-next/src/sources/bun-terminal-protocol-source.ts` and `extensions/shell-next/src/sources/shell-next-live-terminal-source.ts` as the source-owned adapters that bind that law to local Ghostty/Xterm and live transport mirrors.
+- `apps/shell-next/src/sources/bun-terminal-protocol-source.ts` and `apps/shell-next/src/sources/shell-next-live-terminal-source.ts` as the source-owned adapters that bind that law to local Ghostty/Xterm and live transport mirrors.
 
 Alternative considered: keep semantic click and drag-selection state in the frame/view layer and only forward resulting callbacks. Rejected because it preserves split ownership and keeps scroll semantics in the wrong layer.
 

@@ -8,12 +8,12 @@ terminal-1 shell truth
 terminal-chat backend
   -> dialogue offscreen renderer, including selection/copy/scroll/cursor/wrap
 terminal-2
-  -> final composed product screen
+  -> final composed app screen
 native/web host
   -> adapter only
 ```
 
-The next polish work must stay inside that boundary. The failures being addressed are interaction gaps, not a reason to add a second product truth or a second terminal-2-local selection model.
+The next polish work must stay inside that boundary. The failures being addressed are interaction gaps, not a reason to add a second app truth or a second terminal-2-local selection model.
 
 ## Goals / Non-Goals
 
@@ -57,7 +57,7 @@ Triple-click selection selects the clicked row inside the active owner region. T
 
 Rejected alternative: select the whole composed screen row.
 
-Reason: shell and dialogue have independent selection/copy ownership. A row gesture inside one region must not select product chrome or another region.
+Reason: shell and dialogue have independent selection/copy ownership. A row gesture inside one region must not select app chrome or another region.
 
 ### 4. Shell Input Uses Existing Follow-Cursor Bridge
 

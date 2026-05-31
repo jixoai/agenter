@@ -1,6 +1,6 @@
 ## Context
 
-`loopbus-attention-first-plugin-pipeline` introduces the backend contract, but the migration is incomplete until client-sdk and WebUI stop depending on the legacy single-focus and diff-only assumptions. The user requirement is broader than backend correctness: the product surface should make the new terminal contract obvious and stable, with minimal compatibility shims.
+`loopbus-attention-first-plugin-pipeline` introduces the backend contract, but the migration is incomplete until client-sdk and WebUI stop depending on the legacy single-focus and diff-only assumptions. The user requirement is broader than backend correctness: the app surface should make the new terminal contract obvious and stable, with minimal compatibility shims.
 
 Existing code already has relevant integration points:
 - runtime snapshots carry both `focusedTerminalId` and `focusedTerminalIds`

@@ -36,4 +36,4 @@ User-facing frontend surfaces SHALL delegate scroll ownership to shared scroll p
 
 - **WHEN** a shared Svelte package needs durable scroll ownership
 - **THEN** it imports the appropriate shared scroll primitive from `@agenter/svelte-components`
-- **THEN** host packages do not need a product-local wrapper to recover the scroll law
+- **THEN** host packages do not need a app-local wrapper to recover the scroll law

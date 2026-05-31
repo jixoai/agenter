@@ -221,7 +221,7 @@
       <header>
         <h1>Studio now embeds Web Chat through app-view</h1>
         <p class="lede">
-          Round 4 implements the user-confirmed app-view law: Web Chat is a product surface that can run as a full app or as a partial embedded room view, like Chrome vs Chrome WebView. Studio now loads the room chat through an iframe app-view boundary and keeps superadmin controls outside that boundary.
+          Round 4 implements the user-confirmed app-view law: Web Chat is a app surface that can run as a full app or as a partial embedded room view, like Chrome vs Chrome WebView. Studio now loads the room chat through an iframe app-view boundary and keeps superadmin controls outside that boundary.
         </p>
         <div class="chips">
           <span class="chip pass">Exit: pass</span>
@@ -236,7 +236,7 @@
         <div class="grid">
           <div class="card">
             <strong>Boundary</strong>
-            Studio no longer mounts <code>WebChatViewHost</code> directly as a product surface. It builds an app-view URL and renders <code>message-room-app-view-frame</code>.
+            Studio no longer mounts <code>WebChatViewHost</code> directly as a app surface. It builds an app-view URL and renders <code>message-room-app-view-frame</code>.
           </div>
           <div class="card">
             <strong>Runtime ownership</strong>
@@ -261,7 +261,7 @@
           </thead>
           <tbody>
             <tr>
-              <td>Studio consumes the full Web Chat product shell instead of rebuilding Framework7 chat topology.</td>
+              <td>Studio consumes the full Web Chat app shell instead of rebuilding Framework7 chat topology.</td>
               <td>Live 4174 screenshot shows iframe src <code>http://127.0.0.1:4293/?mode=room&amp;...&amp;viewer=...</code> and app-view page class <code>review-shell-room-page review-shell-embedded-room-page page</code>.</td>
               <td class="status-pass">Pass</td>
             </tr>
@@ -277,7 +277,7 @@
             </tr>
             <tr>
               <td>Round 1/2 CSS work does not become the main architectural answer.</td>
-              <td>Leaf geometry fixes stay as package guardrails, while the product embedding path is now app-view iframe.</td>
+              <td>Leaf geometry fixes stay as package guardrails, while the app embedding path is now app-view iframe.</td>
               <td class="status-pass">Pass</td>
             </tr>
           </tbody>
@@ -303,7 +303,7 @@
         <h3>Plain-language deviations</h3>
         <ol>
           <li>Rounds 1 and 2 fixed real leaf-geometry risks, but they were not the complete architecture fix.</li>
-          <li>The correct product law is app-view iframe embedding; Studio owns superadmin chrome, app-view owns chat.</li>
+          <li>The correct app law is app-view iframe embedding; Studio owns superadmin chrome, app-view owns chat.</li>
           <li>The first live verification hit a stale 4292 app-view pointed at the review harness. Isolated 4174/4293 validation used the current daemon proxy and passed.</li>
           <li>Some lower-level WebChat prop/type names still say actor; this change cleans the app-view and Studio boundary, not the entire public WebChat API.</li>
         </ol>
@@ -320,9 +320,9 @@
         <h2>Verification Commands</h2>
         <ul>
           <li><code>bun run --filter '@agenter/web-chat-view-example' typecheck</code></li>
-          <li><code>bun run --filter 'agenter-ext-studio' typecheck</code></li>
+          <li><code>bun run --filter 'agenter-app-studio' typecheck</code></li>
           <li><code>bun run --filter '@agenter/web-chat-view-example' test -- test/review-profile-query-contract.test.ts test/review-people-projection-contract.test.ts</code></li>
-          <li><code>bun run --filter 'agenter-ext-studio' test:unit -- src/lib/features/messages/message-app-view-url.spec.ts src/lib/features/messages/message-room-route-contract.spec.ts</code></li>
+          <li><code>bun run --filter 'agenter-app-studio' test:unit -- src/lib/features/messages/message-app-view-url.spec.ts src/lib/features/messages/message-room-route-contract.spec.ts</code></li>
           <li><code>bun agenter studio --dev --web-port 4174</code> plus Playwright screenshots against desktop and iPhone 14.</li>
         </ul>
       </section>

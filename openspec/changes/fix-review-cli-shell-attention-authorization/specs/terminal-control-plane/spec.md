@@ -52,15 +52,15 @@ The terminal control plane SHALL expose a `terminal cancel` operation, or equiva
 
 ### Requirement: Terminal action ids SHALL be local to terminal action state
 
-Terminal action ids SHALL identify one action within TerminalSystem action state. They MUST NOT be confused with MessageRoom ids, AvatarRuntime session ids, or cli-shell product session keys.
+Terminal action ids SHALL identify one action within TerminalSystem action state. They MUST NOT be confused with MessageRoom ids, AvatarRuntime session ids, or cli-shell app session keys.
 
 #### Scenario: Action id resolves only with terminal scope
 - **WHEN** a caller waits or cancels action id `N`
 - **THEN** TerminalSystem resolves `N` under the intended terminal or action namespace
 - **AND** the operation cannot affect an unrelated terminal action by sharing a numeric id
 
-#### Scenario: Product session key is not an action id
+#### Scenario: App session key is not an action id
 - **WHEN** cli-shell session `shell-4` creates a guard action
-- **THEN** `shell-4` remains only the product resource key
+- **THEN** `shell-4` remains only the app resource key
 - **AND** the guard action id is a separate terminal action identifier
 

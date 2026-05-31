@@ -260,7 +260,7 @@ describe("Feature: generic tmux client command API", () => {
 });
 
 describe("Feature: generic tmux status bar model", () => {
-  test("Scenario: Given text and buttons When rendering a status bar Then tmux status format is generated without product semantics", () => {
+  test("Scenario: Given text and buttons When rendering a status bar Then tmux status format is generated without app semantics", () => {
     const rendered = renderTmuxStatusBar({
       defaultStyle: {
         fg: "colour252",
@@ -297,7 +297,7 @@ describe("Feature: generic tmux status bar model", () => {
     expect(rendered.statusLeft.includes("#[norange]")).toBe(true);
     expect(rendered.statusRight.includes("#[range=user|help]")).toBe(true);
     expect(rendered.statusRight.includes("#[range=user|chat]")).toBe(true);
-    expect(rendered.statusRight.includes("product")).toBe(false);
+    expect(rendered.statusRight.includes("app")).toBe(false);
     expect(rendered.statusRight.includes("domain")).toBe(false);
   });
 

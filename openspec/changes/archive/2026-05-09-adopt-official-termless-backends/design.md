@@ -2,7 +2,7 @@
 
 Agenter already split shared terminal projection into `@agenter/termless-core`, but the current package graph still installs an Agenter-private backend authority at `@agenter/termless-xterm-backend`. That is the wrong long-term law.
 
-The official Termless model is already `@termless/core` plus official backend packages such as `@termless/xtermjs` and `@termless/ghostty-native`. Agenter does not need to re-own that layer. Agenter's durable responsibility is narrower: terminal launch/runtime contracts, projection, transport, renderer adapters, and product-facing bridges.
+The official Termless model is already `@termless/core` plus official backend packages such as `@termless/xtermjs` and `@termless/ghostty-native`. Agenter does not need to re-own that layer. Agenter's durable responsibility is narrower: terminal launch/runtime contracts, projection, transport, renderer adapters, and app-facing bridges.
 
 Current code paths that expose the wrong ownership boundary include:
 
@@ -64,7 +64,7 @@ That code SHALL consume official backend instances or official backend entrypoin
 Alternative considered:
 
 - Remove all Agenter-local terminal bridge code and consume raw Termless APIs directly everywhere.
-  - Rejected because Agenter still has legitimate local contracts such as runtime projection and product-facing terminal mirrors.
+  - Rejected because Agenter still has legitimate local contracts such as runtime projection and app-facing terminal mirrors.
 
 ### 3. Backend selection and browser renderer selection stay orthogonal
 

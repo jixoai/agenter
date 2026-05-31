@@ -1,7 +1,7 @@
-## 1. Product shell foundations
+## 1. App shell foundations
 
 - [x] 1.1 Add app-shell state, profile models, and local profile persistence for the standalone Flutter app.
-- [x] 1.2 Replace the demo configuration-first page with a responsive product shell that separates profiles, chat stage, and detail surfaces.
+- [x] 1.2 Replace the demo configuration-first page with a responsive app shell that separates profiles, chat stage, and detail surfaces.
 
 ## 2. Chat stage upgrades
 
@@ -10,5 +10,5 @@
 
 ## 3. Verification and durable docs
 
-- [x] 3.1 Add or update tests for product-shell desktop/compact layouts and profile lifecycle behavior.
-- [x] 3.2 Re-run Flutter analyze/test, then sync Flutter package docs and durable specs with the new product-shell law.
+- [x] 3.1 Add or update tests for app-shell desktop/compact layouts and profile lifecycle behavior.
+- [x] 3.2 Re-run Flutter analyze/test, then sync Flutter package docs and durable specs with the new app-shell law.

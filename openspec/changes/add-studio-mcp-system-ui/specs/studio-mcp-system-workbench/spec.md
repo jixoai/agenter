@@ -10,7 +10,7 @@ Studio SHALL expose an app-shell navigation item named `MCP` that opens `/mcp` a
 - **AND** activating it opens `/mcp`
 - **AND** the active navigation state follows `/mcp` and nested MCP routes
 
-#### Scenario: MCP route stays inside Studio product boundary
+#### Scenario: MCP route stays inside Studio app boundary
 - **WHEN** reviewers inspect the MCP route and feature source
 - **THEN** it imports MCP data through Studio app controller and client runtime-store facades
 - **AND** it does not import `packages/app-server/src/mcp-system/*`, runtime internals, or cli-shell modules

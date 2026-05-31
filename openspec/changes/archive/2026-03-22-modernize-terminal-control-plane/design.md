@@ -1,6 +1,6 @@
 ## Context
 
-`loopbus-attention-first-plugin-pipeline` establishes attention-first ingestion and starts the terminal tool migration, but it stops at the app-server boundary. The product target is broader: terminal-system itself should own terminal lifecycle, process profiles, websocket transport, and the canonical control-plane contract. If we leave these concerns in app-server glue, future consumers such as standalone `terminal-view`, client-sdk, or plugin-driven systems will keep depending on runtime-specific behavior instead of a reusable service contract.
+`loopbus-attention-first-plugin-pipeline` establishes attention-first ingestion and starts the terminal tool migration, but it stops at the app-server boundary. The app target is broader: terminal-system itself should own terminal lifecycle, process profiles, websocket transport, and the canonical control-plane contract. If we leave these concerns in app-server glue, future consumers such as standalone `terminal-view`, client-sdk, or plugin-driven systems will keep depending on runtime-specific behavior instead of a reusable service contract.
 
 Existing code already provides useful primitives:
 - `AgenticTerminal` / `ManagedTerminal` model process state, rendering, and dirty tracking.

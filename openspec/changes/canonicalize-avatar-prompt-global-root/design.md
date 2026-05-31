@@ -5,7 +5,7 @@ The latest Avatar topology separates Avatar identity from workspace locality. Th
 The current implementation still contains old prompt/root assumptions:
 
 - `session-config` can prefer a workspace avatar root for `prompt.rootDir`, `prompt.privateRootDir`, and `prompt.agenterPath`.
-- product prompt seed can take `workspacePath` and write `AGENTER.mdx` under a workspace-local principal root.
+- app prompt seed can take `workspacePath` and write `AGENTER.mdx` under a workspace-local principal root.
 - client-sdk and cli-shell still pass or model `workspacePath` for prompt seed.
 - specs and tests still describe or assert workspace prompt roots.
 - local filesystem residue under the repo `.agenter` and the user's `~/.agenter` can keep the old design confusing during manual verification.
@@ -22,9 +22,9 @@ The runtime prompt entry point is always:
 
 `<workspace>/.agenter/avatars/by-principal/<principalId>/AGENTER.mdx`, workspace root `.agenter/AGENTER.mdx`, nickname aliases, session-local prompt paths, and settings prompt paths cannot become runtime prompt truth.
 
-### 2. Product prompt seed is not workspace-scoped
+### 2. App prompt seed is not workspace-scoped
 
-Product seed-if-missing remains legal, but only for the global Avatar prompt. The prompt seed input must not expose `workspacePath`. Existing product memory or workspace-private asset APIs are separate concerns and stay outside this prompt/root change.
+App seed-if-missing remains legal, but only for the global Avatar prompt. The prompt seed input must not expose `workspacePath`. Existing app memory or workspace-private asset APIs are separate concerns and stay outside this prompt/root change.
 
 ### 3. Runtime identity must not accidentally use a workspace seat principal as prompt identity
 

@@ -28,9 +28,9 @@ The repair must move terminal interaction ownership into backend/offscreen-rende
 
 - `terminal-screen-projection-law`: Move offscreen selection/copy/cursor-follow ownership from projection-local simulation to backend/offscreen-renderer interaction truth.
 - `terminal-view-component`: Clarify that `shell-terminal-view` and `web-terminal-view` may capture events but must render backend-owned interaction overlays and must not create a second selection truth.
-- `cli-shell-interaction-capabilities`: Replace product-local backend workaround recommendations with backend capability-driven interaction routing and enhancement decisions.
+- `cli-shell-interaction-capabilities`: Replace app-local backend workaround recommendations with backend capability-driven interaction routing and enhancement decisions.
 - `terminal-pty-transport`: Add semantic interaction event transport/control-plane requirements for selection, copy, cursor-follow, and backend-owned overlay publication.
-- `runtime-terminal-contract`: Require runtime terminal publications and frame payloads to carry backend-owned interaction state when a product projection needs to render it.
+- `runtime-terminal-contract`: Require runtime terminal publications and frame payloads to carry backend-owned interaction state when a app projection needs to render it.
 
 ## Impact
 

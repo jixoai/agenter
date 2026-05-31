@@ -1,8 +1,8 @@
 ## MODIFIED Requirements
 
-### Requirement: Cli-shell SHALL preserve product shell chrome while using tmux as host
+### Requirement: Cli-shell SHALL preserve app shell chrome while using tmux as host
 
-Cli-shell SHALL remain a tmux-hosted extension product, but tmux hosting SHALL include the cli-shell product shell chrome. The visible shell surface SHALL keep a bottom status bar, mouse-operable Help and Chat entries, and keyboard shortcuts even when the Chat room is not currently visible. Cli-shell SHALL keep this tmux product shell isolated from core TerminalSystem and from the user's default tmux server.
+Cli-shell SHALL remain a tmux-hosted extension app, but tmux hosting SHALL include the cli-shell app shell chrome. The visible shell surface SHALL keep a bottom status bar, mouse-operable Help and Chat entries, and keyboard shortcuts even when the Chat room is not currently visible. Cli-shell SHALL keep this tmux app shell isolated from core TerminalSystem and from the user's default tmux server.
 
 #### Scenario: Shell-first attach still exposes Chat and status
 
@@ -12,8 +12,8 @@ Cli-shell SHALL remain a tmux-hosted extension product, but tmux hosting SHALL i
 - **AND** Chat can be opened from the status-advertised key without replacing the shell pane
 - **AND** a mouse user can click Help to discover the keyboard and mouse controls
 
-#### Scenario: Product tmux state does not leak
+#### Scenario: App tmux state does not leak
 
 - **WHEN** cli-shell installs status actions and key bindings
 - **THEN** it installs them in the cli-shell-owned tmux socket namespace
-- **AND** it does not write cli-shell product bindings into the user's default tmux server
+- **AND** it does not write cli-shell app bindings into the user's default tmux server

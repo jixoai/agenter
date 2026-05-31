@@ -27,7 +27,7 @@ The missing layer is a standalone renderer package with an explicit transport an
 ### Renderer becomes a package, not a feature helper
 `terminal-view` lives as a standalone package and exports a standard WebComponent.
 
-Why: this enforces separation between renderer infrastructure and WebUI product surfaces.
+Why: this enforces separation between renderer infrastructure and WebUI app surfaces.
 
 ### Transport stays websocket-based
 The component connects through the terminal-system websocket PTY transport contract and does not require app-server-local render bindings.
@@ -56,7 +56,7 @@ Why: terminal rendering problems often appear only with real layout and viewport
 2. Create the `terminal-view` package and its WebComponent contract.
 3. Adapt WebUI terminal surfaces to consume the component.
 4. Add DOM/browser verification for rendering and scroll behavior.
-5. Retire product-local renderer glue once the standalone component is stable.
+5. Retire app-local renderer glue once the standalone component is stable.
 
 ## Dependencies and Handoff
 

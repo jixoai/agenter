@@ -1,6 +1,6 @@
 ## Context
 
-`packages/app-server` already has a real-provider harness (`createRealKernelHarness`) plus several opt-in LoopBus scenarios that prove isolated behaviors such as simple room reply, relay through a second room, terminal-backed fact gathering, and interleaved user input. What is still missing is the most product-shaped backend acceptance path: a user asks one Avatar to build a tiny app, the Avatar uses terminal tools to create and launch it, delivers the URL through the room, receives feedback, and improves the delivered app without leaving the same conversation.
+`packages/app-server` already has a real-provider harness (`createRealKernelHarness`) plus several opt-in LoopBus scenarios that prove isolated behaviors such as simple room reply, relay through a second room, terminal-backed fact gathering, and interleaved user input. What is still missing is the most app-shaped backend acceptance path: a user asks one Avatar to build a tiny app, the Avatar uses terminal tools to create and launch it, delivers the URL through the room, receives feedback, and improves the delivered app without leaving the same conversation.
 
 This change must stay backend-only. It should not depend on WebUI, and it should not invent a second truth source for runtime state. The scenario must read durable room truth, recent model-call traces, terminal-backed side effects, and real HTTP responses from the delivered URL.
 
@@ -15,7 +15,7 @@ This change must stay backend-only. It should not depend on WebUI, and it should
 **Non-Goals:**
 - Do not implement the later two-Avatar project-room collaboration scenario in this change.
 - Do not add a browser/UI harness.
-- Do not expand product behavior beyond what existing room, terminal, and runtime contracts already support.
+- Do not expand app behavior beyond what existing room, terminal, and runtime contracts already support.
 
 ## Decisions
 
@@ -75,7 +75,7 @@ Why not:
 
 ## Risks / Trade-offs
 
-- [Prompt brittleness against provider variance] → Keep the protocol small, marker-based, and operationally explicit; avoid open-ended product requests.
+- [Prompt brittleness against provider variance] → Keep the protocol small, marker-based, and operationally explicit; avoid open-ended app requests.
 - [Long-running local HTTP process may not stay up] → Preallocate the port, instruct the Avatar to verify the URL before replying, and fetch immediately after delivery.
 - [Real-provider flakiness can create false negatives] → Keep the scenario opt-in under the existing real-provider gate and collect rich failure evidence for triage.
 - [Overfitting to one tiny app] → Accept this trade-off for the first validation slice; broader multi-Avatar collaboration remains a separate change.

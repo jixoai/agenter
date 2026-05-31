@@ -1,6 +1,6 @@
 ## Why
 
-The current WebUI still misses several product-level behaviors from the original target: Chat media input is incomplete, Session and Avatar identity surfaces are inconsistent, Devtools typography and scrolling remain uneven, and navigation boundaries between global entry points and page-local headers are still blurred. These gaps now block the app from feeling like a coherent workspace product rather than a collection of partially aligned panels.
+The current WebUI still misses several app-level behaviors from the original target: Chat media input is incomplete, Session and Avatar identity surfaces are inconsistent, Devtools typography and scrolling remain uneven, and navigation boundaries between global entry points and page-local headers are still blurred. These gaps now block the app from feeling like a coherent workspace app rather than a collection of partially aligned panels.
 
 ## What Changes
 

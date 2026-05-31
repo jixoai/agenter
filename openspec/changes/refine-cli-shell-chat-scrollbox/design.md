@@ -1,6 +1,6 @@
 ## Context
 
-The current cli-shell Chat implementation has a useful product shape but the wrong scroll physics. ChatTUI v9 proved the desired effect: a compact shell-first product with an optional Chat panel, an independent Chat scrollbar, bottom-pinned follow behavior, and a return-to-bottom affordance when the user scrolls up. The implementation then encoded that effect with a product-local row offset, `dialogueScrollOffset`, and a self-painted scrollbar.
+The current cli-shell Chat implementation has a useful app shape but the wrong scroll physics. ChatTUI v9 proved the desired effect: a compact shell-first app with an optional Chat panel, an independent Chat scrollbar, bottom-pinned follow behavior, and a return-to-bottom affordance when the user scrolls up. The implementation then encoded that effect with a app-local row offset, `dialogueScrollOffset`, and a self-painted scrollbar.
 
 That model is brittle because it collapses three layers into one variable:
 
@@ -8,14 +8,14 @@ That model is brittle because it collapses three layers into one variable:
 2. the Chat view's loaded message window
 3. the native host's viewport position and scrollbar behavior
 
-OpenTUI already provides `ScrollBoxRenderable` with `scrollTop`, `scrollHeight`, `viewport`, `scrollBy`, `scrollTo`, `stickyScroll`, `stickyStart`, and built-in vertical scrollbar support. OpenTUI also provides `ScrollBarRenderable` as a controlled progress primitive. MessageRoom already exposes snapshots and page reads through `pageGlobalRoomMessages({ chatId, before, limit })`. The product should compose those laws instead of inventing another scroll system.
+OpenTUI already provides `ScrollBoxRenderable` with `scrollTop`, `scrollHeight`, `viewport`, `scrollBy`, `scrollTo`, `stickyScroll`, `stickyStart`, and built-in vertical scrollbar support. OpenTUI also provides `ScrollBarRenderable` as a controlled progress primitive. MessageRoom already exposes snapshots and page reads through `pageGlobalRoomMessages({ chatId, before, limit })`. The app should compose those laws instead of inventing another scroll system.
 
 ## Goals / Non-Goals
 
 **Goals:**
 
 - Make native cli-shell Chat use OpenTUI scroll container semantics for the message-list viewport.
-- Remove `dialogueScrollOffset` as a durable product law.
+- Remove `dialogueScrollOffset` as a durable app law.
 - Load older room messages incrementally as the user scrolls near the older-history edge.
 - Preserve the user's visible anchor when older messages are prepended.
 - Preserve bottom-pinned follow behavior for new messages and streaming updates.
@@ -24,7 +24,7 @@ OpenTUI already provides `ScrollBoxRenderable` with `scrollTop`, `scrollHeight`,
 
 **Non-Goals:**
 
-- Do not redesign terminal-1 / terminal-2 product truth.
+- Do not redesign terminal-1 / terminal-2 app truth.
 - Do not change TerminalSystem viewport ownership for the shell surface.
 - Do not couple WebUI to cli-shell.
 - Do not introduce a cli-shell-local transcript database or message truth.
@@ -54,9 +54,9 @@ This is view state, not durable message truth and not terminal viewport truth.
 
 ### 3. Native host scroll container
 
-The native Chat body should be a real OpenTUI `ScrollBoxRenderable` or a thin wrapper around it. The ScrollBox owns viewport movement, wheel direction, keyboard/page scrolling, content height, and scrollbar rendering. Product code should react to semantic edges and anchors; it should not manually draw scrollbar glyphs as the accepted interaction truth.
+The native Chat body should be a real OpenTUI `ScrollBoxRenderable` or a thin wrapper around it. The ScrollBox owns viewport movement, wheel direction, keyboard/page scrolling, content height, and scrollbar rendering. App code should react to semantic edges and anchors; it should not manually draw scrollbar glyphs as the accepted interaction truth.
 
-The product may use a controlled OpenTUI scrollbar wrapper where backend or host control projection requires it. The important law is that the accepted Chat scroll control comes from OpenTUI primitives, not from ad-hoc text painting.
+The app may use a controlled OpenTUI scrollbar wrapper where backend or host control projection requires it. The important law is that the accepted Chat scroll control comes from OpenTUI primitives, not from ad-hoc text painting.
 
 ## Scroll Direction
 
@@ -100,19 +100,19 @@ When the user scrolls upward:
 - cli-shell exposes the existing compact return-to-bottom/new-message affordance
 - activating that affordance uses ScrollBox scroll-to-bottom behavior and returns to pinned mode
 
-OpenTUI `stickyScroll` / `stickyStart: "bottom"` may be used where it matches this behavior, but cli-shell still needs explicit pinned/unpinned state for product affordances.
+OpenTUI `stickyScroll` / `stickyStart: "bottom"` may be used where it matches this behavior, but cli-shell still needs explicit pinned/unpinned state for app affordances.
 
-## Product And Platform Boundary
+## App And Platform Boundary
 
-This is a cli-shell product correction over existing platform laws. It does not add cli-shell branches to MessageRoom, TerminalSystem, WebUI, or terminal-view components.
+This is a cli-shell app correction over existing platform laws. It does not add cli-shell branches to MessageRoom, TerminalSystem, WebUI, or terminal-view components.
 
 The durable law is:
 
 - MessageRoom provides history and pagination.
 - OpenTUI provides native viewport primitives.
-- Cli-shell composes them into one Chat panel for the current product room.
+- Cli-shell composes them into one Chat panel for the current app room.
 
-Terminal-2 product truth remains the final visible terminal surface law from the existing cli-shell changes. This change only repairs the Chat transcript chrome's own scroll ownership and loading behavior.
+Terminal-2 app truth remains the final visible terminal surface law from the existing cli-shell changes. This change only repairs the Chat transcript chrome's own scroll ownership and loading behavior.
 
 ## Migration Notes
 
@@ -130,4 +130,4 @@ Self-painted Chat scrollbar code should be deleted or reduced to non-interactive
 ## Open Questions
 
 - Should the initial Chat page size stay aligned with the existing snapshot default, or should cli-shell define a smaller native Chat page size to keep TUI startup cheap?
-- Should the return-to-bottom affordance show only a compact icon/count, or should the current `↓ N` style remain the accepted product text?
+- Should the return-to-bottom affordance show only a compact icon/count, or should the current `↓ N` style remain the accepted app text?

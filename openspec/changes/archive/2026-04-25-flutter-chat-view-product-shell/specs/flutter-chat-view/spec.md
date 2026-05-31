@@ -1,14 +1,14 @@
 ## ADDED Requirements
 
 ### Requirement: Flutter chat view SHALL compose as a host-owned conversation stage
-The Flutter chat package SHALL expose chat-stage primitives that a host-owned product shell can compose without inheriting route chrome, connection forms, or app-level navigation from the package itself. The package SHALL keep room transport, transcript, composer, and row affordances inside the stage boundary while leaving profile management, shell navigation, and room-detail orchestration to the host shell.
+The Flutter chat package SHALL expose chat-stage primitives that a host-owned app shell can compose without inheriting route chrome, connection forms, or app-level navigation from the package itself. The package SHALL keep room transport, transcript, composer, and row affordances inside the stage boundary while leaving profile management, shell navigation, and room-detail orchestration to the host shell.
 
-#### Scenario: Host shell owns product chrome around the chat stage
+#### Scenario: Host shell owns app chrome around the chat stage
 - **WHEN** a standalone Flutter app shell embeds the chat stage
 - **THEN** the package provides the conversation viewport and composer surface without forcing a second package-owned page header
 - **THEN** the host shell remains free to place its own navigation, status chrome, and detail surfaces around that stage
 
-### Requirement: Flutter chat view SHALL expose product-grade transcript affordances
+### Requirement: Flutter chat view SHALL expose app-grade transcript affordances
 The Flutter chat stage SHALL render a conversation-first transcript with restrained time dividers, message selection, and a return-to-latest affordance so a host shell can deliver long-lived room browsing without reverting to demo-style flat rendering.
 
 #### Scenario: Transcript shows restrained time dividers

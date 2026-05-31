@@ -2,7 +2,7 @@
 
 ## Goal
 
-Repair cli-shell native Chat scroll physics by replacing product-local `dialogueScrollOffset` reverse-offset math with native OpenTUI scroll container semantics and MessageRoom-backed incremental history paging.
+Repair cli-shell native Chat scroll physics by replacing app-local `dialogueScrollOffset` reverse-offset math with native OpenTUI scroll container semantics and MessageRoom-backed incremental history paging.
 
 The change is OpenSpec `refine-cli-shell-chat-scrollbox`, schema `spec-driven`.
 
@@ -29,7 +29,7 @@ Current `main` has uncommitted WIP for this change. Dirty/untracked files observ
 - `openspec/changes/refine-cli-shell-chat-scrollbox/.openspec.yaml`
 - `openspec/changes/refine-cli-shell-chat-scrollbox/design.md`
 - `openspec/changes/refine-cli-shell-chat-scrollbox/proposal.md`
-- `openspec/changes/refine-cli-shell-chat-scrollbox/specs/cli-shell-product/spec.md`
+- `openspec/changes/refine-cli-shell-chat-scrollbox/specs/cli-shell-app/spec.md`
 - `openspec/changes/refine-cli-shell-chat-scrollbox/specs/message-chat-control-plane/spec.md`
 - `openspec/changes/refine-cli-shell-chat-scrollbox/tasks.md`
 - `packages/cli-shell/src/index.ts`
@@ -40,7 +40,7 @@ Current `main` has uncommitted WIP for this change. Dirty/untracked files observ
 - `packages/cli-shell/src/tui/model.ts`
 - `packages/cli-shell/src/tui/types.ts`
 - `packages/cli-shell/src/tui/view-state.ts`
-- `packages/cli-shell/src/web/web-product-host.ts`
+- `packages/cli-shell/src/web/web-app-host.ts`
 - `packages/cli-shell/test/cli-shell-termless-walkthrough.test.ts`
 - `packages/cli-shell/test/cli-shell-tui.test.ts`
 - `packages/cli-shell/src/tui/dialogue-scrollbox.ts`
@@ -56,7 +56,7 @@ The WIP already introduces several promising pieces:
 - Model shape moves from `dialogueScrollOffset` toward `dialogueScrollTop`, `dialogueScroll`, and `dialogueWindow`.
 - Store harness now includes `pageGlobalRoomMessages`.
 - Tests were added around ScrollBox ownership, scroll direction, older-message loading, anchor preservation, and bottom pinning.
-- Web product host and backend projection were partially updated from `offsetFromBottom` to `scrollTop`/`maxScrollTop`.
+- Web app host and backend projection were partially updated from `offsetFromBottom` to `scrollTop`/`maxScrollTop`.
 
 ## What Didn't Work
 
@@ -65,7 +65,7 @@ This is not finished and should not be presented as complete:
 - `tasks.md` still has 0/27 checked.
 - The WIP has not been committed.
 - I did not run focused cli-shell tests or typecheck for this WIP during handoff.
-- `git diff --name-only` shows `dialogue-backend.ts`, `web-product-host.ts`, and `cli-shell-termless-walkthrough.test.ts` in addition to the first visible diff set; include them in review.
+- `git diff --name-only` shows `dialogue-backend.ts`, `web-app-host.ts`, and `cli-shell-termless-walkthrough.test.ts` in addition to the first visible diff set; include them in review.
 - The WIP is on the main checkout, not isolated in a worktree. Create a worktree or snapshot branch before further risky edits if you want stricter isolation.
 
 ## Next Steps

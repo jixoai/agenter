@@ -29,7 +29,7 @@ Cli-shell SHALL support terminal-like word and row selection gestures in project
 #### Scenario: Triple click selects one row
 - **WHEN** the user triple-clicks inside shell or dialogue projected text
 - **THEN** cli-shell SHALL select the clicked row inside that region
-- **AND** copy SHALL return that row text without neighboring product chrome
+- **AND** copy SHALL return that row text without neighboring app chrome
 
 #### Scenario: Word and row selection stay inside owner region
 - **WHEN** semantic selection starts in shell or dialogue

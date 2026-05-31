@@ -62,7 +62,7 @@ Terminal-chat SHALL use an independent OpenTUI dialogue backend instance in the 
 - **AND** selection, copy, scroll, cursor, and wrapping SHALL be owned by that backend path
 
 #### Scenario: Terminal-2 does not hand-roll dialogue algorithms
-- **WHEN** terminal-2 composes dialogue into the final product screen
+- **WHEN** terminal-2 composes dialogue into the final app screen
 - **THEN** terminal-2 SHALL consume terminal-chat's offscreen frame
 - **AND** it SHALL NOT implement separate dialogue selection, copy, scroll, cursor, or wrapping algorithms as a replacement for terminal-chat backend ownership
 
@@ -71,24 +71,24 @@ Terminal-chat SHALL use an independent OpenTUI dialogue backend instance in the 
 - **THEN** the independent backend route SHALL already have passed acceptance
 - **AND** the optimization SHALL preserve the same observable dialogue selection, copy, scroll, cursor, wrapping, and event-routing contract
 
-### Requirement: Terminal-2 SHALL be the final composed product screen truth
+### Requirement: Terminal-2 SHALL be the final composed app screen truth
 
-Terminal-2 SHALL be the final composed cli-shell product screen truth. Native and Web hosts SHALL render terminal-2 rather than rendering terminal-1 or host-local approximations of the product surface.
+Terminal-2 SHALL be the final composed cli-shell app screen truth. Native and Web hosts SHALL render terminal-2 rather than rendering terminal-1 or host-local approximations of the app surface.
 
 #### Scenario: Terminal-2 composes shell and dialogue frames
-- **WHEN** cli-shell builds the final visible product screen
-- **THEN** terminal-2 SHALL compose the shell offscreen frame, terminal-chat frame, and product chrome into one final screen
-- **AND** terminal-2 SHALL publish that final screen as the product truth consumed by hosts
+- **WHEN** cli-shell builds the final visible app screen
+- **THEN** terminal-2 SHALL compose the shell offscreen frame, terminal-chat frame, and app chrome into one final screen
+- **AND** terminal-2 SHALL publish that final screen as the app truth consumed by hosts
 
 #### Scenario: Native host renders terminal-2
 - **WHEN** cli-shell runs in native mode
-- **THEN** the native host SHALL render terminal-2 final product screen through the current process output path
-- **AND** it SHALL NOT keep accepted product chrome only in host-local OpenTUI overlays
+- **THEN** the native host SHALL render terminal-2 final app screen through the current process output path
+- **AND** it SHALL NOT keep accepted app chrome only in host-local OpenTUI overlays
 - **AND** it SHALL NOT open a pull/readback transport session for terminal-2 from the same native process
 
 #### Scenario: Web host renders terminal-2
 - **WHEN** cli-shell runs in `--web` mode
-- **THEN** the Web host SHALL render terminal-2 final product screen
+- **THEN** the Web host SHALL render terminal-2 final app screen
 - **AND** it SHALL NOT render only terminal-1 shell truth or a reduced debugging-only surface
 
 ### Requirement: Terminal-2 SHALL NOT require a child PTY process
@@ -96,7 +96,7 @@ Terminal-2 SHALL be the final composed cli-shell product screen truth. Native an
 Terminal-2 SHALL be allowed to be a composed terminal runtime without a child PTY process. It SHALL still have terminal identity, geometry, frame publication, event routing, and raw-output adapter capability.
 
 #### Scenario: Composed terminal publishes without fake PTY
-- **WHEN** terminal-2 is composed from terminal-1 shell frame, terminal-chat frame, and product chrome
+- **WHEN** terminal-2 is composed from terminal-1 shell frame, terminal-chat frame, and app chrome
 - **THEN** terminal-2 SHALL publish terminal screen truth without requiring a fake shell child process
 - **AND** the implementation SHALL NOT perform an unnecessary cells-to-ANSI-to-cells round trip just to make terminal-2 look like a terminal
 
@@ -121,7 +121,7 @@ Host keyboard, mouse, wheel, drag, resize, and copy events SHALL route through t
 
 #### Scenario: Final visible result returns through terminal-2
 - **WHEN** an owning backend updates state after a routed event
-- **THEN** terminal-2 SHALL compose and publish the next final product screen
+- **THEN** terminal-2 SHALL compose and publish the next final app screen
 - **AND** native and Web hosts SHALL observe the result from terminal-2 rather than applying independent host-local paint fixes
 
 ### Requirement: Frame transport SHALL keep input drain dirty clock and pull delivery orthogonal
@@ -173,7 +173,7 @@ Protocol 2 frame transport SHALL split backend input drain, backend dirty detect
 - **AND** media paste SHALL be modeled as a MIME-aware media paste fact and routed to room asset / attachment ownership or explicit unsupported handling
 - **AND** image paste SHALL NOT be written into shell stdin as plain text or raw binary bytes
 - **AND** concrete copy shortcuts SHALL be treated as keybinding policy outside the projection component
-- **AND** product entrypoints SHALL NOT reimplement selection or paste handling outside this projection component
+- **AND** app entrypoints SHALL NOT reimplement selection or paste handling outside this projection component
 
 #### Scenario: Experimental dynamic refresh is opt-in
 - **WHEN** experimental dynamic refresh is explicitly enabled
@@ -181,12 +181,12 @@ Protocol 2 frame transport SHALL split backend input drain, backend dirty detect
 - **AND** the client MAY fall back to 1 FPS only after its own pulled drawable cells have stayed unchanged for the quiet window
 - **AND** dynamic refresh SHALL be treated as a power-saving optimization, not the default correctness path
 
-#### Scenario: Codec-level notModified preserves unchanged-frame pacing without duplicate product work
+#### Scenario: Codec-level notModified preserves unchanged-frame pacing without duplicate app work
 - **WHEN** a paced pull observes the same serialized viewport rows, cursor, and viewport facts as the last real row-cache frame
 - **THEN** the backend MAY return a transport-level `notModified` patch
 - **AND** the client SHALL consume that server frame for pacing without requesting a paint
 - **AND** `notModified` SHALL NOT advance the row-cache decoder base frame for future cid-only rows
-- **AND** product code SHALL NOT add an independent visible-frame duplicate skip before serialization
+- **AND** app code SHALL NOT add an independent visible-frame duplicate skip before serialization
 
 #### Scenario: Pulled cells replay through one paint path
 - **WHEN** the client receives a pulled frame
@@ -205,5 +205,5 @@ Protocol 2 frame transport SHALL split backend input drain, backend dirty detect
 - **THEN** the initial WebSocket `hello` / `helloAck` handshake MAY negotiate a same-process direct data plane
 - **AND** WebSocket SHALL remain the bootstrap lifecycle credential and fallback control plane
 - **AND** the direct path SHALL carry the same semantic terminal messages as function calls into the backend input drain
-- **AND** the direct path SHALL NOT become a second terminal truth product-layer shortcut or BroadcastChannel-specific dependency
+- **AND** the direct path SHALL NOT become a second terminal truth app-layer shortcut or BroadcastChannel-specific dependency
 - **AND** a direct upgrade token SHALL be claimable only once for one accepted client

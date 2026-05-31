@@ -5,7 +5,7 @@ The current Devtools attention surface still leaks legacy structure in two impor
 - the primary route is still `/workspace/devtools?...&sessionId=...` instead of a session-native deep link;
 - the attention inspector keeps `Context / Items` and `Query commits` state in local memory instead of route-backed navigation.
 
-That makes Devtools fragile to refresh/back-forward navigation, keeps the shell URL semantically weak, and does not match the attention-first inspection flow the product now requires.
+That makes Devtools fragile to refresh/back-forward navigation, keeps the shell URL semantically weak, and does not match the attention-first inspection flow the app now requires.
 
 ## What Changes
 

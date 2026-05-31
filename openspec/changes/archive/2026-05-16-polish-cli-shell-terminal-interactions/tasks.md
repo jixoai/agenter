@@ -19,5 +19,5 @@
 - [x] 3.1 Run focused cli-shell TUI tests covering the new interaction scenarios.
 - [x] 3.2 Run `bun run --filter '@agenter/cli-shell' typecheck` and `bun run --filter '@agenter/cli-shell' test`.
 - [x] 3.3 Run affected transport/projection regression tests if implementation touches shared terminal contracts.
-- [x] 3.4 Sync durable spec changes to `openspec/specs/terminal-screen-projection-law/spec.md` and `openspec/specs/cli-shell-product/spec.md`.
+- [x] 3.4 Sync durable spec changes to `openspec/specs/terminal-screen-projection-law/spec.md` and `openspec/specs/cli-shell-app/spec.md`.
 - [x] 3.5 Archive this change after verification.

@@ -1,13 +1,13 @@
 ## Context
 
-This change stays strictly inside the cli-shell extension product boundary:
+This change stays strictly inside the cli-shell extension app boundary:
 
 - TerminalSystem still owns terminal truth
 - MessageSystem still owns room truth
 - Attention-backed authorization continues to evolve in `fix-review-cli-shell-attention-authorization`
 - tmux remains a local presentation/runtime host, not shell truth
 
-The remaining bugs are product-composition bugs.
+The remaining bugs are app-composition bugs.
 
 ## Decisions
 
@@ -21,15 +21,15 @@ The lawful stack remains:
 2. native cursor commit converts that cursor into 1-based screen coordinates
 3. no intermediate layer is allowed to re-own cursor truth or move the `+1`
 
-### 2. cli-shell owns its own product config files
+### 2. cli-shell owns its own app config files
 
 cli-shell should not write into the shared core settings truth. It gets its own fixed directory:
 
 - `~/.agenter/cli-shell/settings.json`
 - `~/.agenter/cli-shell/keybindings.json`
 
-`settings.json` stores durable product behavior such as the preferred Chat layout.  
-`keybindings.json` stores product shortcut bindings only.
+`settings.json` stores durable app behavior such as the preferred Chat layout.
+`keybindings.json` stores app shortcut bindings only.
 
 ### 3. Room composer becomes a small host, not a bigger input
 
@@ -55,13 +55,13 @@ This avoids baking special cases directly into the Room root.
 
 The Room composer currently clears the draft only after a forced hydrate succeeds. That is wrong.
 
-The corrected product law is:
+The corrected app law is:
 
 1. send returns success -> clear draft, pin to bottom, show send success
 2. refresh runs separately
 3. refresh failure is surfaced as a follow-up notice, not as a false send failure
 
-### 6. Chat layout persistence is singleton product state
+### 6. Chat layout persistence is singleton app state
 
 cli-shell still has only one Chat surface per session. The persisted default layout controls how Chat opens from the bottom bar when currently closed:
 
@@ -69,4 +69,4 @@ cli-shell still has only one Chat surface per session. The persisted default lay
 - `right`
 - `cover`
 
-Open/close state itself is runtime state. The default layout is durable product preference.
+Open/close state itself is runtime state. The default layout is durable app preference.

@@ -35,7 +35,7 @@ Alternative considered: keep folders named `profile-*` and only add auth-named e
 
 ### 2. Legacy profile packages become thin compatibility aliases
 
-`packages/profile-service` and `packages/profile-cli` should remain as small wrappers that re-export or delegate to the auth packages. New product code must import auth packages; profile packages exist only to keep older scripts/tests/users from failing during the migration window.
+`packages/profile-service` and `packages/profile-cli` should remain as small wrappers that re-export or delegate to the auth packages. New app code must import auth packages; profile packages exist only to keep older scripts/tests/users from failing during the migration window.
 
 Alternative considered: do a hard rename with no compatibility packages. Rejected for this slice because app-server, tests, docs, and local operator habits still reference `profile-*`; a thin alias lets the canonical law change without coupling it to every cleanup at once.
 
@@ -55,7 +55,7 @@ Alternative considered: rename every `profile` token. Rejected because it would 
 
 - [Alias packages drift into second implementations] -> Keep compatibility packages as wrappers only, with tests that assert they delegate to auth packages.
 - [Storage migration accidentally creates two authorities] -> Resolve data dir through one function and cover legacy fallback in an integration test.
-- [Import migration is noisy] -> Migrate product imports first, keep old import tests only in compatibility packages.
+- [Import migration is noisy] -> Migrate app imports first, keep old import tests only in compatibility packages.
 - [Operator scripts break] -> Keep `profile-cli` as an alias binary and add `auth-cli` as the canonical binary.
 - [Spec vocabulary becomes mixed] -> Update durable `SPEC.md` files and OpenSpec specs in the implementation commit, separating auth service identity from profile media owner semantics.
 

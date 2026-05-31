@@ -1,10 +1,10 @@
 ## ADDED Requirements
 
-### Requirement: cli-shell SHALL install a tmux-native product status bar
+### Requirement: cli-shell SHALL install a tmux-native app status bar
 
-cli-shell SHALL configure the tmux session status line as the bottom product shell chrome. The status line SHALL expose the cli-shell session, selected Avatar, Avatar Heartbeat preview, clickable managed state, Help entry, and Chat entry. Dock pane fallback, Mouse toggle, Shell focus, and Refresh SHALL remain product-local expert key bindings rather than right-side status entries. cli-shell SHALL split identity and actions across status-left and status-right, hide the default tmux window list, configure status lengths so clickable actions remain visible in normal terminal widths, and highlight the active product surface with tmux status styling instead of repeating shortcut text as the main UI.
-The Avatar Heartbeat preview SHALL be a cli-shell-local projection of runtime Heartbeat facts and SHALL NOT require restoring the old composed terminal surface or reading a TerminalSystem active product surface.
-cli-shell SHALL set an explicit high-contrast status palette for status, status-left, and status-right and SHALL NOT depend on `#[default]` inside product status labels.
+cli-shell SHALL configure the tmux session status line as the bottom app shell chrome. The status line SHALL expose the cli-shell session, selected Avatar, Avatar Heartbeat preview, clickable managed state, Help entry, and Chat entry. Dock pane fallback, Mouse toggle, Shell focus, and Refresh SHALL remain app-local expert key bindings rather than right-side status entries. cli-shell SHALL split identity and actions across status-left and status-right, hide the default tmux window list, configure status lengths so clickable actions remain visible in normal terminal widths, and highlight the active app surface with tmux status styling instead of repeating shortcut text as the main UI.
+The Avatar Heartbeat preview SHALL be a cli-shell-local projection of runtime Heartbeat facts and SHALL NOT require restoring the old composed terminal surface or reading a TerminalSystem active app surface.
+cli-shell SHALL set an explicit high-contrast status palette for status, status-left, and status-right and SHALL NOT depend on `#[default]` inside app status labels.
 
 #### Scenario: Attach configures status before foreground attach
 
@@ -23,7 +23,7 @@ cli-shell SHALL set an explicit high-contrast status palette for status, status-
 
 ### Requirement: cli-shell SHALL make status clicks the default and keep Mouse reversible
 
-cli-shell SHALL enable tmux mouse support by default so non-tmux users can click the product status bar. cli-shell SHALL expose a product-local Mouse toggle, currently `Ctrl+b` then `m`; when Mouse is on, clickable status ranges for managed, Help, and Chat SHALL be active. When Mouse is off, native terminal text selection is restored and status clicks are unavailable until Mouse is enabled again.
+cli-shell SHALL enable tmux mouse support by default so non-tmux users can click the app status bar. cli-shell SHALL expose a app-local Mouse toggle, currently `Ctrl+b` then `m`; when Mouse is on, clickable status ranges for managed, Help, and Chat SHALL be active. When Mouse is off, native terminal text selection is restored and status clicks are unavailable until Mouse is enabled again.
 
 #### Scenario: Status clicks are default and Mouse is reversible
 
@@ -33,7 +33,7 @@ cli-shell SHALL enable tmux mouse support by default so non-tmux users can click
 - **AND** the status text marks user ranges for managed, Help, and Chat
 - **AND** the plan binds `MouseDown1Status` to dispatch the clicked status range
 
-#### Scenario: Managed click is routed to the runtime product action
+#### Scenario: Managed click is routed to the runtime app action
 
 - **WHEN** cli-shell plans tmux attach
 - **THEN** the managed status label is wrapped in `range=user|managed`
@@ -56,7 +56,7 @@ cli-shell SHALL provide a shortcut help popup reachable by keyboard and, when Mo
 
 ### Requirement: cli-shell SHALL toggle managed state through hosting attention
 
-cli-shell SHALL make the `managed:on/off` status label clickable. Clicking it SHALL execute a cli-shell product action that commits or settles room-bound hosting attention for the selected Avatar and then refreshes the session-local tmux managed option. Because tmux-hosted cli-shell does not have a TerminalSystem visible terminal id, the action SHALL use an extension-local `surfaceId` such as `tmux:shell-5` in attention provenance and SHALL NOT create or mutate TerminalSystem terminals.
+cli-shell SHALL make the `managed:on/off` status label clickable. Clicking it SHALL execute a cli-shell app action that commits or settles room-bound hosting attention for the selected Avatar and then refreshes the session-local tmux managed option. Because tmux-hosted cli-shell does not have a TerminalSystem visible terminal id, the action SHALL use an extension-local `surfaceId` such as `tmux:shell-5` in attention provenance and SHALL NOT create or mutate TerminalSystem terminals.
 
 #### Scenario: Managed status click toggles hosting attention
 
@@ -77,7 +77,7 @@ cli-shell SHALL make the `managed:on/off` status label clickable. Clicking it SH
 
 ### Requirement: cli-shell SHALL open OpenTUI Chat through a tmux popup by default
 
-cli-shell SHALL treat Chat as an on-demand product entry. The default Chat key binding SHALL delegate to the product-owned `tmux-action` command, and that action SHALL run the MessageRoom OpenTUI surface through `tmux display-popup` instead of creating a permanent split pane during default attach. The popup SHALL keep an exit status visible and wait for the user to close it after the room command exits unexpectedly. Normal titlebar close and layout switching SHALL close the old surface immediately.
+cli-shell SHALL treat Chat as an on-demand app entry. The default Chat key binding SHALL delegate to the app-owned `tmux-action` command, and that action SHALL run the MessageRoom OpenTUI surface through `tmux display-popup` instead of creating a permanent split pane during default attach. The popup SHALL keep an exit status visible and wait for the user to close it after the room command exits unexpectedly. Normal titlebar close and layout switching SHALL close the old surface immediately.
 tmux SHALL act only as the local popup/pane host for Chat; the `room` subcommand SHALL remain an OpenTUI MessageRoom UI and SHALL NOT regress to a plain text console fallback.
 The OpenTUI Chat titlebar SHALL expose a close control. Its `◨`, `◧`, and `⿴` controls SHALL request tmux-owned layout changes for left dock, right dock, and cover popup respectively. These controls SHALL NOT resize or reposition the Chat surface's own OpenTUI title/body/status/draft renderables as an internal layout mode.
 cli-shell SHALL treat Chat as a singleton surface per tmux session and Avatar. If an existing Chat pane is present, the `Chat` action SHALL focus that pane and update session-local Chat state instead of opening a second popup. When switching an existing Chat pane between left and right dock positions, cli-shell SHALL move/rejoin the existing tmux pane instead of killing the Room process. When switching from a pane to a cover popup, cli-shell SHALL close the existing pane first because tmux popups cannot host a moved live pane. Chat singleton state SHALL be stored in tmux session-local options and verified by pane discovery, not in process-local JS state.
@@ -126,10 +126,10 @@ Any tmux format intended for a nested tmux command inside `run-shell` SHALL be d
 
 cli-shell SHALL NOT render terminal write approval prompts inside the MessageRoom surface. cli-shell SHALL provide an OpenTUI `shell top` surface that can be opened as a tmux top-layer popup. The top surface SHALL subscribe to terminal permission requests, show pending approvals, and support keyboard and mouse approve/deny actions. Room MAY request that the tmux host opens `shell top` when it observes pending approvals, but Room SHALL NOT own or render the approval card.
 
-#### Scenario: Pending approval opens a product top layer instead of a Room overlay
+#### Scenario: Pending approval opens a app top layer instead of a Room overlay
 
 - **GIVEN** the Room surface observes a pending terminal write approval
-- **WHEN** cli-shell is running inside the tmux product host
+- **WHEN** cli-shell is running inside the tmux app host
 - **THEN** Room requests the `top` tmux action
 - **AND** Room does not render an approval overlay inside its own render tree
 - **AND** the `top` action opens an OpenTUI `shell top` popup
@@ -154,11 +154,11 @@ cli-shell SHALL provide a key binding that opens or focuses a Chat pane as a fal
 - **AND** the fallback command uses `split-window`
 - **AND** the fallback command is not executed before attach by default
 
-### Requirement: cli-shell SHALL provide product-local key bindings
+### Requirement: cli-shell SHALL provide app-local key bindings
 
-cli-shell SHALL install product-local tmux key bindings for Help, Chat popup, Chat pane fallback, shell focus, and status refresh.
+cli-shell SHALL install app-local tmux key bindings for Help, Chat popup, Chat pane fallback, shell focus, and status refresh.
 
-#### Scenario: Product keys are installed
+#### Scenario: App keys are installed
 
 - **WHEN** cli-shell plans tmux attach
 - **THEN** the plan binds `c` for Chat popup
@@ -170,17 +170,17 @@ cli-shell SHALL install product-local tmux key bindings for Help, Chat popup, Ch
 
 #### Scenario: Status refresh updates the Avatar Heartbeat preview
 
-- **WHEN** cli-shell runs the product-local status refresh action
+- **WHEN** cli-shell runs the app-local status refresh action
 - **THEN** the action reads the runtime Heartbeat projection through cli-shell code
 - **AND** the action writes the resulting one-line preview into the current tmux session option
 - **AND** tmux refreshes the status line after the option is updated
 
-### Requirement: cli-shell SHALL isolate tmux product state
+### Requirement: cli-shell SHALL isolate tmux app state
 
-cli-shell SHALL run attach, status, binding, popup, pane, and cleanup tmux commands inside a cli-shell-owned tmux socket namespace. Product key bindings SHALL read session-local tmux options for Avatar, daemon endpoint, workspace, and managed state instead of hard-coding one cli-shell session into global tmux bindings.
-Product key bindings SHALL keep tmux binding strings short by delegating to `tmux-action`; full product actions SHALL be implemented in cli-shell extension code so tmux format tokens do not leak into the shell process as literal URLs or arguments.
+cli-shell SHALL run attach, status, binding, popup, pane, and cleanup tmux commands inside a cli-shell-owned tmux socket namespace. App key bindings SHALL read session-local tmux options for Avatar, daemon endpoint, workspace, and managed state instead of hard-coding one cli-shell session into global tmux bindings.
+App key bindings SHALL keep tmux binding strings short by delegating to `tmux-action`; full app actions SHALL be implemented in cli-shell extension code so tmux format tokens do not leak into the shell process as literal URLs or arguments.
 
-#### Scenario: Product bindings are isolated and session-local
+#### Scenario: App bindings are isolated and session-local
 
 - **WHEN** cli-shell plans tmux attach
 - **THEN** every tmux command targets the cli-shell-owned socket namespace

@@ -21,7 +21,7 @@ Frontend room and workbench surfaces SHALL be able to expose room provenance and
 - **AND** it does not rely on the old assumption that one implicit local message-system owns the room by default
 
 ### Requirement: Studio SHALL keep room domain/source metadata available but low-emphasis
-Studio is the superadmin-facing product, so it SHALL keep room `superKey` / domain / source metadata available, but it SHALL avoid turning that metadata into the primary chat focus path.
+Studio is the superadmin-facing app, so it SHALL keep room `superKey` / domain / source metadata available, but it SHALL avoid turning that metadata into the primary chat focus path.
 
 #### Scenario: Low-frequency room authority stays in a secondary panel
 - **GIVEN** a Studio room detail view
@@ -33,7 +33,7 @@ Studio is the superadmin-facing product, so it SHALL keep room `superKey` / doma
 ### Requirement: Embedded chat surface SHALL remain ordinary-user-focused
 The reusable chat surface embedded inside Studio SHALL stay focused on transcript/composer behavior instead of absorbing superadmin-only room-management chrome.
 
-#### Scenario: Studio wraps chat without polluting the chat product
+#### Scenario: Studio wraps chat without polluting the chat app
 - **WHEN** Studio embeds the reusable chat surface for a room
 - **THEN** transcript, composer, read-state, and message actions remain owned by that chat surface
 - **AND** superadmin-only room domain/source controls remain in Studio wrapper surfaces around it

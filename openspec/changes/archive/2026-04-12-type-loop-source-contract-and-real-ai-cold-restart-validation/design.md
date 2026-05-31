@@ -7,7 +7,7 @@ The previous attention cleanup fixed the model-facing side of the architecture, 
 
 Those fields are no longer fed into durable attention or prompt payloads, but they still violate the platform law because they let systems smuggle lookup context through an untyped bag instead of through protocol coordinates.
 
-The biggest remaining product-risk is also now clearer: unit and integration tests prove that stop/start rebuilds runtime state, but the real-provider suite still does not prove that an Avatar can resume a real room + workspace task after cold restart. That gap matters more than another synthetic regression because recovery is now a first-class architectural promise.
+The biggest remaining app-risk is also now clearer: unit and integration tests prove that stop/start rebuilds runtime state, but the real-provider suite still does not prove that an Avatar can resume a real room + workspace task after cold restart. That gap matters more than another synthetic regression because recovery is now a first-class architectural promise.
 
 ## Goals / Non-Goals
 

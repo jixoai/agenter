@@ -14,7 +14,7 @@
 
 ## 3. Implementation
 
-- [x] 3.1 Run `bun run openspec:vision -- commit-check fix-shell-next-pty-aware-selection-routing --phase apply` before product-code work starts and keep unrelated `bun.lock` unstaged.
+- [x] 3.1 Run `bun run openspec:vision -- commit-check fix-shell-next-pty-aware-selection-routing --phase apply` before app-code work starts and keep unrelated `bun.lock` unstaged.
 - [x] 3.2 Add `TerminalMouseTrackingState` to termless-core interaction/frame state and expose it from `XtermBridge`.
 - [x] 3.3 Propagate mouse state through terminal-system frame projection and terminal-transport-protocol encoding/decoding.
 - [x] 3.4 Implement xterm mouse encoding and PTY-aware pointer routing in `termless-backend-utils`.

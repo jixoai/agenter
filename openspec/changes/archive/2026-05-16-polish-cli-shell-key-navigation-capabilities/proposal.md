@@ -10,7 +10,7 @@ The broader issue is that some terminal engines already implement rich selection
 - Add backend capability recommendation coverage so cli-shell can enable only the enhancements missing from each backend.
 - Extend shell keyboard navigation so printable input, arrows, Home, End, and supported navigation keys request backend cursor follow after successful shell input.
 - Add Option+Left/Right word navigation using the same ICU word segmentation and terminal cell-width mapping as double-click word selection.
-- Keep Option+Up/Down as backend-native passthrough; cli-shell will not invent product semantics for those keys.
+- Keep Option+Up/Down as backend-native passthrough; cli-shell will not invent app semantics for those keys.
 - Add BDD coverage for the supported terminal key matrix and interaction enhancement decisions.
 
 ## Capabilities
@@ -28,4 +28,4 @@ The broader issue is that some terminal engines already implement rich selection
 - Affected package: `@agenter/cli-shell`.
 - Affected modules: TUI input encoding, backend frame projection selection logic, live mirror cursor-follow routing, CLI/web startup configuration propagation if needed.
 - Affected tests: cli-shell TUI BDD tests, live terminal mirror tests, package boundary tests, and a backend capability recommendation test.
-- No core terminal-system dependency may be added for cli-shell-specific product behavior.
+- No core terminal-system dependency may be added for cli-shell-specific app behavior.

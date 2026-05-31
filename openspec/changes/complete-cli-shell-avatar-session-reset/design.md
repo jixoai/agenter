@@ -1,24 +1,24 @@
 > Boundary note:
 > This design remains relevant for Avatar selection/create/clear semantics and for the general rule that terminal approvals stay terminal-local.
-> But any cli-shell terminal-identity or browser-host wording must now be read through `realign-cli-shell-with-core-system-boundaries`: cli-shell uses one bound TerminalSystem terminal as shell truth, and browser-host experiments are not the current cli-shell product route.
+> But any cli-shell terminal-identity or browser-host wording must now be read through `realign-cli-shell-with-core-system-boundaries`: cli-shell uses one bound TerminalSystem terminal as shell truth, and browser-host experiments are not the current cli-shell app route.
 
 ## Physical Review
 
 The current platform law is correct and must stay intact:
 
 - AvatarRuntime identity is the Avatar identity, not `--session`.
-- cli-shell is an ordinary product package and must consume platform capabilities through generic contracts.
-- `--session=4` means product resource key `shell-4`; it does not create a clean Avatar context.
-- cli-shell may have implementation-local host structure under one product session, but product interaction is anchored on the bound TerminalSystem terminal.
+- cli-shell is an ordinary app package and must consume platform capabilities through generic contracts.
+- `--session=4` means app resource key `shell-4`; it does not create a clean Avatar context.
+- cli-shell may have implementation-local host structure under one app session, but app interaction is anchored on the bound TerminalSystem terminal.
 - TerminalSystem owns write authority. Guard approval is terminal authority, not cli-shell managed/takeover state.
 
 The current implementation is incomplete in three places:
 
 - Main checkout parses positional `@avatar`, but not `--avatar`, `--create-avatar`, or `--clear-avatar`.
 - Missing explicit Avatars fail unless the Avatar is the default `shell-assistant`.
-- The live authorization popup is not proven by component tests alone. If the popup is missing in cli-shell, the first suspicion is that Shell Assistant's write request did not target the currently opened terminal or that the current-terminal permission stream is not connected in the real product path.
+- The live authorization popup is not proven by component tests alone. If the popup is missing in cli-shell, the first suspicion is that Shell Assistant's write request did not target the currently opened terminal or that the current-terminal permission stream is not connected in the real app path.
 
-## Product Story
+## App Story
 
 A user wants to run:
 
@@ -57,7 +57,7 @@ The recommended clear scope is:
 
 This keeps startup fast and clean without turning `--clear-avatar` into a dangerous avatar deletion command.
 
-Product terminal and MessageRoom resources are not deleted by this flag by default. Those are product resource cleanup concerns and already belong to `agenter shell cleanup`. A user who wants a fully empty terminal/room should either use a new `--session` name or run cleanup for that product resource.
+App terminal and MessageRoom resources are not deleted by this flag by default. Those are app resource cleanup concerns and already belong to `agenter shell cleanup`. A user who wants a fully empty terminal/room should either use a new `--session` name or run cleanup for that app resource.
 
 ## Prompt And Memory Boundary
 
@@ -67,7 +67,7 @@ Therefore:
 
 - default `shell-assistant` keeps the existing seed-if-missing prompt and memory pack behavior
 - explicit `--avatar=<name>` keeps the selected Avatar's own prompt and memory truth
-- product-created `--avatar=<name> --create-avatar` uses the ordinary Avatar creation path
+- app-created `--avatar=<name> --create-avatar` uses the ordinary Avatar creation path
 - cli-shell must not install a special prompt or memory pack only because an Avatar was created through this command
 - `--clear-avatar` clears runtime session context only and must not delete or rewrite prompt/memory assets
 
@@ -81,7 +81,7 @@ Nickname aliases are discovery paths only.
 
 ## Authorization Popup Gap
 
-The guard authorization popup is not complete just because `shell-terminal-view` and `web-terminal-view` have component tests. The product law is simpler than my earlier overreach:
+The guard authorization popup is not complete just because `shell-terminal-view` and `web-terminal-view` have component tests. The app law is simpler than my earlier overreach:
 
 - cli-shell binds one TerminalSystem terminal for the user-facing conversation.
 - cli-shell subscribes to permission requests for that bound terminal.
@@ -90,15 +90,15 @@ The guard authorization popup is not complete just because `shell-terminal-view`
 
 The fix must not widen subscriptions to a role set as a workaround. A wider subscription would hide the real bug and make terminal-view less orthogonal. The correct implementation path is:
 
-- identify the bound terminal id as a first-class cli-shell product fact
+- identify the bound terminal id as a first-class cli-shell app fact
 - subscribe only to that terminal's permission request stream
 - ensure runtime-local `terminal write` / `terminal input` guidance and resource focus resolve to that terminal for cli-shell MessageRoom work
 - render the default approval overlay for requests on that terminal
 - preserve TerminalSystem authority: no UI marks a request approved locally; it calls TerminalSystem approve/deny
 
-## Product UI Details
+## App UI Details
 
-The native cli-shell host surface must validate this behavior. WebUI is a separate product and is intentionally out of scope for this change. Browser-host experiments do not define the current cli-shell product route.
+The native cli-shell host surface must validate this behavior. WebUI is a separate app and is intentionally out of scope for this change. Browser-host experiments do not define the current cli-shell app route.
 
 Native cli-shell:
 
@@ -110,9 +110,9 @@ Native cli-shell:
 
 ## Options Considered
 
-Option A, recommended: product-scoped startup flags plus current-bound-terminal authorization projection.
+Option A, recommended: app-scoped startup flags plus current-bound-terminal authorization projection.
 
-This keeps `--session` product-local, keeps AvatarRuntime identity pure, and makes terminal-view components reusable. cli-shell owns the mapping from product session to the bound terminal; TerminalSystem owns request authority; terminal-view owns projection for that terminal.
+This keeps `--session` app-local, keeps AvatarRuntime identity pure, and makes terminal-view components reusable. cli-shell owns the mapping from app session to the bound terminal; TerminalSystem owns request authority; terminal-view owns projection for that terminal.
 
 Option B, rejected: make `--session` part of runtime identity or create a cli-shell-specific core branch.
 

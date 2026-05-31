@@ -1,35 +1,35 @@
-## 0. Product Extension Runtime
+## 0. App Extension Runtime
 
-- [x] 0.1 Define the product extension descriptor contract for command name, package name, bin metadata, source policy, and capability hints
+- [x] 0.1 Define the app extension descriptor contract for command name, package name, bin metadata, source policy, and capability hints
 - [x] 0.2 Add extension-runtime tests proving core packages do not import `@agenter/cli-shell` implementation code or branch on cli-shell grammar, toolbar state, layout, or terminal naming
-- [x] 0.3 Define generic product resource binding APIs using `productId`, `resourceKey`, resource kind, and owner-system metadata rather than cli-shell-specific fields
-- [x] 0.4 Define product-scoped attention ingress/projection APIs for Heartbeat display, unread/chat signals, terminal idle/dirty signals, and product lifecycle facts
-- [x] 0.5 Define generic assistant initialization APIs for product-owned Avatar ensure, prompt-source ensure, and avatar-private memory-pack ensure without product-specific core branches
-- [x] 0.6 Define product hosting attention APIs for managed/takeover scheduling, including the literal fixed score key `hosting`, managed-on commits `scores: {"hosting": 1000}`, and mandatory managed-off commits `scores: {"hosting": 0}` with reason `user_disabled`
-- [x] 0.7 Define product delegation APIs for managed/takeover terminal write authority with granting user, target Avatar, terminal id, room id, expiry, revocation, policy, and provenance
+- [x] 0.3 Define generic app resource binding APIs using `appId`, `resourceKey`, resource kind, and owner-system metadata rather than cli-shell-specific fields
+- [x] 0.4 Define app-scoped attention ingress/projection APIs for Heartbeat display, unread/chat signals, terminal idle/dirty signals, and app lifecycle facts
+- [x] 0.5 Define generic assistant initialization APIs for app-owned Avatar ensure, prompt-source ensure, and avatar-private memory-pack ensure without app-specific core branches
+- [x] 0.6 Define app hosting attention APIs for managed/takeover scheduling, including the literal fixed score key `hosting`, managed-on commits `scores: {"hosting": 1000}`, and mandatory managed-off commits `scores: {"hosting": 0}` with reason `user_disabled`
+- [x] 0.7 Define app delegation APIs for managed/takeover terminal write authority with granting user, target Avatar, terminal id, room id, expiry, revocation, policy, and provenance
 - [x] 0.8 Add contract tests showing cli-shell can be removed or disabled without breaking core daemon, terminal, room, AvatarRuntime, prompt, memory, or attention modules
-- [x] 0.9 Extend or verify minimal attention-cli compatible product APIs for committing, querying, and settling self-evolution attention contexts without adding fixed kernel features such as `auto-dream`; defer watch/schedule primitives to `extend-attention-cli-self-evolution-runtime`
+- [x] 0.9 Extend or verify minimal attention-cli compatible app APIs for committing, querying, and settling self-evolution attention contexts without adding fixed kernel features such as `auto-dream`; defer watch/schedule primitives to `extend-attention-cli-self-evolution-runtime`
 - [x] 0.10 Add contract tests proving self-evolution attention loops do not require `hosting`, do not grant terminal write authority, and remain reusable by future products
 - [x] 0.11 Add package-boundary tests proving cli-shell consumes daemon/client-sdk style extension contracts and does not import core runtime internals even during local workspace tests
 
-## 1. Product Launcher
+## 1. App Launcher
 
-- [x] 1.1 Add a descriptor-driven product-command registry in `@agenter/cli` that maps `shell` to `@agenter/cli-shell` without importing cli-shell implementation code
+- [x] 1.1 Add a descriptor-driven app-command registry in `@agenter/cli` that maps `shell` to `@agenter/cli-shell` without importing cli-shell implementation code
 - [x] 1.2 Implement local-first package resolution for `packages/cli-shell` before installed-package and remote npm fallback
-- [x] 1.3 Forward host, port, auth-service options, and remaining argv from `agenter shell ...` into the product process
-- [x] 1.4 Run product bins as foreground interactive processes with inherited stdio and propagated exit status
-- [x] 1.5 Add launcher tests for descriptor lookup, local workspace resolution, unsupported command rejection, no product-specific runtime branch, and remote fallback command construction
-- [x] 1.6 Define and pass the launcher-owned env contract: `AGENTER_DAEMON_HOST`, `AGENTER_DAEMON_PORT`, `AGENTER_AUTH_SERVICE_ENDPOINT`, `AGENTER_PRODUCT_COMMAND`, `AGENTER_PRODUCT_PACKAGE`, and `AGENTER_PRODUCT_SOURCE`
+- [x] 1.3 Forward host, port, auth-service options, and remaining argv from `agenter shell ...` into the app process
+- [x] 1.4 Run app bins as foreground interactive processes with inherited stdio and propagated exit status
+- [x] 1.5 Add launcher tests for descriptor lookup, local workspace resolution, unsupported command rejection, no app-specific runtime branch, and remote fallback command construction
+- [x] 1.6 Define and pass the launcher-owned env contract: `AGENTER_DAEMON_HOST`, `AGENTER_DAEMON_PORT`, `AGENTER_AUTH_SERVICE_ENDPOINT`, `AGENTER_APP_COMMAND`, `AGENTER_APP_PACKAGE`, and `AGENTER_APP_SOURCE`
 - [x] 1.7 Add package-runner override tests for remote fallback without executing arbitrary user-supplied package names
-- [x] 1.8 Add launcher/product tests proving cli-shell consumes launcher-owned daemon context and does not create a product-local daemon port-file authority
+- [x] 1.8 Add launcher/app tests proving cli-shell consumes launcher-owned daemon context and does not create a app-local daemon port-file authority
 
 ## 2. Cli-shell Package
 
 - [x] 2.1 Create `packages/cli-shell` with package metadata, bin entry, TypeScript config, and workspace dependency declarations
 - [x] 2.2 Parse optional `@avatar` mention and `--session` into normalized `avatarNickname` and `shellName`, defaulting the Avatar to `shell-assistant` when no mention is provided
 - [x] 2.3 Connect to the daemon using launcher-provided connection context and perform superadmin auto-login
-- [x] 2.4 Ensure the selected AvatarRuntime is started or reused without using the cli-shell session name as runtime identity, including creating or ensuring the default `shell-assistant` Avatar through generic Avatar/product-extension APIs when absent
-- [x] 2.5 Consume product extension runtime APIs for resource binding, assistant initialization, attention projection, hosting attention, and delegation instead of importing core internals or adding cli-shell special cases to core modules
+- [x] 2.4 Ensure the selected AvatarRuntime is started or reused without using the cli-shell session name as runtime identity, including creating or ensuring the default `shell-assistant` Avatar through generic Avatar/app-extension APIs when absent
+- [x] 2.5 Consume app runtime APIs for resource binding, assistant initialization, attention projection, hosting attention, and delegation instead of importing core internals or adding cli-shell special cases to core modules
 - [x] 2.6 Add unit tests for command parsing, default `shell-assistant` ensure, explicit `@avatar` override such as `@default`, shell name normalization, AvatarRuntime identity inputs, extension API consumption, and the rule that historical terminal-assistant role notes do not override an explicit `@avatar` mention
 - [x] 2.7 Initialize missing `shell-assistant` `AGENTER.mdx` with flexible pair-programming, user-understanding, self-evolution, and managed-mode autonomy guidance while explicitly stating self-evolution is orthogonal to managed mode and underlying prompt/memory files remain openly editable user assets
 - [x] 2.8 Initialize missing `shell-assistant` memory roles for `user-model`, `pairing-playbook`, `terminal-habits`, `self-evolution-log`, and `hosting-objective`, and link them explicitly from `AGENTER.mdx`
@@ -39,23 +39,23 @@
 
 ## 3. Backend Resource Orchestration
 
-- [x] 3.1 Implement list-before-create terminal ensure through the generic product resource binding API for terminal resource keys such as `shell-1`
+- [x] 3.1 Implement list-before-create terminal ensure through the generic app resource binding API for terminal resource keys such as `shell-1`
 - [x] 3.2 Ensure terminal grant and focus for the summoned Avatar principal through terminal-system native authority
-- [x] 3.3 Implement product room lookup by generic product metadata `productId=cli-shell` and `resourceKey=<shellName>`
-- [x] 3.4 Create missing product rooms with backend-allocated room ids and visible title `<shellName>`
+- [x] 3.3 Implement app room lookup by generic app metadata `appId=cli-shell` and `resourceKey=<shellName>`
+- [x] 3.4 Create missing app rooms with backend-allocated room ids and visible title `<shellName>`
 - [x] 3.5 Ensure room grant and focus for the summoned Avatar principal through message-system native authority
 - [x] 3.6 Add integration tests for repeated `agenter shell`, explicit `agenter shell @default`, `--session=2`, no duplicate terminal or room creation, and absence of cli-shell-specific backend branches
 
-## 4. Terminal Product TUI
+## 4. Terminal App TUI
 
-- [x] 4.1 Build the shell TUI collapsed layout as one shell-terminal attached to one internal terminal, using `assets/cli-shell-product-reference-v8-toolbar-grid.png` as the final product-effect reference, `assets/cli-shell-product-reference-v8-toolbar-grid.svg` as the inspection/regeneration companion, and `assets/cli-shell-product-reference-v8-toolbar-grid.txt` as the cell-grid contract
+- [x] 4.1 Build the shell TUI collapsed layout as one shell-terminal attached to one internal terminal, using `assets/cli-shell-app-reference-v8-toolbar-grid.png` as the final app-effect reference, `assets/cli-shell-app-reference-v8-toolbar-grid.svg` as the inspection/regeneration companion, and `assets/cli-shell-app-reference-v8-toolbar-grid.txt` as the cell-grid contract
 - [x] 4.2 Build cli-shell directly on `@opentui/react` primitives without importing dashboard/session-list panels from `@agenter/tui`
-- [x] 4.3 Render terminal identity from durable terminal facts instead of local product state
+- [x] 4.3 Render terminal identity from durable terminal facts instead of local app state
 - [x] 4.4 Render the default toolbar in three zones: status icon, current Heartbeat, and action buttons
 - [x] 4.5 Implement toolbar state icons for idle, text-progressing, thinking, tool-call, message-tool, and terminal-tool states
 - [x] 4.6 Implement toolbar Heartbeat rendering from the latest message-part, including optimized summaries for message/terminal/attention built-in tool calls
 - [x] 4.7 Implement toolbar action buttons: managed/takeover toggle backed by platform hosting attention plus delegation projections, and chat entry with unread count plus shortcut
-- [x] 4.8 Implement the explicit TUI dialogue panel using `assets/cli-shell-product-reference-v8-dialogue-right-grid.png` as the final product-effect reference, `assets/cli-shell-product-reference-v8-dialogue-right-grid.svg` as the inspection/regeneration companion, and `assets/cli-shell-product-reference-v8-dialogue-right-grid.txt` as the cell-grid contract
+- [x] 4.8 Implement the explicit TUI dialogue panel using `assets/cli-shell-app-reference-v8-dialogue-right-grid.png` as the final app-effect reference, `assets/cli-shell-app-reference-v8-dialogue-right-grid.svg` as the inspection/regeneration companion, and `assets/cli-shell-app-reference-v8-dialogue-right-grid.txt` as the cell-grid contract
 - [x] 4.9 Implement dialogue panel top toolbar placement controls for left, right, floating, bottom, plus close
 - [x] 4.10 Implement dialogue panel Markdown message list with left gutter, right scrollbar, gray user message background, `>` gutter marker, and docked panel separators instead of a full enclosing border
 - [x] 4.11 Implement focused bottom input box with one-line separator, gray background, left `>` gutter, and cursor
@@ -64,23 +64,23 @@
 - [x] 4.14 Implement settings-driven toolbar/chat/dialogue focus/cancel/send behavior without leaking chat input into the backend terminal
 - [x] 4.15 Implement shell-terminal resize handling that updates backend terminal cols/rows after subtracting the one-line toolbar
 - [x] 4.16 Keep UI terminology aligned with v8 references, distinguishing `shell-terminal` from backend `terminal`
-- [x] 4.17 Implement all cli-shell product chrome as terminal cell-grid output: split lines, minimal floating borders, gutter columns, scrollbar columns, background cell ranges, and deterministic width accounting for emoji/CJK glyphs
+- [x] 4.17 Implement all cli-shell app chrome as terminal cell-grid output: split lines, minimal floating borders, gutter columns, scrollbar columns, background cell ranges, and deterministic width accounting for emoji/CJK glyphs
 - [x] 4.18 Render dialogue short time metadata for each message group and centered date divider rows when visible messages cross a local date boundary
 - [x] 4.19 Implement managed/takeover on behavior as hosting AttentionItem commit with the literal fixed key `scores: {"hosting": 1000}`, plus default write-capable terminal delegation create/refresh
 - [x] 4.20 Implement managed/takeover off behavior as delegation revoke plus mandatory hosting attention settlement `scores: {"hosting": 0}` with reason `user_disabled`, without deleting conversation or read access
 - [x] 4.21 Ensure autonomous terminal writes under managed/takeover use the Avatar actor identity and record delegation/lease provenance, not hidden superadmin writes
-- [x] 4.22 Add focused TUI/view-model tests for initial render, one-line toolbar, toolbar zones, status states, Heartbeat streaming, action buttons/unread count, hosting attention projection, managed delegation projection, optional visual separator, dialogue panel open/close/placement, Markdown list rendering, short time rendering, date divider rendering, focused input, cell-grid alignment, wide glyph width accounting, absence of top product chrome, absence of multi-terminal navigation, terminal hydration, input routing, and resize geometry
+- [x] 4.22 Add focused TUI/view-model tests for initial render, one-line toolbar, toolbar zones, status states, Heartbeat streaming, action buttons/unread count, hosting attention projection, managed delegation projection, optional visual separator, dialogue panel open/close/placement, Markdown list rendering, short time rendering, date divider rendering, focused input, cell-grid alignment, wide glyph width accounting, absence of top app chrome, absence of multi-terminal navigation, terminal hydration, input routing, and resize geometry
 
 ## 5. Validation
 
 - [x] 5.1 Run targeted `@agenter/cli` tests for launcher behavior
-- [x] 5.2 Run targeted product-extension-runtime tests for descriptor isolation, generic resource binding, assistant initialization, attention projection, hosting score lifecycle, delegation lease lifecycle, and no cli-shell imports in core
+- [x] 5.2 Run targeted app-runtime tests for descriptor isolation, generic resource binding, assistant initialization, attention projection, hosting score lifecycle, delegation lease lifecycle, and no cli-shell imports in core
 - [x] 5.3 Run targeted `@agenter/cli-shell` tests for parsing, orchestration, extension API consumption, prompt/memory initialization, hosting attention, delegation projection, and TUI view-model behavior
-- [x] 5.4 Run app-server/client-sdk tests covering generic product resource binding, terminal ensure, room ensure, grants, AvatarRuntime reuse, prompt/memory ensure, attention ingress, hosting settlement, and delegation lease provenance
+- [x] 5.4 Run app-server/client-sdk tests covering generic app resource binding, terminal ensure, room ensure, grants, AvatarRuntime reuse, prompt/memory ensure, attention ingress, hosting settlement, and delegation lease provenance
 - [x] 5.5 Run a real local walkthrough of `agenter shell`, repeat launch, explicit `agenter shell @default`, detach/reconnect, one-line toolbar, status state transitions, Heartbeat streaming, managed toggle on/off, managed state reconnect, chat unread entry, dialogue panel open/close/placement, short time rendering, date divider rendering, dialogue input send/cancel, terminal `Ctrl+C`, resize, and `agenter shell --session=2` from a separate shell-terminal
-- [x] 5.6 Refresh the v8 PNG/SVG/TXT reference set if product feedback changes the IA, then update `design.md`, specs, and audit evidence to point only at the accepted reference set
+- [x] 5.6 Refresh the v8 PNG/SVG/TXT reference set if app feedback changes the IA, then update `design.md`, specs, and audit evidence to point only at the accepted reference set
 - [x] 5.7 Add long-running real AI semantic-judge tests for shell-assistant self-evolution using `SemanticJudge.judgeStructured` or equivalent existing judge support, with a rubric for user-fit learning, memory quality, self-evolution direction, orthogonality, hosting separation, programmable attention usage, and anti-overfit behavior
 - [x] 5.8 Implement AI evaluation threshold and retry policy: fail below the configured score threshold, retry at most twice to absorb model variance, and treat repeated low scores as prompt or implementation defects
 - [x] 5.9 Run real AI evaluation scenarios for senior-led, requirement-led, and playful/companion-like collaboration traces, and verify the assistant learns from evidence rather than relying on preset archetype labels
-- [x] 5.10 Create and use `.chat/add-cli-shell-product/` during implementation to record contradictions, idealized assumptions, objective pain points, test-overfit pressure, and product/runtime tensions discovered while building the change
+- [x] 5.10 Create and use `.chat/add-cli-shell-app/` during implementation to record contradictions, idealized assumptions, objective pain points, test-overfit pressure, and app/runtime tensions discovered while building the change
 - [x] 5.11 Generate and run a long-script real AI validation suite that simulates many-turn terminal work, user correction, memory update, compact/restart continuity, later reuse of learned memory, and model-response cache behavior; keep normal CI gating explicit but do not replace this suite with deterministic-only assertions

@@ -17,7 +17,7 @@ This change therefore targets prompt law and acceptance style together:
 ## Goals / Non-Goals
 
 **Goals:**
-- Make real-provider acceptance closer to everyday product usage by replacing step-by-step user scripts with ordinary-user requests.
+- Make real-provider acceptance closer to everyday app usage by replacing step-by-step user scripts with ordinary-user requests.
 - Strengthen shared Avatar prompt docs so Avatars act like proactive software-delivery agents, not passive command interpreters.
 - Strengthen Message / Terminal / Workspace guides so the model knows how to self-recover resources and verify work without being told every step by the user.
 - Preserve deterministic acceptance by checking delivery URLs, on-disk files, room truth, attachments, and tool traces.
@@ -43,7 +43,7 @@ Alternative considered:
 - keep the shared prompts generic and continue teaching this only through scenario-specific user wording.
 
 Why not:
-- that would keep the product looking better in tests than in real use.
+- that would keep the app looking better in tests than in real use.
 
 ### 2. Express role preference through avatar-name heuristics, not runtime branching
 

@@ -32,4 +32,4 @@
 ## Impact
 
 - Affected systems: `@agenter/session-system` paging helpers, `@agenter/app-server` Heartbeat query/projection path, `@agenter/client-sdk` grouped Heartbeat resource hydration, WebUI Heartbeat route verification
-- No durable product behavior change is intended beyond performance/stability; the operator should still see the same Heartbeat truth, but without startup blow-up
+- No durable app behavior change is intended beyond performance/stability; the operator should still see the same Heartbeat truth, but without startup blow-up

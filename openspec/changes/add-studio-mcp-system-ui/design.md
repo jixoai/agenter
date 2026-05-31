@@ -2,7 +2,7 @@
 
 `mcpSystem` is already a runtime-owned system atom. It stores reusable global MCP configs, exact-project enablement, project-scoped live instances, discovery snapshots, action facts, SQL query projections, and MCP tool calls under Avatar runtime authority. The current operator gap is that Studio has no first-class surface for this system, while the only complete control surface is the root-workspace `mcp` CLI/API.
 
-The closest existing Studio product is Skills: both are catalogs of runtime abilities, both need list-detail inspection, and both should stay inside Studio workbench navigation. MCP is simpler than Skills in UI shape because there is no filesystem tree or file preview. The important MCP-specific interaction is the two-layer model: installed globals are inert, then exact projects enable and run them.
+The closest existing Studio app is Skills: both are catalogs of runtime abilities, both need list-detail inspection, and both should stay inside Studio workbench navigation. MCP is simpler than Skills in UI shape because there is no filesystem tree or file preview. The important MCP-specific interaction is the two-layer model: installed globals are inert, then exact projects enable and run them.
 
 ## Goals / Non-Goals
 
@@ -111,4 +111,4 @@ Route-level browser acceptance can be added after the workbench is wired to a re
 5. Add DOM contract tests and route-level smoke tests for desktop and mobile.
 6. Update Studio and client-runtime-store durable specs before archiving.
 
-Rollback is straightforward because this is an additive Studio product surface. Removing the `/mcp` route and SDK facade leaves existing CLI/API MCP behavior intact.
+Rollback is straightforward because this is an additive Studio app surface. Removing the `/mcp` route and SDK facade leaves existing CLI/API MCP behavior intact.

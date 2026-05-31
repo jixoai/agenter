@@ -50,7 +50,7 @@ If a defect comes from missing runtime resources or incorrect router state, fix 
 
 ### Decision 4: HTML report is a generated review artifact
 
-The final report SHALL live under a dated worktree-local screenshot folder and SHALL reference the actual screenshots from the same run. The report should tell the product story in plain language: what was broken, what was fixed, and what remains architecture-deferred.
+The final report SHALL live under a dated worktree-local screenshot folder and SHALL reference the actual screenshots from the same run. The report should tell the app story in plain language: what was broken, what was fixed, and what remains architecture-deferred.
 
 ## Risks / Trade-offs
 

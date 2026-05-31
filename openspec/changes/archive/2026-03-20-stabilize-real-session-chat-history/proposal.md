@@ -1,6 +1,6 @@
 ## Why
 
-Real workspace sessions still need a final hardening pass after the conversation-first Chat rewrite. The current surface can regress under long persisted histories, pagination, virtualization, and real-session runtime churn, which means the product is still less reliable in real workspaces than it appears in mocked or short-session tests.
+Real workspace sessions still need a final hardening pass after the conversation-first Chat rewrite. The current surface can regress under long persisted histories, pagination, virtualization, and real-session runtime churn, which means the app is still less reliable in real workspaces than it appears in mocked or short-session tests.
 
 ## What Changes
 

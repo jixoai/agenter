@@ -130,7 +130,7 @@ Compatibility shims may remain inside the shared package during migration, but f
   Mitigation: keep each trigger family's query shape separate and add unit tests per family.
 
 - [Risk] The new controller becomes a thin shell that still leaks old imperative APIs into consumers.  
-  Mitigation: migrate Storybook harnesses and product code in the same round instead of only exporting the new runtime.
+  Mitigation: migrate Storybook harnesses and app code in the same round instead of only exporting the new runtime.
 
 - [Risk] Insert-batch and collection-delta programs regress pinned-latest behavior.  
   Mitigation: keep the existing tx kernel, preserve Storybook append/prepend race contracts, and add explicit interruption matrix coverage.

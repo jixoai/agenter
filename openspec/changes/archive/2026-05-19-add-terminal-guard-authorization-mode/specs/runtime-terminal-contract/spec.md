@@ -34,8 +34,8 @@ Runtime terminal `write` and `input` operations SHALL preserve TerminalSystem gu
 - **THEN** runtime `terminal write` and `terminal input` calls may reach the PTY under that lease
 - **THEN** terminal activity preserves the actor and lease provenance
 
-#### Scenario: Product hosting attention does not affect runtime write authorization
+#### Scenario: App hosting attention does not affect runtime write authorization
 - **GIVEN** cli-shell hosting attention is active for a shell
 - **WHEN** the bound Shell Assistant calls runtime `terminal write` or `terminal input`
 - **THEN** runtime authorization still checks only TerminalSystem grant, approval request, and terminal-native write lease facts
-- **THEN** runtime does not consult product delegation or hosting attention as write authority
+- **THEN** runtime does not consult app delegation or hosting attention as write authority

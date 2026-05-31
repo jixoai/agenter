@@ -40,7 +40,7 @@ The user decisions for this change are explicit:
 The runtime identity law becomes `one Avatar -> one canonical AvatarRuntime`. Workspaces, rooms, and terminals are attached to that runtime as dynamic mounts instead of creating new runtime identities.
 
 Why:
-- it matches the product goal that one Avatar can control multiple workspaces at once;
+- it matches the app goal that one Avatar can control multiple workspaces at once;
 - it removes the artificial requirement that workspace membership must define runtime identity;
 - it makes future Avatar-to-Avatar collaboration compositional instead of pairwise.
 

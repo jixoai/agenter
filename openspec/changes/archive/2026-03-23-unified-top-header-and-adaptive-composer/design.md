@@ -26,7 +26,7 @@ Why: this keeps one header surface while preserving semantic layering.
 ### Bottom navigation is removed, not hidden
 `useAdaptiveViewport` stops computing a workspace nav mode and `WorkspaceShellFrame` stops rendering `BottomNavBar`.
 
-Why: the approved product decision is top-only navigation, and keeping the old mode would preserve dead complexity.
+Why: the approved app decision is top-only navigation, and keeping the old mode would preserve dead complexity.
 
 ### Adaptive affordances use CSS first, ResizeObserver second
 Container queries decide coarse layout bands for the toolbar; `ResizeObserver` inside the adaptive button decides whether the individual label can fit.

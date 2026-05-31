@@ -1,6 +1,6 @@
 ## Why
 
-The terminal extraction work landed the renderer as a WebComponent, but the integrated Terminal page regressed: missing color fidelity, missing fit/cover affordances, unstable resize behavior, and no terminal-centric inspection view. The product now needs a dedicated recovery change focused on renderer quality and terminal-id-based inspection.
+The terminal extraction work landed the renderer as a WebComponent, but the integrated Terminal page regressed: missing color fidelity, missing fit/cover affordances, unstable resize behavior, and no terminal-centric inspection view. The app now needs a dedicated recovery change focused on renderer quality and terminal-id-based inspection.
 
 ## What Changes
 

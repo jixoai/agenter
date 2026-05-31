@@ -6,7 +6,7 @@
 - Iteration: 4
 - Recurring issue counts: `read-indicator-geometry` occurred once after Round 1; `framework7-shell-topology-mismatch` occurred once after Round 2; `stale-app-view-proxy` occurred once during Round 4 verification.
 - Exit-condition judgment: pass for the current change scope after iframe app-view embedding, contact terminology cleanup, targeted typechecks, BDD contracts, and desktop/iPhone 14 live-route screenshots.
-- Next loop action: do not add more Studio-local chat CSS. Future work should harden product polish around Studio mobile shell density and full e2e fixtures, but the app-view boundary law is now implemented.
+- Next loop action: do not add more Studio-local chat CSS. Future work should harden app polish around Studio mobile shell density and full e2e fixtures, but the app-view boundary law is now implemented.
 
 ## Intent Alignment
 
@@ -18,15 +18,15 @@
 | Bottom-anchored transcript remains stable after compact avatar geometry becomes real. | Existing Storybook DOM scroll contract initially exposed `62px` anchor drift; `estimateMessageRowSize` was corrected and the full targeted contract now passes. | Pass |
 | BDD is run before implementation. | First targeted unit run failed on `test/chat-avatar-embedded-style.test.ts` before the component fix. | Pass |
 | Live Studio route read indicators stay bounded. | Round 2 BDD first failed with `300px` read indicators; after the fix, live `127.0.0.1:4173/messages/room/...` metrics report two indicators as `20x20`, with SVG rings also `20x20`. | Pass |
-| Studio uses the same Web Chat product shell as the full review shell. | Studio now renders an iframe app-view boundary. Live 4174 evidence shows iframe URL `http://127.0.0.1:4293/?mode=room&...&viewer=...`, app-view page class `review-shell-room-page review-shell-embedded-room-page page`, `.messages` at `1184x846` desktop / `324x692` iPhone 14, and `.messagebar` at `1180x58` desktop / `321x56` iPhone 14. | Pass |
-| App-view product language is contact-based. | URL contracts now emit `viewer=<contactId>`; README and visible setup copy say viewer contact; `viewerActorId` is no longer emitted by app-view query builders or Studio iframe URLs. | Pass |
+| Studio uses the same Web Chat app shell as the full review shell. | Studio now renders an iframe app-view boundary. Live 4174 evidence shows iframe URL `http://127.0.0.1:4293/?mode=room&...&viewer=...`, app-view page class `review-shell-room-page review-shell-embedded-room-page page`, `.messages` at `1184x846` desktop / `324x692` iPhone 14, and `.messagebar` at `1180x58` desktop / `321x56` iPhone 14. | Pass |
+| App-view app language is contact-based. | URL contracts now emit `viewer=<contactId>`; README and visible setup copy say viewer contact; `viewerActorId` is no longer emitted by app-view query builders or Studio iframe URLs. | Pass |
 | The current fix avoids symptom-only visual patching. | Round 1/2 package CSS bounds are retained as defensive leaf guardrails, but Round 4 moved the Studio integration to iframe app-view and removed outer route send/read-ack effects that belonged inside app-view/backend flow. | Pass |
 
 ## Deviations From Intent
 
 1. Round 1 incorrectly treated the visible giant circular artifacts as avatar geometry only. The user-provided live route screenshot proved the remaining artifacts were discloseable `MessageReadIndicator` SVG rings.
 2. Round 1 screenshots used the embedded Storybook contract story rather than a live Studio route. Round 2 corrected this by capturing the active `127.0.0.1:4173/messages/room/...` route on desktop and iPhone 14.
-3. Storybook dev server emitted a Vite dependency pre-scan warning for Storybook/Svelte virtual module `DecoratorHandler.svelte`. Targeted DOM tests and live-route screenshots still succeeded; this remains a tooling warning, not a product failure in this change.
+3. Storybook dev server emitted a Vite dependency pre-scan warning for Storybook/Svelte virtual module `DecoratorHandler.svelte`. Targeted DOM tests and live-route screenshots still succeeded; this remains a tooling warning, not a app failure in this change.
 4. Round 3 initially deferred the iframe/custom-element decision and kept the direct Svelte component contract too long. The user clarified app-view should behave like Chrome/Chrome WebView, so Round 4 switched Studio to iframe app-view.
 5. Round 3 found the previous boundary assumption was too small: `WebChatViewHost` is the leaf transcript/composer, while the previously good-looking version used a full Framework7 review shell.
 6. The full review shell itself had drifted from the current message-system contact API. A small non-visual harness fix was needed to make it usable as evidence.
@@ -73,15 +73,15 @@
 - Studio current route has `WebChatViewHost` at `1184x865`, `.messages` at `1184x747`, `.messagebar` at `1180x117`, no visible Framework7 `.page`, and only a hidden `.framework7-root` at `0x0`.
 - Failing BDD proof before implementation: `bun run --filter '@agenter/web-chat-view' test:unit -- test/chat-avatar-embedded-style.test.ts` failed because `ChatAvatar` still used Tailwind utility geometry.
 - Failing Round 2 BDD proof before implementation: `bun run --filter '@agenter/web-chat-view' test:unit -- test/message-read-disclosure-sizing.test.ts` failed because `MessageReadIndicator` had no package-global trigger sizing for the Framework7 `Link` root.
-- Failing Round 2 DOM proof before implementation: `bun run --filter 'agenter-ext-studio' test:dom -- test/storybook/web-chat-view-host.contract.stories.test.ts` failed because embedded read indicators measured `300px` wide.
+- Failing Round 2 DOM proof before implementation: `bun run --filter 'agenter-app-studio' test:dom -- test/storybook/web-chat-view-host.contract.stories.test.ts` failed because embedded read indicators measured `300px` wide.
 - Passing Web Chat BDD: `bun run --filter '@agenter/web-chat-view' test:unit -- test/chat-avatar-embedded-style.test.ts test/message-utils.test.ts`
 - Passing Round 2 Web Chat BDD: `bun run --filter '@agenter/web-chat-view' test:unit -- test/message-read-disclosure-sizing.test.ts test/chat-avatar-embedded-style.test.ts test/message-utils.test.ts`
-- Passing Studio DOM contract: `bun run --filter 'agenter-ext-studio' test:dom -- test/storybook/web-chat-view-host.contract.stories.test.ts`
-- Passing typechecks: `bun run --filter '@agenter/web-chat-view' typecheck`; `bun run --filter 'agenter-ext-studio' typecheck`
+- Passing Studio DOM contract: `bun run --filter 'agenter-app-studio' test:dom -- test/storybook/web-chat-view-host.contract.stories.test.ts`
+- Passing typechecks: `bun run --filter '@agenter/web-chat-view' typecheck`; `bun run --filter 'agenter-app-studio' typecheck`
 - Passing live route metrics: desktop and iPhone 14 both reported `indicatorCount: 2`, each indicator `20x20`, each SVG ring `20x20`.
 - Passing Round 4 app-view BDD: `bun run --filter '@agenter/web-chat-view-example' test -- test/review-profile-query-contract.test.ts test/review-people-projection-contract.test.ts`
-- Passing Round 4 Studio BDD: `bun run --filter 'agenter-ext-studio' test:unit -- src/lib/features/messages/message-app-view-url.spec.ts src/lib/features/messages/message-room-route-contract.spec.ts`
-- Passing Round 4 typechecks: `bun run --filter '@agenter/web-chat-view-example' typecheck`; `bun run --filter 'agenter-ext-studio' typecheck`
+- Passing Round 4 Studio BDD: `bun run --filter 'agenter-app-studio' test:unit -- src/lib/features/messages/message-app-view-url.spec.ts src/lib/features/messages/message-room-route-contract.spec.ts`
+- Passing Round 4 typechecks: `bun run --filter '@agenter/web-chat-view-example' typecheck`; `bun run --filter 'agenter-app-studio' typecheck`
 - Passing Round 4 live route evidence: isolated `bun agenter studio --dev --web-port 4174` started app-view at `4293`, desktop and iPhone 14 iframe URLs used `mode=room` and `viewer=...`, and app-view rendered Framework7 room page + messagebar inside the iframe.
 - Passing OpenSpec validation: `bun run openspec:vision -- validate fix-studio-web-chat-view-embedding-style`
 - Svelte autofixer: no blocking issues for touched Svelte files. Existing large-component `$effect` and `Map -> SvelteMap` suggestions were not expanded into this change.
@@ -101,4 +101,4 @@ See `review/self-review.html`.
 ## Exit Handling
 
 - Normal exit is allowed after final `openspec:vision validate/check` and commit hygiene pass.
-- This review does not require an abnormal handoff. The next agent should not continue app-view embedding by editing Studio-local transcript CSS; the product boundary is iframe app-view plus backend synchronization.
+- This review does not require an abnormal handoff. The next agent should not continue app-view embedding by editing Studio-local transcript CSS; the app boundary is iframe app-view plus backend synchronization.

@@ -78,7 +78,7 @@
   <body>
     <main>
       <h1>Self Review: design-instance-focus-attention-lifecycle</h1>
-      <p class="muted">Iteration 1. Backend/product runtime evidence only; no screenshots were required.</p>
+      <p class="muted">Iteration 1. Backend/app runtime evidence only; no screenshots were required.</p>
 
       <section>
         <h2>Alignment Matrix</h2>
@@ -105,9 +105,9 @@
               <td class="pass">Pass</td>
             </tr>
             <tr>
-              <td>Shell-next owns terminal-room reaction in product code.</td>
+              <td>Shell-next owns terminal-room reaction in app code.</td>
               <td>
-                <code>extensions/shell-next/src/product/lifecycle-reaction.ts</code> subscribes through public store
+                <code>apps/shell-next/src/app/lifecycle-reaction.ts</code> subscribes through public store
                 APIs.
               </td>
               <td class="pass">Pass</td>
@@ -145,7 +145,7 @@
               <td class="pass">3 pass</td>
             </tr>
             <tr>
-              <td><code>bun test extensions/shell-next/test/run-shell-next.test.ts --test-name-pattern ...</code></td>
+              <td><code>bun test apps/shell-next/test/run-shell-next.test.ts --test-name-pattern ...</code></td>
               <td class="pass">3 pass</td>
             </tr>
             <tr>
@@ -172,7 +172,7 @@
               <td class="warn">Pre-existing module resolution failure in <code>../cli/src/trpc-server.ts</code>.</td>
             </tr>
             <tr>
-              <td><code>bun run --filter 'agenter-ext-shell-next' typecheck</code></td>
+              <td><code>bun run --filter 'agenter-app-shell-next' typecheck</code></td>
               <td class="warn">Pre-existing message fixture type drift remains outside this change.</td>
             </tr>
           </tbody>
@@ -182,7 +182,7 @@
       <section>
         <h2>Review Judgment</h2>
         <p>
-          The implementation follows the final architecture boundary: kernel lifecycle laws remain product-agnostic, and
+          The implementation follows the final architecture boundary: kernel lifecycle laws remain app-agnostic, and
           shell-next owns only its application-specific binding reaction. The remaining questions are cleanup and
           inactive runtime propagation scope, not blockers for this batch.
         </p>

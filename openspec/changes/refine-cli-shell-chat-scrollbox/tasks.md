@@ -11,7 +11,7 @@
 
 - [x] 2.1 Introduce a cli-shell Chat loaded-window model containing loaded message ids, `nextBefore`, `hasMoreBefore`, `loadingBefore`, pinned state, and anchor metadata.
 - [x] 2.2 Merge snapshot, page, and incremental room updates by durable message id while preserving stable chronological order.
-- [x] 2.3 Remove or demote `dialogueScrollOffset` from public TUI model/state so it cannot remain the product scroll law.
+- [x] 2.3 Remove or demote `dialogueScrollOffset` from public TUI model/state so it cannot remain the app scroll law.
 - [x] 2.4 Ensure successful dialogue send clears only the draft, keeps the dialogue open, and returns to bottom-pinned mode.
 
 ## 3. OpenTUI ScrollBox Integration
@@ -25,7 +25,7 @@
 ## 4. MessageRoom Pagination Wiring
 
 - [x] 4.1 Wire native cli-shell Chat older-history loading through the existing client SDK `pageGlobalRoomMessages` path.
-- [x] 4.2 Ensure authorization errors, empty pages, stale cursors, and duplicate page results are surfaced as recoverable product states, not crashes.
+- [x] 4.2 Ensure authorization errors, empty pages, stale cursors, and duplicate page results are surfaced as recoverable app states, not crashes.
 - [x] 4.3 Ensure incremental room updates update existing loaded messages in place when message lifecycle records change.
 
 ## 5. Cleanup
@@ -38,7 +38,7 @@
 
 - [x] 6.1 Run focused cli-shell TUI tests for Chat scrolling, pagination, anchor preservation, and bottom pinning.
 - [x] 6.2 Run focused cli-shell web-host tests only where shared room pagination helpers changed; do not add WebUI coupling.
-- [x] 6.3 Run `bun run --filter 'agenter-ext-shell' typecheck`.
+- [x] 6.3 Run `bun run --filter 'agenter-app-shell' typecheck`.
 - [x] 6.4 Run `openspec validate refine-cli-shell-chat-scrollbox --strict`.
 - [x] 6.5 Run `openspec validate --specs --strict`.
 - [x] 6.6 Run `git diff --check`.

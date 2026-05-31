@@ -1,12 +1,12 @@
 ## ADDED Requirements
 
-### Requirement: Shell SHALL own localized product atoms copied from cli-shell
+### Requirement: Shell SHALL own localized app atoms copied from cli-shell
 
-Shell SHALL NOT import `agenter-ext-shell-old` or `extensions/shell-old` at runtime. Shell MAY preserve proven Room, product bootstrap, settings, heartbeat, approval, cleanup, and terminal projection behavior copied from cli-shell, but copied code SHALL live under `extensions/shell` and use shell/opencompose naming.
+Shell SHALL NOT import `agenter-app-shell-old` or `apps/shell-old` at runtime. Shell MAY preserve proven Room, app bootstrap, settings, heartbeat, approval, cleanup, and terminal projection behavior copied from cli-shell, but copied code SHALL live under `apps/shell` and use shell/opencompose naming.
 
-#### Scenario: Product Room uses the localized shell Room atom
+#### Scenario: App Room uses the localized shell Room atom
 
-- **WHEN** shell is product-attached and Chat is opened
+- **WHEN** shell is app-attached and Chat is opened
 - **THEN** the Chat pane mounts shell-owned OpenTUI Room code inside shell layout
 - **AND** it preserves multiline composer, history, room hydration, send/refresh failure separation, and live repaint behavior
 - **AND** it does not start a tmux popup or tmux pane
@@ -14,8 +14,8 @@ Shell SHALL NOT import `agenter-ext-shell-old` or `extensions/shell-old` at runt
 #### Scenario: Legacy shell package stays out of shell runtime
 
 - **WHEN** shell runtime and mux source files are inspected
-- **THEN** they do not import `agenter-ext-shell-old`
-- **AND** they do not import `extensions/shell-old`
+- **THEN** they do not import `agenter-app-shell-old`
+- **AND** they do not import `apps/shell-old`
 - **AND** shell pane ids remain OpenTUI/opencompose layout ids, not tmux pane ids
 
 ### Requirement: Opencompose panes SHALL support renderer and custom content families
@@ -34,40 +34,40 @@ Shell SHALL incubate the reusable compositor as opencompose. A pane source SHALL
 - **THEN** opencompose mounts the custom terminal frame renderer
 - **AND** shell connects that renderer to the PTY/protocol source rather than to cli-shell code
 
-### Requirement: Terminal source policy SHALL keep product terminals and local BunPTY separate
+### Requirement: Terminal source policy SHALL keep app terminals and local BunPTY separate
 
-Shell SHALL model terminal creation through a terminal source policy. A product-bound policy SHALL create the initial source from TerminalSystem truth and SHALL NOT expose a Local BunPTY split creator. A local policy MAY expose a BunPTY split creator. These policies are separate capabilities, not fallback levels.
+Shell SHALL model terminal creation through a terminal source policy. A app-bound policy SHALL create the initial source from TerminalSystem truth and SHALL NOT expose a Local BunPTY split creator. A local policy MAY expose a BunPTY split creator. These policies are separate capabilities, not fallback levels.
 
-#### Scenario: Product policy has no Local BunPTY split capability
+#### Scenario: App policy has no Local BunPTY split capability
 
-- **WHEN** shell is attached to a daemon-backed product terminal
+- **WHEN** shell is attached to a daemon-backed app terminal
 - **AND** the user requests a new shell split
 - **THEN** shell does not create a Local BunPTY source
 - **AND** it keeps the existing terminal truth intact
-- **AND** it shows the product-bound policy's split-unavailable reason
+- **AND** it shows the app-bound policy's split-unavailable reason
 
 #### Scenario: Local policy may create Local BunPTY splits
 
-- **WHEN** shell is not attached to a daemon-backed product terminal
+- **WHEN** shell is not attached to a daemon-backed app terminal
 - **AND** the user requests a new shell split
 - **THEN** the local terminal source policy may create a Local BunPTY-backed protocol source
-- **AND** that source is not presented as product-bound TerminalSystem truth
+- **AND** that source is not presented as app-bound TerminalSystem truth
 
 ### Requirement: Shell SHALL own the stable launcher command
 
-Shell SHALL own `agenter shell` as the stable launcher command. The previous incubation command `agenter shell2` SHALL be removed from the product command descriptor registry.
+Shell SHALL own `agenter shell` as the stable launcher command. The previous incubation command `agenter shell2` SHALL be removed from the app command descriptor registry.
 
 #### Scenario: Stable shell resolves to the promoted package
 
-- **WHEN** the product launcher resolves shell commands
-- **THEN** `shell` resolves to `agenter-ext-shell`
+- **WHEN** the app launcher resolves shell commands
+- **THEN** `shell` resolves to `agenter-app-shell`
 - **AND** its bin is `agenter-shell`
 - **AND** its in-process main export is `runShell`
 
-#### Scenario: Shell2 is no longer a product command
+#### Scenario: Shell2 is no longer a app command
 
-- **WHEN** the product launcher resolves `shell2`
-- **THEN** no product descriptor is returned
+- **WHEN** the app launcher resolves `shell2`
+- **THEN** no app descriptor is returned
 
 ### Requirement: Status view SHALL remain distinct from the approval top-layer
 
@@ -91,9 +91,9 @@ Shell mixed host mode SHALL not render Heartbeat preview detail in the bottom st
 - **AND** it may show `Context <percent> used`
 - **AND** it does not show AttentionItem preview strings or Heartbeat narrative text
 
-#### Scenario: Product attach strips Heartbeat preview text
+#### Scenario: App attach strips Heartbeat preview text
 
-- **WHEN** product attach reads a non-idle Heartbeat preview and model call context facts
+- **WHEN** app attach reads a non-idle Heartbeat preview and model call context facts
 - **THEN** shell projects a macro runtime label such as `Active`
 - **AND** it projects AI context usage from model-call token facts
 - **AND** it does not pass Heartbeat preview prose into the statusbar
@@ -101,7 +101,7 @@ Shell mixed host mode SHALL not render Heartbeat preview detail in the bottom st
 #### Scenario: Help and Chat are clickable statusbar actions
 
 - **WHEN** the user clicks `Help` or `Chat` in the bottom statusbar
-- **THEN** shell opens or toggles the corresponding product surface
+- **THEN** shell opens or toggles the corresponding app surface
 
 ### Requirement: Terminal panes SHALL surface source title and close confirmation
 

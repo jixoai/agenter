@@ -7,7 +7,7 @@ The repository already has a strong avatar law:
 - The current `Avatars` workbench is a runtime-first operational surface, not a marketplace.
 - The platform already distinguishes durable identity from nickname alias, which is a useful precedent for separating avatar identity from avatar source provenance.
 
-The next product step is not to introduce a second avatar ontology. The user clarified that so-called "remote avatars" are still meant to become local, operable avatars after installation. The remote aspect describes how the root-workspace capability bundle is sourced, assembled, or executed, not a permanently separate runtime class that should leak into every surface as `remote` special-casing.
+The next app step is not to introduce a second avatar ontology. The user clarified that so-called "remote avatars" are still meant to become local, operable avatars after installation. The remote aspect describes how the root-workspace capability bundle is sourced, assembled, or executed, not a permanently separate runtime class that should leak into every surface as `remote` special-casing.
 
 This makes the design cross-cutting:
 
@@ -25,7 +25,7 @@ This makes the design cross-cutting:
 - Add `Discover` and `Sources` as explicit peer surfaces inside `Avatars`.
 - Make install the default durable flow for remote packages.
 - Preserve installed-avatar provenance, including source and revision facts.
-- Record the user interview objectively, with verbatim wording preserved where it drives product law.
+- Record the user interview objectively, with verbatim wording preserved where it drives app law.
 
 **Non-Goals:**
 
@@ -33,7 +33,7 @@ This makes the design cross-cutting:
 - Do not make transient direct launch of remote packages the primary user path.
 - Do not introduce a second runtime ontology for `remote avatars`.
 - Do not finalize update/sync algorithms across multiple sources in this draft.
-- Do not implement this change yet; this document only captures the product/spec direction.
+- Do not implement this change yet; this document only captures the app/spec direction.
 
 ## Decisions
 
@@ -69,7 +69,7 @@ Alternative considered:
 
 ### The current local-only page should become directory-ready before Discover and Sources ship
 
-The product should not wait for full remote-source implementation before correcting the current page language and structure. The existing local route should already read as the future `My Avatars` operational surface:
+The app should not wait for full remote-source implementation before correcting the current page language and structure. The existing local route should already read as the future `My Avatars` operational surface:
 
 - avoid over-committing to `local-only catalog` wording
 - keep the selected-avatar lens runtime-first
@@ -85,7 +85,7 @@ Alternative considered:
 
 ### Install is the default durable path
 
-Remote packages may theoretically support temporary launch later, but the primary product path for this change is explicit install:
+Remote packages may theoretically support temporary launch later, but the primary app path for this change is explicit install:
 
 1. Browse or search remote package
 2. Choose install
@@ -118,7 +118,7 @@ Implications:
 Alternative considered:
 
 - Show persistent "remote avatar" special chrome in operational views.
-  - Rejected because it would fragment the product into mixed ontologies and contradict the user's "theoretical local equivalence" rule.
+  - Rejected because it would fragment the app into mixed ontologies and contradict the user's "theoretical local equivalence" rule.
 
 ### Source management is an explicit surface, not hidden setup
 
@@ -126,7 +126,7 @@ The user explicitly wants source entry to be open, not buried. Therefore `Source
 
 Why:
 
-- Multiple sources are a product truth, not an implementation detail.
+- Multiple sources are a app truth, not an implementation detail.
 - Alias management matters for conflict resolution and discoverability.
 - It keeps supply-plane control available without polluting `My Avatars`.
 
@@ -175,7 +175,7 @@ Alternative considered:
 ## Risks / Trade-offs
 
 - [Risk] Multi-source conflicts create confusing duplicate names or package identity collisions. → Mitigation: keep names primary in scanning, sources secondary in display, and require explicit rename only at local install conflict boundaries.
-- [Risk] Product scope drifts into update/sync mechanics too early. → Mitigation: keep this draft focused on source/discover/install/provenance law; defer richer sync policy.
+- [Risk] App scope drifts into update/sync mechanics too early. → Mitigation: keep this draft focused on source/discover/install/provenance law; defer richer sync policy.
 - [Risk] The workbench becomes too acquisition-heavy and weakens current runtime operations. → Mitigation: keep `My Avatars` as default landing and preserve runtime-first action hierarchy there.
 - [Risk] Future implementation shortcuts may still introduce `isRemote` checks. → Mitigation: encode the source/package/install/provenance model in specs before code starts.
 - [Risk] Source management as a visible surface could add UI complexity. → Mitigation: treat `Sources` as a supply-plane control view, distinct from `My Avatars` and `Discover`.

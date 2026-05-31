@@ -7,10 +7,10 @@ Define the canonical package, CLI, runtime, and vocabulary identity for the auth
 ### Requirement: Auth service SHALL be the canonical package identity
 The auth authority implementation SHALL be published and consumed through canonical `@agenter/auth-service` and `@agenter/auth-cli` package identities. Legacy `@agenter/profile-service` and `@agenter/profile-cli` packages SHALL remain only as compatibility aliases and SHALL NOT own independent service logic or durable state.
 
-#### Scenario: New product code imports auth-service
+#### Scenario: New app code imports auth-service
 - **WHEN** app-server or another first-party package consumes auth identity, managed principal, auth challenge, or typed icon authority APIs
 - **THEN** it imports the canonical `@agenter/auth-service` package
-- **THEN** no new first-party product import targets `@agenter/profile-service`
+- **THEN** no new first-party app import targets `@agenter/profile-service`
 
 #### Scenario: Legacy profile package delegates to auth-service
 - **WHEN** a compatibility caller imports `@agenter/profile-service`

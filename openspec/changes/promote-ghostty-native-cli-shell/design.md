@@ -1,10 +1,10 @@
 ## Context
 
-`add-cli-shell-product` established cli-shell as an external product package that binds one shell-terminal to one backend terminal, one room, and one AvatarRuntime through product-extension contracts. That law is still correct, but two concrete contracts are now wrong for the next platform step.
+`add-cli-shell-app` established cli-shell as an external app package that binds one shell-terminal to one backend terminal, one room, and one AvatarRuntime through app-extension contracts. That law is still correct, but two concrete contracts are now wrong for the next platform step.
 
-First, cli-shell has no explicit backend-selection path. The current argv only carries avatar and session naming, `ProductEnsureTerminalBindingInput.createInput` has no backend field, terminal control-plane durable launch truth does not expose a backend field, and `@agenter/termless-core` only instantiates the official xterm backend. The durable specs already separate backend truth from browser renderer truth, so the implementation gap is platform plumbing, not a product-local shortcut.
+First, cli-shell has no explicit backend-selection path. The current argv only carries avatar and session naming, `AppEnsureTerminalBindingInput.createInput` has no backend field, terminal control-plane durable launch truth does not expose a backend field, and `@agenter/termless-core` only instantiates the official xterm backend. The durable specs already separate backend truth from browser renderer truth, so the implementation gap is platform plumbing, not a app-local shortcut.
 
-Second, cli-shell still models `bottom` as a multi-row transcript panel. The user has now tightened the product law: the shell-terminal bottom surface may render exactly one row, and bottom content must be derived by rendering markdown at constrained width and taking only the last rendered line. That means bottom is a projection surface, not a second transcript panel.
+Second, cli-shell still models `bottom` as a multi-row transcript panel. The user has now tightened the app law: the shell-terminal bottom surface may render exactly one row, and bottom content must be derived by rendering markdown at constrained width and taking only the last rendered line. That means bottom is a projection surface, not a second transcript panel.
 
 This change stays scoped to cli-shell and terminal backend/runtime law. It MUST NOT pull `extend-attention-cli-self-evolution-runtime` into the same implementation.
 
@@ -12,12 +12,12 @@ This change stays scoped to cli-shell and terminal backend/runtime law. It MUST 
 
 **Goals:**
 
-- Provide a real product path for `bun agenter shell --backend=ghostty-native`.
-- Keep backend identity as durable terminal launch truth rather than a renderer alias or product-local flag.
+- Provide a real app path for `bun agenter shell --backend=ghostty-native`.
+- Keep backend identity as durable terminal launch truth rather than a renderer alias or app-local flag.
 - Reuse the official Termless ownership slot for `ghostty-native` without introducing another Agenter-private backend package.
 - Keep xterm as the default backend unless the user explicitly asks for another backend.
 - Redefine cli-shell bottom rendering as a one-line markdown projection built from `MarkdownRenderable`.
-- Preserve the core/product boundary: cli-shell consumes contracts, core runtime stays product-agnostic.
+- Preserve the core/app boundary: cli-shell consumes contracts, core runtime stays app-agnostic.
 
 **Non-Goals:**
 
@@ -31,7 +31,7 @@ This change stays scoped to cli-shell and terminal backend/runtime law. It MUST 
 
 ### 1. Backend selection becomes explicit durable launch truth named `backend`
 
-Cli-shell will parse `--backend=<name>` and pass that value as explicit terminal launch truth named `backend`. The terminal control-plane, runtime terminal config surfaces, and product terminal-binding contract will all use the same field name.
+Cli-shell will parse `--backend=<name>` and pass that value as explicit terminal launch truth named `backend`. The terminal control-plane, runtime terminal config surfaces, and app terminal-binding contract will all use the same field name.
 
 Rationale:
 
@@ -88,7 +88,7 @@ The multi-row bottom dialogue panel contract is removed. Explicit transcript chr
 
 Rationale:
 
-- This matches the user's tightened product law exactly.
+- This matches the user's tightened app law exactly.
 - It preserves terminal primacy and avoids consuming terminal rows with a second bottom panel.
 - A markdown-to-last-line projection gives one consistent rendering path for rich Heartbeat content without letting bottom UI grow vertically.
 
@@ -97,7 +97,7 @@ Alternatives considered:
 - Keep the old multi-row bottom panel and only clamp its initial height.
   - Rejected because the law is now “bottom only one line”, not “bottom usually small”.
 - Bypass markdown rendering and hand-roll last-line string truncation.
-  - Rejected because the required projection must come from the same markdown renderer semantics used by the product.
+  - Rejected because the required projection must come from the same markdown renderer semantics used by the app.
 
 ### 5. Transcript input remains explicit and separate from the collapsed bottom row
 
@@ -118,7 +118,7 @@ Rationale:
 ## Migration Plan
 
 1. Land the spec change first.
-2. Add `backend` durable launch truth through terminal-system, runtime/client surfaces, and product-extension runtime.
+2. Add `backend` durable launch truth through terminal-system, runtime/client surfaces, and app-extension runtime.
 3. Add official `ghostty-native` backend instantiation behind the shared Termless ownership slot.
 4. Wire cli-shell argv/bootstrap/reuse policy to the new backend contract.
 5. Replace bottom multi-row rendering with the single-line markdown projection helper and remove bottom transcript-panel behavior.

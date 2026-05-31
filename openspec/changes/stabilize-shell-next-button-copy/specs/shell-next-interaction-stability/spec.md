@@ -30,7 +30,7 @@ Shell-next SHALL render all interactive text buttons through one shared Button p
 
 ### Requirement: ShellPane selection, copy, and paste SHALL follow backend-owned terminal truth
 
-ShellPane SHALL treat terminal selection, selected text, clear-selection, copy, and paste as backend-owned terminal facts. Shell-next SHALL copy the needed legacy cli-shell behavior into shell-next modules without modifying or importing `extensions/cli-shell`.
+ShellPane SHALL treat terminal selection, selected text, clear-selection, copy, and paste as backend-owned terminal facts. Shell-next SHALL copy the needed legacy cli-shell behavior into shell-next modules without modifying or importing `apps/cli-shell`.
 
 #### Scenario: Drag selection routes pane-local terminal coordinates
 - **WHEN** the user drags visible ShellPane terminal text
@@ -93,12 +93,12 @@ The final implementation pass SHALL commit the completed shell-next/OpenSpec cha
 
 #### Scenario: Cli-shell remains read-only
 - **WHEN** this change is complete
-- **THEN** `git diff -- extensions/cli-shell` is empty
-- **AND** no shell-next implementation imports from `extensions/cli-shell`
+- **THEN** `git diff -- apps/cli-shell` is empty
+- **AND** no shell-next implementation imports from `apps/cli-shell`
 
 ### Requirement: Shell-next SHALL preserve legacy terminal keyboard selection affordances
 
-Shell-next SHALL support the terminal keyboard affordances previously validated by cli-shell without importing from or editing `extensions/cli-shell`: Option+Left/Right moves by word, Shift+Left/Right extends selection by cell, and Shift+Option+Left/Right extends selection by word. The behavior SHALL use backend-owned terminal range selection and source-owned input bytes.
+Shell-next SHALL support the terminal keyboard affordances previously validated by cli-shell without importing from or editing `apps/cli-shell`: Option+Left/Right moves by word, Shift+Left/Right extends selection by cell, and Shift+Option+Left/Right extends selection by word. The behavior SHALL use backend-owned terminal range selection and source-owned input bytes.
 
 #### Scenario: Option arrows move by terminal word boundary
 - **GIVEN** a focused ShellPane has a visible backend line and cursor position
@@ -167,7 +167,7 @@ Shell-next SHALL keep terminal-specific input, selection, viewport, copy, paste,
 #### Scenario: ShellNextApp does not own terminal interaction laws
 - **WHEN** ShellPane receives normal key input, paste input, selection movement, or viewport interaction
 - **THEN** ShellNextApp delegates to the shell-next Terminal Engine boundary
-- **AND** ShellNextApp only keeps product decisions such as prefix shortcuts, Help/Chat toggles, statusbar, close confirmation, and Room binding
+- **AND** ShellNextApp only keeps app decisions such as prefix shortcuts, Help/Chat toggles, statusbar, close confirmation, and Room binding
 
 ### Requirement: Terminal input SHALL be one transaction
 

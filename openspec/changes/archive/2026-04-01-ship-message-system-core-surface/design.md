@@ -1,6 +1,6 @@
 ## Context
 
-The backend already exposes global room listing, room snapshots/pages, grants, room updates, archive/delete operations, auth actor catalogs, and profile projections. The frontend problems have been mostly around incorrect product modeling: mixing room with chat, allowing non-auth-backed identities, keeping stale local state, and prioritizing attention-style unread hints that do not fit group chat.
+The backend already exposes global room listing, room snapshots/pages, grants, room updates, archive/delete operations, auth actor catalogs, and profile projections. The frontend problems have been mostly around incorrect app modeling: mixing room with chat, allowing non-auth-backed identities, keeping stale local state, and prioritizing attention-style unread hints that do not fit group chat.
 
 ## Goals / Non-Goals
 
@@ -18,10 +18,10 @@ The backend already exposes global room listing, room snapshots/pages, grants, r
 ## Decisions
 
 ### 1. `/messages` is a global room surface
-The new route will present the room catalog, transcript, and access/users panel as a standalone message-system product surface.
+The new route will present the room catalog, transcript, and access/users panel as a standalone message-system app surface.
 
 Alternative considered:
-- Keep `/chats` semantics and adapt them. Rejected because it preserves the wrong product vocabulary.
+- Keep `/chats` semantics and adapt them. Rejected because it preserves the wrong app vocabulary.
 
 ### 2. Actor identity comes only from auth/profile sources
 The UI will use `listAuthActors`, `listProfiles`, and profile/icon projections for actor selection and presentation. Room membership will not invent local placeholder actors.

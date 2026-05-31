@@ -28,7 +28,7 @@ Terminal authorization transitions SHALL enter the runtime through the shared ru
 #### Scenario: Adapter path does not become cli-shell-specific
 - **WHEN** cli-shell renders an approval popup or a browser host approves an action
 - **THEN** the same terminal adapter path commits the attention facts
-- **AND** the runtime kernel does not add cli-shell product branches for authorization
+- **AND** the runtime kernel does not add cli-shell app branches for authorization
 
 ### Requirement: Terminal authorization attention SHALL wake relevant runtime work promptly
 

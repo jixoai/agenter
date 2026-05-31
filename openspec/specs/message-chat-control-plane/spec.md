@@ -46,7 +46,7 @@ Room message writes SHALL recover from stale cached room-database handles by clo
 - **GIVEN** a room already exists and its cached room database handle has gone stale
 - **WHEN** the next authorized room write targets that same room
 - **THEN** message-system closes the stale handle, reopens the room database, and retries the write once
-- **THEN** the durable room message is persisted without requiring product-specific retry glue
+- **THEN** the durable room message is persisted without requiring app-specific retry glue
 
 #### Scenario: Retrying the same logical room send does not create a second durable row
 - **GIVEN** a caller sends an authorized room message with durable `clientMessageId = X`

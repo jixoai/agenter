@@ -21,12 +21,12 @@
 
 - [x] 4.1 Add descriptor-backed runtime commands for `terminal history`, `terminal archive`, and the revised `terminal delete` semantics.
 - [x] 4.2 Update runtime CLI help and built-in terminal guidance so `terminal list` is live-only and history management is explicit.
-- [x] 4.3 Update any product/runtime consumers that currently rely on stopped terminals remaining in the default list.
+- [x] 4.3 Update any app/runtime consumers that currently rely on stopped terminals remaining in the default list.
 
-## 5. UI and product surfaces
+## 5. UI and app surfaces
 
 - [x] 5.1 Rework terminal-system UI so killed terminals leave the main live route and appear in explicit history/archive management surfaces.
-- [x] 5.2 Update terminal-facing product surfaces to handle live-terminal disappearance without silently targeting stale dead instances.
+- [x] 5.2 Update terminal-facing app surfaces to handle live-terminal disappearance without silently targeting stale dead instances.
 
 ## 6. Verification
 

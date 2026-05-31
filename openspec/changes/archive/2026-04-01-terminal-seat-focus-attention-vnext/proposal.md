@@ -1,6 +1,6 @@
 ## Why
 
-The terminal control plane already has actor-scoped focus primitives, but the current product still presents terminal focus like a single global toolbar toggle. That leaks the wrong mental model into WebUI and risks coupling LoopBus attention injection to UI selection state instead of to the terminal-system's actor-owned focus truth.
+The terminal control plane already has actor-scoped focus primitives, but the current app still presents terminal focus like a single global toolbar toggle. That leaks the wrong mental model into WebUI and risks coupling LoopBus attention injection to UI selection state instead of to the terminal-system's actor-owned focus truth.
 
 ## What Changes
 

@@ -36,7 +36,7 @@ Alternatives considered:
 Running sessions remain a secondary section under the primary entries `Quick Start` and `Workspaces`.
 
 Rationale:
-- This preserves the product model that only two items are true application roots.
+- This preserves the app model that only two items are true application roots.
 - It still exposes all active sessions at the highest shell level without turning them into persistent global routes.
 - It keeps the sidebar dense and IDE-like rather than card-driven.
 

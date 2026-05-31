@@ -18,7 +18,7 @@
 ## 3. Self Review
 
 - [x] 3.1 Self review round 1: compare implementation against the seven original feedback bullets and record any remaining gap.
-  - Round 1 result: all seven feedback bullets are covered by BDD tests or implementation changes. No remaining product gap found in this pass.
+  - Round 1 result: all seven feedback bullets are covered by BDD tests or implementation changes. No remaining app gap found in this pass.
 - [x] 3.2 Self review round 2: inspect event ownership, hit-region coordinates, copy paths, and resize delivery for architectural drift.
   - Round 2 result: pane/title events remain scoped to their visible hit regions; terminal and renderer copy paths stay source-family-aware; terminal backend resize is owned by the terminal projection and coalesces rapid layout updates.
 - [x] 3.3 Update OpenSpec tasks to reflect actual completion state without marking unverified work done.
@@ -26,7 +26,7 @@
 ## 4. Verification And Commit
 
 - [x] 4.1 Run `openspec validate refine-shell-next-interactions --strict`.
-- [x] 4.2 Run `bun run --filter 'agenter-ext-shell-next' test`.
-- [x] 4.3 Run `bun run --filter 'agenter-ext-shell-next' typecheck`.
+- [x] 4.2 Run `bun run --filter 'agenter-app-shell-next' test`.
+- [x] 4.3 Run `bun run --filter 'agenter-app-shell-next' typecheck`.
 - [x] 4.4 Run `git diff --check`.
 - [x] 4.5 Stage only shell-next and `refine-shell-next-interactions` files, then create a focused commit.

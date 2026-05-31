@@ -12,15 +12,15 @@ The problem is twofold. First, the role is named `requester`, which describes an
 
 ## Interaction First
 
-See `interaction.md` and `interaction-prototype.html` for the product story that drives this design. The short version:
+See `interaction.md` and `interaction-prototype.html` for the app story that drives this design. The short version:
 
 - a guarded write is a request to the current live TerminalInstance
 - the user may see it inside an embedded terminal view or as a global notification
-- the approval view belongs to the terminal host surface, not to cli-shell product state
+- the approval view belongs to the terminal host surface, not to cli-shell app state
 - approval mints TerminalSystem-native write authority only
 - terminal death or rebootstrap invalidates unresolved requests
 
-This is why the architecture must not introduce a product delegation database or a cli-shell-specific kernel branch.
+This is why the architecture must not introduce a app delegation database or a cli-shell-specific kernel branch.
 
 ## Architecture Decision
 
@@ -41,13 +41,13 @@ TerminalSystem owns the authority law. It should not know about cli-shell or She
 
 Runtime terminal tools expose the authority result. They may request approval creation and return approval request facts, but they do not decide cli-shell behavior.
 
-cli-shell owns the product interpretation. In cli-shell, the current MessageRoom is about the current TerminalSystem instance, so a guard approval result means "the terminal action is pending admin approval" rather than "try a different shell".
+cli-shell owns the app interpretation. In cli-shell, the current MessageRoom is about the current TerminalSystem instance, so a guard approval result means "the terminal action is pending admin approval" rather than "try a different shell".
 
 WebUI owns operator affordances. It presents Guard as a role, shows pending approvals, and allows admins to approve/deny without reconstructing terminal truth locally.
 
 Terminal-view components own inline permission affordances. They subscribe to permission requests for the terminal they render, expose a callback for host customization, and provide a default TopLayer approval UI. They do not own authorization.
 
-Product-extension runtime owns only generic product entry points: descriptor resolution, resource binding, assistant seed, and attention operations. It must not define a product write-delegation authority layer for cli-shell. If a future product needs a reusable delegation primitive, that must be designed as a separate platform capability with a non-cli-shell use case and an explicit authority owner.
+App-extension runtime owns only generic app entry points: descriptor resolution, resource binding, assistant seed, and attention operations. It must not define a app write-delegation authority layer for cli-shell. If a future app needs a reusable delegation primitive, that must be designed as a separate platform capability with a non-cli-shell use case and an explicit authority owner.
 
 ## Permission Request State
 
@@ -77,23 +77,23 @@ Deny and expiry are terminal decisions. They leave the PTY unchanged, close or e
 
 ## Terminal View Contract
 
-`web-terminal-view` needs a product-agnostic permission surface:
+`web-terminal-view` needs a app-agnostic permission surface:
 
 - property/callback: `onRequestPermissions(request)`
 - default behavior: render an HTML-Popover approval view in TopLayer
 - host override: if the callback handles the request, the component does not render the default view
 - scoped subscription: subscribe only to requests for the rendered terminal id
-- authority rule: custom UI can only call TerminalSystem approve/deny commands; it cannot mint leases locally or mark requests resolved as product state
+- authority rule: custom UI can only call TerminalSystem approve/deny commands; it cannot mint leases locally or mark requests resolved as app state
 
 `shell-terminal-view` needs the same conceptual contract for OpenTUI:
 
-- callback for product-level customization
+- callback for app-level customization
 - default OpenTUI TopLayer overlay
 - no mutation of terminal scrollback, selection truth, shell truth, or cli-shell managed state
 
-This mirrors the same product story across Web and native hosts without making TerminalSystem aware of either host's UI implementation.
+This mirrors the same app story across Web and native hosts without making TerminalSystem aware of either host's UI implementation.
 
-The contract must stay useful for non-cli-shell products. A product that embeds a terminal view without hosting/managed concepts should receive guard approval UI and callbacks, but no cli-shell labels, product delegation semantics, or managed-state assumptions.
+The contract must stay useful for non-cli-shell products. A app that embeds a terminal view without hosting/managed concepts should receive guard approval UI and callbacks, but no cli-shell labels, app delegation semantics, or managed-state assumptions.
 
 ## Data And Migration
 
@@ -108,7 +108,7 @@ After the implementation lands, `requester` must not remain in public types, spe
 
 Existing `ProductDelegation` JSON data and fixtures are not durable platform truth. They may be deleted during this breaking cleanup. The replacement facts are:
 
-- cli-shell managed/takeover state: product-owned hosting attention
+- cli-shell managed/takeover state: app-owned hosting attention
 - terminal write authority: TerminalSystem grants, guard approval requests, and terminal-native write leases
 - visible managed/takeover label: a cli-shell-rendered projection of hosting attention, not a TerminalSystem metadata fact
 
@@ -130,22 +130,22 @@ Default cli-shell Shell Assistant access is Guard. This preserves user control f
 
 Managed/takeover is cli-shell application state, not TerminalSystem authority. Enabling it commits or updates the room-bound hosting attention item for the current shell. Disabling it commits or settles that hosting attention item. These commits are the only durable state transition for managed mode.
 
-Managed/takeover MUST NOT create terminal-native write leases, product write delegations, permanent writer grants, or TerminalSystem metadata that becomes a second source of truth. If Shell Assistant later needs to write to the terminal while hosting is active, it uses the ordinary terminal API under its existing terminal authority. A Guard actor still enters the guard approval path; a Writer actor can write directly; hosting attention does not change either rule.
+Managed/takeover MUST NOT create terminal-native write leases, app write delegations, permanent writer grants, or TerminalSystem metadata that becomes a second source of truth. If Shell Assistant later needs to write to the terminal while hosting is active, it uses the ordinary terminal API under its existing terminal authority. A Guard actor still enters the guard approval path; a Writer actor can write directly; hosting attention does not change either rule.
 
 Any visible label such as "托管 on" is a projection of the hosting attention head. It may be cached in a rendered frame, but it is not durable truth and cannot be used to authorize terminal writes.
 
-`ProductDelegation` is removed from this cli-shell law. The model was a mistaken middle layer: it named product-specific hosting work as if it were reusable platform authorization, then tried to mirror that into terminal write leases. That violates the product/core boundary because future products would inherit cli-shell's managed/takeover semantics without opting into them.
+`ProductDelegation` is removed from this cli-shell law. The model was a mistaken middle layer: it named app-specific hosting work as if it were reusable platform authorization, then tried to mirror that into terminal write leases. That violates the app/core boundary because future products would inherit cli-shell's managed/takeover semantics without opting into them.
 
 ## Composed Terminal Surface Law
 
-TerminalSystem may provide a generic composed terminal runtime: an authorized publisher can publish a terminal frame that already contains the product's accepted visible screen. TerminalSystem's job is to store, publish, read, and transport that frame as terminal truth.
+TerminalSystem may provide a generic composed terminal runtime: an authorized publisher can publish a terminal frame that already contains the app's accepted visible screen. TerminalSystem's job is to store, publish, read, and transport that frame as terminal truth.
 
 TerminalSystem must not model cli-shell chrome. It must not expose fields named after cli-shell state such as `managedLabel`, toolbar state, heartbeat text, dialogue draft, or Chinese labels like "托管 off". Those belong to cli-shell's renderer before the frame crosses the TerminalSystem boundary.
 
 The boundary should look like this:
 
 ```text
-cli-shell product state
+cli-shell app state
   hosting attention, room unread projection, dialogue draft, toolbar layout
         |
         v
@@ -155,20 +155,20 @@ cli-shell renderer builds complete terminal frame
 TerminalSystem composed runtime stores/transports generic frame
 ```
 
-This keeps terminal composition reusable: another product can publish a composed frame without inheriting cli-shell managed/takeover vocabulary.
+This keeps terminal composition reusable: another app can publish a composed frame without inheriting cli-shell managed/takeover vocabulary.
 
 ## Boundary Comments And Regression Guards
 
-The implementation must leave short code comments at product/core boundary points. The comments should not narrate trivial code. They should state the durable rule:
+The implementation must leave short code comments at app/core boundary points. The comments should not narrate trivial code. They should state the durable rule:
 
-- cli-shell managed/takeover is product attention state, not TerminalSystem authority
+- cli-shell managed/takeover is app attention state, not TerminalSystem authority
 - TerminalSystem composed surface accepts generic terminal frames, not cli-shell chrome semantics
-- product-extension runtime must not create product-owned write authority for terminal work
+- app-extension runtime must not create app-owned write authority for terminal work
 - terminal-view permission UI observes TerminalSystem requests and must not approve without an explicit user/admin action
 
-Tests must enforce the same rule by searching core surfaces for cli-shell-specific tokens or by asserting the absence of product delegation routes/types where appropriate.
+Tests must enforce the same rule by searching core surfaces for cli-shell-specific tokens or by asserting the absence of app delegation routes/types where appropriate.
 
-The cli-shell-specific prompt rule stays product-local:
+The cli-shell-specific prompt rule stays app-local:
 
 - MessageRoom conversation defaults to the bound TerminalSystem instance.
 - Terminal actions go through terminal APIs.
@@ -183,7 +183,7 @@ The cli-shell-specific prompt rule stays product-local:
 - If runtime tools expose approval creation without prompt/tool guidance, the model may still treat it as failure. The implementation must update both result shape and Shell Assistant guidance.
 - If WebUI only renames labels without changing tests, old requester semantics can leak back through fixtures and role selectors.
 - If `ProductDelegation` is merely left unused, future work can accidentally revive it as a second authority truth. Prefer removal over deprecation unless a separate approved change redesigns delegation as a generic platform capability.
-- If TerminalSystem keeps product-named composed fields, future products will inherit cli-shell UI semantics. The composed contract must be frame-oriented or otherwise product-opaque.
+- If TerminalSystem keeps app-named composed fields, future products will inherit cli-shell UI semantics. The composed contract must be frame-oriented or otherwise app-opaque.
 - If approval subscriptions are only global, terminal-view components will either over-hydrate or miss inline requests. The subscription must support terminal-id filtering.
 - If permission requests are stored as durable restartable authority, a killed/rebootstrapped terminal can inherit stale approval state. Pending request authority must stay TerminalInstance-bound.
 - If duplicate guard writes create a new prompt every loop tick, users will see approval spam and may approve the wrong request. Equivalent pending request coalescing belongs in TerminalSystem, not the UI.
@@ -194,7 +194,7 @@ The cli-shell-specific prompt rule stays product-local:
 
 - Do not add a second core role that duplicates guard/requester behavior.
 - Do not make cli-shell behavior a global runtime rule.
-- Do not couple cli-shell managed/takeover to TerminalSystem authority, product write delegation, or terminal write leases.
+- Do not couple cli-shell managed/takeover to TerminalSystem authority, app write delegation, or terminal write leases.
 - Do not preserve `ProductDelegation` as a current public contract for cli-shell managed/takeover.
 - Do not let TerminalSystem define cli-shell UI vocabulary in composed surface types or metadata defaults.
 - Do not implement long-term requester compatibility aliases as durable public truth.

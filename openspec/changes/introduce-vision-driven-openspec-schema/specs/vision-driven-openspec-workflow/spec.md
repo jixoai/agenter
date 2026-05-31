@@ -63,7 +63,7 @@ The `vision-driven` workflow SHALL require Git evidence when durable work change
 
 - **GIVEN** a `vision-driven` change has research-plan, specs, and tasks ready for apply
 - **WHEN** implementation is about to start
-- **THEN** the agent records a Git commit containing the OpenSpec artifacts before changing product code
+- **THEN** the agent records a Git commit containing the OpenSpec artifacts before changing app code
 
 #### Scenario: Task progress is committed by the agent that performed it
 

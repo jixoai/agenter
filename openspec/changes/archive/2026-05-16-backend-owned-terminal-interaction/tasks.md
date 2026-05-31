@@ -3,7 +3,7 @@
 - [x] 1.1 Record code-evidence in `.chat/backend-owned-terminal-interaction/opening-architecture.md`: current Ghostty terminal-core selection APIs, current `ghostty-native` wrapper gaps, and current OpenTUI host-local selection ownership.
 - [x] 1.2 Add shared backend interaction types in `@termless/core` for capabilities, owner coordinates, pointer events, selection ranges, overlays, semantic selection, copy, and cursor-follow.
 - [x] 1.3 Add BDD unit tests proving backend capability facts distinguish backend-native, backend-adapter-owned, unavailable, and host-projection-only behavior.
-- [x] 1.4 Update durable package exports so terminal-system and cli-shell consume the shared interaction types without importing product-specific modules.
+- [x] 1.4 Update durable package exports so terminal-system and cli-shell consume the shared interaction types without importing app-specific modules.
 
 ## 2. Ghostty-native Backend Interaction
 
@@ -27,7 +27,7 @@
 - [x] 4.1 Extend terminal frame/projection payloads with backend-owned selection overlays and active owner metadata.
 - [x] 4.2 Extend terminal transport protocol and direct endpoint with semantic interaction messages for selection lifecycle, semantic selection, copy selection, clear selection, cursor-follow, and paste/resize routing where needed.
 - [x] 4.3 Ensure direct in-process transport passes structured interaction values or fast clones, while WebSocket serialization remains a transport implementation detail.
-- [x] 4.4 Thread backend interaction APIs through `XtermReadableBridge`, managed terminal runtime, projection/composed terminal runtime, and terminal control-plane surfaces without product-specific imports.
+- [x] 4.4 Thread backend interaction APIs through `XtermReadableBridge`, managed terminal runtime, projection/composed terminal runtime, and terminal control-plane surfaces without app-specific imports.
 - [x] 4.5 Add BDD integration tests for event path causality: host event -> transport/direct endpoint -> backend action -> frame overlay publication.
 - [x] 4.6 Add BDD integration tests for cursor-follow causality: accepted input -> backend followCursor -> backend-published viewport result.
 

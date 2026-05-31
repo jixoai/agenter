@@ -1,6 +1,6 @@
 ## Why
 
-LoopBus is still described and implemented too narrowly as backend orchestration glue. The real target is broader: LoopBus should become the attention-first runtime core for the whole product, with a clear plugin pipeline on the backend and a coherent publication/inspection contract on the frontend. Without that split, backend refactors and frontend runtime/devtools surfaces will keep drifting apart.
+LoopBus is still described and implemented too narrowly as backend orchestration glue. The real target is broader: LoopBus should become the attention-first runtime core for the whole app, with a clear plugin pipeline on the backend and a coherent publication/inspection contract on the frontend. Without that split, backend refactors and frontend runtime/devtools surfaces will keep drifting apart.
 
 ## What Changes
 

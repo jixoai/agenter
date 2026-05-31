@@ -1,6 +1,6 @@
 # Cli-shell ChatTUI v9 References
 
-This directory contains deterministic terminal-grid references for the revised ChatTUI direction in `separate-cli-shell-product-from-terminal-view-components`.
+This directory contains deterministic terminal-grid references for the revised ChatTUI direction in `separate-cli-shell-app-from-terminal-view-components`.
 
 ## Final v9 design references
 

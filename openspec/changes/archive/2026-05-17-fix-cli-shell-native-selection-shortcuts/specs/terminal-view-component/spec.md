@@ -17,7 +17,7 @@ When OpenTUI native projection receives renderable-level mouse lifecycle events,
 #### Scenario: Renderable drag stays inside one owner
 - **WHEN** a drag starts inside shell or dialogue and moves across another owner region
 - **THEN** `shell-terminal-view` SHALL keep the selection owner from the drag start
-- **AND** it SHALL NOT merge shell, dialogue, scrollbar, or product chrome into one host-local range
+- **AND** it SHALL NOT merge shell, dialogue, scrollbar, or app chrome into one host-local range
 
 #### Scenario: Selection overlay follows backend content through scroll round trip
 - **WHEN** a backend owner has selected text and the user scrolls the viewport down and back up

@@ -24,7 +24,7 @@ The harness must therefore remind the Avatars that terminals are not pre-mounted
 - Add one real-provider scenario for `user + backend Avatar + frontend Avatar + shared project room`.
 - Prove both Avatars can read and reply in the same room while sharing one project workspace.
 - Prove room attachments are durable inside the collaboration loop by posting a frontend-authored design artifact into the project room.
-- Keep the product ask intentionally small so the test validates collaboration mechanics rather than application complexity.
+- Keep the app ask intentionally small so the test validates collaboration mechanics rather than application complexity.
 - Preserve a single contract authority inside the shared room so the backend's API answer becomes the only durable truth for `/api/status`.
 
 **Non-Goals:**
@@ -59,7 +59,7 @@ Alternative considered:
 - rely entirely on nickname-based self-identification.
 
 Why not:
-- Real-provider variance would make role separation flaky and convert product validation into prompt lottery.
+- Real-provider variance would make role separation flaky and convert app validation into prompt lottery.
 
 ### 4. Bridge frontend-authored design files into room attachments
 The frontend Avatar will be instructed to create a deterministic design artifact file in the shared workspace and announce it in the room. The harness will then upload that file into the global room using the frontend Avatar’s room actor identity and send a matching room message with the attachment.
@@ -100,7 +100,7 @@ Alternative considered:
 - silently assume the model will remember its prior terminal state.
 
 Why not:
-- The product law is explicit resource mounting plus recoverable terminal context. The scenario should exercise that law instead of sneaking in a hidden default terminal assumption.
+- The app law is explicit resource mounting plus recoverable terminal context. The scenario should exercise that law instead of sneaking in a hidden default terminal assumption.
 
 ### 8. Backend contract and delivery prompts must stay exact
 The backend's `API-ANSWER:` must stay aligned with the eventual `server.js` template. The scenario should therefore reject extra payload fields such as `uptime`, and delivery reminders must tell the backend to repair `server.js`, relaunch the service in the background, and self-test before publishing `PROJECT-URL`.
@@ -127,7 +127,7 @@ Alternative considered:
 - require completion marker messages from both Avatars before success.
 
 Why not:
-- Real providers vary too much on ceremonial wrap-up. The product behavior we need to prove is collaboration, durable handoff, delivery, and user acceptance, not ritual shutdown phrasing.
+- Real providers vary too much on ceremonial wrap-up. The app behavior we need to prove is collaboration, durable handoff, delivery, and user acceptance, not ritual shutdown phrasing.
 
 ## Risks / Trade-offs
 

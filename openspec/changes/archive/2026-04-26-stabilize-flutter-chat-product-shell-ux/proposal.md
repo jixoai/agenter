@@ -1,6 +1,6 @@
 ## Why
 
-The route-depth refactor removed the compact bottom nav, but the product shell still needs a final UX stabilization pass before it is a durable Apple-style host shell. Current weak points are transient surface sizing, safe-area/scroll ownership, and duplicated icon semantics that can make the Web build feel less native and less accessible.
+The route-depth refactor removed the compact bottom nav, but the app shell still needs a final UX stabilization pass before it is a durable Apple-style host shell. Current weak points are transient surface sizing, safe-area/scroll ownership, and duplicated icon semantics that can make the Web build feel less native and less accessible.
 
 This change turns those details into platform rules instead of one-off visual patches, so future profile, inspector, tooltip, menu, and message actions can attach to stable host-shell primitives.
 
@@ -21,7 +21,7 @@ This change turns those details into platform rules instead of one-off visual pa
 
 ### Modified Capabilities
 
-- `flutter-chat-view`: Product-shell adaptive navigation and accessibility requirements are tightened for compact route sheets and icon-only actions.
+- `flutter-chat-view`: App-shell adaptive navigation and accessibility requirements are tightened for compact route sheets and icon-only actions.
 
 ## Impact
 

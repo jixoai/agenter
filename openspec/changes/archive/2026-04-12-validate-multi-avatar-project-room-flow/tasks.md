@@ -1,7 +1,7 @@
 ## 1. OpenSpec And Scenario Law
 
 - [x] 1.1 Finalize the proposal, design, and spec for the shared project-room multi-avatar validation flow.
-- [x] 1.2 Define the smallest deterministic product scope, actor roles, room markers, and acceptance markers for the scenario.
+- [x] 1.2 Define the smallest deterministic app scope, actor roles, room markers, and acceptance markers for the scenario.
 
 ## 2. Harness Implementation
 

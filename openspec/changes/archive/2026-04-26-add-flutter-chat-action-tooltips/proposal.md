@@ -8,7 +8,7 @@ This change adds tooltip behavior at the shared Apple icon-action primitive so f
 
 - Add tooltip/long-press help to `AppleIconButton` using the existing localized action label.
 - Keep tooltip semantics excluded so each icon-only action still exposes exactly one labeled semantic button.
-- Add a widget contract for product-shell icon tooltips.
+- Add a widget contract for app-shell icon tooltips.
 - Update durable design/spec rules for icon-only action discoverability.
 
 ## Capabilities
@@ -19,7 +19,7 @@ This change adds tooltip behavior at the shared Apple icon-action primitive so f
 
 ### Modified Capabilities
 
-- `flutter-chat-view`: Product-shell icon-only action requirements add visible tooltip/long-press discoverability while preserving single-button semantics.
+- `flutter-chat-view`: App-shell icon-only action requirements add visible tooltip/long-press discoverability while preserving single-button semantics.
 
 ## Impact
 

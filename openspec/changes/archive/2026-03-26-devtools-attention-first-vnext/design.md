@@ -1,6 +1,6 @@
 ## Context
 
-The frontend still explains the runtime through `LoopBus`, `inputs`, `facts`, and `reply`. That mismatches the current architectural direction and hides the new attention primitives from the product. The result is a Devtools surface that still tells the legacy story even though runtime code and user requirements are moving toward attention contexts, attention items, cycle frames, model calls, and trace.
+The frontend still explains the runtime through `LoopBus`, `inputs`, `facts`, and `reply`. That mismatches the current architectural direction and hides the new attention primitives from the app. The result is a Devtools surface that still tells the legacy story even though runtime code and user requirements are moving toward attention contexts, attention items, cycle frames, model calls, and trace.
 
 ## Goals / Non-Goals
 

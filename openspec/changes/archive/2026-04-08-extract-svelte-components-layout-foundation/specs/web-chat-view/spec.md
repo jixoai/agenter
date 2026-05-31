@@ -17,4 +17,4 @@ The shared room component SHALL render one durable conversation surface with tra
 #### Scenario: Shared chat surface composes package-local shadcn-svelte atoms
 - **WHEN** `@agenter/web-chat-view` assembles its conversation shell
 - **THEN** it uses package-local `shadcn-svelte` composition for controls and surfaces
-- **THEN** it still keeps the package boundary independent from `@agenter/webui` and product-local UI exports
+- **THEN** it still keeps the package boundary independent from `@agenter/webui` and app-local UI exports

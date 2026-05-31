@@ -1,6 +1,6 @@
 ## Why
 
-The current chat surfaces still leak AI-centric "pending for attention" semantics into a group messaging product. In a room, the user needs to know who has read the message, who has not, and when they read it; that is a message-system concern, not an attention-strip concern.
+The current chat surfaces still leak AI-centric "pending for attention" semantics into a group messaging app. In a room, the user needs to know who has read the message, who has not, and when they read it; that is a message-system concern, not an attention-strip concern.
 
 ## What Changes
 

@@ -1,7 +1,7 @@
 ## ADDED Requirements
 
 ### Requirement: Client runtime store SHALL name terminal projections by semantics
-The client runtime store SHALL expose terminal projection methods and cached resources whose names match their projection semantics. Live catalog, killed history, combined index, and archive SHALL be distinct resource families so product callers cannot accidentally treat history/index data as live candidates.
+The client runtime store SHALL expose terminal projection methods and cached resources whose names match their projection semantics. Live catalog, killed history, combined index, and archive SHALL be distinct resource families so app callers cannot accidentally treat history/index data as live candidates.
 
 #### Scenario: Live terminal catalog is live-only
 - **WHEN** a caller hydrates or lists global live terminals

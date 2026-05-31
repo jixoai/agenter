@@ -5,7 +5,7 @@
 - Change: `repair-terminal-system-git-attention-hook`
 - Iteration: 2, reopened for Round 5 after real daemon + `shell2` and BootstrapAdmin global terminal write acceptance still did not commit terminal attention.
 - Recurring issue counts: none.
-- Exit-condition judgment: implementation exit is satisfied for the Round 5 product/global fix; archive remains gated on operator acceptance.
+- Exit-condition judgment: implementation exit is satisfied for the Round 5 app/global fix; archive remains gated on operator acceptance.
 - Next loop action: user manual re-test with daemon + `bun agenter shell2`; if accepted, archive the change.
 
 ## Intent Alignment
@@ -23,8 +23,8 @@
 | TerminalSystem truth chain is covered first | Control-plane BDD proves raw `inputBytes` advances `waitCommitted(...)`, can be sealed to git truth, consumes through `readAuthorized(... remark:true)`, advances the actor cursor, and appends no automation activity. | Pass |
 | Already-IDLE focus hydration is covered | Adapter BDD proves focus sync arms an idle waiter without requiring a fresh `BUSY -> IDLE`; SessionRuntime BDD proves a shell2-style already-idle focused terminal promotes raw input into terminal attention. | Pass |
 | BUSY race keeps the pre-busy wait baseline | Runtime adapter BDD now proves a waiter canceled by `BUSY` resumes from the pre-BUSY baseline when output commits before the next idle wait is registered. | Pass |
-| Product terminal history is present | shell-next product bootstrap now requests `profile.gitLog: "normal"`, and daemon AppKernel global TerminalControlPlane defaults terminals to `gitLog: "normal"`. | Pass |
-| Product/global write path is covered | AppKernel BDD creates a product-style global terminal, grants it to the avatar actor, focuses it into the runtime, writes through BootstrapAdmin `writeGlobalTerminal(...)`, and observes terminal attention plus attention signal advancement. | Pass |
+| App terminal history is present | shell-next app bootstrap now requests `profile.gitLog: "normal"`, and daemon AppKernel global TerminalControlPlane defaults terminals to `gitLog: "normal"`. | Pass |
+| App/global write path is covered | AppKernel BDD creates a app-style global terminal, grants it to the avatar actor, focuses it into the runtime, writes through BootstrapAdmin `writeGlobalTerminal(...)`, and observes terminal attention plus attention signal advancement. | Pass |
 | First unread read may be a snapshot | Runtime terminal ingestion now previews without consuming, requests diff mode for idle/drain paths, and accepts semantic snapshot lines when the physical bottom `tail` is blank. | Pass |
 | Preserve boundary cleanup | TerminalSystem still has no AttentionSystem/LoopBus import; no direct scheduler terminal branch was restored; `terminal_idle_ready` remains scheduler-only. | Pass |
 
@@ -36,7 +36,7 @@
 
 ## New Questions For User
 
-1. No blocking design question. The remaining product confirmation is empirical: re-run the daemon + `bun agenter shell2` path.
+1. No blocking design question. The remaining app confirmation is empirical: re-run the daemon + `bun agenter shell2` path.
 
 ## Evidence
 
@@ -51,24 +51,24 @@
   - `bun run openspec:vision -- validate repair-terminal-system-git-attention-hook`
   - `bun run openspec:vision -- check repair-terminal-system-git-attention-hook`
 - Round 5 commands passed in this working context:
-  - `bun test extensions/shell-next/test/run-shell-next.test.ts --grep "git-backed history is requested"`
+  - `bun test apps/shell-next/test/run-shell-next.test.ts --grep "git-backed history is requested"`
   - `bun test packages/app-server/test/app-kernel.test.ts --grep "BootstrapAdmin writes through TerminalSystem"`
   - `bun test packages/app-server/test/runtime-terminal-kernel-adapter.test.ts`
   - `bun test packages/app-server/test/session-runtime.attention-system.test.ts --grep "raw inputBytes changes output|focused terminal enters idle|already focused"`
   - `bun test packages/terminal-system/test/control-plane.test.ts --grep "raw inputBytes|cursor hash is inspected"`
   - `bun test packages/app-server/test/session-runtime.attention-system.test.ts --grep "focused terminal snapshot|focused terminal diff invalidation|terminal read representation"`
   - `bun run --filter '@agenter/terminal-system' typecheck`
-  - `git diff --check -- extensions/shell-next/src/product/bootstrap.ts extensions/shell-next/test/run-shell-next.test.ts packages/app-server/src/app-kernel.ts packages/app-server/src/runtime-system-kernel-adapters/terminal-adapter.ts packages/app-server/src/session-runtime.ts packages/app-server/test/app-kernel.test.ts openspec/changes/repair-terminal-system-git-attention-hook`
+  - `git diff --check -- apps/shell-next/src/app/bootstrap.ts apps/shell-next/test/run-shell-next.test.ts packages/app-server/src/app-kernel.ts packages/app-server/src/runtime-system-kernel-adapters/terminal-adapter.ts packages/app-server/src/session-runtime.ts packages/app-server/test/app-kernel.test.ts openspec/changes/repair-terminal-system-git-attention-hook`
   - `bun run openspec:vision -- validate repair-terminal-system-git-attention-hook`
   - `bun run openspec:vision -- check repair-terminal-system-git-attention-hook`
 - Known external verification blockers:
   - `bun run --filter '@agenter/app-server' typecheck` now has no errors from this change, but still fails in unrelated workspace resolution: `packages/cli/src/trpc-server.ts` cannot resolve `@agenter/message-system`.
-  - `bun run --filter 'agenter-ext-shell-next' typecheck` fails in unrelated message type drift (`senderActorId`, `readActorIds`, and missing `MessageControlPlaneEntry.superKey/createdBySystemId`).
+  - `bun run --filter 'agenter-app-shell-next' typecheck` fails in unrelated message type drift (`senderActorId`, `readActorIds`, and missing `MessageControlPlaneEntry.superKey/createdBySystemId`).
 - Unrelated dirty paths were left untouched:
   - `bun.lock`
 - Task checkboxes updated by this working context:
   - Round 4 tasks `6.1` through `8.6` were checked after red/green implementation and verification.
-  - Round 5 tasks `9.1` through `11.6` were checked after product/global red/green implementation and targeted verification, except archive remains intentionally unchecked until user acceptance.
+  - Round 5 tasks `9.1` through `11.6` were checked after app/global red/green implementation and targeted verification, except archive remains intentionally unchecked until user acceptance.
 
 ## HTML Review Report
 
@@ -77,4 +77,4 @@ Created separately as `review/self-review.html`.
 ## Exit Handling
 
 - Normal implementation exit is available after user acceptance.
-- Archive is deferred because the last product-level signal was a manual failure report, and this round repaired the product/global path that needs real daemon validation.
+- Archive is deferred because the last app-level signal was a manual failure report, and this round repaired the app/global path that needs real daemon validation.

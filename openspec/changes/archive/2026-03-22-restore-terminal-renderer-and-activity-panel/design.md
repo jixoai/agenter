@@ -1,6 +1,6 @@
 ## Context
 
-The current `TerminalPanel` is intentionally thin, but the result is a product regression: it no longer exposes the previously expected fit/cover controls, geometry/status affordances, or terminal-centric inspection. The renderer itself also now resets aggressively from snapshots and no longer preserves the richer rendering experience the user had before.
+The current `TerminalPanel` is intentionally thin, but the result is a app regression: it no longer exposes the previously expected fit/cover controls, geometry/status affordances, or terminal-centric inspection. The renderer itself also now resets aggressively from snapshots and no longer preserves the richer rendering experience the user had before.
 
 ## Goals / Non-Goals
 

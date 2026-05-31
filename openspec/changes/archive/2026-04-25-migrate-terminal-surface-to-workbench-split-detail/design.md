@@ -15,7 +15,7 @@ The problem is only the shell primitive. `SplitView` gives a static two-column s
 - Keep existing terminal content surfaces intact instead of rewriting the stage pane, actions rail, or user-management internals.
 - Preserve terminal accessibility on compact widths by keeping the detail rail reachable through the shared right-sheet fallback after the split collapses.
 - Add regressions that lock the terminal surface to the shared split-detail law.
-- Move terminal route-local identity and detail-view switching into the shared `page-toolbar` host so the shell no longer shows static product copy while the real route controls live deeper in the page.
+- Move terminal route-local identity and detail-view switching into the shared `page-toolbar` host so the shell no longer shows static app copy while the real route controls live deeper in the page.
 - Surface current terminal runtime facts through the shared page-toolbar `status` slot instead of leaving running/busy state implicit inside the stage body.
 - Flatten the terminal route out of the oversized `WorkbenchWindow` body card so the stage pane and the detail rail own visual surfaces directly.
 - Extract one shared actor selector primitive for avatar-bearing actor choice surfaces instead of repeating custom `Select` markup in terminal and message pages.

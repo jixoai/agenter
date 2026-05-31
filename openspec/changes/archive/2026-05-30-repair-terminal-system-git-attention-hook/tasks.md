@@ -18,7 +18,7 @@
 
 ## 3. Implementation
 
-- [x] 3.1 Run `bun run openspec:vision -- commit-check repair-terminal-system-git-attention-hook --phase apply` before product-code work starts and record the result.
+- [x] 3.1 Run `bun run openspec:vision -- commit-check repair-terminal-system-git-attention-hook --phase apply` before app-code work starts and record the result.
 - [x] 3.2 Add a terminal-control-plane cursor inspection method that authorizes read access, resolves the reader actor, and returns the current cursor hash without consuming output or appending activity.
 - [x] 3.3 Extend `RuntimeTerminalKernelAdapter` with a focused idle unread predicate: compare terminal git HEAD with actor read cursor; when unread, read existing terminal ingress, promote it to a wakeable terminal fact, commit it through the host with `notifyLoop: true`, and clear queued dirty state.
 - [x] 3.4 Wire `SessionRuntime` to provide terminal HEAD and actor cursor inspection to the adapter for both control-plane terminals and local fallback terminals.
@@ -76,22 +76,22 @@
 - [x] 8.5 Update self-review evidence with the Round 4 red/green result and keep archive gated on user shell2 acceptance.
 - [x] 8.6 Re-run adapter BDD after adding the pre-BUSY baseline regression.
 
-## 9. Round 5 Product/Global Red Tests
+## 9. Round 5 App/Global Red Tests
 
-- [x] 9.1 Add shell-next product bootstrap BDD proving the terminal binding requests git-backed terminal history by default, without relying on a hand-built test terminal profile.
-- [x] 9.2 Add AppKernel/SessionRuntime BDD proving a product-style focused global terminal written through `writeGlobalTerminal(...)` commits terminal attention and wakes the runtime through the attention signal.
-- [x] 9.3 Capture the initial failing behavior from the Round 5 BDD tests before product-code fixes.
+- [x] 9.1 Add shell-next app bootstrap BDD proving the terminal binding requests git-backed terminal history by default, without relying on a hand-built test terminal profile.
+- [x] 9.2 Add AppKernel/SessionRuntime BDD proving a app-style focused global terminal written through `writeGlobalTerminal(...)` commits terminal attention and wakes the runtime through the attention signal.
+- [x] 9.3 Capture the initial failing behavior from the Round 5 BDD tests before app-code fixes.
 
 ## 10. Round 5 Implementation
 
-- [x] 10.1 Fix the product/global terminal creation path at the correct layer so terminal git/read-cursor truth is present for shell-next and other product-bound terminals.
+- [x] 10.1 Fix the app/global terminal creation path at the correct layer so terminal git/read-cursor truth is present for shell-next and other app-bound terminals.
 - [x] 10.2 Fix the runtime/control-plane attachment or status synchronization path if the global terminal write path bypasses the idle bridge.
 - [x] 10.3 Preserve TerminalSystem purity: no AttentionSystem/LoopBus imports and no modeling raw transport input as `terminal_write`.
 
 ## 11. Round 5 Verification
 
-- [x] 11.1 Re-run the new shell-next product bootstrap BDD.
-- [x] 11.2 Re-run the new AppKernel/SessionRuntime product/global BDD.
+- [x] 11.1 Re-run the new shell-next app bootstrap BDD.
+- [x] 11.2 Re-run the new AppKernel/SessionRuntime app/global BDD.
 - [x] 11.3 Re-run targeted TerminalSystem, runtime adapter, and SessionRuntime attention tests.
 - [x] 11.4 Run scoped typecheck and `git diff --check` for touched files.
 - [x] 11.5 Run `bun run openspec:vision -- validate repair-terminal-system-git-attention-hook` and `bun run openspec:vision -- check repair-terminal-system-git-attention-hook`.

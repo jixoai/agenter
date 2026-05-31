@@ -13,7 +13,7 @@ The current message-system surface regressed into a room-centric operator page w
 **Non-Goals:**
 - Redesign the underlying room grant model or candidate-admin semantics.
 - Introduce a second room-specific transport model outside the existing message control plane.
-- Build a full end-user chat product; this change is scoped to operator-facing message-system and the shared web chat surface.
+- Build a full end-user chat app; this change is scoped to operator-facing message-system and the shared web chat surface.
 
 ## Decisions
 

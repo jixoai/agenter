@@ -2,7 +2,7 @@
 
 The current `avatar` and profile-image behavior is fragmented across local persona directories, `app-server` glue, and a browser-side rasterization workaround. That model cannot support authenticated profile ownership, multi-identifier binding, gravatar fallback, or a canonical icon service that other subsystems can reuse.
 
-We need a real `profile-service` now because the product is expanding from “nickname-based local avatars” into durable identity, metadata, and icon infrastructure. If we keep layering this into `app-server`, prompt-persona storage, identity auth, and media delivery will collapse into one coupled surface and become harder to evolve than the new service itself.
+We need a real `profile-service` now because the app is expanding from “nickname-based local avatars” into durable identity, metadata, and icon infrastructure. If we keep layering this into `app-server`, prompt-persona storage, identity auth, and media delivery will collapse into one coupled surface and become harder to evolve than the new service itself.
 
 ## What Changes
 

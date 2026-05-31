@@ -2,7 +2,7 @@
 
 The current terminal lifecycle behavior mixes two different classes of concern:
 
-- product chrome projections (`page-toolbar`, `terminal-window` titlebar)
+- app chrome projections (`page-toolbar`, `terminal-window` titlebar)
 - lifecycle ownership (`bootstrap`, `kill`)
 - live transport lifecycle (`running` vs `stopped`)
 

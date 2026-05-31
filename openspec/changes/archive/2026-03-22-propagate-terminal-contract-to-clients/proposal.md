@@ -1,6 +1,6 @@
 ## Why
 
-The backend terminal contract can only become real product behavior once runtime snapshots, realtime events, client-sdk state, and WebUI surfaces all consume it consistently. Right now those layers still rely on compatibility fields and older assumptions about focused terminals and terminal reads. That mismatch raises migration risk and leaves the user-facing product one step behind the backend architecture.
+The backend terminal contract can only become real app behavior once runtime snapshots, realtime events, client-sdk state, and WebUI surfaces all consume it consistently. Right now those layers still rely on compatibility fields and older assumptions about focused terminals and terminal reads. That mismatch raises migration risk and leaves the user-facing app one step behind the backend architecture.
 
 ## What Changes
 

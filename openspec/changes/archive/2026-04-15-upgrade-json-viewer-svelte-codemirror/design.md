@@ -1,6 +1,6 @@
 ## Context
 
-The current WebUI `JsonView` is not actually a WebUI component. `packages/webui/src/lib/components/web-components/json-viewer.svelte` only forwards props into `@agenter/web-components`, where `json-viewer-element.ts` renders its own shadow-private toolbar, menu, surface framing, and manual YAML/JSON token coloring. That architecture made the viewer easy to reuse across hosts, but it now conflicts with the product's design law:
+The current WebUI `JsonView` is not actually a WebUI component. `packages/webui/src/lib/components/web-components/json-viewer.svelte` only forwards props into `@agenter/web-components`, where `json-viewer-element.ts` renders its own shadow-private toolbar, menu, surface framing, and manual YAML/JSON token coloring. That architecture made the viewer easy to reuse across hosts, but it now conflicts with the app's design law:
 
 - WebUI surfaces are expected to share shadcn-svelte primitives and the same toolbar/menu affordance system.
 - Framing ownership must stay with the page or card surface instead of being hidden inside a shadow root.

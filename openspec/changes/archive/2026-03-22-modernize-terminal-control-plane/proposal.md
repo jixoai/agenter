@@ -1,6 +1,6 @@
 ## Why
 
-The current terminal work only modernizes the model-facing surface inside `app-server`. The real terminal authority still lives in fragmented runtime glue, lacks a canonical control plane, and does not yet expose the richer process metadata, config, and transport behavior from the original target. That leaves AI-facing ergonomics inconsistent and keeps terminal-system from becoming the reusable backend service the product needs.
+The current terminal work only modernizes the model-facing surface inside `app-server`. The real terminal authority still lives in fragmented runtime glue, lacks a canonical control plane, and does not yet expose the richer process metadata, config, and transport behavior from the original target. That leaves AI-facing ergonomics inconsistent and keeps terminal-system from becoming the reusable backend service the app needs.
 
 ## What Changes
 

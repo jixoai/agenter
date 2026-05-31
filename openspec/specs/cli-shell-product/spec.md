@@ -1,24 +1,24 @@
-# cli-shell-product Specification
+# cli-shell-app Specification
 
 ## Purpose
 
-Define `agenter-ext-shell` as an extension TUI product that binds and renders core-system resources without redefining Shell, Room, prompt, or authorization truth.
+Define `agenter-app-shell` as an extension TUI app that binds and renders core-system resources without redefining Shell, Room, prompt, or authorization truth.
 ## Requirements
-### Requirement: Cli-shell SHALL parse Avatar selection and product session separately
+### Requirement: Cli-shell SHALL parse Avatar selection and app session separately
 
-Cli-shell SHALL treat Avatar identity and cli-shell session identity as two different things. `--avatar` selects the AvatarRuntime. `--session` selects the cli-shell product resource key. `--create-avatar` only allows creating a missing ordinary Avatar. `--clear-avatar` only clears runtime session state for the selected Avatar in the current workspace. None of these flags SHALL create a special test Avatar concept.
+Cli-shell SHALL treat Avatar identity and cli-shell session identity as two different things. `--avatar` selects the AvatarRuntime. `--session` selects the cli-shell app resource key. `--create-avatar` only allows creating a missing ordinary Avatar. `--clear-avatar` only clears runtime session state for the selected Avatar in the current workspace. None of these flags SHALL create a special test Avatar concept.
 
 #### Scenario: Default command selects shell-assistant and shell-1
 
 - **WHEN** a user runs `agenter shell`
 - **THEN** cli-shell resolves Avatar nickname `shell-assistant`
-- **AND** it resolves product resource key `shell-1`
+- **AND** it resolves app resource key `shell-1`
 
 #### Scenario: Explicit Avatar overrides the default assistant
 
 - **WHEN** a user runs `agenter shell --avatar=bangeel --session=7`
 - **THEN** cli-shell selects Avatar `bangeel`
-- **AND** it resolves product resource key `shell-7`
+- **AND** it resolves app resource key `shell-7`
 - **AND** it does not reinterpret `shell-7` as runtime identity
 
 #### Scenario: Clear-avatar only clears runtime session state
@@ -29,23 +29,23 @@ Cli-shell SHALL treat Avatar identity and cli-shell session identity as two diff
 
 ### Requirement: Cli-shell SHALL be a TUI projection over core systems
 
-Cli-shell SHALL be an extension TUI product that binds and renders core-system resources. Shell truth SHALL remain in TerminalSystem. Room truth SHALL remain in MessageSystem. Prompt truth SHALL remain in Core/AvatarRuntime through `AGENTER.mdx`. Authorization truth SHALL remain in TerminalSystem. cli-shell SHALL own only product grammar, local TUI layout, local host/process choice, and lifecycle orchestration through generic SDK contracts.
+Cli-shell SHALL be an extension TUI app that binds and renders core-system resources. Shell truth SHALL remain in TerminalSystem. Room truth SHALL remain in MessageSystem. Prompt truth SHALL remain in Core/AvatarRuntime through `AGENTER.mdx`. Authorization truth SHALL remain in TerminalSystem. cli-shell SHALL own only app grammar, local TUI layout, local host/process choice, and lifecycle orchestration through generic SDK contracts.
 
 #### Scenario: Cli-shell start binds core resources
 
 - **WHEN** a user runs `bun agenter shell --session=7 --avatar=bangeel`
-- **THEN** cli-shell binds product resource key `shell-7`
-- **AND** it obtains or ensures a TerminalSystem terminal through generic product binding
-- **AND** it obtains or ensures a MessageSystem room through generic product binding
+- **THEN** cli-shell binds app resource key `shell-7`
+- **AND** it obtains or ensures a TerminalSystem terminal through generic app binding
+- **AND** it obtains or ensures a MessageSystem room through generic app binding
 - **AND** it starts or selects the AvatarRuntime through generic runtime APIs
 - **AND** it does not replace those identities with tmux pane ids as durable truth
 
-#### Scenario: Cli-shell does not restore terminal-2 product chrome
+#### Scenario: Cli-shell does not restore terminal-2 app chrome
 
 - **WHEN** cli-shell renders status, Chat, top layer, or layout controls
-- **THEN** those UI elements remain product TUI projections
-- **AND** TerminalSystem is not asked to store cli-shell chrome as a composed product terminal
-- **AND** no `terminalRuntimeKind=composed`, `composedShellTerminalId`, or `ProductTerminalComposedSurfaceState` is required for active cli-shell runtime
+- **THEN** those UI elements remain app TUI projections
+- **AND** TerminalSystem is not asked to store cli-shell chrome as a composed app terminal
+- **AND** no `terminalRuntimeKind=composed`, `composedShellTerminalId`, or `AppTerminalComposedSurfaceState` is required for active cli-shell runtime
 
 #### Scenario: Cli-shell does not make tmux the Shell truth
 
@@ -53,9 +53,9 @@ Cli-shell SHALL be an extension TUI product that binds and renders core-system r
 - **THEN** tmux pane ids remain presentation/process-host identities
 - **AND** terminal read/write/await, approval, grant, lifecycle, and AI terminal observation continue to target the bound TerminalSystem terminal id
 
-### Requirement: Cli-shell SHALL resolve the current shell target from product binding
+### Requirement: Cli-shell SHALL resolve the current shell target from app binding
 
-Cli-shell SHALL resolve the current shell target from the product binding created during bootstrap. Neither the TUI nor the Avatar SHALL need to infer the current shell by scanning stale global terminal catalogs or tmux pane lists.
+Cli-shell SHALL resolve the current shell target from the app binding created during bootstrap. Neither the TUI nor the Avatar SHALL need to infer the current shell by scanning stale global terminal catalogs or tmux pane lists.
 
 #### Scenario: Fresh session ignores stale terminal residue
 
@@ -63,17 +63,17 @@ Cli-shell SHALL resolve the current shell target from the product binding create
 - **WHEN** cli-shell starts `--session=7 --avatar=bangeel`
 - **THEN** the current shell target is the TerminalSystem terminal bound to `shell-7`
 - **AND** stale resources are not selected as write targets
-- **AND** Avatar-visible product facts identify the current bound terminal
+- **AND** Avatar-visible app facts identify the current bound terminal
 
 #### Scenario: Re-entering a session restores the same binding
 
 - **WHEN** a user exits and later re-enters `--session=6 --avatar=bangeel`
-- **THEN** cli-shell restores or reuses the product binding for `shell-6`
+- **THEN** cli-shell restores or reuses the app binding for `shell-6`
 - **AND** it does not report that there is no independent terminal merely because tmux state or old TerminalSystem residue disagrees
 
 ### Requirement: Cli-shell SHALL render Room and approval as separate TUI surfaces
 
-Cli-shell SHALL render MessageRoom as a MessageSystem surface and terminal approval as a TerminalSystem surface. Room MAY nudge the product shell to open a top layer when pending approvals exist, but Room SHALL NOT own approval truth.
+Cli-shell SHALL render MessageRoom as a MessageSystem surface and terminal approval as a TerminalSystem surface. Room MAY nudge the app shell to open a top layer when pending approvals exist, but Room SHALL NOT own approval truth.
 
 #### Scenario: Room stays MessageSystem only
 
@@ -90,24 +90,24 @@ Cli-shell SHALL render MessageRoom as a MessageSystem surface and terminal appro
 
 ### Requirement: Cli-shell managed state SHALL remain attention projection
 
-Cli-shell managed/on/off SHALL be a product-scoped attention fact and a TUI projection. It SHALL NOT grant terminal authority, alter TerminalSystem mode, or become local host truth.
+Cli-shell managed/on/off SHALL be a app-scoped attention fact and a TUI projection. It SHALL NOT grant terminal authority, alter TerminalSystem mode, or become local host truth.
 
 #### Scenario: Managed click commits attention only
 
 - **WHEN** the user enables managed mode from cli-shell
-- **THEN** cli-shell commits a product-scoped attention item with `scores: {"hosting": 1000}`
+- **THEN** cli-shell commits a app-scoped attention item with `scores: {"hosting": 1000}`
 - **AND** the item references the bound terminal id and room id as provenance
 - **AND** no terminal grant, lease, or TerminalSystem mode is created solely because managed is on
 
 #### Scenario: Managed off settles attention only
 
 - **WHEN** the user disables managed mode from cli-shell
-- **THEN** cli-shell settles the product-scoped hosting attention with `scores: {"hosting": 0}`
+- **THEN** cli-shell settles the app-scoped hosting attention with `scores: {"hosting": 0}`
 - **AND** terminal grants, approval requests, and leases remain governed by TerminalSystem
 
 ### Requirement: Cli-shell local host choice SHALL be replaceable
 
-Cli-shell MAY use tmux, OpenTUI, a native terminal host, process IPC, or future local composition mechanisms for presentation. That choice SHALL be replaceable without changing TerminalSystem, MessageSystem, AvatarRuntime, AttentionSystem, or product binding truth.
+Cli-shell MAY use tmux, OpenTUI, a native terminal host, process IPC, or future local composition mechanisms for presentation. That choice SHALL be replaceable without changing TerminalSystem, MessageSystem, AvatarRuntime, AttentionSystem, or app binding truth.
 
 #### Scenario: Tmux can be swapped without changing system truth
 
@@ -116,14 +116,14 @@ Cli-shell MAY use tmux, OpenTUI, a native terminal host, process IPC, or future 
 - **AND** the bound MessageSystem room id remains the room truth
 - **AND** the selected AvatarRuntime and attention contexts remain unchanged
 
-### Requirement: Cli-shell SHALL own product-local settings and keybindings
+### Requirement: Cli-shell SHALL own app-local settings and keybindings
 
-Cli-shell SHALL keep its product-local preferences under `~/.agenter/cli-shell/`. `settings.json` stores durable product behavior such as the default Chat layout. `keybindings.json` stores product shortcut bindings for the Room composer and related panels. Missing, empty, or invalid product config files SHALL fall back to cli-shell defaults instead of mutating shared core settings truth. The built-in Chat default layout SHALL be `right`.
+Cli-shell SHALL keep its app-local preferences under `~/.agenter/cli-shell/`. `settings.json` stores durable app behavior such as the default Chat layout. `keybindings.json` stores app shortcut bindings for the Room composer and related panels. Missing, empty, or invalid app config files SHALL fall back to cli-shell defaults instead of mutating shared core settings truth. The built-in Chat default layout SHALL be `right`.
 
-#### Scenario: Missing product config falls back to cli-shell defaults
+#### Scenario: Missing app config falls back to cli-shell defaults
 
 - **WHEN** cli-shell starts and `~/.agenter/cli-shell/settings.json` or `keybindings.json` does not exist, is empty, or is invalid
-- **THEN** cli-shell uses built-in product defaults
+- **THEN** cli-shell uses built-in app defaults
 - **AND** the built-in Chat layout default is `right`
 - **AND** it does not write into shared core settings state just to recover those defaults
 
@@ -152,7 +152,7 @@ Cli-shell Room SHALL use a multiline textarea composer. The composer area SHALL 
 
 ### Requirement: Cli-shell Room send SHALL separate send success from refresh failure
 
-Cli-shell SHALL treat room-message send success and follow-up snapshot refresh failure as separate product facts. A successful send SHALL clear the draft immediately. A later refresh failure SHALL surface as a recoverable notice instead of rewriting the send result into failure.
+Cli-shell SHALL treat room-message send success and follow-up snapshot refresh failure as separate app facts. A successful send SHALL clear the draft immediately. A later refresh failure SHALL surface as a recoverable notice instead of rewriting the send result into failure.
 
 #### Scenario: Refresh failure does not cancel a successful send
 
@@ -172,9 +172,9 @@ Cli-shell shell-pane projection SHALL keep cursor truth in 0-based viewport-loca
 - **WHEN** cli-shell commits the hardware cursor for a visible viewport-local cursor
 - **THEN** the native cursor position uses renderable screen origin plus the viewport-local cursor plus the single 1-based native offset
 
-### Requirement: Cli-shell SHALL use normalized tmux product actions for status clicks
+### Requirement: Cli-shell SHALL use normalized tmux app actions for status clicks
 
-Cli-shell SHALL normalize tmux status-bar mouse range payloads before dispatching product actions. The action boundary SHALL accept both direct action names such as `help` and user-range forms such as `user|help` for known product actions. Unknown range payloads SHALL fail as unknown actions without mutating Chat surface state.
+Cli-shell SHALL normalize tmux status-bar mouse range payloads before dispatching app actions. The action boundary SHALL accept both direct action names such as `help` and user-range forms such as `user|help` for known app actions. Unknown range payloads SHALL fail as unknown actions without mutating Chat surface state.
 
 #### Scenario: Help click normalizes user range
 
@@ -202,7 +202,7 @@ Cli-shell SHALL maintain exactly one visible Chat surface per tmux session and s
 
 #### Scenario: Default attach opens Chat on the right
 
-- **WHEN** cli-shell attaches to a tmux product session
+- **WHEN** cli-shell attaches to a tmux app session
 - **THEN** it opens or reuses one Chat Room surface as a right dock pane
 - **AND** the bottom status bar remains part of the clickable tmux pane layout
 - **AND** no second Room surface is created if a matching Room pane already exists

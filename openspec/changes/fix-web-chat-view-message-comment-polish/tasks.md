@@ -20,8 +20,8 @@
 
 ## 3. Implementation
 
-- [x] 3.1 Run `bun run openspec:vision -- commit-check fix-web-chat-view-message-comment-polish --phase apply` after OpenSpec artifacts are committed and before product-code work starts. Process deviation recorded in self-review: the command was rerun in this context, but product-code edits already existed as uncommitted work from the previous context.
-- [x] 3.2 Commit the ready OpenSpec artifacts separately from product code.
+- [x] 3.1 Run `bun run openspec:vision -- commit-check fix-web-chat-view-message-comment-polish --phase apply` after OpenSpec artifacts are committed and before app-code work starts. Process deviation recorded in self-review: the command was rerun in this context, but app-code edits already existed as uncommitted work from the previous context.
+- [x] 3.2 Commit the ready OpenSpec artifacts separately from app code.
 - [x] 3.3 Implement canonical sender/avatar presentation for app-view room mode without Studio iframe event bridges or Studio store imports; prefer backend/app-view snapshot projection and keep bootstrap labels as fallback provenance only.
 - [x] 3.4 Replace comment icons with `MessageSquareDot` across comment anchor, inspector, resource card, and preview-layer comment surfaces while preserving the user's `.comment-anchor-serial span` style change.
 - [x] 3.5 Prevent empty comment bodies from becoming visible comment cards/resources; keep save disabled for empty drafts and remove `No comment body yet` visible copy.
@@ -89,7 +89,7 @@
 
 ## 9. Round 6 Framework7 Modal Encapsulation
 
-- [x] 9.1 Record the latest user feedback in `plans/plan.md` and extend Framework7 visual-law specs before product-code edits.
+- [x] 9.1 Record the latest user feedback in `plans/plan.md` and extend Framework7 visual-law specs before app-code edits.
 - [x] 9.2 Add BDD/source contracts proving composer tool trays use a shared Framework7 `MessagebarSheet` wrapper and do not repaint `.messagebar-sheet` chrome.
 - [x] 9.3 Add BDD/source contracts proving message/source contextual actions use one shared Framework7 Actions adapter instead of repeated `app.f7.actions.create(...)` implementations and blurred custom fallback surfaces.
 - [x] 9.4 Add BDD/source contracts proving resource/source popup shells do not repaint `.popup`, bottom `.toolbar`, or navbar slot chrome with custom blur/safe-area inline styles.

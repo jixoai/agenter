@@ -19,19 +19,19 @@ The client runtime store SHALL normalize terminal grants, access projections, ca
 - **THEN** implementation either migrates it once to `guard` or rejects/cleans it during local upgrade
 - **THEN** public client APIs and tests use `guard` as the canonical role
 
-### Requirement: Client runtime store SHALL not expose product delegation authority
+### Requirement: Client runtime store SHALL not expose app delegation authority
 
-The client runtime store SHALL remove product delegation list/create/revoke APIs from the active product-extension runtime surface for this change. Client code may still expose terminal-native approval and write lease projections, but it SHALL NOT expose product-owned write delegation as a second authorization truth.
+The client runtime store SHALL remove app delegation list/create/revoke APIs from the active app-extension runtime surface for this change. Client code may still expose terminal-native approval and write lease projections, but it SHALL NOT expose app-owned write delegation as a second authorization truth.
 
-#### Scenario: Product extension client omits delegation methods
-- **WHEN** product code constructs the product-extension runtime client
-- **THEN** the active client surface includes product descriptor/resource/assistant/attention operations
+#### Scenario: App extension client omits delegation methods
+- **WHEN** app code constructs the app-extension runtime client
+- **THEN** the active client surface includes app descriptor/resource/assistant/attention operations
 - **THEN** it does not include `listProductDelegations`, `createProductDelegation`, or `revokeProductDelegation` as supported current operations
 
 #### Scenario: Terminal leases remain terminal-native client facts
 - **WHEN** a guard write is approved
 - **THEN** the client store projects the resulting terminal write lease from TerminalSystem approval state
-- **THEN** it does not mirror that lease into a product delegation record
+- **THEN** it does not mirror that lease into a app delegation record
 
 ### Requirement: Client runtime store SHALL expose filtered terminal permission request subscriptions
 

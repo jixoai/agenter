@@ -38,7 +38,7 @@ Disabled features must become no-op/fallthrough paths. They must not mutate targ
 
 `@agenter/termless-backend-utils` may import core terminal contracts from `@agenter/termless-core`. The dependency direction must not invert: `@agenter/termless-core` must not import or export `@agenter/termless-backend-utils`.
 
-`shell-next` uses this package because shell-next currently composes a backend and needs host input policy. `extensions/cli-shell` remains read-only.
+`shell-next` uses this package because shell-next currently composes a backend and needs host input policy. `apps/cli-shell` remains read-only.
 
 ## BDD Strategy
 
@@ -51,12 +51,12 @@ BDD tests live with the new package and focus on observable composition behavior
 - disabling drag selection still permits semantic selection when enabled;
 - disabling selection clearing or follow-cursor changes only that portion of the transaction.
 
-Shell-next tests continue to prove product behavior, while the utility package proves reusable composition law.
+Shell-next tests continue to prove app behavior, while the utility package proves reusable composition law.
 
 ## Self Review Checklist
 
 - `core` exposes terminal contracts but no optional host input policy.
 - `backend-utils` is an opt-in utility package, not backend authority.
 - shell-next explicitly imports the utility package.
-- no code imports from or edits `extensions/cli-shell`.
+- no code imports from or edits `apps/cli-shell`.
 - disabled utility features do not mutate backend state.

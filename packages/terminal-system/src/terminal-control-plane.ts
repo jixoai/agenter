@@ -3306,7 +3306,7 @@ export class TerminalControlPlane {
       throw new Error(`terminal already exists: ${terminalId}`);
     }
     const runtimeKind = readTerminalRuntimeKind(input.metadata);
-    const processKind = input.processKind ?? (runtimeKind === "composed" ? "product" : "shell");
+    const processKind = input.processKind ?? (runtimeKind === "composed" ? "app" : "shell");
     const profile = mergeProfile(
       this.config.defaults,
       this.config.processProfiles?.[processKind],

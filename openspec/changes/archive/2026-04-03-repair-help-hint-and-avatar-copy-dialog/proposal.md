@@ -1,6 +1,6 @@
 ## Why
 
-The current Svelte operator shell regressed in two places that break the intended product contract.
+The current Svelte operator shell regressed in two places that break the intended app contract.
 
 - `HelpHint` currently auto-opens on first paint, which turns optional guidance into persistent overlay noise and obscures primary surfaces like `Workspaces` and `Terminals`.
 - The `Copy avatar` dialog in `Workspaces` is not implemented as a real submit flow, so the primary action is unreliable and keyboard submission is not supported as a durable contract.

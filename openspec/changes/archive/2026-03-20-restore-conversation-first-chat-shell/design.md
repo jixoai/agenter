@@ -15,7 +15,7 @@ The repository already has most of the building blocks we need: a workspace shel
 - Redesigning LoopBus or changing cycle persistence semantics.
 - Changing the durable session schema beyond adding cycle linkage to runtime chat projections.
 - Replacing CodeMirror or the existing AI input surface.
-- Introducing a new notification product beyond the existing ephemeral runtime projection.
+- Introducing a new notification app beyond the existing ephemeral runtime projection.
 
 ## Decisions
 

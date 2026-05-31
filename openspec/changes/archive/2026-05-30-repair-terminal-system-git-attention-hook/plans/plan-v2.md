@@ -71,7 +71,7 @@
 
 | Checkpoint | Expected commit evidence | Current status |
 | ---------- | ------------------------ | -------------- |
-| OpenSpec artifacts before apply | Commit containing `plans/plan.md`, specs, and `tasks.md` before product-code work starts | Not yet committed; plan is still being revised. |
+| OpenSpec artifacts before apply | Commit containing `plans/plan.md`, specs, and `tasks.md` before app-code work starts | Not yet committed; plan is still being revised. |
 | Task-progress commits | Commit containing task checkbox updates plus matching code/BDD evidence | Not started. |
 | Self-review updates | Commit containing review output and reopened tasks before next apply loop | Not started. |
 | Normal archive | Commit containing archive result | Not started. |
@@ -157,7 +157,7 @@ AI 执行一个终端任务后，终端输出在结束/稳定到 IDLE 时会自�
 
 ### Interface Shape
 
-- Add a terminal bridge method or adapter path with product semantics:
+- Add a terminal bridge method or adapter path with app semantics:
   - `inspectIdleTerminal(terminalId)`
   - input: terminal id from BUSY -> IDLE transition
   - condition: focused/running/actionable + `headHash !== readCursorHash`

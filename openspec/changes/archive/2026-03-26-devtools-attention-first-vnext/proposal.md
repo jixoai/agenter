@@ -1,6 +1,6 @@
 ## Why
 
-The frontend still presents the runtime through old `LoopBus`, `inputs`, `facts`, and `reply` concepts, so the new attention architecture is not actually visible or explainable in the product. As a result, Devtools and Cycle detail still reflect the legacy runtime story instead of the intended attention-first model with contexts, items, cycle frames, model calls, and trace.
+The frontend still presents the runtime through old `LoopBus`, `inputs`, `facts`, and `reply` concepts, so the new attention architecture is not actually visible or explainable in the app. As a result, Devtools and Cycle detail still reflect the legacy runtime story instead of the intended attention-first model with contexts, items, cycle frames, model calls, and trace.
 
 ## What Changes
 

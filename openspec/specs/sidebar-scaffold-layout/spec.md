@@ -18,7 +18,7 @@ The system SHALL provide a dedicated `SidebarScaffold` primitive for static `sid
 - **THEN** the layout remains a static `sidebar + content` shell rather than a stateful main-detail surface
 
 ### Requirement: Sidebar scaffold SHALL replace SplitView as the durable static shell law
-The repository SHALL use `SidebarScaffold` as the only active shared primitive for static `sidebar + content` shells. Product code, stories, tests, and durable docs SHALL NOT depend on `SplitView` once migration is complete.
+The repository SHALL use `SidebarScaffold` as the only active shared primitive for static `sidebar + content` shells. App code, stories, tests, and durable docs SHALL NOT depend on `SplitView` once migration is complete.
 
 #### Scenario: Shared consumer imports the static shell after migration
 - **WHEN** a WebUI route or shared package needs a static sidebar shell

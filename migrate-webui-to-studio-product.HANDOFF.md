@@ -1,19 +1,19 @@
-# Handoff: migrate-webui-to-studio-product
+# Handoff: migrate-webui-to-studio-app
 
 ## Goal
 
-Break the old core-owned WebUI delivery law and make the active operator web product an ecosystem package:
+Break the old core-owned WebUI delivery law and make the active operator web app an ecosystem package:
 
 - `packages/webui` / `@agenter/webui` becomes `packages/studio` / `@agenter/studio`.
 - `agenter studio` is descriptor-driven like `agenter shell`.
 - `agenter web` is removed without compatibility alias.
 - `packages/ui-studio` / `@agenter/ui-studio` becomes `packages/icon-studio` / `@agenter/icon-studio`.
 
-The change is OpenSpec `migrate-webui-to-studio-product`, schema `spec-driven`.
+The change is OpenSpec `migrate-webui-to-studio-app`, schema `spec-driven`.
 
 ## Current Progress
 
-Confirmed from `openspec status --change migrate-webui-to-studio-product --json` and `openspec instructions apply --change migrate-webui-to-studio-product --json`:
+Confirmed from `openspec status --change migrate-webui-to-studio-app --json` and `openspec instructions apply --change migrate-webui-to-studio-app --json`:
 
 - Artifacts are complete: `proposal`, `design`, `specs`, `tasks`.
 - Tasks are complete: `24/24`.
@@ -21,20 +21,20 @@ Confirmed from `openspec status --change migrate-webui-to-studio-product --json`
 
 Landed on `main` with:
 
-- `41469166 docs(spec): propose studio product migration`
-- `462a3db1 feat: migrate webui to studio product`
-- `d8b2ac8b docs(spec): close studio product migration tasks`
+- `41469166 docs(spec): propose studio app migration`
+- `462a3db1 feat: migrate webui to studio app`
+- `d8b2ac8b docs(spec): close studio app migration tasks`
 
 Feature worktree and branch were cleaned:
 
-- Worktree removed: `.worktree/migrate-webui-to-studio-product`
-- Branch removed: `feature/migrate-webui-to-studio-product`
+- Worktree removed: `.worktree/migrate-webui-to-studio-app`
+- Branch removed: `feature/migrate-webui-to-studio-app`
 
 ## What Worked
 
 Verified before landing:
 
-- `bun test packages/cli/test/product-command-launcher.test.ts packages/product-extension-runtime/test/product-extension-runtime.test.ts packages/studio/test/static-root.test.ts --timeout 30000`
+- `bun test packages/cli/test/app-command-launcher.test.ts packages/app-runtime/test/app-runtime.test.ts packages/studio/test/static-root.test.ts --timeout 30000`
 - `bun run --filter '@agenter/icon-studio' typecheck`
 - `bun run --filter '@agenter/studio' typecheck`
 - `bun run --filter '@agenter/studio' test:unit`
@@ -42,11 +42,11 @@ Verified before landing:
 - `bun run --filter '@agenter/icon-studio' build`
 - `bun run --filter '@agenter/studio' build`
 - `bun run --filter '@agenter/studio' test:dom`
-- `openspec validate migrate-webui-to-studio-product --strict`
+- `openspec validate migrate-webui-to-studio-app --strict`
 - `openspec validate --specs --strict`
 - `git diff --check`
 - `./.gemini/scripts/wt-merge-verify.sh --target main`
-- `./.gemini/scripts/wt-land-ff.sh feature/migrate-webui-to-studio-product`
+- `./.gemini/scripts/wt-land-ff.sh feature/migrate-webui-to-studio-app`
 
 Important observed non-fatal warnings:
 
@@ -63,7 +63,7 @@ Important observed non-fatal warnings:
 
 Confirmed next workflow step is human/main-branch review, then archive if accepted:
 
-- Review current `main` commits and product behavior.
+- Review current `main` commits and app behavior.
 - Re-run any desired acceptance gates on `main`.
-- Archive `migrate-webui-to-studio-product` after acceptance.
+- Archive `migrate-webui-to-studio-app` after acceptance.
 - Be aware that current `main` also has unrelated WIP for `refine-cli-shell-chat-scrollbox`; do not mix that WIP into Studio archive unless intentionally continuing it.

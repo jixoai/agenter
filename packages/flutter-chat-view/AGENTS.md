@@ -2,7 +2,7 @@
 
 ## Objective
 
-Implement and evolve a Flutter room chat package that stays protocol-compatible with `message-system` while remaining independent from `extensions/studio`.
+Implement and evolve a Flutter room chat package that stays protocol-compatible with `message-system` while remaining independent from `apps/studio`.
 
 ## Rules
 
@@ -11,7 +11,7 @@ Implement and evolve a Flutter room chat package that stays protocol-compatible 
 - Keep rendering, transport, and attachment upload concerns orthogonal.
 - Keep message history reverse-paged and revision-safe for long-lived rooms.
 - Keep plugin contracts explicit; do not bury trigger behavior inside the core composer.
-- Keep phase 1 delivery scoped to the standalone product shell under `example/`.
+- Keep phase 1 delivery scoped to the standalone app shell under `example/`.
 - Keep page-level chrome and profile persistence outside the core package.
 
 ## Required compatibility
@@ -29,4 +29,4 @@ When changing this package, validate against:
 1. `packages/message-system` room transport contract
 2. `openspec/specs/flutter-chat-view/spec.md`
 3. `packages/flutter-chat-view/SPEC.md`
-4. `packages/flutter-chat-view/example` as the only phase-1 product shell
+4. `packages/flutter-chat-view/example` as the only phase-1 app shell

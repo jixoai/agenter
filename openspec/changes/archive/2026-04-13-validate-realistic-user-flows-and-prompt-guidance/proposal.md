@@ -4,7 +4,7 @@ The current real-provider acceptance suite proves that the architecture works, b
 
 ## What Changes
 
-- Add two new real-provider validation flows that keep the same product coverage as the current `1 user + 1 avatar` and `1 user + 2 avatars` scenarios, but replace step-by-step user scripts with more realistic novice-user requests.
+- Add two new real-provider validation flows that keep the same app coverage as the current `1 user + 1 avatar` and `1 user + 2 avatars` scenarios, but replace step-by-step user scripts with more realistic novice-user requests.
 - Strengthen shared Avatar prompt guidance so Avatars more clearly act like proactive software engineers who can translate vague user goals into concrete delivery steps without needing the user to micromanage tools.
 - Strengthen system guide descriptions so Message / Terminal / Workspace guidance better teaches the model how to recover state, create terminals when missing, verify deliveries, and coordinate in shared rooms.
 - Keep `UsageExamplePrompt` out of scope for now; only record it as the next escalation path if prompt-law tightening still proves insufficient.

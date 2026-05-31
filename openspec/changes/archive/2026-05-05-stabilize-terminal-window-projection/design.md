@@ -7,7 +7,7 @@ The existing terminal window surface already separates PTY geometry from project
 - cover mode still behaves like a framed window instead of a fullscreen-like shell state
 - destructive delete is still coupled to the titlebar, which conflicts with the final two-circle control law
 
-The durable rule is that `terminal-view` remains a viewport primitive while the host owns product chrome. This design keeps that split and tightens the host-side projection law.
+The durable rule is that `terminal-view` remains a viewport primitive while the host owns app chrome. This design keeps that split and tightens the host-side projection law.
 
 ## Goals / Non-Goals
 
@@ -32,11 +32,11 @@ The durable rule is that `terminal-view` remains a viewport primitive while the 
 `terminal-view` continues to render only the terminal viewport. The titlebar, projection mode controls, sticky fullscreen chrome, and resize affordance remain in `terminal-window-surface`.
 
 Why:
-- This preserves the existing platform law that product chrome does not leak into the shared terminal viewport primitive.
+- This preserves the existing platform law that app chrome does not leak into the shared terminal viewport primitive.
 
 Alternative considered:
 - Push titlebar and projection semantics into `terminal-view`.
-- Rejected because it couples product chrome to a reusable terminal viewport primitive and breaks the current host/component boundary.
+- Rejected because it couples app chrome to a reusable terminal viewport primitive and breaks the current host/component boundary.
 
 ### 2. `fit` scales only terminal content; `cover` removes the frame and keeps native content scale
 

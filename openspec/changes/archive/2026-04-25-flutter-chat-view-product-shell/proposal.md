@@ -4,22 +4,22 @@
 
 ## What Changes
 
-- Replace the current example demo shell with a product-grade standalone Flutter app shell that separates profile management, chat stage, and detail surfaces.
+- Replace the current example demo shell with a app-grade standalone Flutter app shell that separates profile management, chat stage, and detail surfaces.
 - Add persistent connection profiles and active-profile lifecycle so operators do not re-enter `url + token` on every visit.
-- Restructure the chat experience into responsive product spaces:
+- Restructure the chat experience into responsive app spaces:
   - profile rail / compact navigation
   - conversation-first chat stage
   - detail rail for room facts and selected message detail
 - Upgrade the Flutter chat stage primitives to support host-owned shell composition, message selection, time dividers, and return-to-latest affordances.
-- Keep the room transport / asset upload / composer plugin law in `packages/flutter-chat-view`, but move product navigation and configuration UI into the standalone app shell.
+- Keep the room transport / asset upload / composer plugin law in `packages/flutter-chat-view`, but move app navigation and configuration UI into the standalone app shell.
 
 ## Capabilities
 
 ### New Capabilities
-- `flutter-chat-view-product-shell`: standalone Flutter product shell for room chat, including persistent connection profiles, responsive shell layout, conversation-first stage composition, and detail surfaces without any `packages/webui` embed.
+- `flutter-chat-view-app-shell`: standalone Flutter app shell for room chat, including persistent connection profiles, responsive shell layout, conversation-first stage composition, and detail surfaces without any `packages/webui` embed.
 
 ### Modified Capabilities
-- `flutter-chat-view`: extend the Flutter package from transport-capable demo widgets into reusable chat-stage primitives that can be embedded inside a host-owned product shell.
+- `flutter-chat-view`: extend the Flutter package from transport-capable demo widgets into reusable chat-stage primitives that can be embedded inside a host-owned app shell.
 
 ## Impact
 
@@ -31,7 +31,7 @@
   - Flutter Web standalone delivery surface
   - room transport websocket
   - room asset upload API
-  - local product-shell profile persistence
+  - local app-shell profile persistence
 - Non-goals:
   - no `packages/webui` integration
   - no native packaging milestone yet

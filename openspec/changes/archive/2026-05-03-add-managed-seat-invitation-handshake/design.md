@@ -249,7 +249,7 @@ Rollback posture:
 
 ## Implementation Defaults
 
-These defaults are now intentionally fixed for the first implementation so the change can move into code without reopening product-law debates.
+These defaults are now intentionally fixed for the first implementation so the change can move into code without reopening app-law debates.
 
 - `message-manage` first exposes direct room-native authority grammar: `readonly | member | admin`.
 - Replacing a still-pending invitation for the same principal rotates the opaque acceptance handle and all derived descriptors.
@@ -568,7 +568,7 @@ These are the topics that should be explicitly discussed before or during implem
 - Does re-inviting the same principal always replace the previous pending invitation, even when only expiry is being refreshed?
 - If accept and revoke race each other, which durable ordering decides the winner?
 - Should acceptance be idempotent for the same invited principal if the seat is already active?
-- How is descriptor leakage explained in product terms, given that leaked links are still non-authoritative until the invited principal signs?
+- How is descriptor leakage explained in app terms, given that leaked links are still non-authoritative until the invited principal signs?
 - When `TM` or room `admin` is accepted, how does the UI/CLI explain "you are an admin candidate but not necessarily the current admin right now"?
 - How quickly do revoke and expiry effects propagate to already-issued active access tokens or write leases?
 - In the dual-agenter case, which endpoint metadata must be embedded in the descriptor so the client can find the correct remote backend without confusing transport projection and authority ownership?

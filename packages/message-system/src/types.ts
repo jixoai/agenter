@@ -29,7 +29,7 @@ export interface MessageSystemIdentity {
 }
 
 /**
- * message-system keeps "channel" as the generic product surface.
+ * message-system keeps "channel" as the generic app surface.
  * Today the only concrete channel kind is "room", which is the shared space
  * that carries user-facing conversation.
  */

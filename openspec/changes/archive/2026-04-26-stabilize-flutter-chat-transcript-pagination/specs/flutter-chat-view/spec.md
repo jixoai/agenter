@@ -1,6 +1,6 @@
 ## MODIFIED Requirements
 
-### Requirement: Flutter chat view SHALL expose product-grade transcript affordances
+### Requirement: Flutter chat view SHALL expose app-grade transcript affordances
 The Flutter chat stage SHALL render a conversation-first transcript with restrained time dividers, message selection, and a return-to-latest affordance so a host shell can deliver long-lived room browsing without reverting to demo-style flat rendering.
 
 Transcript and Web demo shell surfaces SHALL avoid `SelectableRegion`, `HtmlElementView`, and Flutter Web platform views. Text copy SHALL be exposed through stable message actions so virtualized rows and return-to-latest motion do not leave platform-view layout callbacks attached to disposed render objects.

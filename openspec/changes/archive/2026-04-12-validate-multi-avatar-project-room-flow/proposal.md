@@ -1,6 +1,6 @@
 ## Why
 
-The first real-provider validation now proves a single user and one Avatar can complete a room-to-terminal-to-URL delivery loop. What remains unverified is the next product promise: multiple Avatars collaborating inside one project room, exchanging implementation details through shared room truth, consuming room attachments, and delivering a final result back to the user.
+The first real-provider validation now proves a single user and one Avatar can complete a room-to-terminal-to-URL delivery loop. What remains unverified is the next app promise: multiple Avatars collaborating inside one project room, exchanging implementation details through shared room truth, consuming room attachments, and delivering a final result back to the user.
 
 This matters now because the system’s differentiation is not just “one Avatar can code”, but “multiple Avatars can coordinate like a small engineering team”. Without a repeatable real-provider scenario for that behavior, the backend still lacks a direct acceptance test for shared-room collaboration, attachment handoff, and multi-runtime convergence.
 

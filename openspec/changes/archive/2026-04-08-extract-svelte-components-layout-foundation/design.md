@@ -10,7 +10,7 @@ But the implementation is split incorrectly:
 
 - `ScrollView` still belongs to the legacy `@agenter/svelte-primitives`
 - scaffold-family primitives still live in `@agenter/webui`
-- `@agenter/web-chat-view` cannot reuse the full law without depending on product-local source
+- `@agenter/web-chat-view` cannot reuse the full law without depending on app-local source
 
 ## Goals / Non-Goals
 
@@ -23,8 +23,8 @@ But the implementation is split incorrectly:
 
 **Non-Goals**
 
-- Rebuild `web-chat-view` into a full product shell
-- Move shadcn-svelte product components into the new shared package
+- Rebuild `web-chat-view` into a full app shell
+- Move shadcn-svelte app components into the new shared package
 - Reopen Lit/web-component packaging for layout primitives
 
 ## Decisions
@@ -50,7 +50,7 @@ The repository will directly replace the old package instead of retaining a para
 
 ### `DialogScaffold` excludes UI-framework-specific close affordances
 
-The shared package exports `DialogScaffold.Root/Header/ScrollBody/Footer` only. A close button belongs to the consuming UI framework or product shell, not to the structural primitive itself.
+The shared package exports `DialogScaffold.Root/Header/ScrollBody/Footer` only. A close button belongs to the consuming UI framework or app shell, not to the structural primitive itself.
 
 ### `web-chat-view` reuses shared shell law, not only shared scrolling
 
@@ -59,5 +59,5 @@ The shared package exports `DialogScaffold.Root/Header/ScrollBody/Footer` only. 
 ## Risks / Trade-offs
 
 - [Risk] Direct replacement touches multiple packages at once. -> Mitigation: keep the shared API small and run consumer regressions in the same change.
-- [Risk] `web-chat-view` could accidentally inherit product-specific shell assumptions. -> Mitigation: only move structural law; leave chat-specific visuals and transport logic inside `web-chat-view`.
-- [Risk] Shared package could start absorbing product-level UI atoms. -> Mitigation: add package SPEC and delta specs that freeze the boundary.
+- [Risk] `web-chat-view` could accidentally inherit app-specific shell assumptions. -> Mitigation: only move structural law; leave chat-specific visuals and transport logic inside `web-chat-view`.
+- [Risk] Shared package could start absorbing app-level UI atoms. -> Mitigation: add package SPEC and delta specs that freeze the boundary.

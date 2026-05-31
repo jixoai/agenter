@@ -1,6 +1,6 @@
 ## Why
 
-The current kernel still mixes several incompatible laws into the same objects: `workspace` is simultaneously an avatar overlay root, a runtime identity key, a settings scope, and a WebUI workbench; `notification` is still modeled outside of attention; and focus is still projected from source adapters instead of being owned by `AttentionContext` itself. That model blocks the intended product direction of global Avatars, grant-based multi-workspace control, and a simpler human-like attention workflow.
+The current kernel still mixes several incompatible laws into the same objects: `workspace` is simultaneously an avatar overlay root, a runtime identity key, a settings scope, and a WebUI workbench; `notification` is still modeled outside of attention; and focus is still projected from source adapters instead of being owned by `AttentionContext` itself. That model blocks the intended app direction of global Avatars, grant-based multi-workspace control, and a simpler human-like attention workflow.
 
 This change replaces those old laws instead of extending them. The current phase is backend-only: it introduces a first-class `WorkspaceSystem`, global Avatar ownership, and attention-native push ingress as the new platform truth. WebUI restructuring is intentionally deferred to a follow-up frontend change once the backend contracts stabilize.
 

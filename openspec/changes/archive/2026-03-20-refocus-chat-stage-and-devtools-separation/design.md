@@ -1,6 +1,6 @@
 ## Context
 
-The current workspace shell already separates `Chat`, `Devtools`, and `Settings` as routes, but the Chat route still renders cycle metadata, collected-input summaries, and other LoopBus-oriented diagnostics in its primary reading flow. That makes the product hierarchy collapse: the workspace shell looks like multiple stacked dashboards, while the actual conversation and composer lose visual priority. The latest user review makes the target explicit: Chat must feel like the product, while Devtools remains available for expert inspection without leaking by default into the main conversation surface.
+The current workspace shell already separates `Chat`, `Devtools`, and `Settings` as routes, but the Chat route still renders cycle metadata, collected-input summaries, and other LoopBus-oriented diagnostics in its primary reading flow. That makes the app hierarchy collapse: the workspace shell looks like multiple stacked dashboards, while the actual conversation and composer lose visual priority. The latest user review makes the target explicit: Chat must feel like the app, while Devtools remains available for expert inspection without leaking by default into the main conversation surface.
 
 This change stays inside `packages/webui` and OpenSpec artifacts. It does not change session runtime semantics, LoopBus persistence, or server-side cycle generation. The change is primarily a projection and composition redesign: we keep the factual data, but move it to the correct surface and reduce duplicated passive status surfaces.
 
@@ -24,7 +24,7 @@ This change stays inside `packages/webui` and OpenSpec artifacts. It does not ch
 The Chat route will still consume `RuntimeChatCycle[]`, but it will render them as a conversation-first stream. User messages, assistant replies, and tool-visible outputs remain factual, while cycle badges, collected-facts chips, and inspection metadata are removed from the default reading path.
 
 Rationale:
-- Chat is the product's primary surface; cycle internals are implementation context, not the main user task.
+- Chat is the app's primary surface; cycle internals are implementation context, not the main user task.
 - We keep the existing cycle-backed data model and pagination, so the change stays projection-level instead of rewriting runtime contracts.
 
 Alternatives considered:
@@ -90,4 +90,4 @@ Rollback is straightforward because the change only affects WebUI composition an
 
 ## Open Questions
 
-- None. The product direction is already explicit: Chat is the primary stage, Devtools is the diagnostic surface.
+- None. The app direction is already explicit: Chat is the primary stage, Devtools is the diagnostic surface.

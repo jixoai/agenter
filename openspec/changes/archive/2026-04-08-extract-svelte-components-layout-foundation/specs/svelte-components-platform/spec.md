@@ -1,7 +1,7 @@
 ## ADDED Requirements
 
 ### Requirement: Shared Svelte structural primitives SHALL live in @agenter/svelte-components
-The repository SHALL expose `@agenter/svelte-components` as the shared Svelte structural package for durable scroll ownership and scaffold-family layout law. Shared Svelte consumers SHALL import structural primitives from that package instead of reaching into product-local `webui` source.
+The repository SHALL expose `@agenter/svelte-components` as the shared Svelte structural package for durable scroll ownership and scaffold-family layout law. Shared Svelte consumers SHALL import structural primitives from that package instead of reaching into app-local `webui` source.
 
 #### Scenario: Shared Svelte consumer resolves one structural package
 - **WHEN** a shared Svelte package such as `web-chat-view` needs transcript scrolling or shell layout primitives

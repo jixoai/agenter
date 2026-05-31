@@ -43,7 +43,7 @@ The terminal control plane SHALL publish live permission request events for guar
 - **WHEN** an admin approves or denies a permission request
 - **THEN** TerminalSystem verifies the request is still pending for the same live TerminalInstance
 - **THEN** approved, denied, expired, cancelled, or stale requests cannot mint additional leases
-- **THEN** the result records the decision without creating product-local authority state
+- **THEN** the result records the decision without creating app-local authority state
 
 ### Requirement: Terminal seat management SHALL onboard shared principals through invitation acceptance
 
@@ -127,30 +127,30 @@ Terminal `config` and `revoke` operations SHALL remain unilateral actions for th
 - **THEN** any pending invitation for `P` on `T` becomes invalid
 - **THEN** any active write lease for `P` on `T` no longer authorizes new writes
 
-### Requirement: Composed terminal surfaces SHALL remain product-opaque terminal frames
+### Requirement: Composed terminal surfaces SHALL remain app-opaque terminal frames
 
-The terminal control plane MAY accept composed terminal frame publications from an authorized publisher, but the composed surface contract SHALL be product-opaque. TerminalSystem SHALL store and transport generic terminal frame data, cursor, scrollback, and product-opaque metadata. It SHALL NOT model cli-shell toolbar state, managed/takeover labels, dialogue draft, heartbeat text, unread label, or localized strings such as `托管 off` as terminal-native fields or metadata defaults.
+The terminal control plane MAY accept composed terminal frame publications from an authorized publisher, but the composed surface contract SHALL be app-opaque. TerminalSystem SHALL store and transport generic terminal frame data, cursor, scrollback, and app-opaque metadata. It SHALL NOT model cli-shell toolbar state, managed/takeover labels, dialogue draft, heartbeat text, unread label, or localized strings such as `托管 off` as terminal-native fields or metadata defaults.
 
 #### Scenario: Composed publication carries generic frame data
 
-- **WHEN** an authorized product publishes a composed terminal frame
+- **WHEN** an authorized app publishes a composed terminal frame
 - **THEN** the control plane stores the frame lines, rich lines, cursor, scrollback, and generic frame metadata needed to reproduce the terminal screen
 - **THEN** it does not require fields named after cli-shell UI state such as `managedLabel`, `dialogueDraft`, `unreadLabel`, or `heartbeatLabel`
 
 #### Scenario: TerminalSystem does not default cli-shell labels
 
-- **WHEN** a composed terminal is created before any product frame has been published
+- **WHEN** a composed terminal is created before any app frame has been published
 - **THEN** TerminalSystem may show a generic placeholder based on terminal id or title
 - **THEN** it does not synthesize cli-shell text such as `托管 off`, toolbar separators, unread counters, or heartbeat messages
 
-#### Scenario: Product chrome is rendered before crossing the TerminalSystem boundary
+#### Scenario: App chrome is rendered before crossing the TerminalSystem boundary
 
 - **WHEN** cli-shell wants terminal-2 to display managed/takeover state, room unread count, heartbeat text, or dialogue draft
-- **THEN** cli-shell renders those product facts into the terminal frame before publication
+- **THEN** cli-shell renders those app facts into the terminal frame before publication
 - **THEN** TerminalSystem treats the result as terminal frame content rather than structured cli-shell state
 
-#### Scenario: Core comments document product opacity
+#### Scenario: Core comments document app opacity
 
 - **WHEN** the composed surface type or publisher is implemented
-- **THEN** a short code comment states that TerminalSystem accepts product-rendered frames and must not learn product chrome semantics
+- **THEN** a short code comment states that TerminalSystem accepts app-rendered frames and must not learn app chrome semantics
 - **THEN** tests prevent reintroducing cli-shell-specific composed-surface fields into terminal-system public types

@@ -51,7 +51,7 @@ Why this over ad hoc test prose:
 Rejected alternative:
 
 - Store scenarios only as freeform prompts in individual test files.
-- Rejected because the prompt then becomes the hidden law, and every later CLI or wording change looks like a product regression even when authority behavior is still correct.
+- Rejected because the prompt then becomes the hidden law, and every later CLI or wording change looks like a app regression even when authority behavior is still correct.
 
 ### 2. Validation prompts are situation briefs, not command recipes
 

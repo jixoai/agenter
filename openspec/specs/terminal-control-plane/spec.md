@@ -71,19 +71,19 @@ Terminal output SHALL remain a shared physical fact, but git-log/diff read progr
 - **THEN** the returned payload may describe the actor's current read cursor
 - **AND** the durable read cursor for that actor is not advanced
 
-### Requirement: Product-bound terminals SHALL request git-backed history
+### Requirement: App-bound terminals SHALL request git-backed history
 
-Product/global terminal creation paths that are intended to participate in runtime attention SHALL create git-log backed terminals by default. This is the durable terminal truth required by the idle unread bridge; product bindings MUST NOT rely on hand-built test profiles to enable terminal history.
+App/global terminal creation paths that are intended to participate in runtime attention SHALL create git-log backed terminals by default. This is the durable terminal truth required by the idle unread bridge; app bindings MUST NOT rely on hand-built test profiles to enable terminal history.
 
-#### Scenario: Product terminal binding requests git-backed history
+#### Scenario: App terminal binding requests git-backed history
 
-- **GIVEN** Shell creates a product global terminal binding
+- **GIVEN** Shell creates a app global terminal binding
 - **WHEN** it asks TerminalSystem to create that terminal
 - **THEN** the terminal creation request includes `gitLog: "normal"`
 
 #### Scenario: Daemon global terminals default to git-backed history
 
-- **GIVEN** a product or admin path creates a global terminal without an explicit `gitLog` profile
+- **GIVEN** a app or admin path creates a global terminal without an explicit `gitLog` profile
 - **WHEN** the daemon AppKernel provisions the shared TerminalControlPlane
 - **THEN** the created terminal still has git-backed history available for read cursor comparison
 

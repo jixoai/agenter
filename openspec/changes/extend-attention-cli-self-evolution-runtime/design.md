@@ -1,8 +1,8 @@
 ## Context
 
-`add-cli-shell-product` intentionally keeps the first attention-cli requirement small: products and assistants need to commit, query, and settle self-evolution attention. That avoids delaying cli-shell on a larger scheduler design.
+`add-cli-shell-app` intentionally keeps the first attention-cli requirement small: products and assistants need to commit, query, and settle self-evolution attention. That avoids delaying cli-shell on a larger scheduler design.
 
-The missing future capability is still important. Users may teach an assistant recurring or delayed habits: nightly reflection, weekly skill review, memory cleanup, or "watch this condition and reconsider later". Those loops should be built from platform attention law, not from hard-coded product features.
+The missing future capability is still important. Users may teach an assistant recurring or delayed habits: nightly reflection, weekly skill review, memory cleanup, or "watch this condition and reconsider later". Those loops should be built from platform attention law, not from hard-coded app features.
 
 ## Goals / Non-Goals
 
@@ -16,7 +16,7 @@ Goals:
 
 Non-goals:
 
-- Do not implement `auto-dream` as a product command or kernel branch.
+- Do not implement `auto-dream` as a app command or kernel branch.
 - Do not use scheduled self-evolution as a bypass for managed mode.
 - Do not replace real AI evaluation with deterministic-only assertions.
 

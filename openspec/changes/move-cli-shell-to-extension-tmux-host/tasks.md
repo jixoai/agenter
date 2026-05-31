@@ -4,14 +4,14 @@
 
 ## 1. OpenSpec
 
-- [x] 1.1 Write proposal, design, and delta specs for extension layout, tmux host, cli-shell product, launcher, product-extension runtime, and TerminalSystem boundary.
+- [x] 1.1 Write proposal, design, and delta specs for extension layout, tmux host, cli-shell app, launcher, app-extension runtime, and TerminalSystem boundary.
 - [x] 1.2 Validate `move-cli-shell-to-extension-tmux-host` with `openspec validate --strict`.
 
 ## 2. Workspace And Launcher
 
-- [x] 2.1 Add `extensions/*` to root workspace configuration.
-- [x] 2.2 Move `agenter-ext-shell` from `packages/cli-shell` to `extensions/cli-shell`.
-- [x] 2.3 Update product command launcher local-first resolution to search product workspace roots without cli-shell-specific branches.
+- [x] 2.1 Add `apps/*` to root workspace configuration.
+- [x] 2.2 Move `agenter-app-shell` from `packages/cli-shell` to `apps/cli-shell`.
+- [x] 2.3 Update app command launcher local-first resolution to search app workspace roots without cli-shell-specific branches.
 - [x] 2.4 Update launcher BDD tests for extension-local cli-shell and package-local Studio fallback.
 
 ## 3. cli-shell Runtime
@@ -33,8 +33,8 @@
 - [x] 5.1 Add BDD tests proving attach bootstrap does not create TerminalSystem terminals.
 - [x] 5.2 Add BDD tests proving attach startup launches a tmux session with shell and room panes.
 - [x] 5.3 Add source boundary tests proving active cli-shell runtime does not import or call composed TerminalSystem publication.
-- [x] 5.4 Update package boundary tests after moving cli-shell to `extensions/cli-shell`.
-- [x] 5.5 Run targeted tests for `@agenter/cli`, `@agenter/product-extension-runtime`, and `agenter-ext-shell`.
+- [x] 5.4 Update package boundary tests after moving cli-shell to `apps/cli-shell`.
+- [x] 5.5 Run targeted tests for `@agenter/cli`, `@agenter/app-runtime`, and `agenter-app-shell`.
 
 ## 6. Build And Delivery
 

@@ -8,7 +8,7 @@
 - Add a simpler-than-Skills MCP workbench for global configs, project enablement, lifecycle controls, capability snapshots, latest errors, action history, and optional tool-call testing.
 - Expose typed client runtime-store MCP facade methods so Studio consumes daemon/client-sdk contracts instead of importing `app-server` or `mcp-system` internals.
 - Preserve existing MCP laws: global add/remove are global-only, project enablement is exact-path, disabled globals are inert, snapshots are project-local, lifecycle controls are project-scoped, and MCP tools do not become provider direct tools.
-- Keep WebUI/Studio and cli-shell independent. This change adds a Studio product surface only; it does not add cli-shell-specific controls or couple MCP UI to cli-shell sessions.
+- Keep WebUI/Studio and cli-shell independent. This change adds a Studio app surface only; it does not add cli-shell-specific controls or couple MCP UI to cli-shell sessions.
 
 ## Capabilities
 
@@ -22,7 +22,7 @@
 
 ## Impact
 
-- Studio UI: `extensions/studio/src/lib/features/mcp/**/*`, `extensions/studio/src/routes/(app)/mcp/**/*`, and `extensions/studio/src/lib/features/shell/app-shell.svelte`.
+- Studio UI: `apps/studio/src/lib/features/mcp/**/*`, `apps/studio/src/routes/(app)/mcp/**/*`, and `apps/studio/src/lib/features/shell/app-shell.svelte`.
 - Client SDK/runtime store: `packages/client-sdk/src/runtime-store.ts` and exported MCP view/input types.
 - App server/trpc: browser-safe MCP routes or descriptor-backed bridge endpoints, implemented without exposing `mcpSystem` internals directly to Studio.
 - Tests: BDD unit/contract tests for runtime-store MCP facade, Studio app-shell navigation, MCP workbench layout, project filter behavior, lifecycle/action controls, and Storybook DOM coverage for the add/edit/remove and project detail interactions.

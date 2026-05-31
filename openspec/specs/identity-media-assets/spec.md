@@ -18,7 +18,7 @@ The system SHALL provide session-specific icon media endpoints that allow client
 
 #### Scenario: Session fallback preserves the canonical Agenter renderer
 - **WHEN** a caller requests a deterministic session fallback for the same `workspacePath + sessionId + label`
-- **THEN** the backend returns the same Agenter-native SVG composition that the product already treats as the canonical session identity artwork
+- **THEN** the backend returns the same Agenter-native SVG composition that the app already treats as the canonical session identity artwork
 - **THEN** raster outputs are derived from that SVG instead of swapping to a different identicon family
 
 ### Requirement: Avatar media SHALL provide backend fallback and override upload

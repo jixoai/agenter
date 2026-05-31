@@ -26,6 +26,6 @@ Original user intent for this change: `core` placement is architecturally risky 
 ## Impact
 
 - New package: `packages/termless-backend-utils`.
-- Affected packages: `packages/termless-core`, `extensions/shell-next`.
+- Affected packages: `packages/termless-core`, `apps/shell-next`.
 - Affected APIs: host input controller imports move from `@agenter/termless-core` to `@agenter/termless-backend-utils`.
 - Verification: BDD tests for utility package composition switches plus shell-next typecheck/test coverage.

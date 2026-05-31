@@ -4,9 +4,9 @@
 
 ## Context
 
-The existing cli-shell code path used TerminalSystem as a product compositor. It created a shell terminal, created a visible `terminal-2`, marked it with `terminalRuntimeKind: "composed"`, and published cli-shell chrome through `publishGlobalTerminalComposedSurface(...)`.
+The existing cli-shell code path used TerminalSystem as a app compositor. It created a shell terminal, created a visible `terminal-2`, marked it with `terminalRuntimeKind: "composed"`, and published cli-shell chrome through `publishGlobalTerminalComposedSurface(...)`.
 
-That implementation is now rejected. The important architectural fact is not that terminal composition is impossible; it is that cli-shell is the wrong owner for TerminalSystem laws. TerminalSystem should expose terminal primitives. cli-shell should compose its own product experience as an extension.
+That implementation is now rejected. The important architectural fact is not that terminal composition is impossible; it is that cli-shell is the wrong owner for TerminalSystem laws. TerminalSystem should expose terminal primitives. cli-shell should compose its own app experience as an extension.
 
 ## Architecture Decision
 
@@ -14,14 +14,14 @@ That implementation is now rejected. The important architectural fact is not tha
 
 Chosen.
 
-cli-shell becomes an extension-local terminal product:
+cli-shell becomes an extension-local terminal app:
 
-- `extensions/cli-shell` owns cli-shell grammar, UI, tmux process topology, room pane, cleanup, and distribution scripts.
-- tmux is the host/compositor for the cli-shell terminal product.
-- MessageRoom remains a generic backend resource created through product-extension APIs.
-- AvatarRuntime remains Avatar-scoped and is started through generic product-extension APIs.
-- TerminalSystem is not used to create cli-shell's visible terminal, internal pane, or composed product surface.
-- Core CLI only launches a descriptor-defined product package and passes daemon/auth context.
+- `apps/cli-shell` owns cli-shell grammar, UI, tmux process topology, room pane, cleanup, and distribution scripts.
+- tmux is the host/compositor for the cli-shell terminal app.
+- MessageRoom remains a generic backend resource created through app-extension APIs.
+- AvatarRuntime remains Avatar-scoped and is started through generic app-extension APIs.
+- TerminalSystem is not used to create cli-shell's visible terminal, internal pane, or composed app surface.
+- Core CLI only launches a descriptor-defined app package and passes daemon/auth context.
 
 In plain terms: cli-shell may use Agenter backend systems for room/avatar/attention, but the terminal window that the user sees is tmux's business, not TerminalSystem's business.
 
@@ -29,16 +29,16 @@ In plain terms: cli-shell may use Agenter backend systems for room/avatar/attent
 
 Rejected.
 
-Keeping terminal-2 would preserve the wrong product physics: cli-shell would keep requiring TerminalSystem to understand a cli-shell-specific final product terminal role. That creates exactly the kind of core/product coupling this platform is meant to avoid.
+Keeping terminal-2 would preserve the wrong app physics: cli-shell would keep requiring TerminalSystem to understand a cli-shell-specific final app terminal role. That creates exactly the kind of core/app coupling this platform is meant to avoid.
 
-## Product Topology
+## App Topology
 
 For `agenter shell --session=5 --avatar=bangeel`:
 
-1. Core CLI resolves product command `shell` to `agenter-ext-shell`.
-2. Local-first launcher searches `extensions/cli-shell` before installed/remote packages.
+1. Core CLI resolves app command `shell` to `agenter-app-shell`.
+2. Local-first launcher searches `apps/cli-shell` before installed/remote packages.
 3. cli-shell bootstraps the selected AvatarRuntime and MessageRoom through generic APIs.
-4. cli-shell starts or attaches a tmux session named from the product session key.
+4. cli-shell starts or attaches a tmux session named from the app session key.
 5. tmux pane 0 runs the user's shell in the requested workspace.
 6. tmux pane 1 runs `agenter-cli-shell room --session=5 --avatar=bangeel`.
 7. The foreground process attaches the user to that tmux session.
@@ -49,12 +49,12 @@ The room pane is allowed to talk to MessageRoom. The shell pane is ordinary tmux
 
 The platform law added here is small:
 
-- Workspace products may live under `extensions/*`.
-- Product command resolution may discover extension packages by package descriptor, not by hard-coded product implementation imports.
-- Product packages may use generic backend APIs.
-- Product packages may not make core TerminalSystem data structures carry product-specific terminal roles.
+- Workspace products may live under `apps/*`.
+- App command resolution may discover extension packages by package descriptor, not by hard-coded app implementation imports.
+- App packages may use generic backend APIs.
+- App packages may not make core TerminalSystem data structures carry app-specific terminal roles.
 
-cli-shell-specific law stays in `extensions/cli-shell`.
+cli-shell-specific law stays in `apps/cli-shell`.
 
 ## Tmux Runtime Contract
 
@@ -86,7 +86,7 @@ The extension package owns executable builds:
 - `build:binary:windows-amd64`
 - `build:binary`
 
-The compiled artifact is the cli-shell product binary. Runtime success still depends on a local tmux executable.
+The compiled artifact is the cli-shell app binary. Runtime success still depends on a local tmux executable.
 
 ## Residue Strategy
 

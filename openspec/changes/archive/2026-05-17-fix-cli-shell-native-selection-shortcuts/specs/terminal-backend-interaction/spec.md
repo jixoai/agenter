@@ -2,7 +2,7 @@
 
 ### Requirement: Backend interaction SHALL accept keyboard-driven selection ranges
 
-Backend interaction owners SHALL accept selection ranges produced by keyboard editing gestures such as Option+Shift+Left and Option+Shift+Right when the product enables those gestures.
+Backend interaction owners SHALL accept selection ranges produced by keyboard editing gestures such as Option+Shift+Left and Option+Shift+Right when the app enables those gestures.
 
 #### Scenario: Keyboard range selection remains backend-owned
 - **WHEN** a projection host turns a keyboard selection gesture into a `selectRange` event

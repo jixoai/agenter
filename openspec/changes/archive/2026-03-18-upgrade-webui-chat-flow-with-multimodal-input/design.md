@@ -2,7 +2,7 @@
 
 The current WebUI already has the raw ingredients for Chat, Workspaces, Sessions, Devtools, and settings, but those flows are still assembled in a way that leaks implementation detail into the main application shell. `App.tsx` remains a high-pressure coordination point, the chat composer is still textarea-shaped, and there is no durable path for images to move from the browser into a session, back out to the UI, and onward to a multimodal model.
 
-This change spans multiple packages and contracts: WebUI composition, client-side runtime state, app-server routes, session persistence, and model input shaping. It also has product-level constraints: Quick Start must be a first-class entry, Chat and Workspaces must feel like an application rather than a page, and image input must only appear when the resolved provider can actually consume it.
+This change spans multiple packages and contracts: WebUI composition, client-side runtime state, app-server routes, session persistence, and model input shaping. It also has app-level constraints: Quick Start must be a first-class entry, Chat and Workspaces must feel like an application rather than a page, and image input must only appear when the resolved provider can actually consume it.
 
 ## Goals / Non-Goals
 
@@ -27,7 +27,7 @@ We will implement `AIInput` directly on top of CodeMirror instead of preserving 
 
 **Alternatives considered:**
 - Keep textarea and add popovers/drag handlers around it: rejected because the interaction model becomes brittle and duplicates editor state management.
-- Support both textarea and CodeMirror variants: rejected because it creates two behaviors for the same product surface.
+- Support both textarea and CodeMirror variants: rejected because it creates two behaviors for the same app surface.
 
 ### 2. Split image transport from tRPC and keep images session-scoped
 Image bytes will travel through dedicated HTTP upload/media routes, while tRPC continues to carry typed metadata and chat commands. Uploaded files will live under the target `sessionRoot`, and persistence metadata will live in `@agenter/session-system`.

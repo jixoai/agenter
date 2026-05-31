@@ -370,7 +370,7 @@ const seedPeople = (
       sourceId: "remote-lab",
       remoteContactId: "auth:mira",
       label: "Mira",
-      subtitle: "Remote lab product reviewer",
+      subtitle: "Remote lab app reviewer",
       iconUrl: buildAvatarDataUrl("Mira remote"),
       metadata: {
         role: "reviewer",
@@ -417,7 +417,7 @@ const seedPeople = (
       sourceId: "remote-lab",
       remoteContactId: "auth:mira",
       remoteLabel: "Mira",
-      remoteSubtitle: "remote-lab · product reviewer",
+      remoteSubtitle: "remote-lab · app reviewer",
       remoteIconUrl: buildAvatarDataUrl("Mira"),
       message: "Requesting access to the mobile review room.",
       callbackSourceId: "local-review",

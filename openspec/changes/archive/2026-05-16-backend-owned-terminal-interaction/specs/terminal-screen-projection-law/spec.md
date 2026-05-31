@@ -16,7 +16,7 @@ Host keyboard, mouse, wheel, drag, resize, and copy events SHALL route through t
 
 #### Scenario: Final visible result returns through terminal-2
 - **WHEN** an owning backend updates state after a routed event
-- **THEN** terminal-2 SHALL compose and publish the next final product screen
+- **THEN** terminal-2 SHALL compose and publish the next final app screen
 - **AND** native and Web hosts SHALL observe the result from terminal-2 rather than applying independent host-local paint fixes
 
 #### Scenario: Projection does not retain selected text as owner truth
@@ -43,7 +43,7 @@ The offscreen frame projection component SHALL route terminal-like semantic sele
 #### Scenario: Semantic selection uses backend copy path
 - **WHEN** a word or row is selected by double-click or triple-click
 - **THEN** copy extraction SHALL return text through the same backend-selected-text path as drag selection
-- **AND** product code SHALL NOT implement a separate copy algorithm for semantic selections
+- **AND** app code SHALL NOT implement a separate copy algorithm for semantic selections
 
 #### Scenario: Click drift resets semantic gesture cluster
 - **WHEN** repeated clicks differ by more than one terminal cell in x or cross to another backend row
@@ -87,5 +87,5 @@ When word-navigation enhancement is enabled, Option+Left and Option+Right SHALL 
 
 #### Scenario: Option Up and Option Down stay backend native
 - **WHEN** the user presses Option+Up or Option+Down
-- **THEN** cli-shell SHALL NOT invent product-specific word navigation semantics
+- **THEN** cli-shell SHALL NOT invent app-specific word navigation semantics
 - **AND** it SHALL pass through backend/native terminal input when a native sequence is available

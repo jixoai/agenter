@@ -49,7 +49,7 @@ Transcript rows SHALL not stack a second custom message bubble inside the Framew
 
 ### Requirement: Shared chat surfaces SHALL follow Framework7 mobile density
 
-Composer and comment-detail surfaces SHALL read as the same Framework7/iOS product family as the example shell.
+Composer and comment-detail surfaces SHALL read as the same Framework7/iOS app family as the example shell.
 
 #### Scenario: Composer remains a compact messagebar-style surface
 
@@ -88,7 +88,7 @@ This slice SHALL treat real route-level screenshots as the primary acceptance ar
 - **AND** the screenshot flow does not silently create a second nested package-local screenshot subtree
 
 ### Requirement: Visual law SHALL cover the multi-tab people shell
-The Framework7 visual acceptance contract SHALL cover the mobile-first people-aware chat product shell. Visual evidence SHALL cover Messages, Contacts, Me, contact detail, source management, source detail, and room chat states.
+The Framework7 visual acceptance contract SHALL cover the mobile-first people-aware chat app shell. Visual evidence SHALL cover Messages, Contacts, Me, contact detail, source management, source detail, and room chat states.
 
 #### Scenario: Mobile visual proof covers all primary destinations
 - **WHEN** the operator claims the redesigned shell is visually aligned
@@ -107,7 +107,7 @@ The Framework7 visual acceptance contract SHALL cover the mobile-first people-aw
 - **THEN** they show adaptation of the same Messages / Contacts / Me model
 - **THEN** they do not revive a separate card-heavy desktop dashboard for source or contact management
 
-#### Scenario: Formal-product density is visible on root destinations
+#### Scenario: Formal-app density is visible on root destinations
 - **WHEN** the operator reviews fresh screenshots for root destinations
-- **THEN** search, grouped lists, section spacing, and summary rhythm read like a production chat product
+- **THEN** search, grouped lists, section spacing, and summary rhythm read like a production chat app
 - **THEN** the visual hierarchy no longer reads like a prototype shell with excessive empty space or duplicated explanatory copy

@@ -1,6 +1,6 @@
 ## Why
 
-The current attention tooling leaks internal attention replies into the Chat surface and still uses weak heuristics to deduplicate optimistic user messages. That violates the product contract that Chat is a user-facing surface, not a dump of internal attention-system activity.
+The current attention tooling leaks internal attention replies into the Chat surface and still uses weak heuristics to deduplicate optimistic user messages. That violates the app contract that Chat is a user-facing surface, not a dump of internal attention-system activity.
 
 ## What Changes
 

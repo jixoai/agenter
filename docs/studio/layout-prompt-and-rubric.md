@@ -87,7 +87,7 @@ change: compact-chat-density-and-layout-rubric
 viewport: mobile-iphone-se
 story: CompactConversationKeepsNavigationAndComposerStable
 screenshots:
-  - path: extensions/studio/test/storybook/__screenshots__/chat-panel-compact.png
+  - path: apps/studio/test/storybook/__screenshots__/chat-panel-compact.png
 metrics:
   asyncSurface:
     state: ready-loading

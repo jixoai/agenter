@@ -59,7 +59,7 @@
 - Review B input: the first failing red test now stops at `message-system instance identity contract missing getSystemIdentity()`. This is the correct first missing law: without explicit `systemId`, the later requirements for multi-system provenance and room `superKey` authority have no stable anchor.
 - Review B alignment: the user accepted the BDD direction with one required correction: message-system must say it serves multiple **Contacts**, not multiple contacts. Contact is the canonical message-system term shared with contact management.
 - Review B alignment: this is a breaking update. Do not preserve old `contact_*` public API/table vocabulary as compatibility glue.
-- Review B input: the BDD suite intentionally covers four product-law claims before broad implementation: default singleton `systemId = superadmin address`, shared room-management backend with multiple `systemId`s, one system serving multiple Contacts, and `superKey` read/manage without send membership.
+- Review B input: the BDD suite intentionally covers four app-law claims before broad implementation: default singleton `systemId = superadmin address`, shared room-management backend with multiple `systemId`s, one system serving multiple Contacts, and `superKey` read/manage without send membership.
 
 ## Multi-Turn Self Review
 

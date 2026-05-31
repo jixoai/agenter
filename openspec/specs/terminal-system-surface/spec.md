@@ -3,7 +3,7 @@
 ## Purpose
 Define the durable WebUI contract for the standalone terminal-system route, including its shared split-detail shell, route-owned toolbar, actor-bearing tool composers, and live action-management surfaces.
 ## Requirements
-### Requirement: Terminal-system SHALL present global terminals as a standalone product surface
+### Requirement: Terminal-system SHALL present global terminals as a standalone app surface
 The WebUI SHALL expose a dedicated terminal-system route that lists live global terminals, renders the selected live terminal transcript, and provides lifecycle-aware actions without reconstructing terminal identity from stale catalog fields. Dead terminals SHALL be managed through explicit history/archive surfaces instead of remaining selectable in the main live route.
 
 #### Scenario: Global terminal navigation
@@ -335,7 +335,7 @@ The integrated terminal window SHALL size fit/cover projection from renderer-mea
 - **AND** cover mode does not invent extra spacing between `terminal-content` and `terminal-window`
 
 ### Requirement: Terminal-system SHALL expose explicit history management separate from the live workbench
-The WebUI terminal-system product SHALL separate live terminal work from dead terminal history management. Killed terminals SHALL leave the main live workbench and remain accessible only through explicit history or archive surfaces.
+The WebUI terminal-system app SHALL separate live terminal work from dead terminal history management. Killed terminals SHALL leave the main live workbench and remain accessible only through explicit history or archive surfaces.
 
 #### Scenario: Killed terminal leaves the live workbench list
 - **WHEN** the selected live terminal is killed

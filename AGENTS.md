@@ -40,7 +40,7 @@
   - 组件真实交互：走 Storybook DOM；
   - 跨页面/跨进程链路：走 Playwright E2E。
 - **实现方式**：优先在 story 的 `play` 中描述用户行为与断言，再在 `test/storybook/*` 中以 `Story.run()` 复用。
-- **回归入口**：Studio 至少维护 `bun run --filter 'agenter-ext-studio' test:dom` 作为高价值 DOM 回归入口。
+- **回归入口**：Studio 至少维护 `bun run --filter 'agenter-app-studio' test:dom` 作为高价值 DOM 回归入口。
 - **串行执行纪律**：`Vitest browser`、`storybook dev`、`storybook:build` 不能并行运行；需要串行执行，避免浏览器会话与 Vite 端口资源冲突。
 
 ## 3.2) Storybook DOM 技能手册（上下文清空后直接照做）
@@ -53,22 +53,22 @@
 
 ### 3.2.2 当前仓库约定
 
-- Storybook 配置目录：`extensions/studio/.storybook/`
-- Storybook 主配置：`extensions/studio/.storybook/main.ts`
-- Storybook 全局预览：`extensions/studio/.storybook/preview.tsx`
-- Storybook + Vitest 初始化：`extensions/studio/.storybook/vitest.setup.ts`
-- Vitest 配置：`extensions/studio/vitest.config.ts`
+- Storybook 配置目录：`apps/studio/.storybook/`
+- Storybook 主配置：`apps/studio/.storybook/main.ts`
+- Storybook 全局预览：`apps/studio/.storybook/preview.tsx`
+- Storybook + Vitest 初始化：`apps/studio/.storybook/vitest.setup.ts`
+- Vitest 配置：`apps/studio/vitest.config.ts`
 - stories 位置：优先与组件同目录，命名为 `*.stories.tsx`
-- Story 驱动的 DOM 测试位置：`extensions/studio/test/storybook/*.test.tsx`
+- Story 驱动的 DOM 测试位置：`apps/studio/test/storybook/*.test.tsx`
 
 ### 3.2.3 命令
 
 ```bash
-bun run --filter 'agenter-ext-studio' storybook
-bun run --filter 'agenter-ext-studio' storybook:build
-bun run --filter 'agenter-ext-studio' test:unit
-bun run --filter 'agenter-ext-studio' test:dom
-bun run --filter 'agenter-ext-studio' test
+bun run --filter 'agenter-app-studio' storybook
+bun run --filter 'agenter-app-studio' storybook:build
+bun run --filter 'agenter-app-studio' test:unit
+bun run --filter 'agenter-app-studio' test:dom
+bun run --filter 'agenter-app-studio' test
 ```
 
 - `test:unit`：保留 jsdom/unit 层，适合纯逻辑与轻交互。
@@ -143,7 +143,7 @@ describe("Feature: Storybook DOM contract for AI input", () => {
 
 - **桌面端 + 移动端都是强制验收项**：Studio 走查、Playwright E2E、关键 shell/layout 回归，默认都必须同时覆盖 desktop 和 mobile，不能只看桌面端。
 - **移动端默认基线**：统一使用 `iPhone 14` 作为默认移动端环境；本项目当前的强制移动 viewport 基线就是 `390px` 宽。
-- **Playwright 默认双 project**：`extensions/studio` 的 E2E 默认必须跑 `desktop-chromium` + `mobile-iphone14`；单 project 只允许本地调试，不算最终验收。
+- **Playwright 默认双 project**：`apps/studio` 的 E2E 默认必须跑 `desktop-chromium` + `mobile-iphone14`；单 project 只允许本地调试，不算最终验收。
 - **验收按能力，不按 DOM 同构**：桌面与移动可以有不同导航结构（如 sidebar vs sheet / tabs vs bottom nav），但关键能力与主路径必须双端都可达、可操作、可观察。
 - **高风险面板补 compact stories**：Quick Start、Workspace shell、Chat、Devtools、Settings 这类在移动端会折叠、重排或切换导航方式的界面，默认需要至少一个 compact Storybook DOM contract。
 

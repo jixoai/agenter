@@ -16,7 +16,7 @@ finish the OpenSpec lifecycle for the workspace-first runtime tool surface after
   - all checklist items are marked `- [x]`
 - delta spec assessment
   - corresponding main specs already contain the workspace-first law in their durable expanded form
-  - no additional product-code changes were needed before archive
+  - no additional app-code changes were needed before archive
 
 ## Archive Target
 

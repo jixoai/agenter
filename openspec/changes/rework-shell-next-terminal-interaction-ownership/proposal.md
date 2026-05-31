@@ -12,7 +12,7 @@ The user restated the target law in plain terms:
 2. OpenCompose and pane composition stay generic;
 3. `cliRenderer` panes may opt into a `useMouseSelectionBehavior(cliRenderer)`-style extension, but custom-render panes must not inherit double/triple-click selection semantics by default.
 
-This change exists to turn that architecture boundary into explicit product law before more local fixes pile up on top of the wrong layer.
+This change exists to turn that architecture boundary into explicit app law before more local fixes pile up on top of the wrong layer.
 
 ## What Changes
 
@@ -20,7 +20,7 @@ This change exists to turn that architecture boundary into explicit product law 
 - Remove remaining durable selection/semantic selection ownership from Shell/OpenCompose view code; that layer becomes a raw event adapter plus visual projector only.
 - Define renderer-pane mouse selection semantics as an explicit opt-in plugin contract instead of a default pane/runtime law.
 - Add BDD scenarios that reproduce the current Shell selection drift and prove the new ownership boundary.
-- Keep `extensions/cli-shell` read-only and use `legacy/terminal2` only as behavior reference material.
+- Keep `apps/cli-shell` read-only and use `legacy/terminal2` only as behavior reference material.
 - Record multi-round self-review directly against the user's original wording so implementation does not drift back into app-layer patches.
 
 ## Capabilities
@@ -35,8 +35,8 @@ This change exists to turn that architecture boundary into explicit product law 
 
 ## Impact
 
-- Affects `packages/termless-core` terminal host-input law, `extensions/shell-next` terminal projection, live terminal source/mirror, renderer-pane integration points, and tests.
+- Affects `packages/termless-core` terminal host-input law, `apps/shell-next` terminal projection, live terminal source/mirror, renderer-pane integration points, and tests.
 - Adds OpenSpec artifacts under `openspec/changes/rework-shell-next-terminal-interaction-ownership`.
-- Does not modify `extensions/cli-shell`.
+- Does not modify `apps/cli-shell`.
 - Does not promote terminal behavior into OpenCompose or a published `opencompose` package.
 - Does not change stable `agenter shell`; work remains behind `agenter shell2`.

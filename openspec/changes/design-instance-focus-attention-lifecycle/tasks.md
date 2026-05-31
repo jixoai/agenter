@@ -1,29 +1,29 @@
 ## 1. Alignment / Investigation
 
-- [x] 1.1 Confirm `plans/plan.md` captures the final boundary: kernel exposes lifecycle APIs/laws, shell-next owns terminal-room binding and reaction code, and no Product runtime reaction host is introduced.
+- [x] 1.1 Confirm `plans/plan.md` captures the final boundary: kernel exposes lifecycle APIs/laws, shell-next owns terminal-room binding and reaction code, and no App runtime reaction host is introduced.
 - [x] 1.2 Confirm no destructive data migration or state reset is approved or required for this iteration.
-- [x] 1.3 Inspect current terminal lifecycle, room archive, attention focus, source ref, and shell-next product runtime code before implementation.
+- [x] 1.3 Inspect current terminal lifecycle, room archive, attention focus, source ref, and shell-next app runtime code before implementation.
 
 ## 2. BDD Contract
 
 - [x] 2.1 Add a kernel behavior test: Given a room-backed attention context is active When the room is archived Then the room attention context becomes `muted` without rewriting the Avatar-authored summary.
-- [x] 2.2 Add a shell-next product behavior test: Given shell-next has a bound terminal and room When the bound terminal reaches killed lifecycle Then shell-next archives only the bound room through public APIs.
+- [x] 2.2 Add a shell-next app behavior test: Given shell-next has a bound terminal and room When the bound terminal reaches killed lifecycle Then shell-next archives only the bound room through public APIs.
 - [x] 2.3 Add a negative shell-next behavior test: Given shell-next has terminal `A` bound to room `R` When unrelated terminal `B` is killed Then room `R` is not archived.
 - [x] 2.4 Add source/ref parser tests for `room:<roomId>`, `room:<roomId>#<entryId>`, and `msg:<superadminAddress>/<contact>` so room entries remain room-fragment refs and message refs remain contact locators.
 - [x] 2.5 Confirm task checkboxes are only checked after the current agent has implemented and verified the matching behavior in this working context.
 
 ## 3. Implementation
 
-- [x] 3.1 Run `bun run openspec:vision -- commit-check design-instance-focus-attention-lifecycle --phase apply` before product-code work starts and record any limitations caused by unrelated dirty worktree files.
+- [x] 3.1 Run `bun run openspec:vision -- commit-check design-instance-focus-attention-lifecycle --phase apply` before app-code work starts and record any limitations caused by unrelated dirty worktree files.
 - [x] 3.2 Implement the room archive -> attentionContext muted kernel law at the runtime/message adapter boundary.
 - [x] 3.3 Implement source/ref parsing and formatting updates for room refs and message contact refs without adding hard-coded shared-kernel source switches.
-- [x] 3.4 Implement shell-next terminal killed -> archive bound room in shell-next product code using public lifecycle/API contracts, with no core import of shell-next and no shell-next import of core internals.
+- [x] 3.4 Implement shell-next terminal killed -> archive bound room in shell-next app code using public lifecycle/API contracts, with no core import of shell-next and no shell-next import of core internals.
 - [x] 3.5 Add concise intent comments at critical effect points where lifecycle facts cause focus/archive consequences.
 - [x] 3.6 Update only current-context completed task checkboxes and keep implementation changes scoped away from unrelated `fix-web-chat-view-message-comment-polish` worktree changes.
 
 ## 4. Verification
 
-- [x] 4.1 Run targeted unit/integration tests for attention context state, source ref registry, and shell-next product lifecycle reaction.
+- [x] 4.1 Run targeted unit/integration tests for attention context state, source ref registry, and shell-next app lifecycle reaction.
 - [x] 4.2 Run `bun run openspec:vision -- validate design-instance-focus-attention-lifecycle`.
 - [x] 4.3 Run `bun run openspec:vision -- status design-instance-focus-attention-lifecycle` and confirm specs + tasks are visible to the workflow.
 - [x] 4.4 Run `bun run openspec:vision -- commit-check design-instance-focus-attention-lifecycle --phase self-review` before writing final review evidence.

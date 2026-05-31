@@ -1,7 +1,7 @@
 {
   "id": "light-jade-ice",
   "label": "Light jade ice",
-  "description": "Low-drama palette for documentation and product surfaces.",
+  "description": "Low-drama palette for documentation and app surfaces.",
   "theme": "light",
   "family": "brand",
   "backgroundToken": "light-mist",

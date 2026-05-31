@@ -1,6 +1,6 @@
 ## MODIFIED Requirements
 
-### Requirement: Message-system SHALL present rooms as a standalone product surface
+### Requirement: Message-system SHALL present rooms as a standalone app surface
 
 The WebUI SHALL expose a dedicated message-system route that lists global rooms, renders one selected room transcript through the shared chat surface, and keeps the room transcript/composer workflow as the primary operator task. The route shell and room-management dialogs SHALL use the shared scaffold-family primitives so the transcript, management rail, and dialog detail stage no longer repeat their own stretch-layout contracts. The selected room view SHALL support explicit viewer selection, while room membership, metadata, and access administration move into a dedicated management surface instead of a permanently expanded inline rail.
 

@@ -2,7 +2,7 @@
 
 The current repository already codified one durable idea: stateful `main + right detail` pages should use the shared split-detail law, while simple static shells should use a lighter scaffold family. The implementation never fully caught up. `WorkbenchSplitDetail` owns ratio math and compact detection, but desktop detail visibility still has no shared contract, so routes either cannot hide desktop detail at all or they fake visibility with page-local state that only works in compact mode. In parallel, `SplitView` still names a “generic split shell” even though only the `sidebar-content` variant is actually used, which keeps static sidebar pages and stateful detail pages conceptually blurred.
 
-This change is cross-cutting: it affects `@agenter/svelte-components`, the shared WebUI navigation host, multiple product routes, durable docs, and the regression strategy. It also has a breaking API surface because `SplitView` will be removed once migration is complete.
+This change is cross-cutting: it affects `@agenter/svelte-components`, the shared WebUI navigation host, multiple app routes, durable docs, and the regression strategy. It also has a breaking API surface because `SplitView` will be removed once migration is complete.
 
 ## Goals / Non-Goals
 
@@ -59,7 +59,7 @@ Alternative considered:
 ### 5. Final cleanup includes tests and docs, not just code migration
 
 This change is not complete if only runtime code migrates. Final cleanup requires:
-- no `SplitView` export or product usage
+- no `SplitView` export or app usage
 - no `SplitView` references in shared docs/specs except historical archived changes
 - contract tests proving `SidebarScaffold` is the static shell law
 - split-detail host tests covering desktop and compact visibility transitions

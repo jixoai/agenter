@@ -6,7 +6,7 @@
 
 ### Requirement: The system SHALL provide `web-terminal-view` and `shell-terminal-view` as one component family over the same termless substrate
 
-The system SHALL provide `web-terminal-view` for Web hosts and `shell-terminal-view` for native terminal hosts. Both roles SHALL sit on the same termless substrate: canonical backend screen truth is shared, while protocol-2 style product-surface decoding/rendering for native hosts consumes backend-authored composition truth built on top of that substrate. Raw terminal bytes may still exist at boundary adapters, but they are not the reusable component family's only shared synchronization law. `web-terminal-view` SHALL NOT be treated as debugging-only, and `shell-terminal-view` SHALL NOT be used as the product name.
+The system SHALL provide `web-terminal-view` for Web hosts and `shell-terminal-view` for native terminal hosts. Both roles SHALL sit on the same termless substrate: canonical backend screen truth is shared, while protocol-2 style app-surface decoding/rendering for native hosts consumes backend-authored composition truth built on top of that substrate. Raw terminal bytes may still exist at boundary adapters, but they are not the reusable component family's only shared synchronization law. `web-terminal-view` SHALL NOT be treated as debugging-only, and `shell-terminal-view` SHALL NOT be used as the app name.
 
 #### Scenario: Web host embeds `web-terminal-view`
 - **WHEN** a Web host instantiates `web-terminal-view` with a valid terminal projection target
@@ -14,17 +14,17 @@ The system SHALL provide `web-terminal-view` for Web hosts and `shell-terminal-v
 - **AND** the host does not need cli-shell-specific internals just to consume the component
 
 #### Scenario: Native host embeds `shell-terminal-view`
-- **WHEN** a native terminal product such as `cli-shell` instantiates `shell-terminal-view`
+- **WHEN** a native terminal app such as `cli-shell` instantiates `shell-terminal-view`
 - **THEN** the component renders the same backend terminal truth back into the native terminal host
-- **AND** the component contract remains reusable outside that single product
+- **AND** the component contract remains reusable outside that single app
 
 #### Scenario: Native decoder stays derived from the shared substrate
-- **WHEN** a native terminal product such as `cli-shell` instantiates `shell-terminal-view`
+- **WHEN** a native terminal app such as `cli-shell` instantiates `shell-terminal-view`
 - **THEN** it decodes and renders backend-authored terminal truth on top of the shared canonical terminal substrate
-- **AND** it does not redefine a second independent transport contract or a second host-local product-surface truth
+- **AND** it does not redefine a second independent transport contract or a second host-local app-surface truth
 
 #### Scenario: Future Web products reuse the same Web component family
-- **WHEN** a future product such as `agenter shell --web` wants to embed the shared terminal projection
+- **WHEN** a future app such as `agenter shell --web` wants to embed the shared terminal projection
 - **THEN** it can consume `web-terminal-view`
 - **AND** the component is not blocked by a "debug-only" classification
 

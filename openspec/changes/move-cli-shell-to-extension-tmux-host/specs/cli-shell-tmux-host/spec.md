@@ -2,12 +2,12 @@
 
 ### Requirement: cli-shell SHALL host terminal composition through tmux
 
-cli-shell SHALL use tmux as its extension-local host and compositor. The tmux host SHALL create or attach one tmux session per cli-shell product session key, with one shell pane for user terminal work and one room pane for MessageRoom interaction.
+cli-shell SHALL use tmux as its extension-local host and compositor. The tmux host SHALL create or attach one tmux session per cli-shell app session key, with one shell pane for user terminal work and one room pane for MessageRoom interaction.
 
 #### Scenario: Attach starts a tmux session with shell and room panes
 
 - **WHEN** a user runs `agenter shell --session=5 --avatar=bangeel`
-- **THEN** cli-shell plans a tmux session for product session `shell-5`
+- **THEN** cli-shell plans a tmux session for app session `shell-5`
 - **AND** pane 0 runs the user's shell in the current workspace
 - **AND** pane 1 runs `agenter-cli-shell room --session=5 --avatar=bangeel`
 - **AND** the foreground process attaches to that tmux session

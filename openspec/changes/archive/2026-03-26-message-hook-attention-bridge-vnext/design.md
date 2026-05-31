@@ -13,7 +13,7 @@ Only one external system currently needs automatic extraction from attention com
 **Non-Goals**
 - Add more hook-specific metadata that increases AI burden.
 - Infer hidden transactional rollback semantics on hook failure.
-- Rebuild the full chat-channel product surface.
+- Rebuild the full chat-channel app surface.
 
 ## Decisions
 

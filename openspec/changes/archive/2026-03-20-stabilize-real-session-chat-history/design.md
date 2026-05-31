@@ -1,6 +1,6 @@
 ## Context
 
-The conversation-first Chat restoration fixed the main product direction, but the most recent regression showed that real session behavior can still drift away from mocked and short-history behavior. The risk is concentrated in the cross-package path from app-server chat persistence, to client-sdk hydration and selector publication, to WebUI viewport ownership and virtualization. The next change needs to validate and harden that full path against long persisted histories, prepended pagination, optimistic rows, streamed replies, attachment-bearing turns, and notification consumption on both desktop and mobile.
+The conversation-first Chat restoration fixed the main app direction, but the most recent regression showed that real session behavior can still drift away from mocked and short-history behavior. The risk is concentrated in the cross-package path from app-server chat persistence, to client-sdk hydration and selector publication, to WebUI viewport ownership and virtualization. The next change needs to validate and harden that full path against long persisted histories, prepended pagination, optimistic rows, streamed replies, attachment-bearing turns, and notification consumption on both desktop and mobile.
 
 ## Goals / Non-Goals
 
@@ -14,7 +14,7 @@ The conversation-first Chat restoration fixed the main product direction, but th
 **Non-Goals:**
 - Redesigning the Chat surface again or reintroducing cycle-oriented Chat chrome.
 - Changing the durable session schema or notification semantics beyond viewport-consumption correctness.
-- Adding new product features unrelated to Chat history stability.
+- Adding new app features unrelated to Chat history stability.
 
 ## Decisions
 

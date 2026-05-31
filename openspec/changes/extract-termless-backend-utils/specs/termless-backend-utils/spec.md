@@ -14,14 +14,14 @@
 #### Scenario: Complete backend can opt out
 
 - **GIVEN** a future backend already owns keyboard, pointer, selection, and clipboard behavior
-- **WHEN** a product consumes that backend
-- **THEN** the product can avoid `@agenter/termless-backend-utils`
+- **WHEN** a app consumes that backend
+- **THEN** the app can avoid `@agenter/termless-backend-utils`
 - **AND** no `core` behavior forces a second input policy to run
 
 #### Scenario: Partial backend can reuse selected utilities
 
 - **GIVEN** a backend owns normal key handling but not semantic pointer selection
-- **WHEN** a product composes terminal behavior
+- **WHEN** a app composes terminal behavior
 - **THEN** it can disable keyboard utilities and enable pointer semantic selection only
 - **AND** disabled utilities do not mutate backend state
 

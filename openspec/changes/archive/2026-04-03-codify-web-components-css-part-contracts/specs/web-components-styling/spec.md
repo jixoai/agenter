@@ -2,9 +2,9 @@
 
 ### Requirement: Lit web-components SHALL expose stable styling slots through css-part
 
-Framework-agnostic Lit atoms in `@agenter/web-components` SHALL expose stable visual slots through `css-part` whenever their visible surfaces need downstream theming. Product clients such as the Svelte WebUI MAY style those slots through `::part(...)` or Tailwind part selectors, but they MUST NOT depend on shadow-private class names.
+Framework-agnostic Lit atoms in `@agenter/web-components` SHALL expose stable visual slots through `css-part` whenever their visible surfaces need downstream theming. App clients such as the Svelte WebUI MAY style those slots through `::part(...)` or Tailwind part selectors, but they MUST NOT depend on shadow-private class names.
 
-#### Scenario: Product skin styles a Lit atom without shadow-private selectors
+#### Scenario: App skin styles a Lit atom without shadow-private selectors
 - **WHEN** a client needs to theme a Lit atom implemented in `@agenter/web-components`
 - **THEN** the client styles stable `::part(...)` selectors instead of internal class names
 - **THEN** the atom remains reusable across multiple clients without duplicating implementation

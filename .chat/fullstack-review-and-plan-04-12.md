@@ -303,7 +303,7 @@ Workspaces 现在不再只是一个目录下拉，而是明确的 global workben
 - `packages/app-server/src/session-notifications.ts` 当前 `SessionNotificationItem` 结构里还没有 quick-action metadata
 - `packages/webui/src/lib/features/runtime/runtime-stage-attention.svelte` 当前动作是通用按钮集
 
-所以这里属于“架构方向已定，但 product payload 还没补完”。
+所以这里属于“架构方向已定，但 app payload 还没补完”。
 
 ### 5.3 Workspace 前端还偏 root-centric，不是完整 mount/detach control plane
 
@@ -326,7 +326,7 @@ Workspaces 现在不再只是一个目录下拉，而是明确的 global workben
 - 搜索结果里没有对应的 workspace detach/unmount UI surface
 - backend/kernel 已经有 mount/grant facts，但前端没有等价的 mount lifecycle 操作面
 
-这部分是下一阶段最自然的 product 补完点。
+这部分是下一阶段最自然的 app 补完点。
 
 ### 5.4 内部仍残留一层旧式 `/workspace` 执行语义
 

@@ -38,7 +38,7 @@
 ## 6. Architecture Correction After Review
 
 - [x] 6.1 Update OpenSpec to state that shell copies/localizes cli-shell behavior instead of importing cli-shell.
-- [x] 6.2 Keep `extensions/shell-old` untouched and add shell boundary checks for legacy imports/naming.
+- [x] 6.2 Keep `apps/shell-old` untouched and add shell boundary checks for legacy imports/naming.
 - [x] 6.3 Promote keyboard handling to a focus-path dispatcher: top-layer, focused pane, then global host controls.
 - [x] 6.4 Add focused BDD regressions for pane-scope key consumption and top-layer single consumption.
 - [x] 6.5 Record openmux as MIT reference material for layout/pane chrome/resize without adding it as a dependency.
@@ -50,13 +50,13 @@
 - [x] 7.2 Move host split/close/focus layout actions behind `Ctrl+B` prefix and forward bare terminal chords to the focused terminal source.
 - [x] 7.3 Add BDD regressions for focus-tree phase order and key consumption.
 - [x] 7.4 Add BDD regressions for terminal title close hit regions, close-confirm hit regions, and first-row terminal selection coordinates.
-- [x] 7.5 Keep product attach statusbar macro-only by stripping Heartbeat preview labels and projecting available model-call context usage.
+- [x] 7.5 Keep app attach statusbar macro-only by stripping Heartbeat preview labels and projecting available model-call context usage.
 - [x] 7.6 Rerun OpenSpec validation, shell tests, shell typecheck, shell-old focused safety tests, and diff checks.
 
 ## 8. Final Shell Promotion
 
-- [x] 8.1 Rename `extensions/shell-next` to `extensions/shell` and normalize package/bin/main export identity.
-- [x] 8.2 Rename legacy `extensions/cli-shell` to `extensions/shell-old` and remove its package-name collision with `agenter-ext-shell`.
+- [x] 8.1 Rename `apps/shell-next` to `apps/shell` and normalize package/bin/main export identity.
+- [x] 8.2 Rename legacy `apps/cli-shell` to `apps/shell-old` and remove its package-name collision with `agenter-app-shell`.
 - [x] 8.3 Route `agenter shell` to the new Shell descriptor and remove the `shell2` descriptor.
 - [x] 8.4 Update release bundle metadata, CLI tests, and shell tests for the final command surface.
 - [x] 8.5 Rerun targeted verification and stale-reference checks.

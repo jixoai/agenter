@@ -23,7 +23,7 @@ The same acceptance pass also surfaced normal terminal editing parity gaps: Home
 ### Modified Capabilities
 
 - `terminal-screen-projection-law`: strengthen native OpenTUI mouse lifecycle routing, Home/End line navigation, and Option+Shift word selection requirements.
-- `terminal-backend-interaction`: require backend interaction owners to support keyboard-driven selection extension where the product enables editing enhancements.
+- `terminal-backend-interaction`: require backend interaction owners to support keyboard-driven selection extension where the app enables editing enhancements.
 - `terminal-view-component`: require debug-visible native mouse event routing and shortcut routing without host-local selection truth.
 - `cli-shell-interaction-capabilities`: require cli-shell recommendations/tests to cover Home/End and Option+Shift word selection parity.
 

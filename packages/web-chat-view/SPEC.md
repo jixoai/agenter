@@ -123,7 +123,7 @@ For the canonical review flow, high-value host verification also includes a rout
 
 Durable rules:
 
-- durable contacts, contact requests, source subscriptions, current actor profile, and global product navigation are host-owned
+- durable contacts, contact requests, source subscriptions, current actor profile, and global app navigation are host-owned
 - contact identity is source-scoped at the host layer; the room component does not merge contacts or read contact tables directly
 - contact-backed mention suggestions enter through the existing host-provided completion/participant suggestion surface
 - contact-detail start-chat flows are explicit host orchestration that resolves an authorized room transport URL before mounting the shared chat view

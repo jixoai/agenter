@@ -28,7 +28,7 @@
 
 - [x] 5.1 Update shell-next source/test imports to use `@agenter/termless-backend-utils` for host input controller/types.
 - [x] 5.2 Add `@agenter/termless-backend-utils` as a shell-next workspace dependency.
-- [x] 5.3 Confirm `extensions/cli-shell` remains untouched.
+- [x] 5.3 Confirm `apps/cli-shell` remains untouched.
 
 ## 6. Verification And Commit
 

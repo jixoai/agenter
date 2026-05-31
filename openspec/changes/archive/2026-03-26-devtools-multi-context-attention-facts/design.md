@@ -24,7 +24,7 @@ Relevant existing contracts:
 ### Devtools remains the only frontend owner of multi-context attention facts
 The multi-context payload is a technical fact surface, so it belongs in Devtools and Cycle Inspector rather than the Chat transcript.
 
-Why: this preserves the product contract that Chat is user-facing while Devtools is technical.
+Why: this preserves the app contract that Chat is user-facing while Devtools is technical.
 
 ### Flattening keeps context metadata alongside each item
 Cycle Inspector will continue flattening `contexts[].items[]` into a list for rendering, but each rendered item must retain `_contextId` and `_owner` metadata so the user can still understand where the attention item came from.

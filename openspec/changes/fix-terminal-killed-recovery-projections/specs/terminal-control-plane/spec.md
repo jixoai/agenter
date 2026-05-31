@@ -21,7 +21,7 @@ The terminal control plane SHALL replay stale-running daemon recovery through th
 - **AND** the killed history projection includes that terminal until archive or delete
 
 ### Requirement: Killed terminal bootstrap SHALL require explicit history recovery intent
-The terminal control plane SHALL treat bootstrap of a killed terminal as an explicit history recovery operation, not as the default path for product reconnection. Live `not_started` bootstrap and killed-history recovery MUST be distinguishable at the API boundary.
+The terminal control plane SHALL treat bootstrap of a killed terminal as an explicit history recovery operation, not as the default path for app reconnection. Live `not_started` bootstrap and killed-history recovery MUST be distinguishable at the API boundary.
 
 #### Scenario: Live not-started bootstrap remains normal
 - **WHEN** a live non-archived terminal has `processPhase = not_started`

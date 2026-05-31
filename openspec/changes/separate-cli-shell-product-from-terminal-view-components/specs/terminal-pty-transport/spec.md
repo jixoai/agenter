@@ -49,7 +49,7 @@ When same-terminal attachments need shared viewport mutations, the transport or 
 
 ### Requirement: Terminal transport SHALL expose geometry arbitration facts in the shared attachment contract
 
-When multiple frontends may attach to one backend terminal truth, the shared transport attachment contract SHALL carry enough geometry-authority facts for backend control-plane to arbitrate deterministically. Geometry authority SHALL NOT remain an unobservable local convention or a product-local helper outside the shared transport/control-plane truth.
+When multiple frontends may attach to one backend terminal truth, the shared transport attachment contract SHALL carry enough geometry-authority facts for backend control-plane to arbitrate deterministically. Geometry authority SHALL NOT remain an unobservable local convention or a app-local helper outside the shared transport/control-plane truth.
 
 #### Scenario: Attachment hello declares requested geometry role and explicit order
 - **WHEN** an attachment connects to shared transport for one backend terminal truth
@@ -74,7 +74,7 @@ When multiple frontends may attach to one backend terminal truth, the shared tra
 - **THEN** backend control-plane reevaluates authority deterministically
 - **AND** the reevaluation result is again observable through shared transport/control-plane truth
 
-#### Scenario: Product-local claim helpers do not replace shared backend authority truth
-- **WHEN** a product host provides convenience claim or release helpers for geometry ownership
+#### Scenario: App-local claim helpers do not replace shared backend authority truth
+- **WHEN** a app host provides convenience claim or release helpers for geometry ownership
 - **THEN** those helpers act only as adapters over the shared backend authority contract
 - **AND** they do not become an independent final source of geometry authority outside transport/control-plane truth

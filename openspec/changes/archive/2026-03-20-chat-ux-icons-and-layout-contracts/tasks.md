@@ -1,7 +1,7 @@
 ## 1. OpenSpec / Contracts
 
 - [x] 1.1 Add delta specs for chat presentation, chatapp surface, multimodal input, navigation, workspace settings, cycles timeline, and overflow contracts plus the new profile image system spec.
-- [x] 1.2 Update `AGENTS.md` with the new chat-product, profile-image, and layout/background best-practice rules.
+- [x] 1.2 Update `AGENTS.md` with the new chat-app, profile-image, and layout/background best-practice rules.
 
 ## 2. Backend profile image and global settings APIs
 

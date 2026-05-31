@@ -1,6 +1,6 @@
 ## Why
 
-The active Svelte WebUI still leaks obsolete shell chrome, lacks a generic entity icon authority for room-first navigation, and ships a stripped-down room chat surface that regressed from the richer React-era composer and bubble behavior. Global rooms also still stop at text-only send because room-owned attachment transport was never finished, which now blocks the room experience the product is already trying to present.
+The active Svelte WebUI still leaks obsolete shell chrome, lacks a generic entity icon authority for room-first navigation, and ships a stripped-down room chat surface that regressed from the richer React-era composer and bubble behavior. Global rooms also still stop at text-only send because room-owned attachment transport was never finished, which now blocks the room experience the app is already trying to present.
 
 ## What Changes
 

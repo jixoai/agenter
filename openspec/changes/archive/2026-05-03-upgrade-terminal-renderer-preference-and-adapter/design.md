@@ -8,7 +8,7 @@ Current terminal rendering is nominally configurable but still physically center
 - WebUI and e2e tests reach into `.xterm-helper-textarea` and `.xterm-screen`
 - terminal-window/body backgrounds are partially feature-local instead of theme-owned
 
-At the same time, product goals have changed:
+At the same time, app goals have changed:
 
 - desktop WebUI should default to `ghostty-web`
 - `ghostty-web` is preferred for current fit/cover work because scale does not break selection the same way xterm does
@@ -17,7 +17,7 @@ At the same time, product goals have changed:
 
 The user-supplied rationale that must survive context loss is:
 
-- `ghostty-web` should be the current desktop default because its rendering architecture is stronger than xterm for this product's fit/cover projection law.
+- `ghostty-web` should be the current desktop default because its rendering architecture is stronger than xterm for this app's fit/cover projection law.
 - In current xterm-based fit mode, host scaling can leave text selection visibly offset because xterm relies on a stack of DOM/layout hacks that do not remain stable under scaled projection.
 - `ghostty-web` renders through canvas and owns selection behavior itself, so host-side scale does not inherently break selection in the same way.
 - `wterm` is worth preserving as a future renderer target because it is explicitly optimized for the web/mobile environment and accessibility, even if it is not implemented in this round.
@@ -169,7 +169,7 @@ These comments should be short and engineer-facing, but they must preserve the d
 - [Tests still depend on xterm DOM] → Update test harnesses to consume public viewport facts or adapter-owned test surfaces, not `.xterm-*` selectors.
 - [ghostty-web option mismatch with xterm] → Translate options per adapter; do not force one canonical option bag to equal every renderer-specific implementation detail.
 - [Future wterm work stalls because contract is still desktop-biased] → Keep adapter API oriented around viewport primitives, not canvas-specific details.
-- [Theme projection leaks product chrome concerns into viewport package] → Keep resolved theme tokens minimal and terminal-centric (`background`, `foreground`, `cursor`, selection/scrollbar tokens if needed).
+- [Theme projection leaks app chrome concerns into viewport package] → Keep resolved theme tokens minimal and terminal-centric (`background`, `foreground`, `cursor`, selection/scrollbar tokens if needed).
 - [Breaking migration may temporarily destabilize tests] → Accept the breaking update explicitly, update all affected projections/tests in one bounded sequence, and avoid half-compatible dual-field logic that would linger.
 
 ## Migration Plan

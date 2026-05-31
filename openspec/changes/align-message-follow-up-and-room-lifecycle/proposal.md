@@ -25,7 +25,7 @@ At the same time, two adjacent architecture questions must be recorded explicitl
 
 ## Impact
 
-- Affected packages: `@agenter/message-system`, `@agenter/app-server`, `agenter-ext-studio`
+- Affected packages: `@agenter/message-system`, `@agenter/app-server`, `agenter-app-studio`
 - Compatibility:
   - local message follow-up continues to work, but its ownership is message-system owned rather than session-runtime watch owned
   - remote managed-seat follow-up remains intentionally unsupported until the lower-level AsyncContext + RPC architecture exists

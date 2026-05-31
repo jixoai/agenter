@@ -3,7 +3,7 @@
 terminal backend 的底层法则已经成立：
 
 - terminal-system 把 `backend` 作为 durable launch truth 持久化。
-- product-extension-runtime 可以在 create/reuse contract 中读写 `backend`。
+- app-runtime 可以在 create/reuse contract 中读写 `backend`。
 - cli-shell 已经通过 `--backend=ghostty-native` 消费这条平台法则。
 
 现在剩下的不是新范式，而是 `app-server` 的投影断层。runtime/public surface 里有些 terminal 结果带 `backend`，有些没有；有些 mutation schema 可以接受 backend，有些仍然没有开放；remote placeholder terminal 甚至没有一个显式的 backend 占位值。这样会让 client store、browser-authenticated operator、runtime-local descriptor caller 分别看到不同版本的 terminal truth。

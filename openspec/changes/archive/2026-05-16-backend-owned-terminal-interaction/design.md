@@ -1,6 +1,6 @@
 ## Context
 
-The current cli-shell repair path already established one important law: terminal-2 is the final composed product screen and projection hosts should render backend-authored cells. However, recent native acceptance showed another layer still violates the same principle: terminal-like interactions are still partly owned by the OpenTUI projection layer.
+The current cli-shell repair path already established one important law: terminal-2 is the final composed app screen and projection hosts should render backend-authored cells. However, recent native acceptance showed another layer still violates the same principle: terminal-like interactions are still partly owned by the OpenTUI projection layer.
 
 The strongest concrete evidence is in three places:
 
@@ -41,7 +41,7 @@ The durable repair is to make terminal interaction ownership a backend/offscreen
 
 ## Decisions
 
-### 1. Backend interaction is a platform capability, not cli-shell product policy
+### 1. Backend interaction is a platform capability, not cli-shell app policy
 
 Add a `terminal-backend-interaction` capability that defines common terms and contracts:
 
@@ -63,12 +63,12 @@ Add a `terminal-backend-interaction` capability that defines common terms and co
 Rationale:
 
 - cli-shell is only one consumer. The same interaction law is needed by shell projection, terminal-chat, future terminal-view surfaces, and runtime inspection.
-- A product-local recommendation map cannot be the owner of terminal physics.
+- A app-local recommendation map cannot be the owner of terminal physics.
 
 Rejected alternative:
 
 - Keep interaction enhancements in `@agenter/cli-shell`.
-  - Rejected because it recreates backend semantics in a host product and causes the current regression class.
+  - Rejected because it recreates backend semantics in a host app and causes the current regression class.
 
 ### 2. Ghostty-native should expose terminal-core selection first
 
@@ -118,7 +118,7 @@ OpenTUI projection components must not:
 
 - keep durable selected text as host-local state;
 - compute scrollback selection ranges from OpenTUI `Selection` as a terminal truth;
-- keep word/row semantic selection as a product-local copy algorithm;
+- keep word/row semantic selection as a app-local copy algorithm;
 - update selection visuals without a backend-published overlay.
 
 Rationale:

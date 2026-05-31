@@ -6532,7 +6532,7 @@ var qrcodegen;
       }
       return result;
     }
-    // Returns the product of the two given field elements modulo GF(2^8/0x11D). The arguments and result
+    // Returns the app of the two given field elements modulo GF(2^8/0x11D). The arguments and result
     // are unsigned 8-bit integers. This could be implemented as a lookup table of 256*256 entries of uint8.
     static reedSolomonMultiply(x2, y2) {
       if (x2 >>> 8 || y2 >>> 8)

@@ -73,7 +73,7 @@
 | `packages/app-server/src/runtime-system-kernel-adapters/terminal-adapter.ts` | Current `handleStatusChange()` only emits a terminal actionable signal for some IDLE transitions; it does not compare HEAD vs read cursor or auto-read. | This is the missing bridge location. |
 | `packages/app-server/src/runtime-system-kernel-adapters/terminal-adapter.ts` | The current repaired bridge still checks HEAD/cursor only once on `BUSY -> IDLE`; it does not register a terminal commit waiter for the idle window. | This explains the user's pseudocode concern. |
 | `packages/app-server/src/session-runtime.ts` | `buildTerminalSystemIngressEnvelope()` already turns `readTerminalRepresentation(... remark:true)` into a terminal world-fact attention envelope. | The read-result-to-attention path exists; it needs to be invoked at the IDLE hash comparison boundary. |
-| `packages/app-server/src/session-runtime.ts` | Runtime startup assigned `focusedTerminalIds` from TerminalControlPlane directly; focused terminals that already existed before runtime start were not normalized/attached. | Product-bound shell2 reuse can miss `terminal.onStatus()` and therefore never reach the adapter idle hook. |
+| `packages/app-server/src/session-runtime.ts` | Runtime startup assigned `focusedTerminalIds` from TerminalControlPlane directly; focused terminals that already existed before runtime start were not normalized/attached. | App-bound shell2 reuse can miss `terminal.onStatus()` and therefore never reach the adapter idle hook. |
 | `packages/terminal-system/src/managed-terminal.ts` | `ManagedTerminal.getHeadHash()` returns snapshot `seq`, while git-log reads/cursors are only committed when `profile.gitLog` is enabled. | This is a projection-vs-git-truth residual; the new fix must not deepen that leak. |
 | `openspec/changes/archive/2026-05-05-decouple-terminal-activity-from-runtime-loop/design.md` | The old runtime had two terminal wake paths: `markTerminalDirty -> notifyInput("terminal")` and scheduler `waitCommitted(...)`; that change intentionally separated physical terminal changes from runtime ingress. | This explains why broad terminal wake behavior was removed. |
 | `openspec/changes/archive/2026-05-05-decouple-terminal-activity-from-runtime-loop/specs/runtime-terminal-activity-bridge/spec.md` | The bridge may upgrade terminal changes to actionable ingress when an explicit action predicate matches. | `HEAD > readed HASH on IDLE` should be added as a named explicit action predicate. |
@@ -85,7 +85,7 @@
 
 | Checkpoint | Expected commit evidence | Current status |
 | ---------- | ------------------------ | -------------- |
-| OpenSpec artifacts before apply | Commit containing `plans/plan.md`, specs, and `tasks.md` before product-code work starts | Not yet committed; plan is still being revised. |
+| OpenSpec artifacts before apply | Commit containing `plans/plan.md`, specs, and `tasks.md` before app-code work starts | Not yet committed; plan is still being revised. |
 | Task-progress commits | Commit containing task checkbox updates plus matching code/BDD evidence | Not started. |
 | Self-review updates | Commit containing review output and reopened tasks before next apply loop | Not started. |
 | Normal archive | Commit containing archive result | Not started. |
@@ -173,7 +173,7 @@ AI 执行一个终端任务后，终端输出在结束/稳定到 IDLE 时会自�
 
 ### Interface Shape
 
-- Add a terminal bridge method or adapter path with product semantics:
+- Add a terminal bridge method or adapter path with app semantics:
   - `inspectIdleTerminal(terminalId)`
   - input: terminal id from BUSY -> IDLE transition
   - condition: focused/running/actionable + `headHash !== readCursorHash`

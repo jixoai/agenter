@@ -1,6 +1,6 @@
 ## Context
 
-Two visible regressions share the same shape: product projections are leaking implementation residue as if it were truth.
+Two visible regressions share the same shape: app projections are leaking implementation residue as if it were truth.
 
 In `cli-shell`, tmux is only the local compositor, but the current Chat/Help handling is spread across status ranges, session options, pane discovery, popup commands, and OpenTUI layout callbacks. Because no single state transition owns the Chat surface, a layout switch can open a second Room surface before the previous one has been closed, or clear the highlight while a surface still exists.
 
@@ -10,7 +10,7 @@ In Studio Terminals, TerminalSystem already defines one `terminal_instance` trut
 
 **Goals:**
 
-- Make tmux status clicks normalize to product actions before dispatch, so `help`, `user|help`, and equivalent range payloads do not diverge.
+- Make tmux status clicks normalize to app actions before dispatch, so `help`, `user|help`, and equivalent range payloads do not diverge.
 - Make Chat a singleton presentation surface per tmux session: exactly one of closed, popup, or pane.
 - Make Chat layout buttons move that singleton surface instead of starting another Room owner.
 - Make status-bar `Chat` a true toggle and restore shell focus/highlight after close.
@@ -28,9 +28,9 @@ In Studio Terminals, TerminalSystem already defines one `terminal_instance` trut
 
 ### 1. Normalize tmux status ranges at the action boundary
 
-`tmux-action` is the canonical product action boundary. It will normalize known action strings and `range=user|<action>` style strings into the same action enum before execution.
+`tmux-action` is the canonical app action boundary. It will normalize known action strings and `range=user|<action>` style strings into the same action enum before execution.
 
-Alternative considered: encode only pure action names in `range=user|...` and assume tmux always returns the argument. That keeps tests small but leaves the product dependent on tmux range serialization details. Normalization is cheaper and more robust.
+Alternative considered: encode only pure action names in `range=user|...` and assume tmux always returns the argument. That keeps tests small but leaves the app dependent on tmux range serialization details. Normalization is cheaper and more robust.
 
 ### 2. Model Chat as one session-local surface state
 
@@ -48,7 +48,7 @@ Alternative considered: keep `@agenter_cli_shell_chat_surface` and `@agenter_cli
 
 ### 3. Put tmux operations behind a generic SDK boundary
 
-`tmux-host` still needs short `run-shell` launcher commands because tmux status/key bindings execute inside tmux, but the real product action path must use a typed tmux client for session options, pane discovery, pane moves, popup display, and focus changes.
+`tmux-host` still needs short `run-shell` launcher commands because tmux status/key bindings execute inside tmux, but the real app action path must use a typed tmux client for session options, pane discovery, pane moves, popup display, and focus changes.
 
 The new `@agenter/tmux-client` package is intentionally generic: it only models tmux sessions, panes, options, popups, bindings, command execution, and parsing. It must not import or name cli-shell, Avatar, MessageRoom, TerminalSystem, or Studio. It exports TypeScript source directly so local development remains ts-first and does not depend on `dist`.
 

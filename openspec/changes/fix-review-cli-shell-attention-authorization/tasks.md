@@ -32,7 +32,7 @@
 - [ ] 4.4 Add code comments at the TerminalSystem/runtime adapter boundary documenting that cli-shell products must not hardcode core behavior and all visible authorization effects must trace to attention-item commits.
 - [ ] 4.5 Update durable `SPEC.md` files so they no longer state or imply that terminal approval attention is merely a projection; TerminalSystem keeps live PTY authority while attention items carry the visible authorization causal facts.
 
-## 5. Product Projection Updates
+## 5. App Projection Updates
 
 - [ ] 5.1 Update native cli-shell authorization overlay to render terminal action identity, state, expiry, and optional denial reason affordance.
 - [ ] 5.2 Update cli-shell native authorization UI to approve, deny, and cancel terminal actions for the current bound terminal only.

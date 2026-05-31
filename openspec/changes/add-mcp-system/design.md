@@ -292,7 +292,7 @@ Only read-only statements are allowed. First implementation should accept `SELEC
 
 ### Temporary Table Schemas
 
-The query surface exposes two temporary tables. They directly mirror the product concepts:
+The query surface exposes two temporary tables. They directly mirror the app concepts:
 
 - `mcp_installed`: globals created by `mcp add`
 - `mcp_enabled`: project enablement created by `mcp enable`, plus project-local runtime/snapshot projection

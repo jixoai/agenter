@@ -49,16 +49,16 @@
 | ------ | ---- | -------------- |
 | `packages/termless-core/src/terminal-interaction.ts` | `findWordInTerminalLine` uses `Intl.Segmenter`; backend adapter owns word/line selection. | The word algorithm was not lost. The remaining bug is likely coordinate projection/routing. |
 | `packages/termless-backend-utils/src/terminal-host-input.ts` | Pointer drag, double click, key selection, and input transactions already live in backend-utils. | This is the correct lower layer to extend with PTY-aware routing. |
-| `extensions/shell-next/src/opencompose/terminal-frame/frame-renderable.ts` | `sourceStartRow` exists and maps visible rows to backend rows when `selectionSources` are present. | Shell-Next currently has the right projection primitive but terminal frame is not feeding it. |
-| `extensions/shell-next/src/opencompose/terminal-frame/terminal-frame-renderable.ts` | Terminal frame updates pass overlays but not `selectionSources`. | Scrolled double-click/drag can be sent as viewport-local rows instead of absolute backend rows. |
-| `extensions/shell-next/src/terminal-projection/framebuffer-terminal-pane.ts` | Primary copy fires for any handled pointer-up result. | PTY mouse passthrough must be distinguishable from selection completion. |
+| `apps/shell-next/src/opencompose/terminal-frame/frame-renderable.ts` | `sourceStartRow` exists and maps visible rows to backend rows when `selectionSources` are present. | Shell-Next currently has the right projection primitive but terminal frame is not feeding it. |
+| `apps/shell-next/src/opencompose/terminal-frame/terminal-frame-renderable.ts` | Terminal frame updates pass overlays but not `selectionSources`. | Scrolled double-click/drag can be sent as viewport-local rows instead of absolute backend rows. |
+| `apps/shell-next/src/terminal-projection/framebuffer-terminal-pane.ts` | Primary copy fires for any handled pointer-up result. | PTY mouse passthrough must be distinguishable from selection completion. |
 | `packages/terminal-system/SPEC.md` | Terminal interaction is backend/offscreen renderer capability; host projection cannot own selected text truth. | The new state must stay backend-owned and travel through frame/transport truth. |
 
 ### Git Evidence
 
 | Checkpoint | Expected commit evidence | Current status |
 | ---------- | ------------------------ | -------------- |
-| OpenSpec artifacts before apply | Commit containing `plans/plan.md`, specs, and `tasks.md` before product-code work starts | Pending; `bun.lock` is pre-existing dirty state and must not be staged. |
+| OpenSpec artifacts before apply | Commit containing `plans/plan.md`, specs, and `tasks.md` before app-code work starts | Pending; `bun.lock` is pre-existing dirty state and must not be staged. |
 | Task-progress commits | Commit containing current-context task checkbox updates plus matching code/BDD evidence | Pending. |
 | Self-review updates | Commit containing review output and any reopened or added OpenSpec tasks before the next apply loop | Pending. |
 | Normal archive | Commit containing `openspec archive <change>` result | Pending user acceptance. |
@@ -103,7 +103,7 @@ Fix Shell-Next selection so double-click word selection, drag selection, scrolle
 
 ### Underlying Drive
 
-The product needs an embedded mux-like terminal boundary. Shell-Next can render and compose panes, but terminal interaction laws must live in reusable terminal layers. The user is pushing away from app glue toward platform rules.
+The app needs an embedded mux-like terminal boundary. Shell-Next can render and compose panes, but terminal interaction laws must live in reusable terminal layers. The user is pushing away from app glue toward platform rules.
 
 ### Final Visible Effect
 

@@ -1,7 +1,7 @@
 ## 1. Backend launch truth contracts
 
 - [x] 1.1 Add explicit terminal `backend` durable launch truth to terminal-system create/list/get-config/set-config contracts and storage.
-- [x] 1.2 Extend product-extension-runtime and client-sdk terminal-binding contracts so cli-shell can request and inspect backend launch truth without importing core internals.
+- [x] 1.2 Extend app-runtime and client-sdk terminal-binding contracts so cli-shell can request and inspect backend launch truth without importing core internals.
 - [x] 1.3 Add official Termless backend factory/adapter wiring for `xterm` and `ghostty-native` without reintroducing Agenter-private backend ownership.
 - [x] 1.4 Add contract tests for omitted-backend defaulting, explicit `ghostty-native`, unsupported backend errors, and backend/renderer separation.
 
@@ -20,6 +20,6 @@
 
 ## 4. Verification
 
-- [x] 4.1 Run targeted tests for terminal-system, client-sdk/product-extension-runtime, and cli-shell.
+- [x] 4.1 Run targeted tests for terminal-system, client-sdk/app-runtime, and cli-shell.
 - [x] 4.2 Run `openspec validate promote-ghostty-native-cli-shell --strict`.
 - [x] 4.3 Perform a real local walkthrough of `bun agenter shell --backend=ghostty-native`, including actual terminal input and observable output.

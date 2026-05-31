@@ -1,6 +1,6 @@
 ## Why
 
-The current `session.stop` path destroys the runtime, terminals, and cycle inspection state in one step. That conflicts with the intended architecture: pausing LoopBus and canceling the current model call is not the same operation as tearing the whole runtime down. The product now needs two explicit lifecycle actions so Chat, Devtools, and terminal surfaces can behave predictably.
+The current `session.stop` path destroys the runtime, terminals, and cycle inspection state in one step. That conflicts with the intended architecture: pausing LoopBus and canceling the current model call is not the same operation as tearing the whole runtime down. The app now needs two explicit lifecycle actions so Chat, Devtools, and terminal surfaces can behave predictably.
 
 ## What Changes
 

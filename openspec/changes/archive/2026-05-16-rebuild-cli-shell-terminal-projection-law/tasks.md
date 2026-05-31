@@ -1,9 +1,9 @@
 ## 1. Architecture Audit And Cleanup Boundary
 
 - [x] 1.1 Record a code-path map under `.chat/rebuild-cli-shell-terminal-projection-law/architecture-map.md` classifying every current cli-shell render path as terminal-1 PTY shell truth, shell offscreen renderer, terminal-chat backend, terminal-2 compositor, native host adapter, Web host adapter, or obsolete host-local truth.
-- [x] 1.2 Identify every current host-local accepted product truth path, including native-only bottom chrome, dialogue chrome, shell scrollbar, shell selection, cursor owner, and Web shell-only shortcuts.
+- [x] 1.2 Identify every current host-local accepted app truth path, including native-only bottom chrome, dialogue chrome, shell scrollbar, shell selection, cursor owner, and Web shell-only shortcuts.
 - [x] 1.3 Mark obsolete host-local truth paths for deletion or quarantine before implementing new visual behavior.
-- [x] 1.4 Confirm package boundaries still keep `@agenter/cli-shell` outside core runtime internals and consuming platform APIs through client/product-extension contracts.
+- [x] 1.4 Confirm package boundaries still keep `@agenter/cli-shell` outside core runtime internals and consuming platform APIs through client/app-extension contracts.
 
 ## 2. Terminal Screen Projection Law
 
@@ -32,22 +32,22 @@
 
 ## 5. Terminal-2 Compositor
 
-- [x] 5.1 Implement terminal-2 composition from shell offscreen frame, terminal-chat frame, and bottom/status/product chrome into one final product screen.
+- [x] 5.1 Implement terminal-2 composition from shell offscreen frame, terminal-chat frame, and bottom/status/app chrome into one final app screen.
 - [x] 5.2 Ensure terminal-2 performs hit-testing and routes events to shell or terminal-chat owners without owning a second scroll, selection, cursor, or copy truth for those regions.
-- [x] 5.3 Move accepted bottom/status chrome and dialogue-open visual state into terminal-2 final screen publication so native and Web hosts can observe the same product state.
-- [x] 5.4 Add BDD tests proving terminal-2 publishes the same collapsed and dialogue-open product screen to both host adapters.
+- [x] 5.3 Move accepted bottom/status chrome and dialogue-open visual state into terminal-2 final screen publication so native and Web hosts can observe the same app state.
+- [x] 5.4 Add BDD tests proving terminal-2 publishes the same collapsed and dialogue-open app screen to both host adapters.
 - [x] 5.5 Add resize tests proving terminal-2 geometry, shell sub-geometry, and dialogue layout update without stale-frame blackouts or partial-screen disappearance.
 
 ## 6. Native Host Adapter
 
-- [x] 6.1 Refactor native cli-shell host so it renders terminal-2 final product screen through the current process output path connected to the owning native terminal program.
-- [x] 6.2 Remove any requirement to spawn a terminal-2 child PTY just to pipe product output back to Ghostty or another native terminal host.
+- [x] 6.1 Refactor native cli-shell host so it renders terminal-2 final app screen through the current process output path connected to the owning native terminal program.
+- [x] 6.2 Remove any requirement to spawn a terminal-2 child PTY just to pipe app output back to Ghostty or another native terminal host.
 - [x] 6.3 Keep OpenTUI/native primitives only as lawful control projections where needed, and prove their visible results are republished through terminal-2.
 - [x] 6.4 Add focused automated tests for native adapter event routing and frame output without using Terminal.app, cmux, or native manual interaction as automated evidence.
 
 ## 7. Web Host Adapter And E2E Surface
 
-- [x] 7.1 Refactor `cli-shell --web` so it renders terminal-2 final product screen, not terminal-1 shell-only output or a reduced Web approximation.
+- [x] 7.1 Refactor `cli-shell --web` so it renders terminal-2 final app screen, not terminal-1 shell-only output or a reduced Web approximation.
 - [x] 7.2 Ensure Web host events route through the same terminal-2 hit-test and owner-event contract as native mode.
 - [x] 7.3 Expose enough DOM-observable text/focus/interaction facts in `--web` for browser-driven E2E to verify shell output, dialogue content, bottom/status chrome, selection/copy, scroll, and resize behavior.
 - [x] 7.4 Add browser E2E covering collapsed mode, dialogue-open mode, shell selection/copy, dialogue selection/copy, shell scroll, dialogue scroll, CJK rendering, and resize.
@@ -65,10 +65,10 @@
 - [x] 8.8 Record the JavaScript event-loop vertical-sync boundary in code/spec comments without adding an unnecessary pre-pull flush path.
 - [x] 8.9 Add regression coverage proving frontend scroll forwarding stays objective and backend drain owns scroll coalescing order.
 - [x] 8.10 Separate frontend input forwarding from frontend cells drawing so scroll events do not request local refresh and each pulled frame enters one paint path.
-- [x] 8.11 Add transport codec row-cache patches with per-WebSocket cid reuse, `cid=0` empty row, and no product-layer duplicate-frame skip.
+- [x] 8.11 Add transport codec row-cache patches with per-WebSocket cid reuse, `cid=0` empty row, and no app-layer duplicate-frame skip.
 - [x] 8.12 Add BDD coverage proving row-cache patches reuse known rows, decode scrolled/unchanged rows through client cache, and fall back/fail safely on unknown cid.
 - [x] 8.13 Record trace/performance evidence that repeated full-frame duplicates are reduced by the transport codec path.
-- [x] 8.14 Add codec-level `notModified` row-cache output so unchanged fixed/dynamic paced pulls avoid product-layer duplicate-frame work.
+- [x] 8.14 Add codec-level `notModified` row-cache output so unchanged fixed/dynamic paced pulls avoid app-layer duplicate-frame work.
 - [x] 8.15 Fix cli-shell pull pacing so fixed 30FPS is the default RAF-like frame loop, with dynamic 30FPS/1FPS refresh retained only as an explicit experimental mode.
 - [x] 8.16 Add BDD coverage proving viewport/input events do not directly activate pull cadence and `notModified` consumes dirty without paint.
 
@@ -76,7 +76,7 @@
 
 - [x] 9.1 Run `openspec validate rebuild-cli-shell-terminal-projection-law --strict`.
 - [x] 9.2 Run package typecheck and focused BDD tests for `@agenter/cli-shell`, `@agenter/terminal-system`, `@agenter/terminal-view`, and `@agenter/terminal-transport-protocol`.
-- [x] 9.3 Run `cli-shell --web` browser E2E as the automated acceptance host for the final product screen.
+- [x] 9.3 Run `cli-shell --web` browser E2E as the automated acceptance host for the final app screen.
 - [x] 9.4 Prepare a plain-language Ghostty manual checklist for the user covering native parity, shell/dialogue selection and copy, CJK, cursor, scrollbar, dialogue wrap, resize, and performance.
 - [x] 9.5 Record user Ghostty manual results under `.chat/rebuild-cli-shell-terminal-projection-law/native-manual-acceptance.md`.
 - [x] 9.6 Update durable `SPEC.md` files after implementation if the new terminal projection law becomes long-term platform truth.

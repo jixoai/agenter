@@ -2,13 +2,13 @@
 
 ## Purpose
 
-Define the dedicated `@agenter/icon-studio` icon composer package and its boundary from the operator Studio product.
+Define the dedicated `@agenter/icon-studio` icon composer package and its boundary from the operator Studio app.
 
 ## Requirements
 
 ### Requirement: Icon Studio SHALL be the dedicated icon composer package
 
-The icon composer package SHALL be named `@agenter/icon-studio` and live at `packages/icon-studio`. It SHALL remain a dedicated tooling product for icon composition and asset generation, separate from the operator `agenter-ext-studio` product.
+The icon composer package SHALL be named `@agenter/icon-studio` and live at `packages/icon-studio`. It SHALL remain a dedicated tooling app for icon composition and asset generation, separate from the operator `agenter-app-studio` app.
 
 #### Scenario: Icon Studio package identity is unambiguous
 
@@ -21,7 +21,7 @@ The icon composer package SHALL be named `@agenter/icon-studio` and live at `pac
 
 - **WHEN** repository asset scripts generate icon masters or Lucide metadata
 - **THEN** they import from `@agenter/icon-studio` or its package-owned generated paths
-- **AND** they do not import through the operator `agenter-ext-studio` package
+- **AND** they do not import through the operator `agenter-app-studio` package
 
 ### Requirement: Icon Studio SHALL stay orthogonal to operator Studio
 
@@ -29,6 +29,6 @@ Icon Studio SHALL own icon composer routes, slot catalogs, symbol browsing, and 
 
 #### Scenario: Operator Studio does not own icon composer routes
 
-- **WHEN** `agenter-ext-studio` starts as the operator product
+- **WHEN** `agenter-app-studio` starts as the operator app
 - **THEN** it does not mount Icon Studio's icon composer route tree by default
 - **AND** icon composer development remains owned by `@agenter/icon-studio`

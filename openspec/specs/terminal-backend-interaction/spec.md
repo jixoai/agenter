@@ -28,7 +28,7 @@ Terminal selection state SHALL be represented in backend-owned coordinates tied 
 #### Scenario: Selection remains bounded to one owner
 - **WHEN** a drag starts inside the shell owner region
 - **THEN** the selection SHALL remain owned by the shell backend interaction path
-- **AND** the selection SHALL NOT cross into dialogue, scrollbar, or product status regions
+- **AND** the selection SHALL NOT cross into dialogue, scrollbar, or app status regions
 
 #### Scenario: Dialogue selection uses its own backend owner
 - **WHEN** a drag starts inside the dialogue owner region
@@ -37,7 +37,7 @@ Terminal selection state SHALL be represented in backend-owned coordinates tied 
 
 ### Requirement: Backend interaction SHALL accept keyboard-driven selection ranges
 
-Backend interaction owners SHALL accept selection ranges produced by keyboard editing gestures such as Option+Shift+Left and Option+Shift+Right when the product enables those gestures.
+Backend interaction owners SHALL accept selection ranges produced by keyboard editing gestures such as Option+Shift+Left and Option+Shift+Right when the app enables those gestures.
 
 #### Scenario: Keyboard range selection remains backend-owned
 - **WHEN** a projection host turns a keyboard selection gesture into a `selectRange` event
@@ -51,7 +51,7 @@ Backend interaction owners SHALL accept selection ranges produced by keyboard ed
 
 ### Requirement: Terminal backends SHALL expose selected-text extraction
 
-The selected-text extraction path SHALL read from the backend or backend interaction adapter that owns the active selection. Product or projection code SHALL NOT reconstruct selected text from host-local rendered glyph snapshots as the durable copy truth.
+The selected-text extraction path SHALL read from the backend or backend interaction adapter that owns the active selection. App or projection code SHALL NOT reconstruct selected text from host-local rendered glyph snapshots as the durable copy truth.
 
 #### Scenario: Copy reads selected shell text from shell owner
 - **WHEN** the user copies while shell selection is active

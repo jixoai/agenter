@@ -33,4 +33,4 @@ The active Svelte WebUI SHALL model primary content, navigation, secondary conte
 #### Scenario: WebUI route consumes shared structural package
 - **WHEN** a WebUI route or shell needs scrolling or scaffold-family layout
 - **THEN** it composes the shared primitives from `@agenter/svelte-components`
-- **THEN** `@agenter/webui` stays a product assembly layer instead of becoming the source of truth for shared layout law
+- **THEN** `@agenter/webui` stays a app assembly layer instead of becoming the source of truth for shared layout law

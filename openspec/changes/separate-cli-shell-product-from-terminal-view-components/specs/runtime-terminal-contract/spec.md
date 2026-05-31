@@ -21,7 +21,7 @@ Whenever runtime publishes terminal state, renderable terminal state, durable te
 
 ### Requirement: Runtime publications SHALL preserve shared terminal viewport truth
 
-Runtime terminal publications SHALL preserve shared viewport truth for same-terminal attachments when the product contract requires a single visible source of truth. Buffer content, viewport position, and visible input results SHALL remain synchronized across same-terminal clients that participate in that shared terminal attachment.
+Runtime terminal publications SHALL preserve shared viewport truth for same-terminal attachments when the app contract requires a single visible source of truth. Buffer content, viewport position, and visible input results SHALL remain synchronized across same-terminal clients that participate in that shared terminal attachment.
 
 #### Scenario: Same-terminal clients observe the same visible viewport
 - **WHEN** multiple clients attach to the same backend terminal through a shared terminal contract
@@ -35,13 +35,13 @@ Runtime terminal publications SHALL preserve shared viewport truth for same-term
 
 ### Requirement: Runtime publications SHALL distinguish geometry authority from presentation scale
 
-Runtime terminal projections SHALL distinguish backend terminal geometry truth from host-local presentation scaling. When a product host currently owns geometry authority, other projection hosts may present the same terminal grid without silently rewriting backend columns and rows.
+Runtime terminal projections SHALL distinguish backend terminal geometry truth from host-local presentation scaling. When a app host currently owns geometry authority, other projection hosts may present the same terminal grid without silently rewriting backend columns and rows.
 
 #### Scenario: Cli-shell-owned geometry remains explicit to other attachments
 - **WHEN** `cli-shell` owns geometry authority for a terminal through `shell-terminal-view`
-- **THEN** runtime-facing geometry truth distinguishes terminal-2 full product-surface geometry from terminal-1 derived shell-truth geometry
+- **THEN** runtime-facing geometry truth distinguishes terminal-2 full app-surface geometry from terminal-1 derived shell-truth geometry
 - **AND** terminal-2 geometry remains derived from the native shell window's full visible size
-- **AND** terminal-1 geometry remains derived from terminal-2 geometry after subtracting reserved product rows or docked product chrome
+- **AND** terminal-1 geometry remains derived from terminal-2 geometry after subtracting reserved app rows or docked app chrome
 - **AND** other attachments can observe those geometries without inferring that they own them
 
 #### Scenario: Web host local resize changes presentation only

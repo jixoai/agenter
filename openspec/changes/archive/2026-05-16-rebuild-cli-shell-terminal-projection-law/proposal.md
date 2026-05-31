@@ -2,7 +2,7 @@
 
 Current cli-shell work still drifts between several rendering truths: native host-local composition, Web-only projection shortcuts, backend terminal truth, and ad-hoc scrollbar/selection/cursor state. That drift keeps recreating the same failures: native/Web mismatch, cursor offset, flicker, scrollbar desync, incomplete dialogue behavior, and a `--web` mode that is not useful as an automated acceptance surface.
 
-This change rebuilds the durable terminal projection law around one final product screen: `terminal-2`. Native Ghostty and `--web` must render the same final cli-shell product surface, while shell, dialogue, scrollbar, focus, selection, wrapping, and copy semantics remain owned by their backend/offscreen renderers instead of by frontend patches.
+This change rebuilds the durable terminal projection law around one final app screen: `terminal-2`. Native Ghostty and `--web` must render the same final cli-shell app surface, while shell, dialogue, scrollbar, focus, selection, wrapping, and copy semantics remain owned by their backend/offscreen renderers instead of by frontend patches.
 
 ### User Objective Anchors
 
@@ -25,30 +25,30 @@ The following user statements are copied verbatim as acceptance anchors for this
 - Introduce an explicit `terminal-screen-projection-law` capability that defines the two transport/rendering laws:
   - Protocol 1: raw terminal transport for targets that understand terminal control bytes.
   - Protocol 2: backend-interpreted screen projection for targets that render backend-authored cells/frames.
-- Define `terminal-2` as the final cli-shell product screen truth for both native and Web hosts. **BREAKING**
-- Require `cli-shell --web` to render the same final product screen as native cli-shell, not a shell-only or debugging-only subset. **BREAKING**
-- Require the shell offscreen renderer to output shell cells together with shell scrollbar, focus, selection, cursor, and wrapping state as one cell-locked render product. These concerns MUST NOT be split into external compositor decorations. **BREAKING**
+- Define `terminal-2` as the final cli-shell app screen truth for both native and Web hosts. **BREAKING**
+- Require `cli-shell --web` to render the same final app screen as native cli-shell, not a shell-only or debugging-only subset. **BREAKING**
+- Require the shell offscreen renderer to output shell cells together with shell scrollbar, focus, selection, cursor, and wrapping state as one cell-locked render app. These concerns MUST NOT be split into external compositor decorations. **BREAKING**
 - Require `terminal-chat` to be an independent OpenTUI dialogue/offscreen backend in the first implementation, using the same offscreen renderer/event-bridge law as shell surfaces and OpenTUI scrollBox semantics rather than PTY scrollback. **BREAKING**
 - Prohibit the first implementation from replacing terminal-chat backend ownership with hand-rolled dialogue selection/copy/wrap algorithms; a no-backend or lighter in-process optimization may only be considered after the backend-based path is stable and accepted. **BREAKING**
 - Allow offscreen renderers to configure visual chrome such as scrollbar visibility while preserving backend scroll, viewport, cursor, selection, wrapping, and copy truth.
 - Define the native host and Web host as equivalent adapters over `terminal-2`:
   - native: encode `terminal-2` final screen to raw output on the current process stdout for Ghostty or another real terminal program.
   - Web: encode or stream `terminal-2` final screen to the browser terminal renderer used by `--web`.
-- Require `--web` to become the primary stable automated E2E surface once the product screen is stable, while Ghostty remains the authoritative native manual acceptance environment.
-- Remove implementation paths that keep accepted product chrome, dialogue state, shell selection, shell scrollbar, or cursor truth only in host-local overlays outside backend/offscreen render truth. **BREAKING**
+- Require `--web` to become the primary stable automated E2E surface once the app screen is stable, while Ghostty remains the authoritative native manual acceptance environment.
+- Remove implementation paths that keep accepted app chrome, dialogue state, shell selection, shell scrollbar, or cursor truth only in host-local overlays outside backend/offscreen render truth. **BREAKING**
 
 ## Capabilities
 
 ### New Capabilities
 
-- `terminal-screen-projection-law`: Defines raw transport, backend screen projection, offscreen renderer responsibilities, final product screen composition, and native/Web host equivalence.
+- `terminal-screen-projection-law`: Defines raw transport, backend screen projection, offscreen renderer responsibilities, final app screen composition, and native/Web host equivalence.
 
 ### Modified Capabilities
 
-- `cli-shell-product`: Clarifies terminal-1, terminal-chat, and terminal-2 roles; requires `--web` and native to render the same final product surface; requires terminal-chat to use OpenTUI dialogue backend semantics rather than PTY scrollback.
-- `terminal-view-component`: Clarifies `shell-terminal-view` and `web-terminal-view` as host adapters over the same final product screen, not separate product truths.
-- `terminal-pty-transport`: Clarifies where raw PTY bytes are still lawful and where raw output is only an adapter for a backend-authored final product screen.
-- `runtime-terminal-contract`: Clarifies terminal-2 publication, geometry, frame truth, and observation boundaries for composed product screens without promoting host-local projection caches to runtime truth.
+- `cli-shell-app`: Clarifies terminal-1, terminal-chat, and terminal-2 roles; requires `--web` and native to render the same final app surface; requires terminal-chat to use OpenTUI dialogue backend semantics rather than PTY scrollback.
+- `terminal-view-component`: Clarifies `shell-terminal-view` and `web-terminal-view` as host adapters over the same final app screen, not separate app truths.
+- `terminal-pty-transport`: Clarifies where raw PTY bytes are still lawful and where raw output is only an adapter for a backend-authored final app screen.
+- `runtime-terminal-contract`: Clarifies terminal-2 publication, geometry, frame truth, and observation boundaries for composed app screens without promoting host-local projection caches to runtime truth.
 
 ## Impact
 
@@ -59,7 +59,7 @@ The following user statements are copied verbatim as acceptance anchors for this
 - `packages/terminal-transport-protocol/*`
 - `packages/terminal-view/*`
 - `packages/termless-core/*`
-- `openspec/specs/cli-shell-product/spec.md`
+- `openspec/specs/cli-shell-app/spec.md`
 - `openspec/specs/terminal-view-component/spec.md`
 - `openspec/specs/terminal-pty-transport/spec.md`
 - `openspec/specs/runtime-terminal-contract/spec.md`

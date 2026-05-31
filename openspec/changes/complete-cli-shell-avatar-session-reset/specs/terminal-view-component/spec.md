@@ -19,4 +19,4 @@
 - **WHEN** no custom callback handles a pending permission request
 - **THEN** `web-terminal-view` renders its default HTML Popover TopLayer approval UI
 - **AND** `shell-terminal-view` renders its default OpenTUI TopLayer approval overlay
-- **AND** neither component mutates terminal scrollback, selection truth, product hosting state, or write leases locally
+- **AND** neither component mutates terminal scrollback, selection truth, app hosting state, or write leases locally

@@ -2,7 +2,7 @@
 
 ### Requirement: Cli-shell SHALL provide backend interaction capability recommendations
 
-cli-shell SHALL consume backend interaction capability facts and MAY provide product-local recommendations only as routing policy. The recommendation map SHALL describe which backend interaction enhancements are required for a backend, but it SHALL NOT make OpenTUI projection code the owner of terminal selection, copy, scrollback, cursor-follow, wrapping, or selected-text extraction.
+cli-shell SHALL consume backend interaction capability facts and MAY provide app-local recommendations only as routing policy. The recommendation map SHALL describe which backend interaction enhancements are required for a backend, but it SHALL NOT make OpenTUI projection code the owner of terminal selection, copy, scrollback, cursor-follow, wrapping, or selected-text extraction.
 
 #### Scenario: Recommendation map resolves a supported backend
 - **WHEN** cli-shell resolves interaction recommendations for a supported backend
@@ -38,7 +38,7 @@ cli-shell SHALL include focused tests that verify backend interaction recommenda
 
 ### Requirement: Cli-shell SHALL use backend-owned selection for shell and dialogue owners
 
-cli-shell SHALL route shell-region selection and dialogue-region selection to their respective backend interaction owners. The product MAY use OpenTUI focus/click primitives as native controls, but those controls SHALL only project interaction events and visible results.
+cli-shell SHALL route shell-region selection and dialogue-region selection to their respective backend interaction owners. The app MAY use OpenTUI focus/click primitives as native controls, but those controls SHALL only project interaction events and visible results.
 
 #### Scenario: Shell selection routes to shell backend
 - **WHEN** the user starts dragging inside the shell region

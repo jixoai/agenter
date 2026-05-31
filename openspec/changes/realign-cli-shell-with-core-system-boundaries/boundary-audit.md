@@ -15,11 +15,11 @@
 
 ## 1. 已纠偏的长期 spec 冲突
 
-### 1.1 `openspec/specs/cli-shell-product/spec.md`
+### 1.1 `openspec/specs/cli-shell-app/spec.md`
 
 当前状态：
 
-- 已改写为：cli-shell 是一个 extension TUI product
+- 已改写为：cli-shell 是一个 extension TUI app
 - 明确规定 Shell 真相在 `TerminalSystem`
 - 明确规定 cli-shell 不能恢复 `terminal-2` 产品 chrome，也不能把 tmux 提升成 Shell 真相
 - 明确规定 `--avatar` / `--session` / `--create-avatar` / `--clear-avatar` 的边界
@@ -34,11 +34,11 @@
 
 - 这一条已经收口，可以视为已完成的 durable spec 纠偏
 
-### 1.2 `extensions/cli-shell/SPEC.md`
+### 1.2 `apps/cli-shell/SPEC.md`
 
 当前状态：
 
-- 已改写为：`agenter-ext-shell` 是 extension product
+- 已改写为：`agenter-app-shell` 是 extension app
 - 明确区分 core truth 与 presentation-local truth
 - 明确规定 `AGENTER.mdx` 是唯一提示词真源
 
@@ -51,13 +51,13 @@
 
 - 这一条已经收口，可以视为已完成的 package-level durable spec 纠偏
 
-### 1.2.1 `extensions/cli-shell/README.md`
+### 1.2.1 `apps/cli-shell/README.md`
 
 当前状态：
 
 - 入口 README 已纠偏为：
   - tmux 只是 local host shell
-  - 当前 shell target 仍来自 TerminalSystem product binding
+  - 当前 shell target 仍来自 TerminalSystem app binding
   - MessageRoom 仍来自 MessageSystem
 
 这次纠偏解决了什么：
@@ -108,8 +108,8 @@
 
 保留价值：
 
-- `cli-shell` 挪到 `extensions/cli-shell` 这个方向是对的
-- core 不 import product implementation 这个方向也是对的
+- `cli-shell` 挪到 `apps/cli-shell` 这个方向是对的
+- core 不 import app implementation 这个方向也是对的
 
 冲突点：
 
@@ -126,7 +126,7 @@
 - 包位置迁移的部分可以保留为历史输入
 - 架构断言整体被本次 realign change supersede
 
-### 2.2 `openspec/changes/refine-cli-shell-tmux-product-shell`
+### 2.2 `openspec/changes/refine-cli-shell-tmux-app-shell`
 
 保留价值：
 
@@ -135,8 +135,8 @@
 
 冲突点：
 
-- `proposal/design/tasks` 在反复强调 `tmux-native product shell`
-- `design.md` 里把 tmux session options 写成 “local product truth”
+- `proposal/design/tasks` 在反复强调 `tmux-native app shell`
+- `design.md` 里把 tmux session options 写成 “local app truth”
 
 问题：
 
@@ -151,7 +151,7 @@
 
 ## 3. 当前代码冲突
 
-### 3.1 `extensions/cli-shell/src/bootstrap.ts`
+### 3.1 `apps/cli-shell/src/bootstrap.ts`
 
 证据：
 
@@ -169,7 +169,7 @@
 - 后续实现时必须把 terminal binding 拉回 bootstrap 主路径
 - 不是补一个临时查 terminal list 的 hack
 
-### 3.2 `extensions/cli-shell/src/tmux-host.ts`
+### 3.2 `apps/cli-shell/src/tmux-host.ts`
 
 证据：
 
@@ -188,7 +188,7 @@
 - 但必须改成“消费 SDK-bound terminal/room/runtime facts”
 - 不能继续让 tmux 承担 shell target truth
 
-### 3.2.1 `extensions/cli-shell/src/shell-assistant-seeds.ts`
+### 3.2.1 `apps/cli-shell/src/shell-assistant-seeds.ts`
 
 证据：
 
@@ -199,16 +199,16 @@
 
 - 这里不是普通文案问题，而是把错误 ontology 直接写进了 Shell Assistant 种子提示词
 - 它会继续诱导 Avatar 把 tmux session 当成 shell truth
-- 也会继续把 room->terminal 的绑定解释成 tmux topology，而不是 core product binding
+- 也会继续把 room->terminal 的绑定解释成 tmux topology，而不是 core app binding
 
 处理建议：
 
 - 必须改写成：
-  - room 里的对话默认是关于“当前 product session 绑定的 TerminalSystem terminal”
+  - room 里的对话默认是关于“当前 app session 绑定的 TerminalSystem terminal”
   - tmux 只是 native host/presentation framework
   - root workspace 仍然只是入口环境，不是默认终端目标
 
-### 3.3 `extensions/cli-shell/test/cli-shell.test.ts`
+### 3.3 `apps/cli-shell/test/cli-shell.test.ts`
 
 证据：
 
@@ -228,7 +228,7 @@
   - 不创建 `terminal-2` 这类 cli-shell 特化 terminal role
   - 但必须存在一个当前绑定的 `TerminalSystem terminal`
 
-### 3.4 `extensions/cli-shell/test/fake-cli-shell-store.ts`
+### 3.4 `apps/cli-shell/test/fake-cli-shell-store.ts`
 
 证据：
 
@@ -261,7 +261,7 @@
 - 如果这些测试保留的是 generic composed-terminal capability，就应该改成中性命名
 - 如果 capability 本身就是历史错误路线，也应该在后续实现阶段一起删除
 
-### 3.6 `packages/client-sdk/test/product-extension-runtime.test.ts`
+### 3.6 `packages/client-sdk/test/app-runtime.test.ts`
 
 证据：
 
@@ -269,7 +269,7 @@
 
 问题：
 
-- 这些 fixture 名称会继续暗示“product-extension-runtime 的理想产品就是 cli-shell terminal-2”
+- 这些 fixture 名称会继续暗示“app-runtime 的理想产品就是 cli-shell terminal-2”
 - 这会把 generic binding/runtime store 的语义再次拉歪
 
 处理建议：
@@ -277,7 +277,7 @@
 - 后续应把这些 fixture 改成 generic binding/projection 命名
 - 保留测试能力，不保留 cli-shell 历史命名
 
-### 3.7 `extensions/cli-shell/src/tmux-host.ts`
+### 3.7 `apps/cli-shell/src/tmux-host.ts`
 
 证据：
 
@@ -293,7 +293,7 @@
 - 后续实现时应改成更中性的报错
 - 不再把 `terminal-2` 当成现行用户语义
 
-### 3.8 `extensions/cli-shell/src/cleanup.ts`
+### 3.8 `apps/cli-shell/src/cleanup.ts`
 
 证据：
 
@@ -310,7 +310,7 @@
 - 但实现时要把语义明确成 migration cleanup / legacy residue cleanup
 - 不能让 active runtime correctness 依赖这些 residue 被先清掉
 
-### 3.9 `extensions/cli-shell/test/tmux-host.test.ts`
+### 3.9 `apps/cli-shell/test/tmux-host.test.ts`
 
 证据：
 
@@ -330,17 +330,17 @@
 
 下面这些不是一般残留，而是会直接把后续实现推向错误方向的高优先级对象：
 
-1. `extensions/cli-shell/test/fake-cli-shell-store.ts`
+1. `apps/cli-shell/test/fake-cli-shell-store.ts`
    - 把 `TerminalSystem must not be used by active cli-shell` 写成测试公理
-2. `extensions/cli-shell/test/cli-shell.test.ts`
+2. `apps/cli-shell/test/cli-shell.test.ts`
    - 把“不恢复 terminal-2”扩大成“attach bootstrap 不应该创建任何 TerminalSystem terminal”
-3. `packages/client-sdk/test/product-extension-runtime.test.ts`
+3. `packages/client-sdk/test/app-runtime.test.ts`
    - 用 `shell-*:terminal-2` fixture 暗示 generic binding 的理想形态
 4. `packages/terminal-system/test/control-plane.test.ts`
    - 用 `composed terminal-2 runtime` 命名把旧 cli-shell ontology 嵌进通用 TerminalSystem 语义
-5. `extensions/cli-shell/test/tmux-host.test.ts`
+5. `apps/cli-shell/test/tmux-host.test.ts`
    - 用 `terminal-2 fallback is not attempted` 继续把旧 host 路径暴露成现行语义
-6. `extensions/cli-shell/src/shell-assistant-seeds.ts`
+6. `apps/cli-shell/src/shell-assistant-seeds.ts`
    - 把 tmux session 直接写成 Shell Assistant 的 shell truth
 
 处理原则：
@@ -350,11 +350,11 @@
 
 当前已确认的具体定位：
 
-- `extensions/cli-shell/test/cli-shell.test.ts:37-53`
-- `extensions/cli-shell/test/fake-cli-shell-store.ts:230-269`
-- `extensions/cli-shell/test/tmux-host.test.ts:642-655`
-- `extensions/cli-shell/src/shell-assistant-seeds.ts:50-58`
-- `packages/client-sdk/test/product-extension-runtime.test.ts:618-657`
+- `apps/cli-shell/test/cli-shell.test.ts:37-53`
+- `apps/cli-shell/test/fake-cli-shell-store.ts:230-269`
+- `apps/cli-shell/test/tmux-host.test.ts:642-655`
+- `apps/cli-shell/src/shell-assistant-seeds.ts:50-58`
+- `packages/client-sdk/test/app-runtime.test.ts:618-657`
 - `packages/terminal-system/test/control-plane.test.ts:700-748`
 
 这样后续恢复实现时，不需要再重新搜一轮，可以直接按这些位置开工。
@@ -410,7 +410,7 @@
 
 ### 6.1 保留的东西
 
-- `extensions/cli-shell` 作为 extension package 的位置
+- `apps/cli-shell` 作为 extension package 的位置
 - tmux 作为 host framework
 - OpenTUI 作为 room/top-layer/view library
 - 当前 tmux 交互故事里的 Help/Chat/status bar/TopLayer 设计输入
@@ -451,8 +451,8 @@
 
 反过来，当前最小 SDK 面至少应该能支持：
 
-1. product binding
-   - product resource key
+1. app binding
+   - app resource key
    - 当前 TerminalSystem terminal id
    - 当前 MessageSystem room id
    - 当前 AvatarRuntime identity
@@ -469,12 +469,12 @@
    - send
    - focus
 4. runtime/session facts
-   - 当前 product binding facts 可见
+   - 当前 app binding facts 可见
    - 但不能变成第二 prompt source
 5. cleanup surfaces
    - 通过 owner system 清理 bound resources
 
-只要这套最小面成立，那么 native cli-shell 和未来的 browser-hosted sibling 都只是普通 product，不需要把产品知识下沉进 core。
+只要这套最小面成立，那么 native cli-shell 和未来的 browser-hosted sibling 都只是普通 app，不需要把产品知识下沉进 core。
 
 ## 7. 剩余遗留污染分级
 
@@ -485,7 +485,7 @@
 这些内容可以保留，因为它们本来就是历史 change / legacy code / archive：
 
 - `openspec/changes/archive/**`
-- `extensions/cli-shell/legacy/terminal2/**`
+- `apps/cli-shell/legacy/terminal2/**`
 - `openspec/changes/move-cli-shell-to-extension-tmux-host/legacy-residue-audit.md`
 
 处理原则：
@@ -499,9 +499,9 @@
 这些地方未必还在推动错误架构，但名字太像 cli-shell 私货，会继续误导：
 
 - `packages/terminal-system/test/control-plane.test.ts` 里如果还在用 `shell-*:terminal-2` 这类 fixture 命名
-- `packages/client-sdk/test/product-extension-runtime.test.ts` 里还在用 `shell-*:terminal-2` fixture
-- `extensions/cli-shell/src/cleanup.ts` 里对旧 residue 的识别逻辑
-- `extensions/cli-shell/src/tmux-host.ts` 里的 “old terminal-2 fallback is intentionally disabled” 提示文案
+- `packages/client-sdk/test/app-runtime.test.ts` 里还在用 `shell-*:terminal-2` fixture
+- `apps/cli-shell/src/cleanup.ts` 里对旧 residue 的识别逻辑
+- `apps/cli-shell/src/tmux-host.ts` 里的 “old terminal-2 fallback is intentionally disabled” 提示文案
 
 处理原则：
 
@@ -513,9 +513,9 @@
 这些 change 目前都已经有 superseded note 或 boundary note，但正文仍保留大量旧叙事：
 
 - `openspec/changes/move-cli-shell-to-extension-tmux-host/design.md`
-- `openspec/changes/refine-cli-shell-tmux-product-shell/design.md`
+- `openspec/changes/refine-cli-shell-tmux-app-shell/design.md`
 - `openspec/changes/add-cli-shell-web-host/**`
-- `openspec/changes/separate-cli-shell-product-from-terminal-view-components/**`
+- `openspec/changes/separate-cli-shell-app-from-terminal-view-components/**`
 - `openspec/changes/fix-review-cli-shell-attention-authorization/**`
 
 问题：
@@ -523,7 +523,7 @@
 - superseded note 解决的是“不要直接 apply”
 - 但正文内部仍然保留大量旧世界观，未来检索时仍会误导
 - `add-cli-shell-web-host` 更危险，因为它除了旧世界观，还把 tasks 打成了已完成
-- `separate-cli-shell-product-from-terminal-view-components` 更危险，因为它现在仍然显示为 `in-progress`，而且正文规模很大，极易被误认为“当前主线”
+- `separate-cli-shell-app-from-terminal-view-components` 更危险，因为它现在仍然显示为 `in-progress`，而且正文规模很大，极易被误认为“当前主线”
 - `fix-review-cli-shell-attention-authorization` 的动作生命周期方向本身是对的，但它对 cli-shell terminal identity 的叙述仍带着旧世界观残影
 
 处理原则：
@@ -552,7 +552,7 @@
 补充判断：
 
 - 现在还不急着马上新开 web change
-- 因为当前更底层的 product binding / terminal identity / runtime fact carrier 还没实现收口
+- 因为当前更底层的 app binding / terminal identity / runtime fact carrier 还没实现收口
 - 在这些 core-facing SDK surfaces 没稳定前，先写新的 web host implementation plan 很容易再次把 host 需求误下沉到 core
 
 因此更合理的顺序是：
@@ -561,7 +561,7 @@
 2. 再用“browser-hosted sibling”思维实验检查 SDK 是否足够
 3. 只有当 SDK 面已经稳定时，才单独新开 web host boundary change
 
-### 7.3.2 `separate-cli-shell-product-from-terminal-view-components` 当前判断
+### 7.3.2 `separate-cli-shell-app-from-terminal-view-components` 当前判断
 
 当前判断也很明确：
 
@@ -591,7 +591,7 @@
 
 - 保留它的 terminal action lifecycle / attention-item 因果链方向
 - 禁止从它里面继承任何旧的 cli-shell terminal ontology
-- 后续实现时，应让它依附于 `realign-cli-shell-with-core-system-boundaries` 所定义的 product binding truth
+- 后续实现时，应让它依附于 `realign-cli-shell-with-core-system-boundaries` 所定义的 app binding truth
 
 ### 7.3.4 `complete-cli-shell-avatar-session-reset` 当前判断
 
@@ -614,7 +614,7 @@
 - 但其中关于 terminal identity、web host、包路径的正文都应视为旧边界输入，而不是现行真源
 - 后续要么补 boundary note / superseded note，要么直接按当前边界重写正文
 
-### 7.3.5 durable `product-command-launcher` 当前判断
+### 7.3.5 durable `app-command-launcher` 当前判断
 
 当前判断：
 
@@ -624,7 +624,7 @@
 问题：
 
 - 这不是小文案，因为它属于 durable spec
-- 如果不改，会让后来者误以为 `cli-shell` 还在 core packages，而不是 `extensions/cli-shell`
+- 如果不改，会让后来者误以为 `cli-shell` 还在 core packages，而不是 `apps/cli-shell`
 
 处理建议：
 
@@ -639,7 +639,7 @@
 2. 测试 fixture 命名仍像“cli-shell 官方真相”  
 3. `add-cli-shell-web-host` 还在延续 `terminal-2` 世界观
 4. `complete-cli-shell-avatar-session-reset` 还在保留旧 terminal identity / `--web` / 包路径叙事
-5. `product-command-launcher` durable spec 仍保留 `packages/cli-shell` 本地路径事实
+5. `app-command-launcher` durable spec 仍保留 `packages/cli-shell` 本地路径事实
 
 补充一个当前判断：
 
@@ -658,6 +658,6 @@
 1. 清理测试 fixture 命名，避免 `shell-*:terminal-2` 继续冒充 cli-shell 真相
 2. 收口 `tmux-host.ts` / `cleanup.ts` 里的历史提示文案和 residue 语义
 3. 收口 `shell-assistant-seeds.ts`，把 tmux session truth 从真实入口提示词中移除
-4. 评估 `complete-cli-shell-avatar-session-reset`、`separate-cli-shell-product-from-terminal-view-components` 与 `fix-review-cli-shell-attention-authorization` 中哪些历史输入值得迁移到新边界下
-5. 修正 durable `product-command-launcher` 中仍保留的 `packages/cli-shell` 路径事实
+4. 评估 `complete-cli-shell-avatar-session-reset`、`separate-cli-shell-app-from-terminal-view-components` 与 `fix-review-cli-shell-attention-authorization` 中哪些历史输入值得迁移到新边界下
+5. 修正 durable `app-command-launcher` 中仍保留的 `packages/cli-shell` 路径事实
 6. 评估是否单独新开一个 web host boundary realign change，而不是继续复用 `add-cli-shell-web-host`

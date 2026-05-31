@@ -47,7 +47,7 @@ The terminal renderer SHALL preserve ANSI rendering fidelity and stable fit-driv
 
 ### Requirement: Terminal-view SHALL support terminal-local presentation controls
 
-The integrated terminal viewport SHALL expose terminal-local presentation controls including `fit` and `cover`, while leaving non-terminal product chrome to the host.
+The integrated terminal viewport SHALL expose terminal-local presentation controls including `fit` and `cover`, while leaving non-terminal app chrome to the host.
 
 #### Scenario: Switch between fit and cover modes
 - **WHEN** the host toggles between `fit` and `cover`
@@ -56,11 +56,11 @@ The integrated terminal viewport SHALL expose terminal-local presentation contro
 
 ### Requirement: Terminal-view SHALL behave as a viewport primitive
 
-The standalone `terminal-view` component SHALL own terminal renderer lifecycle, renderer resolution, snapshot hydration, live transport updates, and viewport sizing only. Product-level chrome such as titlebars, metadata footers, and decorative backgrounds MUST remain in the host surface.
+The standalone `terminal-view` component SHALL own terminal renderer lifecycle, renderer resolution, snapshot hydration, live transport updates, and viewport sizing only. App-level chrome such as titlebars, metadata footers, and decorative backgrounds MUST remain in the host surface.
 
-#### Scenario: Host owns product chrome
+#### Scenario: Host owns app chrome
 - **WHEN** a host embeds `terminal-view`
-- **THEN** the component renders the terminal viewport without product-level title or footer chrome
+- **THEN** the component renders the terminal viewport without app-level title or footer chrome
 - **THEN** the host remains responsible for surrounding shell visuals and metadata placement
 
 #### Scenario: Renderer-private helpers stay inside the viewport primitive

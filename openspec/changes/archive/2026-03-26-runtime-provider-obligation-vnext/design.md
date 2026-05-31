@@ -2,7 +2,7 @@
 
 The repository currently loads both user and project settings, but `ai.activeProvider` is treated like any other deep-merged scalar. That means a checked-in project default can silently override the user's real provider choice. In practice this causes sessions to keep using `default/deepseek` even when the user has configured `activeProvider = kimi` globally.
 
-At the same time, unresolved attention debt is modeled correctly in `scoreMap`, but operationally the product can still look as if it simply stopped. Containment is a scheduler fact, not semantic resolution, so the runtime and UI must keep that distinction explicit.
+At the same time, unresolved attention debt is modeled correctly in `scoreMap`, but operationally the app can still look as if it simply stopped. Containment is a scheduler fact, not semantic resolution, so the runtime and UI must keep that distinction explicit.
 
 ## Goals / Non-Goals
 

@@ -4,7 +4,7 @@
 
 First, OpenTUI gives us renderables and events, but it does not give us a Button component. The current code therefore builds "buttons" separately in pane chrome, Chat chrome, statusbar, and top-layer dialogs. Those local renderers disagree about hover colors, active underline, hit boxes, and titlebar overlays.
 
-Second, the ShellPane terminal projection partially copied the legacy cli-shell selection/paste model but did not preserve the whole event law. The legacy code treats terminal selection, copy, paste, and clear-selection as backend-owned facts. Shell-next must copy that behavior into its own modules instead of importing or editing `extensions/cli-shell`.
+Second, the ShellPane terminal projection partially copied the legacy cli-shell selection/paste model but did not preserve the whole event law. The legacy code treats terminal selection, copy, paste, and clear-selection as backend-owned facts. Shell-next must copy that behavior into its own modules instead of importing or editing `apps/cli-shell`.
 
 ## Goals / Non-Goals
 
@@ -13,7 +13,7 @@ Second, the ShellPane terminal projection partially copied the legacy cli-shell 
 - Add a reusable shell-next Button primitive that owns bracketed labels, hover state, active underline, disabled state, hit-region geometry, and event consumption.
 - Replace all shell-next titlebar/statusbar/dialog button rendering with that primitive or a thin adapter over it.
 - Make hover styling bold-only and active styling underline-only across ShellPane, ChatPane, statusbar, and CloseConfirmDialog.
-- Restore ShellPane selection/copy/paste by copying the needed legacy behavior into `extensions/shell-next`.
+- Restore ShellPane selection/copy/paste by copying the needed legacy behavior into `apps/shell-next`.
 - Ensure paste is delivered exactly once to the focused terminal backend.
 - Ensure renderer/Chat primary copy does not clear the user-visible selection during middle-click validation.
 - Ensure terminal backend resize delivery is both debounced and conflated.
@@ -22,7 +22,7 @@ Second, the ShellPane terminal projection partially copied the legacy cli-shell 
 
 **Non-Goals:**
 
-- Modify `extensions/cli-shell` source, tests, or OpenSpec artifacts.
+- Modify `apps/cli-shell` source, tests, or OpenSpec artifacts.
 - Import cli-shell implementation into shell-next.
 - Add an OpenTUI upstream dependency or patch OpenTUI itself.
 - Archive this change before manual acceptance.
@@ -68,7 +68,7 @@ Second, the ShellPane terminal projection partially copied the legacy cli-shell 
 
    Debounce alone is not enough. The terminal projection will maintain a single pending size slot. Each rapid layout update replaces the slot; the timer delivers only the newest size. Stable changes still deliver after the debounce window.
 
-   Alternative considered: debounce mux layout. That makes cheap renderer panes lag and mixes product layout with terminal backend pressure.
+   Alternative considered: debounce mux layout. That makes cheap renderer panes lag and mixes app layout with terminal backend pressure.
 
 ## Risks / Trade-offs
 
@@ -79,7 +79,7 @@ Second, the ShellPane terminal projection partially copied the legacy cli-shell 
 
 ## Rework Design Notes
 
-Manual acceptance exposed that several tests were too high-level or looked at helper output instead of the product node that receives real events. The rework changes the test law:
+Manual acceptance exposed that several tests were too high-level or looked at helper output instead of the app node that receives real events. The rework changes the test law:
 
 1. Button tests must prove a titlebar action created by `ShellNextPaneChromeController` uses the same primitive state as statusbar/dialog buttons. Checking `buildShellNextButtonChunk(...)` alone is insufficient.
 2. Active underline must be asserted on the visible titlebar/statusbar cells after the surface renders, not only on the pure chunk builder.
@@ -88,11 +88,11 @@ Manual acceptance exposed that several tests were too high-level or looked at he
 5. Resize pressure belongs at the source/backend boundary. The pane view can still avoid redundant size calls, but each terminal source implementation must own a debounce plus conflated dispatcher so a blocked resize cannot accumulate a backlog of obsolete sizes.
 6. Resize handle clicks are glyph-sensitive. For horizontal handles, `◀` applies `-1` and `▶` applies `+1`; for vertical handles, `▲` applies `-1` and `▼` applies `+1`.
 
-The implementation should stay within `extensions/shell-next` unless evidence shows `ghostty-native` or OpenTUI itself is the only correct fix. If a lower package needs changes, pause and discuss before editing it.
+The implementation should stay within `apps/shell-next` unless evidence shows `ghostty-native` or OpenTUI itself is the only correct fix. If a lower package needs changes, pause and discuss before editing it.
 
 ## Second Rework Design Notes
 
-Manual acceptance after the first rework proved that the remaining failures are not isolated bugs. The implementation put terminal interaction behavior in the wrong layer and the BDD asserted mocked application calls instead of the real product paths.
+Manual acceptance after the first rework proved that the remaining failures are not isolated bugs. The implementation put terminal interaction behavior in the wrong layer and the BDD asserted mocked application calls instead of the real app paths.
 
 ### Boundary Decision
 
@@ -114,7 +114,7 @@ Shell-next will add an internal terminal-engine boundary that consumes OpenCompo
 - paste is handled by the terminal frame and follows the cursor exactly once after accepted input;
 - copy routes through backend-selected text and a single OSC52 target request.
 
-ShellNextApp should only own product composition: prefix keybindings, pane toggles, Help/Chat/Statusbar, close confirmation, and Room binding.
+ShellNextApp should only own app composition: prefix keybindings, pane toggles, Help/Chat/Statusbar, close confirmation, and Room binding.
 
 ### Clipboard Decision
 
@@ -122,13 +122,13 @@ Primary clipboard remains a single-path capability. Shell-next will request `pri
 
 ### BDD Correction
 
-The next tests must target the shell-next terminal engine and real product surfaces:
+The next tests must target the shell-next terminal engine and real app surfaces:
 
 1. terminal input after a scrolled viewport calls `followCursor`;
 2. normal terminal input clears backend selection before writing bytes;
 3. Shift/Option selection preserves the keyboard selection anchor and does not clear backend selection;
 4. Room-backed Chat titlebar actions use the same pane chrome Button overlay behavior as direct Chat panes;
-5. primary copy requests are asserted as a capability request, while unsupported primary clipboard remains an explicit environment result rather than a product fallback.
+5. primary copy requests are asserted as a capability request, while unsupported primary clipboard remains an explicit environment result rather than a app fallback.
 
 ## Third Rework Design Notes
 
@@ -157,7 +157,7 @@ The current shell-next terminal frame already routes selection events to backend
 The third rework therefore tightens the law:
 
 - the Shell/OpenTUI frame layer may translate raw mouse events into terminal-intent commands only;
-- durable selection gesture state, scroll-aware anchor/focus evolution, and selection lifecycle truth belong to the shell-next terminal kernel boundary (`extensions/shell-next` internal terminal engine / source / mirror path), not to the pane view layer.
+- durable selection gesture state, scroll-aware anchor/focus evolution, and selection lifecycle truth belong to the shell-next terminal kernel boundary (`apps/shell-next` internal terminal engine / source / mirror path), not to the pane view layer.
 
 This does **not** promote terminal behavior into OpenCompose. It only removes remaining terminal-state ownership from the OpenCompose-backed Shell view layer.
 
@@ -173,7 +173,7 @@ The exact law is now:
    - when the in-flight resize finishes, at most one newest resize is sent next.
 
 2. **Top-layer `200ms` debounce**
-   - lives above the backend queue as the product-facing resize send policy;
+   - lives above the backend queue as the app-facing resize send policy;
    - suppresses unnecessary intermediate resize sends during rapid drag;
    - does not replace the bottom-layer conflation law.
 

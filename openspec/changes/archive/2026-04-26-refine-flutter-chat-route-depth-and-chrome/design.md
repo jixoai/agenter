@@ -21,13 +21,13 @@ The current bottom-tab compact route is therefore not a style bug. It is a platf
 - Replace tab equality with a typed route-depth model that can project to compact, standard, and expanded layouts.
 - Preserve all current capabilities: profile activation, room facts, participants, selected-message detail, share link, profile edit, reconnect, disconnect.
 - Use official Cupertino primitives for secondary/tertiary UI: navigation actions, pushed pages, sheets, action sheets, popovers/menus where Flutter supports them.
-- Keep the reusable package atoms orthogonal: controller/model/rendering remain package law; product routing and profile chrome remain example host shell law.
+- Keep the reusable package atoms orthogonal: controller/model/rendering remain package law; app routing and profile chrome remain example host shell law.
 
 **Non-Goals:**
 
 - Do not invent a new room websocket protocol, transport adapter, or profile persistence scheme.
 - Do not fake unsupported iOS 26 Liquid Glass effects with custom blur/glass cards.
-- Do not move product shell routing into the reusable `lib/` package.
+- Do not move app shell routing into the reusable `lib/` package.
 - Do not redesign transcript bubble rendering, markdown, upload protocol, or composer plugin law except where route chrome needs new action entry points.
 
 ## Decisions
@@ -45,7 +45,7 @@ Introduce a host-shell route model that expresses current compact depth explicit
 
 Expanded width projects the same model as persistent sidebars: profile rail + conversation + detail inspector. Standard width projects profile rail + conversation, with details as a transient inspector. Compact width projects conversation as the root route and opens the other depths through push/sheet surfaces.
 
-This is the architecture-first fix because the new law matches the product semantics. Profiles are workspace selection, room facts are inspector data, and selected-message facts are contextual detail; none are peer top-level tabs.
+This is the architecture-first fix because the new law matches the app semantics. Profiles are workspace selection, room facts are inspector data, and selected-message facts are contextual detail; none are peer top-level tabs.
 
 **Rejected option B — hide the bottom nav only on chat.**
 
@@ -91,7 +91,7 @@ Use motion for route-depth transitions and transient inspector presentation:
 - selected-message inspector: lightweight push/sheet transition from message selection.
 - standard/expanded inspector appearance: restrained cross-fade or slide tied to selection state.
 
-Do not add decorative background motion, parallax, or glass animation. The product remains chat-first and text-first.
+Do not add decorative background motion, parallax, or glass animation. The app remains chat-first and text-first.
 
 ## Risks / Trade-offs
 
@@ -110,7 +110,7 @@ Do not add decorative background motion, parallax, or glass animation. The produ
 5. Update localization, keyboard shortcuts, widget tests, `DESIGN.md`, `SPEC.md`, and delta specs.
 6. Validate with Flutter analyze/test plus Web/WASM manual route walk-through.
 
-Rollback is mechanical: the previous `ProductShellTab` code can be restored, but that should be treated as a temporary product regression because it reintroduces bottom navigation on active chat.
+Rollback is mechanical: the previous `ProductShellTab` code can be restored, but that should be treated as a temporary app regression because it reintroduces bottom navigation on active chat.
 
 ## Open Questions
 

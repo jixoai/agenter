@@ -3,7 +3,7 @@
 - [x] 1.1 Move the current service implementation into `packages/auth-service` with package name `@agenter/auth-service`
 - [x] 1.2 Move the current CLI implementation into `packages/auth-cli` with package name `@agenter/auth-cli` and canonical `auth-cli` binary
 - [x] 1.3 Rebuild `packages/profile-service` and `packages/profile-cli` as thin compatibility aliases that delegate to the auth packages
-- [x] 1.4 Update workspace metadata and lockfile so first-party product packages depend on `@agenter/auth-service`
+- [x] 1.4 Update workspace metadata and lockfile so first-party app packages depend on `@agenter/auth-service`
 
 ## 2. Runtime and CLI Migration
 

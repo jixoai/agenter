@@ -1,13 +1,13 @@
 ## MODIFIED Requirements
 
-### Requirement: Cli-shell SHALL own product-local settings and keybindings
+### Requirement: Cli-shell SHALL own app-local settings and keybindings
 
-Cli-shell SHALL keep its product-local preferences under `~/.agenter/cli-shell/`. `settings.json` stores durable product behavior such as the default Chat layout. `keybindings.json` stores product shortcut bindings for the Room composer and related panels. Missing, empty, or invalid product config files SHALL fall back to cli-shell defaults instead of mutating shared core settings truth. The built-in Chat default layout SHALL be `right`.
+Cli-shell SHALL keep its app-local preferences under `~/.agenter/cli-shell/`. `settings.json` stores durable app behavior such as the default Chat layout. `keybindings.json` stores app shortcut bindings for the Room composer and related panels. Missing, empty, or invalid app config files SHALL fall back to cli-shell defaults instead of mutating shared core settings truth. The built-in Chat default layout SHALL be `right`.
 
-#### Scenario: Missing product config falls back to cli-shell defaults
+#### Scenario: Missing app config falls back to cli-shell defaults
 
 - **WHEN** cli-shell starts and `~/.agenter/cli-shell/settings.json` or `keybindings.json` does not exist, is empty, or is invalid
-- **THEN** cli-shell uses built-in product defaults
+- **THEN** cli-shell uses built-in app defaults
 - **AND** the built-in Chat layout default is `right`
 - **AND** it does not write into shared core settings state just to recover those defaults
 
@@ -23,7 +23,7 @@ Cli-shell SHALL maintain exactly one visible Chat surface per tmux session and s
 
 #### Scenario: Default attach opens Chat on the right
 
-- **WHEN** cli-shell attaches to a tmux product session
+- **WHEN** cli-shell attaches to a tmux app session
 - **THEN** it opens or reuses one Chat Room surface as a right dock pane
 - **AND** the bottom status bar remains part of the clickable tmux pane layout
 - **AND** no second Room surface is created if a matching Room pane already exists

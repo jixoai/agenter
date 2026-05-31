@@ -8,7 +8,7 @@
 ## 2. Studio Workbench Shell
 
 - [ ] 2.1 Add `/mcp` route and app-shell `MCP` navigation item with active state for nested MCP routes.
-- [ ] 2.2 Create `extensions/studio/src/lib/features/mcp/` module structure for state, mocked fixtures, workbench layout, list, detail, dialogs, and tests.
+- [ ] 2.2 Create `apps/studio/src/lib/features/mcp/` module structure for state, mocked fixtures, workbench layout, list, detail, dialogs, and tests.
 - [ ] 2.3 Implement runtime selector and no-runtime empty state so MCP facts are always scoped to an explicit runtime authority.
 - [ ] 2.4 Implement project path filter/search with global-only and exact-project projection modes.
 
@@ -25,6 +25,6 @@
 
 - [ ] 4.1 Add Storybook DOM stories/tests for no-runtime, global-only, default-disabled project, enabled stopped, running, failed, blocked-remove, and test-call states.
 - [ ] 4.2 Add route-level smoke tests for `/mcp` desktop and iPhone 14 compact navigation reachability.
-- [ ] 4.3 Run `bun run --filter 'agenter-ext-studio' test:unit`, `bun run --filter 'agenter-ext-studio' test:dom`, and focused client-sdk/app-server tests.
-- [ ] 4.4 Update `openspec/specs/studio-product/spec.md`, `openspec/specs/client-runtime-store/spec.md`, and package-level durable docs before archive.
+- [ ] 4.3 Run `bun run --filter 'agenter-app-studio' test:unit`, `bun run --filter 'agenter-app-studio' test:dom`, and focused client-sdk/app-server tests.
+- [ ] 4.4 Update `openspec/specs/studio-app/spec.md`, `openspec/specs/client-runtime-store/spec.md`, and package-level durable docs before archive.
 - [ ] 4.5 Run `openspec validate add-studio-mcp-system-ui --strict` and `openspec validate --specs --strict`.

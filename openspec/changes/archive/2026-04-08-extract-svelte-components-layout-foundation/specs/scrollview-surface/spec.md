@@ -6,4 +6,4 @@ User-facing frontend surfaces SHALL use a shared `ScrollView` primitive for any 
 #### Scenario: Shared Svelte package consumes ScrollView
 - **WHEN** a shared Svelte package needs a durable scroll owner
 - **THEN** it imports `ScrollView` from `@agenter/svelte-components`
-- **THEN** host packages do not need a product-local wrapper to recover the shared scroll law
+- **THEN** host packages do not need a app-local wrapper to recover the shared scroll law

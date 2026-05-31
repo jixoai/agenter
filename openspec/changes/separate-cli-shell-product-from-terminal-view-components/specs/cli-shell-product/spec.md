@@ -6,27 +6,27 @@
 
 ### Requirement: Cli-shell SHALL compose `shell-terminal-view` as its primary shell surface
 
-Cli-shell SHALL render a shell-first product whose primary visible surface is `shell-terminal-view` bound to terminal-2. Terminal-1 remains the only shell truth, and a backend-owned protocol-2 composition pipeline projects terminal-1 plus accepted product chrome into terminal-2. In the collapsed default state, the product UI SHALL intrude only as a one-row bottom extension.
+Cli-shell SHALL render a shell-first app whose primary visible surface is `shell-terminal-view` bound to terminal-2. Terminal-1 remains the only shell truth, and a backend-owned protocol-2 composition pipeline projects terminal-1 plus accepted app chrome into terminal-2. In the collapsed default state, the app UI SHALL intrude only as a one-row bottom extension.
 
 #### Scenario: First screen shows one active shell-terminal-view with one-line bottom extension
 
 - **WHEN** cli-shell renders after orchestration succeeds
 - **THEN** the main body renders ordinary shell content for terminal-2 through `shell-terminal-view`
-- **AND** Agenter product chrome is confined to one bottom row
+- **AND** Agenter app chrome is confined to one bottom row
 - **AND** no top status line, header, route tabs, dashboard frame, left rail, shell list, session list, tab strip, or terminal switcher is rendered
 - **AND** the bottom row does not replace shell ownership of terminal scrolling, cursor, or input semantics
 
 #### Scenario: Attached terminal resource remains shell truth even if runtime focus still points elsewhere
 
-- **GIVEN** cli-shell bootstrap or reconnect has bound product session `shell-liveproof-a1`
+- **GIVEN** cli-shell bootstrap or reconnect has bound app session `shell-liveproof-a1`
 - **AND** the reused session runtime still reports another focused terminal such as `shell-1`
 - **WHEN** cli-shell rebuilds the shell model
-- **THEN** the main shell surface remains bound to terminal-2 for that product session
-- **AND** the product does not silently replace that shell body with the older runtime focus projection
+- **THEN** the main shell surface remains bound to terminal-2 for that app session
+- **AND** the app does not silently replace that shell body with the older runtime focus projection
 
 #### Scenario: Bottom extension remains orthogonal to shell ownership
 
-- **WHEN** cli-shell renders product metadata or extension actions
+- **WHEN** cli-shell renders app metadata or extension actions
 - **THEN** the bottom row projects extension state without becoming the terminal viewport owner
 - **AND** shell scrolling, shell cursor state, and shell lifecycle truth still come from the backend terminal
 
@@ -54,53 +54,53 @@ Cli-shell SHALL render a shell-first product whose primary visible surface is `s
 #### Scenario: Current v9 effect references are tracked in the change
 
 - **WHEN** reviewers inspect this change
-- **THEN** `assets/cli-shell-chat-tui-reference-v9-toolbar-grid.png` is available as the collapsed bottom-toolbar product-effect reference
+- **THEN** `assets/cli-shell-chat-tui-reference-v9-toolbar-grid.png` is available as the collapsed bottom-toolbar app-effect reference
 - **AND** `assets/cli-shell-chat-tui-reference-v9-toolbar-grid.svg` and `assets/cli-shell-chat-tui-reference-v9-toolbar-grid.txt` are available as its deterministic vector and terminal-grid companions
-- **AND** `assets/cli-shell-chat-tui-reference-v9-chat-right-pinned-grid.png` is available as the Chat-open pinned-at-bottom product-effect reference
+- **AND** `assets/cli-shell-chat-tui-reference-v9-chat-right-pinned-grid.png` is available as the Chat-open pinned-at-bottom app-effect reference
 - **AND** `assets/cli-shell-chat-tui-reference-v9-chat-right-pinned-grid.svg` and `assets/cli-shell-chat-tui-reference-v9-chat-right-pinned-grid.txt` are available as its deterministic vector and terminal-grid companions
-- **AND** `assets/cli-shell-chat-tui-reference-v9-chat-right-scrolled-grid.png` is available as the Chat-open scrolled-up product-effect reference with visible stick-to-bottom affordance
+- **AND** `assets/cli-shell-chat-tui-reference-v9-chat-right-scrolled-grid.png` is available as the Chat-open scrolled-up app-effect reference with visible stick-to-bottom affordance
 - **AND** `assets/cli-shell-chat-tui-reference-v9-chat-right-scrolled-grid.svg` and `assets/cli-shell-chat-tui-reference-v9-chat-right-scrolled-grid.txt` are available as its deterministic vector and terminal-grid companions
 - **AND** `assets/generate-chat-tui-references.ts` is available as the deterministic regeneration source
 
-### Requirement: Terminal-2 SHALL own the complete accepted final product surface
+### Requirement: Terminal-2 SHALL own the complete accepted final app surface
 
-When cli-shell declares terminal-2 as the final visible product terminal, the accepted product surface for that session SHALL live in terminal-2 truth itself. The accepted one-line bottom extension and any accepted transcript-open state SHALL therefore be backend-authored terminal-2 facts rather than native-host-local overlays that another terminal-2 attachment cannot observe.
+When cli-shell declares terminal-2 as the final visible app terminal, the accepted app surface for that session SHALL live in terminal-2 truth itself. The accepted one-line bottom extension and any accepted transcript-open state SHALL therefore be backend-authored terminal-2 facts rather than native-host-local overlays that another terminal-2 attachment cannot observe.
 
 #### Scenario: Native and Web attachments observe the same bottom chrome truth from terminal-2
 
 - **GIVEN** one native cli-shell host attachment and one `agenter shell --web` attachment are connected to the same terminal-2
-- **WHEN** terminal-2 publishes the collapsed final product surface
+- **WHEN** terminal-2 publishes the collapsed final app surface
 - **THEN** both hosts observe the same one-line bottom chrome from terminal-2 truth
 - **AND** native host does not supply an extra accepted bottom bar that the Web attachment cannot observe
 
 #### Scenario: Native and Web attachments observe the same transcript-open state from terminal-2
 
 - **GIVEN** one native cli-shell host attachment and one `agenter shell --web` attachment are connected to the same terminal-2
-- **WHEN** transcript chrome is opened, closed, or re-placed as part of the accepted final product surface
-- **THEN** both hosts observe the same terminal-2 product-surface transition
+- **WHEN** transcript chrome is opened, closed, or re-placed as part of the accepted final app surface
+- **THEN** both hosts observe the same terminal-2 app-surface transition
 - **AND** accepted transcript-open state is not preserved only in native-host-local OpenTUI composition
 
 #### Scenario: Host-local accepted overlays do not satisfy terminal-2 final-truth law
 
-- **WHEN** a host paints accepted bottom chrome, transcript-open state, or another accepted product-surface element outside terminal-2 truth
-- **THEN** that host-local layer does not count as satisfying the terminal-2 final product-truth requirement
-- **AND** apply remains blocked until terminal-2 owns that accepted product state
+- **WHEN** a host paints accepted bottom chrome, transcript-open state, or another accepted app-surface element outside terminal-2 truth
+- **THEN** that host-local layer does not count as satisfying the terminal-2 final app-truth requirement
+- **AND** apply remains blocked until terminal-2 owns that accepted app state
 
 ### Requirement: Cli-shell SHALL provide explicit transcript chrome only as optional extension chrome
 
-Cli-shell MAY provide explicit transcript chrome for the product room, but that transcript chrome SHALL remain optional extension chrome separate from shell ownership. It SHALL read durable room truth, SHALL NOT create another terminal truth, and SHALL NOT reuse the one-line bottom extension as a transcript pane.
+Cli-shell MAY provide explicit transcript chrome for the app room, but that transcript chrome SHALL remain optional extension chrome separate from shell ownership. It SHALL read durable room truth, SHALL NOT create another terminal truth, and SHALL NOT reuse the one-line bottom extension as a transcript pane.
 
 #### Scenario: Optional transcript chrome opens without replacing the shell
 
 - **WHEN** the user invokes the configured transcript-open gesture
-- **THEN** cli-shell may render the product room conversation in explicit side or floating transcript chrome
-- **AND** the shell remains the single active visible product-terminal surface
+- **THEN** cli-shell may render the app room conversation in explicit side or floating transcript chrome
+- **AND** the shell remains the single active visible app-terminal surface
 - **AND** the one-line bottom extension does not expand into a second transcript panel
 
 #### Scenario: Transcript chrome reads durable room truth
 
 - **WHEN** transcript chrome is open for `shell-1`
-- **THEN** it renders messages from the durable product room for `shell-1`
+- **THEN** it renders messages from the durable app room for `shell-1`
 - **AND** it does not keep a separate local transcript as authoritative truth
 
 #### Scenario: Transcript chrome closes back to the one-line shell-first default
@@ -128,7 +128,7 @@ If cli-shell provides explicit transcript chrome, placement SHALL remain an exte
 
 ### Requirement: Cli-shell SHALL keep shell input as the default input owner while keeping extension actions explicitly interactive
 
-Cli-shell SHALL forward shell-terminal input to the current shell session terminal path by default. Product affordances such as transcript entry, extension buttons, or assistant controls SHALL use explicit interaction paths, and SHALL NOT replace shell input ownership unless the user explicitly enters that separate interaction mode.
+Cli-shell SHALL forward shell-terminal input to the current shell session terminal path by default. App affordances such as transcript entry, extension buttons, or assistant controls SHALL use explicit interaction paths, and SHALL NOT replace shell input ownership unless the user explicitly enters that separate interaction mode.
 
 #### Scenario: Printable input goes to the shell by default
 
@@ -140,25 +140,25 @@ Cli-shell SHALL forward shell-terminal input to the current shell session termin
 
 - **WHEN** cli-shell is in terminal mode and the user presses terminal control keys such as `Ctrl+C`
 - **THEN** cli-shell forwards those controls to the current shell session terminal path
-- **AND** the product does not reinterpret those keypresses as local shell-exit or local toolbar actions by default
+- **AND** the app does not reinterpret those keypresses as local shell-exit or local toolbar actions by default
 
 #### Scenario: Explicit extension actions do not leak into shell input bytes
 
 - **WHEN** the user triggers a configured bottom-extension action through click or shortcut
-- **THEN** cli-shell routes that activation to the product extension action path
+- **THEN** cli-shell routes that activation to the app extension action path
 - **AND** `shell-terminal-view` does not emit that activation as shell input bytes to the backend terminal
 
-#### Scenario: Native product affordances are backed by named host primitives
+#### Scenario: Native app affordances are backed by named host primitives
 
 - **WHEN** cli-shell renders visible native actions such as managed toggle, transcript open, placement controls, close, or send
 - **THEN** each accepted action path is owned by an OpenTUI focusable/clickable primitive or another explicitly named host primitive
 - **AND** cli-shell does not rely on transparent overlay hotspot geometry or plain text mouse handlers as the final interaction truth for those actions
 
-#### Scenario: Product action semantics stay valid even when shortcut delivery differs by native host
+#### Scenario: App action semantics stay valid even when shortcut delivery differs by native host
 
-- **WHEN** cli-shell defines a product action such as transcript open, transcript close, placement change, send, or managed toggle
-- **THEN** that action remains a product-semantic contract independent of any one modifier interpretation such as `meta`
-- **AND** native shortcut delivery may still be validated per owning host without redefining the product action itself
+- **WHEN** cli-shell defines a app action such as transcript open, transcript close, placement change, send, or managed toggle
+- **THEN** that action remains a app-semantic contract independent of any one modifier interpretation such as `meta`
+- **AND** native shortcut delivery may still be validated per owning host without redefining the app action itself
 
 #### Scenario: Final native shortcut acceptance records delivered modifier truth
 
@@ -166,12 +166,12 @@ Cli-shell SHALL forward shell-terminal input to the current shell session termin
 - **THEN** the acceptance record names which modifier truth actually reached cli-shell for the tested shortcut path, such as `meta`, `super`, `option`, or host-blocked
 - **AND** the record does not treat a mocked shortcut path alone as proof of real native shortcut reachability
 
-#### Scenario: Host-blocked shortcut does not erase the product action contract
+#### Scenario: Host-blocked shortcut does not erase the app action contract
 
 - **WHEN** the owning native terminal program blocks one configured shortcut before cli-shell receives it
 - **THEN** acceptance records that host-blocked fact explicitly
-- **AND** cli-shell still proves the same product action through native click or another host-lawful interaction path
-- **AND** the product does not relabel the missing shortcut delivery as if the product action itself were absent
+- **AND** cli-shell still proves the same app action through native click or another host-lawful interaction path
+- **AND** the app does not relabel the missing shortcut delivery as if the app action itself were absent
 
 #### Scenario: Pointer-driven shell scrolling mutates shared viewport truth
 
@@ -187,7 +187,7 @@ Cli-shell SHALL forward shell-terminal input to the current shell session termin
 - **AND** it reflects backend-authored viewport position and extent
 - **AND** scrollbar interaction routes through the same backend viewport-mutation contract as wheel or pointer scroll, including absolute viewport-target requests when the thumb itself is dragged
 - **AND** track clicks, page-step motions, or other OpenTUI scrollbar affordances, if present, resolve through that same backend viewport-mutation contract
-- **AND** the product does not keep a host-local fake scroll state for the shell body
+- **AND** the app does not keep a host-local fake scroll state for the shell body
 - **AND** cli-shell does not represent shell scroll position by painting a pseudo-scrollbar into ordinary shell text rows
 
 #### Scenario: Sending a room message does not auto-close transcript chrome
@@ -196,7 +196,7 @@ Cli-shell SHALL forward shell-terminal input to the current shell session termin
 - **WHEN** the user sends a room message successfully
 - **THEN** cli-shell clears the sent draft
 - **AND** transcript chrome remains open
-- **AND** the product does not silently switch back to collapsed shell-only chrome
+- **AND** the app does not silently switch back to collapsed shell-only chrome
 - **AND** if transcript input still owns native focus after send, shell-terminal-view does not reclaim the visible cursor until focus actually returns
 
 #### Scenario: Chat transcript follows new messages when pinned at bottom
@@ -244,19 +244,19 @@ Cli-shell SHALL forward shell-terminal input to the current shell session termin
 
 ### Requirement: Cli-shell SHALL bind visible cursor ownership to explicit focus ownership
 
-Cli-shell SHALL bind visible cursor ownership to explicit focus ownership. When `shell-terminal-view` owns focus, the visible cursor belongs to the current shell-session terminal projection. When transcript entry or another explicit product input owns focus, that product input surface owns the visible cursor instead.
+Cli-shell SHALL bind visible cursor ownership to explicit focus ownership. When `shell-terminal-view` owns focus, the visible cursor belongs to the current shell-session terminal projection. When transcript entry or another explicit app input owns focus, that app input surface owns the visible cursor instead.
 
 #### Scenario: Focused shell-terminal-view owns the visible cursor
 
 - **WHEN** the shell body owns native focus
 - **THEN** the visible cursor reflects backend terminal cursor truth for the attached shell
-- **AND** product transcript or toolbar inputs do not also present themselves as the active cursor owner
+- **AND** app transcript or toolbar inputs do not also present themselves as the active cursor owner
 - **AND** only one surface presents itself as the active visible cursor owner at a time
 
 #### Scenario: Focused transcript input owns the visible cursor
 
-- **WHEN** transcript chrome input or another explicit product input box owns native focus
-- **THEN** that product input surface owns the visible cursor
+- **WHEN** transcript chrome input or another explicit app input box owns native focus
+- **THEN** that app input surface owns the visible cursor
 - **AND** shell-terminal-view does not continue presenting itself as the active cursor owner until shell focus is restored
 - **AND** only one surface presents itself as the active visible cursor owner at a time
 
@@ -271,21 +271,21 @@ Cli-shell SHALL bind visible cursor ownership to explicit focus ownership. When 
 
 ### Requirement: Cli-shell SHALL derive backend terminal geometry from shell-terminal-view native geometry
 
-Cli-shell SHALL derive two related backend geometries from the native shell window. Terminal-2 final product-surface geometry SHALL match the native shell window's full visible size. Terminal-1 shell-truth geometry SHALL be derived from that terminal-2 product-surface geometry after subtracting the collapsed one-row bottom extension and any docked transcript columns that belong to the accepted final product surface. `shell-terminal-view` SHALL derive those geometries from the native shell window rather than from host-local free resize controls.
+Cli-shell SHALL derive two related backend geometries from the native shell window. Terminal-2 final app-surface geometry SHALL match the native shell window's full visible size. Terminal-1 shell-truth geometry SHALL be derived from that terminal-2 app-surface geometry after subtracting the collapsed one-row bottom extension and any docked transcript columns that belong to the accepted final app surface. `shell-terminal-view` SHALL derive those geometries from the native shell window rather than from host-local free resize controls.
 
-#### Scenario: Initial product and shell geometries stay distinct
+#### Scenario: Initial app and shell geometries stay distinct
 
 - **GIVEN** the native shell-terminal is 120 columns by 40 rows
 - **WHEN** cli-shell renders with a one-row collapsed bottom extension
-- **THEN** it configures terminal-2 final product-surface geometry for that shell session with 120 columns and 40 rows
+- **THEN** it configures terminal-2 final app-surface geometry for that shell session with 120 columns and 40 rows
 - **AND** it configures terminal-1 shell-truth geometry with 120 columns and 39 rows
-- **AND** it renders product extension content only in the reserved bottom row
+- **AND** it renders app extension content only in the reserved bottom row
 
 #### Scenario: Native shell window resize updates backend terminal geometry
 
 - **WHEN** the native shell window is resized
-- **THEN** cli-shell recomputes terminal-2 final product-surface geometry from the full native shell window size
-- **AND** it recomputes terminal-1 shell-truth geometry from that product-surface geometry after subtracting reserved product chrome
+- **THEN** cli-shell recomputes terminal-2 final app-surface geometry from the full native shell window size
+- **AND** it recomputes terminal-1 shell-truth geometry from that app-surface geometry after subtracting reserved app chrome
 - **AND** it updates backend terminal cols and rows through the authoritative terminal path for the correct terminal role
 - **AND** `shell-terminal-view` does not keep an independent free-resize geometry model
 
@@ -304,18 +304,18 @@ Cli-shell SHALL derive two related backend geometries from the native shell wind
 - **AND** it also records whether the winner came from explicit `geometry-order` or attach-order fallback
 - **AND** it does not treat one host-local claim helper or observed local resize behavior as sufficient proof by itself
 
-### Requirement: Cli-shell SHALL expose active terminal observation as product startup truth
+### Requirement: Cli-shell SHALL expose active terminal observation as app startup truth
 
-Cli-shell SHALL treat visible Avatar startup as active shell-truth observation readiness. The product-visible startup state MUST indicate when terminal-1 changes can wake LoopBus and participate in assistant understanding, rather than relying only on local heartbeat wording or process bootstrap assumptions.
+Cli-shell SHALL treat visible Avatar startup as active shell-truth observation readiness. The app-visible startup state MUST indicate when terminal-1 changes can wake LoopBus and participate in assistant understanding, rather than relying only on local heartbeat wording or process bootstrap assumptions.
 
 #### Scenario: LoopBus-ready observation counts as Avatar started
 
 - **WHEN** cli-shell has attached the backend terminal and terminal semantic changes can wake LoopBus observation flow
-- **THEN** the product may present the Avatar as started or ready
+- **THEN** the app may present the Avatar as started or ready
 - **AND** that readiness is based on terminal observation truth rather than on a local-only toolbar string
 
 #### Scenario: Runtime bootstrap without terminal observation is not sufficient startup evidence
 
 - **WHEN** runtime processes have auto-started but terminal observation is not yet active
 - **THEN** cli-shell does not present full Avatar-started readiness
-- **AND** the product does not treat a heartbeat placeholder alone as sufficient evidence
+- **AND** the app does not treat a heartbeat placeholder alone as sufficient evidence

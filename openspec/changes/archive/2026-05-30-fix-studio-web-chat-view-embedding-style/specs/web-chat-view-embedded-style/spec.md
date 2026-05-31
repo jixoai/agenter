@@ -45,7 +45,7 @@ The shared room component SHALL render one durable conversation surface with tra
 - **THEN** secondary facts or helper content collapse into secondary affordances instead of shrinking the message viewport first
 
 #### Scenario: Embedded transcript does not create visual dead zones
-- **GIVEN** a host embeds the chat component inside fixed product chrome
+- **GIVEN** a host embeds the chat component inside fixed app chrome
 - **WHEN** message rows contain avatars, read indicators, icons, and bubbles
 - **THEN** those elements use bounded package-owned geometry
 - **AND** the transcript does not create large empty zones caused by unbounded images, unbounded SVG rings, forwarded component-root classes, or unstyled utility classes
@@ -67,9 +67,9 @@ The shared room component SHALL render one durable conversation surface with tra
 - **THEN** chat-specific visuals and transport behavior remain local to `web-chat-view`
 - **THEN** the package still avoids any dependency on `@agenter/webui`
 
-### Requirement: Web chat view SHALL expose a Framework7 product island for host embedding
+### Requirement: Web chat view SHALL expose a Framework7 app island for host embedding
 
-The shared chat package SHALL distinguish the transcript/composer leaf from the whole Web Chat product surface. The whole product surface SHALL own the Framework7 `App`, `View`, and `Page messagesContent` topology, plus the app-level styles needed by Framework7 chat primitives. Host products MAY surround that island with host-specific controls, but they SHALL NOT treat the leaf `WebChatViewHost` as a complete replacement for the Framework7 page shell.
+The shared chat package SHALL distinguish the transcript/composer leaf from the whole Web Chat app surface. The whole app surface SHALL own the Framework7 `App`, `View`, and `Page messagesContent` topology, plus the app-level styles needed by Framework7 chat primitives. Host products MAY surround that island with host-specific controls, but they SHALL NOT treat the leaf `WebChatViewHost` as a complete replacement for the Framework7 page shell.
 
 #### Scenario: Canonical review shell is the visual reference
 - **GIVEN** the full `web-chat-view` review shell renders a room chat
@@ -88,14 +88,14 @@ The shared chat package SHALL distinguish the transcript/composer leaf from the 
 - **THEN** it consumes the package-owned island boundary or iframe/custom-element wrapper
 - **AND** it does not recreate Framework7 page/content behavior through host-local padding, clipping, or emergency CSS patches
 
-### Requirement: Web chat view SHALL name the full product mode as app-view
+### Requirement: Web chat view SHALL name the full app mode as app-view
 
-The runnable full surface SHALL be referred to as `app-view` in product language. The filesystem path may remain historical, but docs, visible titles, and change artifacts SHALL treat the full `example` entrypoint as the canonical `app-view` mode so the integration contract stays clear. App-view SHALL support both standalone full-product mode and partial embedded room mode through URL-selected launch facts. Partial embedded mode SHALL be understood as an app-view mode, not as a lower-level widget API.
+The runnable full surface SHALL be referred to as `app-view` in app language. The filesystem path may remain historical, but docs, visible titles, and change artifacts SHALL treat the full `example` entrypoint as the canonical `app-view` mode so the integration contract stays clear. App-view SHALL support both standalone full-app mode and partial embedded room mode through URL-selected launch facts. Partial embedded mode SHALL be understood as an app-view mode, not as a lower-level widget API.
 
-#### Scenario: App-view naming stays product-facing
+#### Scenario: App-view naming stays app-facing
 - **WHEN** the full review shell is opened directly
 - **THEN** the visible title and docs describe the surface as `app-view`
-- **AND** the historical directory name does not change the product semantics
+- **AND** the historical directory name does not change the app semantics
 
 #### Scenario: App-view partial room mode behaves like a webview
 - **WHEN** a host opens app-view with `mode=room`, room transport URL, viewer token, and viewer contact id

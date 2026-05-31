@@ -1,6 +1,6 @@
 ## Why
 
-WebUI currently renders many always-visible helper sentences that are useful for first-time onboarding but become long-term noise for experienced users. The product needs one reusable help disclosure contract that keeps guidance discoverable without permanently occupying layout space.
+WebUI currently renders many always-visible helper sentences that are useful for first-time onboarding but become long-term noise for experienced users. The app needs one reusable help disclosure contract that keeps guidance discoverable without permanently occupying layout space.
 
 ## What Changes
 

@@ -2,7 +2,7 @@
 
 The repository already has two stable facts that this change must respect. First, the runtime skill system is filesystem-backed and keyed by objective skill roots rather than prompt glue. Second, the WebUI's major systems live inside a shared workbench chrome with fixed tabs, fixed-height toolbar chrome, and shared split-detail behavior. A Skills destination therefore should not become a bespoke file explorer, and it should not tunnel through runtime-local shell-only commands just to reconstruct information the platform already owns.
 
-This change is cross-cutting. It touches app-server control planes, client-sdk facades, WebUI shell navigation, the shared workbench tab model, and route-level responsive preview behavior. It also introduces a new preview isolation pattern because pdf/media support is intentionally not the product focus for this round. The second round of this same change corrects the inheritance law so tab order, route defaults, and runtime-visible precedence all converge on the same canonical model.
+This change is cross-cutting. It touches app-server control planes, client-sdk facades, WebUI shell navigation, the shared workbench tab model, and route-level responsive preview behavior. It also introduces a new preview isolation pattern because pdf/media support is intentionally not the app focus for this round. The second round of this same change corrects the inheritance law so tab order, route defaults, and runtime-visible precedence all converge on the same canonical model.
 
 ## Goals / Non-Goals
 
@@ -113,7 +113,7 @@ Alternatives considered:
   Mitigation: implement them as ordinary workbench tabs keyed by avatar nickname and keep close behavior device-local only.
 
 - [Risk] The isolated preview entry can look visually different from the main app.
-  Mitigation: accept minimal visual mismatch for this round and keep the iframe container, metadata, and empty/error states owned by the main workbench so the product shell still feels coherent.
+  Mitigation: accept minimal visual mismatch for this round and keep the iframe container, metadata, and empty/error states owned by the main workbench so the app shell still feels coherent.
 
 - [Risk] Routing text previews through iframe could regress simple Markdown/source readability or copy semantics.
   Mitigation: make CodeMirror the default text renderer inside `filePreviewer`, keep source-first behavior, and add DOM/browser coverage for `SKILL.md` in addition to pdf.

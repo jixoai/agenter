@@ -20,7 +20,7 @@
 ### `attention_reply` is replaced, not hidden
 The tool contract becomes `attention_update`, with semantics centered on internal attention facts and relationships rather than user-visible reply text.
 
-Why: the user explicitly allowed a non-backward-compatible redesign, and the old name encodes the wrong product meaning.
+Why: the user explicitly allowed a non-backward-compatible redesign, and the old name encodes the wrong app meaning.
 
 ### `attention_query` defaults to `minScore = 1`
 Queries exclude `score=0` rows unless the caller explicitly sets `minScore: 0`.

@@ -56,7 +56,7 @@
 
 | Checkpoint | Expected commit evidence | Current status |
 | ---------- | ------------------------ | -------------- |
-| OpenSpec artifacts before apply | Commit containing `plans/plan.md`, specs, and `tasks.md` before product-code work starts | Not yet committed; only `plans/plan.md` is being created in this round. |
+| OpenSpec artifacts before apply | Commit containing `plans/plan.md`, specs, and `tasks.md` before app-code work starts | Not yet committed; only `plans/plan.md` is being created in this round. |
 | Task-progress commits | Commit containing current-context task checkbox updates plus matching code/BDD evidence | Not started. |
 | Self-review updates | Commit containing review output and any reopened or added OpenSpec tasks before the next apply loop | Not started. |
 | Normal archive | Commit containing `openspec archive <change>` result | Not started. |

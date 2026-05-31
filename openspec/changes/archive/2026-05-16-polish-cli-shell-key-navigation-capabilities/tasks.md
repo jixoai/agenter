@@ -5,7 +5,7 @@
 
 ## 2. Interaction Capability Layer
 
-- [x] 2.1 Add a product-local cli-shell interaction capability profile and backend recommendation map.
+- [x] 2.1 Add a app-local cli-shell interaction capability profile and backend recommendation map.
 - [x] 2.2 Wire the recommendation profile into native and web cli-shell startup/TUI construction without touching core terminal-system policy.
 - [x] 2.3 Add focused BDD tests for backend recommendation defaults and fallback behavior.
 

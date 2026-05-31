@@ -7,7 +7,7 @@ Existing building blocks:
 - `SessionRuntime` currently owns source collection and LoopBus handoff.
 - client-sdk and WebUI already consume runtime snapshots, realtime events, and devtools panels.
 
-The missing slice is a LoopBus-only runtime refactor that defines the core plugin pipeline and the product-facing runtime publication contract.
+The missing slice is a LoopBus-only runtime refactor that defines the core plugin pipeline and the app-facing runtime publication contract.
 
 ## Goals / Non-Goals
 

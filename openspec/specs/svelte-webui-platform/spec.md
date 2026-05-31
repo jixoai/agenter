@@ -6,11 +6,11 @@ Define the active SvelteKit-based operator Studio platform, including system-fir
 ## Requirements
 ### Requirement: SvelteKit package SHALL be the active WebUI platform
 
-The repository SHALL expose `agenter-ext-studio` as the active SvelteKit 2 + Svelte 5 operator package, and the previous React implementation SHALL be retained only as an inactive reference package under a non-conflicting identity. The term WebUI remains historical wording for this capability only; active product identity SHALL be Studio.
+The repository SHALL expose `agenter-app-studio` as the active SvelteKit 2 + Svelte 5 operator package, and the previous React implementation SHALL be retained only as an inactive reference package under a non-conflicting identity. The term WebUI remains historical wording for this capability only; active app identity SHALL be Studio.
 
 #### Scenario: Active package resolution
 
-- **WHEN** workspace package discovery resolves `agenter-ext-studio`
+- **WHEN** workspace package discovery resolves `agenter-app-studio`
 - **THEN** it resolves to the active SvelteKit operator package rather than the archived React package
 
 #### Scenario: Archived React package remains available
@@ -132,7 +132,7 @@ The active Svelte Studio surface SHALL model primary content, navigation, second
 
 - **WHEN** a Studio route or shell needs scrolling or scaffold-family layout
 - **THEN** it composes the shared primitives from `@agenter/svelte-components`
-- **THEN** `agenter-ext-studio` stays a product assembly layer instead of becoming the source of truth for shared layout law
+- **THEN** `agenter-app-studio` stays a app assembly layer instead of becoming the source of truth for shared layout law
 
 ### Requirement: Compact workbench tabs SHALL preserve the primary running-tab hit target
 

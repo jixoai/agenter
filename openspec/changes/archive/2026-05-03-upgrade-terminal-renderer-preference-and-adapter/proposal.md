@@ -1,8 +1,8 @@
 ## Why
 
-The terminal viewport is still built around one concrete renderer implementation (`xterm`) and leaks renderer-private assumptions into durable profile fields, WebComponent host logic, CSS selectors, DOM tests, and AI-facing config mutation surfaces. That blocks the current product goal of defaulting desktop WebUI to `ghostty-web`, and it would make future `wterm` experiments repeat the same coupling failure instead of composing through one stable renderer law.
+The terminal viewport is still built around one concrete renderer implementation (`xterm`) and leaks renderer-private assumptions into durable profile fields, WebComponent host logic, CSS selectors, DOM tests, and AI-facing config mutation surfaces. That blocks the current app goal of defaulting desktop WebUI to `ghostty-web`, and it would make future `wterm` experiments repeat the same coupling failure instead of composing through one stable renderer law.
 
-This change is needed now because terminal-window fit/cover stabilization has already exposed that renderer behavior is a first-class product concern: `ghostty-web` is preferred for desktop due to better rendering architecture and scale-safe text selection, while `wterm` is a future candidate for web/mobile accessibility. Without a renderer-preference contract plus adapter layer, every new renderer would force another host rewrite.
+This change is needed now because terminal-window fit/cover stabilization has already exposed that renderer behavior is a first-class app concern: `ghostty-web` is preferred for desktop due to better rendering architecture and scale-safe text selection, while `wterm` is a future candidate for web/mobile accessibility. Without a renderer-preference contract plus adapter layer, every new renderer would force another host rewrite.
 
 ## What Changes
 

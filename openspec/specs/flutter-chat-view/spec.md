@@ -13,7 +13,7 @@ The controller SHALL act as the stage state kernel and SHALL consume package-own
 #### Scenario: Flutter implementation starts from the package contract
 - **WHEN** a future engineer starts the next Flutter milestone
 - **THEN** `packages/flutter-chat-view` already exposes the canonical room transport and upload contract
-- **THEN** they do not need to reverse-engineer `extensions/studio` to discover websocket paths or upload headers
+- **THEN** they do not need to reverse-engineer `apps/studio` to discover websocket paths or upload headers
 
 #### Scenario: Controller derives room identity and upload base from transport URL
 - **WHEN** the host provides a room websocket URL and an optional overriding access token
@@ -70,25 +70,25 @@ The Flutter chat view SHALL keep composer extensions orthogonal to the core comp
 - **THEN** the base draft input remains a normal text composer
 
 ### Requirement: Flutter chat view SHALL compose as a host-owned conversation stage
-The Flutter chat package SHALL expose chat-stage primitives that a host-owned product shell can compose without inheriting route chrome, connection forms, or app-level navigation from the package itself. The package SHALL keep room transport, transcript, composer, and row affordances inside the stage boundary while leaving profile management, shell navigation, and room-detail orchestration to the host shell.
+The Flutter chat package SHALL expose chat-stage primitives that a host-owned app shell can compose without inheriting route chrome, connection forms, or app-level navigation from the package itself. The package SHALL keep room transport, transcript, composer, and row affordances inside the stage boundary while leaving profile management, shell navigation, and room-detail orchestration to the host shell.
 
-#### Scenario: Host shell owns product chrome around the chat stage
+#### Scenario: Host shell owns app chrome around the chat stage
 - **WHEN** a standalone Flutter app shell embeds the chat stage
 - **THEN** the package provides the conversation viewport and composer surface without forcing a second package-owned page header
 - **THEN** the host shell remains free to place its own navigation, status chrome, and detail surfaces around that stage
 
-### Requirement: Flutter chat view SHALL keep product-shell copy and adaptive navigation localizable and accessible
-The Flutter chat package and its standalone Web product shell SHALL expose durable UI copy through localization delegates, SHALL keep translated copy out of controller/model truth, and SHALL provide baseline Web accessibility via semantics, keyboard reachability, and an adaptive shell that preserves the same capabilities across compact, standard, and expanded layouts.
+### Requirement: Flutter chat view SHALL keep app-shell copy and adaptive navigation localizable and accessible
+The Flutter chat package and its standalone Web app shell SHALL expose durable UI copy through localization delegates, SHALL keep translated copy out of controller/model truth, and SHALL provide baseline Web accessibility via semantics, keyboard reachability, and an adaptive shell that preserves the same capabilities across compact, standard, and expanded layouts.
 
-The standalone product shell SHALL use Apple platform primitives for app-level chrome, conversation content, inspector, icon actions, action sheets, pushed pages, and content-unavailable states. Product code SHALL not hand-roll page-level Apple materials from raw background, clipping, and border values.
+The standalone app shell SHALL use Apple platform primitives for app-level chrome, conversation content, inspector, icon actions, action sheets, pushed pages, and content-unavailable states. App code SHALL not hand-roll page-level Apple materials from raw background, clipping, and border values.
 
 Compact active conversation routing SHALL be conversation-first: the transcript and composer SHALL own the chat screen, and persistent bottom app navigation SHALL NOT appear on the active compact chat page. Profiles, room facts, participants, and selected-message facts SHALL remain reachable through explicit secondary or tertiary navigation surfaces instead of peer bottom tabs.
 
 Compact secondary and tertiary route surfaces SHALL use semantic sheet detents owned by the host-shell sheet primitive. Profile directory surfaces SHALL use a large page-style detent. Room and selected-message inspector surfaces SHALL use an inspector detent that remains clearly intentional, scrollable, and safe-area aware. Feature code SHALL select the semantic detent, not raw popup heights.
 
-Icon-only product-shell actions SHALL expose exactly one labeled semantic button while preserving at least a 44pt hit target. Those icon-only actions SHALL also expose visible tooltip or long-press help derived from the same localized label without creating a duplicate semantic button.
+Icon-only app-shell actions SHALL expose exactly one labeled semantic button while preserving at least a 44pt hit target. Those icon-only actions SHALL also expose visible tooltip or long-press help derived from the same localized label without creating a duplicate semantic button.
 
-#### Scenario: Product shell adapts without losing profile, conversation, or details access
+#### Scenario: App shell adapts without losing profile, conversation, or details access
 - **WHEN** the host shell renders under compact, standard, or expanded width bands
 - **THEN** the operator can still reach profiles, the active conversation, room facts, participants, and selected-message facts in each band
 - **THEN** those layout differences remain host-shell projections instead of package-level special cases
@@ -118,13 +118,13 @@ Icon-only product-shell actions SHALL expose exactly one labeled semantic button
 - **THEN** it may expose profile and inspector atoms as persistent rails when space allows
 - **THEN** those persistent rails remain projections of the same route-depth model used by compact layout
 
-#### Scenario: Product shell uses Apple semantic surfaces
-- **WHEN** the product shell renders profile, conversation, inspector, or empty-state UI
+#### Scenario: App shell uses Apple semantic surfaces
+- **WHEN** the app shell renders profile, conversation, inspector, or empty-state UI
 - **THEN** those surfaces are composed through Apple platform primitives
 - **THEN** icon-only actions preserve a 44pt hit target and one localized accessibility label
 
 #### Scenario: Icon-only action exposes help without duplicate semantics
-- **WHEN** the product shell renders an icon-only action
+- **WHEN** the app shell renders an icon-only action
 - **THEN** the action has a localized semantic button label
 - **THEN** the action exposes tooltip or long-press help from that same label
 - **THEN** the tooltip does not create a second semantic button
@@ -134,7 +134,7 @@ Icon-only product-shell actions SHALL expose exactly one labeled semantic button
 - **THEN** the rendered text comes from localization delegates
 - **THEN** the controller and durable room models continue to store objective facts instead of translated strings
 
-### Requirement: Flutter chat view SHALL expose product-grade transcript affordances
+### Requirement: Flutter chat view SHALL expose app-grade transcript affordances
 The Flutter chat stage SHALL render a conversation-first transcript with restrained time dividers, message selection, and a return-to-latest affordance so a host shell can deliver long-lived room browsing without reverting to demo-style flat rendering.
 
 Transcript and Web demo shell surfaces SHALL avoid `SelectableRegion`, `HtmlElementView`, and Flutter Web platform views. Text copy SHALL be exposed through stable message actions so virtualized rows and return-to-latest motion do not leave platform-view layout callbacks attached to disposed render objects.

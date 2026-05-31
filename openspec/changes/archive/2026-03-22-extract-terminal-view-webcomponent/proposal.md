@@ -1,6 +1,6 @@
 ## Why
 
-The current terminal rendering logic still lives inside WebUI-specific code and does not yet provide the standalone renderer contract from the original target. That blocks reuse, keeps xterm rendering bugs tied to app-specific layout assumptions, and prevents the product from treating terminal rendering as a portable component with a stable transport boundary.
+The current terminal rendering logic still lives inside WebUI-specific code and does not yet provide the standalone renderer contract from the original target. That blocks reuse, keeps xterm rendering bugs tied to app-specific layout assumptions, and prevents the app from treating terminal rendering as a portable component with a stable transport boundary.
 
 ## What Changes
 
@@ -16,7 +16,7 @@ The current terminal rendering logic still lives inside WebUI-specific code and 
 
 ### Modified Capabilities
 - `terminal-pty-transport`: renderer consumers connect through the terminal-system websocket PTY transport contract.
-- `workspace-devtools-surface`: WebUI consumes the new terminal-view component instead of maintaining a product-local terminal renderer.
+- `workspace-devtools-surface`: WebUI consumes the new terminal-view component instead of maintaining a app-local terminal renderer.
 - `overflow-layout-contract`: terminal renderer scroll ownership and fallback behavior are formalized for xterm surfaces.
 
 ## Impact

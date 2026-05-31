@@ -1,6 +1,6 @@
 ## Why
 
-`add-cli-shell-product` needs only minimal attention-cli compatible `commit/query/settle` operations so `shell-assistant` can express self-evolution without kernel special cases. That is enough for the first product, but it does not fully cover richer user-defined loops such as "review my day later, update memory, and keep improving across time".
+`add-cli-shell-app` needs only minimal attention-cli compatible `commit/query/settle` operations so `shell-assistant` can express self-evolution without kernel special cases. That is enough for the first app, but it does not fully cover richer user-defined loops such as "review my day later, update memory, and keep improving across time".
 
 This follow-up change records the future platform proposal: attention-cli should eventually expose generic watch and schedule primitives for assistant-composed self-evolution loops. The proposal exists so the idea is not lost, but it is not part of the current cli-shell implementation.
 
@@ -28,6 +28,6 @@ This follow-up change records the future platform proposal: attention-cli should
 
 ## Out Of Scope
 
-- Implementing this proposal during `add-cli-shell-product`.
+- Implementing this proposal during `add-cli-shell-app`.
 - Adding a built-in `auto-dream` command, score key, or scheduler branch.
 - Granting terminal write authority from self-evolution attention alone.

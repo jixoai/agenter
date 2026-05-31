@@ -1,6 +1,6 @@
 ## Context
 
-`@agenter/webui` currently mixes React shell concerns, custom component wrappers, route state, and product-specific behavior in one package. The backend and SDK already expose the right system-oriented APIs for workspaces, global rooms, global terminals, auth actors, and profile assets. The frontend should switch frameworks without rewriting those contracts, while the CLI must continue serving the app as copied static assets.
+`@agenter/webui` currently mixes React shell concerns, custom component wrappers, route state, and app-specific behavior in one package. The backend and SDK already expose the right system-oriented APIs for workspaces, global rooms, global terminals, auth actors, and profile assets. The frontend should switch frameworks without rewriting those contracts, while the CLI must continue serving the app as copied static assets.
 
 ## Goals / Non-Goals
 

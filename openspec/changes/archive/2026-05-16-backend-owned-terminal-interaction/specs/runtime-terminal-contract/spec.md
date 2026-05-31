@@ -28,16 +28,16 @@ Runtime terminal operations SHALL expose cursor-follow as a backend-owned operat
 - **THEN** runtime SHALL NOT treat that frontend value as the authoritative cursor-follow result
 - **AND** backend cursor-follow remains the primary operation
 
-### Requirement: Runtime terminal contract SHALL keep interaction truth separate from product chrome truth
+### Requirement: Runtime terminal contract SHALL keep interaction truth separate from app chrome truth
 
-Runtime SHALL distinguish backend terminal interaction truth from product chrome state. Product chrome may route events and display results, but terminal selection, copy, cursor-follow, scrollback, and viewport truth SHALL stay attached to the backend or offscreen renderer owner.
+Runtime SHALL distinguish backend terminal interaction truth from app chrome state. App chrome may route events and display results, but terminal selection, copy, cursor-follow, scrollback, and viewport truth SHALL stay attached to the backend or offscreen renderer owner.
 
-#### Scenario: Product action does not become terminal selection truth
-- **WHEN** cli-shell product chrome receives a click or shortcut
-- **THEN** runtime MAY update product state for that action
+#### Scenario: App action does not become terminal selection truth
+- **WHEN** cli-shell app chrome receives a click or shortcut
+- **THEN** runtime MAY update app state for that action
 - **AND** runtime SHALL NOT mutate terminal selection unless the event targets a backend interaction owner
 
-#### Scenario: Terminal selection does not become product-local state
+#### Scenario: Terminal selection does not become app-local state
 - **WHEN** shell backend selection changes
 - **THEN** runtime SHALL publish that selection as terminal interaction projection state
-- **AND** cli-shell product state SHALL NOT store a second authoritative selected range
+- **AND** cli-shell app state SHALL NOT store a second authoritative selected range

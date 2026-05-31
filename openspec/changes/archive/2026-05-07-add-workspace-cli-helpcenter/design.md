@@ -8,10 +8,10 @@ The gap becomes visible in both shell and browser surfaces. A bare `help` invoca
 
 **Goals:**
 - Add one shared command catalog model that can project the current workspace/avatar CLI surface into both shell and browser surfaces.
-- Include `just-bash` builtins explicitly so the catalog matches the real shell contract instead of pretending only product-defined helpers exist.
+- Include `just-bash` builtins explicitly so the catalog matches the real shell contract instead of pretending only app-defined helpers exist.
 - Keep runtime CLI command truth descriptor-backed and keep workspace file-backed tool truth filesystem-backed.
 - Add a `CLI` workspace mode without changing the existing top-level workbench chrome law.
-- Keep arbitrary PATH binaries out of the catalog so the page remains a product/runtime truth surface rather than a generic shell explorer.
+- Keep arbitrary PATH binaries out of the catalog so the page remains a app/runtime truth surface rather than a generic shell explorer.
 
 **Non-Goals:**
 - Replace or override the built-in `help` shell command.

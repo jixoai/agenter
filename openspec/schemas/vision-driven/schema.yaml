@@ -23,7 +23,7 @@ artifacts:
       - Investigate the relevant code before locking the plan.
       - Investigate the relevant existing OpenSpec changes/specs before locking the plan.
       - Preserve the user's original requirement and every requirement-bearing Q&A as objective records.
-      - Make the user's language system visible: capture the phrases, metaphors, and product vocabulary the user actually uses.
+      - Make the user's language system visible: capture the phrases, metaphors, and app vocabulary the user actually uses.
       - Surface the real questions you need to ask the user, plus your current inference before the user answers.
       - Separate facts, inferences, decisions, open questions, and rejected paths.
       - Explain whether this change is a regular atom under current platform laws or a law-breaking entity that needs a paradigm shift.
@@ -38,10 +38,10 @@ artifacts:
       - Never fork competing current intent documents.
 
       Git evidence law:
-      - Once `research-plan`, `specs`, and `tasks` are ready for apply, run `bun run openspec:vision -- commit-check <change> --phase research-plan` and commit the OpenSpec artifacts before product-code work starts.
+      - Once `research-plan`, `specs`, and `tasks` are ready for apply, run `bun run openspec:vision -- commit-check <change> --phase research-plan` and commit the OpenSpec artifacts before app-code work starts.
       - If self-review or renewed user discussion changes OpenSpec artifacts, commit those artifact updates before applying more implementation work.
 
-      Use direct, product-architect language. This artifact is for the user and future agents, not just implementers.
+      Use direct, app-architect language. This artifact is for the user and future agents, not just implementers.
     requires: []
 
   - id: specs
@@ -141,4 +141,4 @@ apply:
     - tasks
   tracks: tasks.md
   instruction: |
-    Implement pending tasks with BDD-first discipline. Keep `plans/plan.md` as the SSOT. Before product-code work starts, run `bun run openspec:vision -- commit-check <change> --phase apply` and make sure OpenSpec artifacts have been committed. Update only task checkboxes completed and verified in the current working context, include concise intent comments at critical effect points derived from `plans/plan.md`, commit task updates with matching implementation/BDD evidence, use `bun run openspec:vision -- validate <change>` when the task list calls for OpenSpec validation, and run `bun run openspec:vision -- check <change>` before claiming the workflow is complete.
+    Implement pending tasks with BDD-first discipline. Keep `plans/plan.md` as the SSOT. Before app-code work starts, run `bun run openspec:vision -- commit-check <change> --phase apply` and make sure OpenSpec artifacts have been committed. Update only task checkboxes completed and verified in the current working context, include concise intent comments at critical effect points derived from `plans/plan.md`, commit task updates with matching implementation/BDD evidence, use `bun run openspec:vision -- validate <change>` when the task list calls for OpenSpec validation, and run `bun run openspec:vision -- check <change>` before claiming the workflow is complete.

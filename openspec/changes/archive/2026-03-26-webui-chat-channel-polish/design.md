@@ -61,4 +61,4 @@ Alternatives considered:
 
 ## Open Questions
 
-- None blocked. The remaining work is implementation and verification discipline rather than unresolved product direction.
+- None blocked. The remaining work is implementation and verification discipline rather than unresolved app direction.

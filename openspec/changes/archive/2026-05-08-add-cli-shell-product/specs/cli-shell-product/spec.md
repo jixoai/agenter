@@ -1,18 +1,18 @@
 ## ADDED Requirements
 
-### Requirement: Cli-shell SHALL parse optional Avatar mention and product terminal name separately
+### Requirement: Cli-shell SHALL parse optional Avatar mention and app terminal name separately
 
-The `@agenter/cli-shell` product SHALL parse an optional Avatar mention and a product-local shell session name, and it SHALL map the session name only to a terminal name. When no Avatar mention is present, cli-shell SHALL use the dedicated terminal assistant Avatar `shell-assistant`. Explicit mentions such as `@default` SHALL remain supported overrides.
+The `@agenter/cli-shell` app SHALL parse an optional Avatar mention and a app-local shell session name, and it SHALL map the session name only to a terminal name. When no Avatar mention is present, cli-shell SHALL use the dedicated terminal assistant Avatar `shell-assistant`. Explicit mentions such as `@default` SHALL remain supported overrides.
 
 #### Scenario: Default command attaches shell-assistant to shell-1
 - **WHEN** a user runs `agenter shell`
 - **THEN** cli-shell resolves the Avatar nickname as `shell-assistant`
-- **AND** it resolves the product terminal name as `shell-1`
+- **AND** it resolves the app terminal name as `shell-1`
 
 #### Scenario: Missing shell-assistant Avatar is ensured
 - **GIVEN** no Avatar with nickname `shell-assistant` exists
 - **WHEN** a user runs `agenter shell`
-- **THEN** cli-shell ensures or creates the Avatar through generic Avatar/product-extension APIs
+- **THEN** cli-shell ensures or creates the Avatar through generic Avatar/app-extension APIs
 - **AND** core launcher modules do not special-case that Avatar identity
 
 #### Scenario: Explicit Avatar mention overrides shell-assistant default
@@ -25,17 +25,17 @@ The `@agenter/cli-shell` product SHALL parse an optional Avatar mention and a pr
 - **THEN** cli-shell summons Avatar `default`
 - **AND** historical terminal-assistant role notes do not override the explicit Avatar mention
 
-#### Scenario: Numeric session maps to product terminal name
+#### Scenario: Numeric session maps to app terminal name
 - **WHEN** a user runs `agenter shell --session=2`
-- **THEN** cli-shell resolves the product terminal name as `shell-2`
+- **THEN** cli-shell resolves the app terminal name as `shell-2`
 - **AND** it does not treat `2` as an AvatarRuntime session id
 
-#### Scenario: Named session maps to product terminal name
+#### Scenario: Named session maps to app terminal name
 - **WHEN** a user runs `agenter shell --session=prod`
-- **THEN** cli-shell resolves the product terminal name as `shell-prod`
+- **THEN** cli-shell resolves the app terminal name as `shell-prod`
 - **AND** repeated launches with the same arguments target the same terminal name
 
-### Requirement: Cli-shell SHALL default to superadmin product login
+### Requirement: Cli-shell SHALL default to superadmin app login
 
 Cli-shell SHALL authenticate through the local daemon using superadmin auto-login by default before it mutates room, terminal, or AvatarRuntime resources.
 
@@ -44,14 +44,14 @@ Cli-shell SHALL authenticate through the local daemon using superadmin auto-logi
 - **THEN** it requests auto-login and stores the returned auth token in its client
 - **AND** later room and terminal mutations use authenticated backend APIs
 
-#### Scenario: Product login failure blocks mutation
+#### Scenario: App login failure blocks mutation
 - **WHEN** superadmin auto-login fails
 - **THEN** cli-shell exits with an explicit authentication error
 - **AND** it does not create or mutate terminals, rooms, or AvatarRuntime state
 
 ### Requirement: Cli-shell SHALL summon the selected Avatar without multiplying runtime identity
 
-Cli-shell SHALL ensure the selected AvatarRuntime is running for the selected Avatar, and it SHALL attach product resources to that runtime instead of creating product-session-specific runtime identities.
+Cli-shell SHALL ensure the selected AvatarRuntime is running for the selected Avatar, and it SHALL attach app resources to that runtime instead of creating app-session-specific runtime identities.
 
 #### Scenario: Repeated default launch reuses one AvatarRuntime
 - **WHEN** a user runs `agenter shell` multiple times
@@ -65,7 +65,7 @@ Cli-shell SHALL ensure the selected AvatarRuntime is running for the selected Av
 
 ### Requirement: Cli-shell SHALL ensure a durable internal terminal by name
 
-Cli-shell SHALL list before creating the target terminal because terminal creation is not idempotent. The target terminal id SHALL be the resolved product terminal name.
+Cli-shell SHALL list before creating the target terminal because terminal creation is not idempotent. The target terminal id SHALL be the resolved app terminal name.
 
 #### Scenario: Existing internal terminal is reused
 - **GIVEN** global terminal `shell-1` already exists
@@ -84,30 +84,30 @@ Cli-shell SHALL list before creating the target terminal because terminal creati
 - **THEN** the Avatar principal has sufficient terminal access to observe and participate through backend systems
 - **AND** terminal focus for that Avatar points at `shell-1`
 
-### Requirement: Cli-shell SHALL ensure a durable room for the shell product
+### Requirement: Cli-shell SHALL ensure a durable room for the shell app
 
-Cli-shell SHALL create or reuse a global room for the resolved shell name, using backend-allocated room ids and product metadata rather than using the shell name as the room id.
+Cli-shell SHALL create or reuse a global room for the resolved shell name, using backend-allocated room ids and app metadata rather than using the shell name as the room id.
 
-#### Scenario: Existing product room is reused by metadata
-- **GIVEN** a global room exists with metadata `product = cli-shell` and `shellName = shell-1`
+#### Scenario: Existing app room is reused by metadata
+- **GIVEN** a global room exists with metadata `app = cli-shell` and `shellName = shell-1`
 - **WHEN** cli-shell starts for `--session=1`
 - **THEN** it reuses that room
-- **AND** it does not create a duplicate room with the same product identity
+- **AND** it does not create a duplicate room with the same app identity
 
-#### Scenario: Missing product room is created with backend id
+#### Scenario: Missing app room is created with backend id
 - **GIVEN** no global room has cli-shell metadata for `shell-1`
 - **WHEN** cli-shell starts for `--session=1`
 - **THEN** it creates a global room whose visible title may be `shell-1`
 - **AND** the durable room id is allocated by the backend message authority
 
-#### Scenario: Avatar is granted and focused into the product room
+#### Scenario: Avatar is granted and focused into the app room
 - **WHEN** cli-shell ensures the room for `shell-1`
 - **THEN** the selected Avatar principal has room access
 - **AND** the room is focused for that Avatar as part of the summon flow
 
 ### Requirement: Cli-shell SHALL bind one shell-terminal to one internal terminal
 
-Cli-shell SHALL treat the user-launched shell-terminal as a single attachment surface for one internal `terminalSystem` terminal. It SHALL NOT provide in-product management or switching across multiple internal terminals in one shell-terminal.
+Cli-shell SHALL treat the user-launched shell-terminal as a single attachment surface for one internal `terminalSystem` terminal. It SHALL NOT provide in-app management or switching across multiple internal terminals in one shell-terminal.
 
 #### Scenario: One shell-terminal attaches one terminal
 - **WHEN** a user runs `agenter shell --session=1`
@@ -126,7 +126,7 @@ Cli-shell SHALL treat the user-launched shell-terminal as a single attachment su
 
 ### Requirement: Cli-shell TUI SHALL intrude only at the bottom of the shell-terminal
 
-Cli-shell SHALL render a terminal-first TUI whose first screen uses the shell-terminal primarily as an ordinary usable terminal surface. In the collapsed default state, the product UI SHALL intrude only as a one-row bottom toolbar and SHALL match the current v8 toolbar effect reference.
+Cli-shell SHALL render a terminal-first TUI whose first screen uses the shell-terminal primarily as an ordinary usable terminal surface. In the collapsed default state, the app UI SHALL intrude only as a one-row bottom toolbar and SHALL match the current v8 toolbar effect reference.
 
 #### Scenario: First screen shows one active terminal with one-line bottom toolbar
 - **WHEN** cli-shell renders after orchestration succeeds
@@ -136,15 +136,15 @@ Cli-shell SHALL render a terminal-first TUI whose first screen uses the shell-te
 - **AND** no persistent right-side room transcript pane is rendered
 
 #### Scenario: Toolbar uses the required three-zone structure
-- **WHEN** cli-shell renders product metadata
+- **WHEN** cli-shell renders app metadata
 - **THEN** the bottom toolbar includes a status icon zone
 - **AND** it includes a current Heartbeat zone
 - **AND** it includes an action button zone
 - **AND** the toolbar is visually distinguished primarily by background color
 
-#### Scenario: Product UI is rendered as terminal cells
+#### Scenario: App UI is rendered as terminal cells
 - **WHEN** cli-shell renders toolbar, dialogue, borders, gutters, scrollbar, controls, backgrounds, or highlights
-- **THEN** every visible product element maps to shell-terminal character cells
+- **THEN** every visible app element maps to shell-terminal character cells
 - **AND** borders are rendered through box-drawing or ASCII characters rather than pixel-only card edges
 - **AND** backgrounds and highlights are applied as cell ranges
 - **AND** wide emoji and CJK glyphs are measured with terminal-width semantics before layout is finalized
@@ -164,7 +164,7 @@ Cli-shell SHALL render a terminal-first TUI whose first screen uses the shell-te
 #### Scenario: Optional separator is not a required content row
 - **WHEN** cli-shell theme renders a separator between terminal body and bottom dock
 - **THEN** the separator is purely visual
-- **AND** the default product content still fits in one bottom row
+- **AND** the default app content still fits in one bottom row
 
 #### Scenario: UI terminology distinguishes shell-terminal and terminal
 - **WHEN** cli-shell renders labels or diagnostics
@@ -174,12 +174,12 @@ Cli-shell SHALL render a terminal-first TUI whose first screen uses the shell-te
 
 #### Scenario: Current effect reference is tracked in the change
 - **WHEN** reviewers inspect the change design
-- **THEN** `assets/cli-shell-product-reference-v8-toolbar-grid.png` is available as the accepted collapsed toolbar product-effect reference
-- **AND** `assets/cli-shell-product-reference-v8-toolbar-grid.svg` is available as its deterministic vector companion
-- **AND** `assets/cli-shell-product-reference-v8-toolbar-grid.txt` is available as its terminal-grid auxiliary contract
-- **AND** `assets/cli-shell-product-reference-v8-dialogue-right-grid.png` is available as the accepted dialogue-open product-effect reference
-- **AND** `assets/cli-shell-product-reference-v8-dialogue-right-grid.svg` is available as its deterministic vector companion
-- **AND** `assets/cli-shell-product-reference-v8-dialogue-right-grid.txt` is available as its terminal-grid auxiliary contract
+- **THEN** `assets/cli-shell-app-reference-v8-toolbar-grid.png` is available as the accepted collapsed toolbar app-effect reference
+- **AND** `assets/cli-shell-app-reference-v8-toolbar-grid.svg` is available as its deterministic vector companion
+- **AND** `assets/cli-shell-app-reference-v8-toolbar-grid.txt` is available as its terminal-grid auxiliary contract
+- **AND** `assets/cli-shell-app-reference-v8-dialogue-right-grid.png` is available as the accepted dialogue-open app-effect reference
+- **AND** `assets/cli-shell-app-reference-v8-dialogue-right-grid.svg` is available as its deterministic vector companion
+- **AND** `assets/cli-shell-app-reference-v8-dialogue-right-grid.txt` is available as its terminal-grid auxiliary contract
 - **AND** stale v1-v7 exploration images are not retained as final-review assets
 - **AND** the implementation target can be revised only by replacing the whole accepted PNG/SVG/TXT reference set in later feedback rounds
 
@@ -208,24 +208,24 @@ Cli-shell's one-line toolbar SHALL expose assistant state through a status icon,
 - **AND** it renders a chat entry button with unread count
 - **AND** the chat entry supports a keyboard shortcut and mouse activation
 
-### Requirement: Cli-shell managed mode SHALL consume hosting attention and product delegation contracts
+### Requirement: Cli-shell managed mode SHALL consume hosting attention and app delegation contracts
 
-Cli-shell SHALL implement its managed/takeover toggle as a view and control over platform-hosted facts: a product-scoped hosting AttentionItem for scheduling and a generic product delegation lease for autonomous terminal write authority when allowed. It SHALL NOT store managed mode as local-only toolbar truth, and it SHALL NOT ask core modules for cli-shell-specific takeover behavior.
+Cli-shell SHALL implement its managed/takeover toggle as a view and control over platform-hosted facts: a app-scoped hosting AttentionItem for scheduling and a generic app delegation lease for autonomous terminal write authority when allowed. It SHALL NOT store managed mode as local-only toolbar truth, and it SHALL NOT ask core modules for cli-shell-specific takeover behavior.
 
 #### Scenario: Managed on creates hosting attention
 - **WHEN** the user turns managed/takeover on from the cli-shell toolbar
-- **THEN** cli-shell commits a product-scoped AttentionItem for the selected Avatar with `scores: {"hosting": 1000}`
-- **AND** the item body names `productId=cli-shell`, the current shell name, the bound terminal, the bound room, the granting user, and the current objective if known
+- **THEN** cli-shell commits a app-scoped AttentionItem for the selected Avatar with `scores: {"hosting": 1000}`
+- **AND** the item body names `appId=cli-shell`, the current shell name, the bound terminal, the bound room, the granting user, and the current objective if known
 - **AND** hosting attention is represented as platform truth rather than local toolbar state
 
-#### Scenario: Managed on creates product delegation for terminal write autonomy
+#### Scenario: Managed on creates app delegation for terminal write autonomy
 - **WHEN** the user turns managed/takeover on from the cli-shell toolbar
-- **THEN** cli-shell requests a product delegation for `productId=cli-shell`, the current shell name, the bound terminal, the bound room, and the summoned Avatar
+- **THEN** cli-shell requests a app delegation for `appId=cli-shell`, the current shell name, the bound terminal, the bound room, and the summoned Avatar
 - **AND** the default managed policy is write-capable terminal autonomy
 - **AND** the delegation is represented as platform truth with expiry and policy
 - **AND** terminal write authority is granted through terminal-native lease or approval law rather than through a cli-shell bypass
 
-#### Scenario: Managed off revokes product delegation
+#### Scenario: Managed off revokes app delegation
 - **WHEN** the user turns managed/takeover off from the cli-shell toolbar
 - **THEN** cli-shell revokes the active delegation it created
 - **AND** it commits a hosting attention update with `scores: {"hosting": 0}` and reason `user_disabled`
@@ -254,21 +254,21 @@ Cli-shell SHALL implement its managed/takeover toggle as a view and control over
 - **WHEN** the Avatar writes to the bound terminal while managed/takeover is active
 - **THEN** the terminal write uses the Avatar actor identity
 - **AND** terminal activity includes delegation or lease provenance
-- **AND** superadmin product bootstrap authority is not the hidden actor for the write
+- **AND** superadmin app bootstrap authority is not the hidden actor for the write
 
 #### Scenario: Managed off blocks autonomous writes but preserves conversation
 - **WHEN** managed/takeover is off
-- **THEN** cli-shell still lets the Avatar observe context and answer in the product room
+- **THEN** cli-shell still lets the Avatar observe context and answer in the app room
 - **AND** the Avatar may request approval or ask the user before terminal mutation
 - **AND** cli-shell does not let unresolved attention alone write terminal input without a valid delegation
 
 ### Requirement: Cli-shell SHALL provide an explicit TUI dialogue panel
 
-Cli-shell SHALL provide an Agenter dialogue panel for the product room. The panel SHALL be an explicit opened state, not a default pane and not part of the collapsed one-line toolbar.
+Cli-shell SHALL provide an Agenter dialogue panel for the app room. The panel SHALL be an explicit opened state, not a default pane and not part of the collapsed one-line toolbar.
 
 #### Scenario: Dialogue panel opens on the right side
 - **WHEN** the user invokes the configured dialogue-open gesture
-- **THEN** cli-shell renders the product room conversation as a right-side dialogue panel
+- **THEN** cli-shell renders the app room conversation as a right-side dialogue panel
 - **AND** the panel contains visible conversation structure such as user messages, Avatar replies, and a message input area
 - **AND** the terminal remains the single active internal terminal
 
@@ -279,7 +279,7 @@ Cli-shell SHALL provide an Agenter dialogue panel for the product room. The pane
 
 #### Scenario: Dialogue panel reads from backend room truth
 - **WHEN** the dialogue panel is open for `shell-1`
-- **THEN** it renders messages from the durable product room for `shell-1`
+- **THEN** it renders messages from the durable app room for `shell-1`
 - **AND** it does not keep a separate local transcript as authoritative truth
 
 #### Scenario: Dialogue panel closes back to one-line default
@@ -291,7 +291,7 @@ Cli-shell SHALL provide an Agenter dialogue panel for the product room. The pane
 #### Scenario: Dialogue panel is not default chrome
 - **WHEN** cli-shell renders the dialogue panel
 - **THEN** it is visible only while explicitly opened
-- **AND** it does not reduce the product to a dashboard layout
+- **AND** it does not reduce the app to a dashboard layout
 
 #### Scenario: Dialogue message list renders Markdown with gutters and scrollbar
 - **WHEN** the dialogue panel renders messages
@@ -332,7 +332,7 @@ Cli-shell SHALL support left, right, floating, and bottom dialogue panel placeme
 
 ### Requirement: Cli-shell SHALL keep terminal input as the default input owner
 
-Cli-shell SHALL forward shell-terminal input to the attached internal terminal by default. The bottom Agenter composer SHALL receive input only after an explicit product focus gesture.
+Cli-shell SHALL forward shell-terminal input to the attached internal terminal by default. The bottom Agenter composer SHALL receive input only after an explicit app focus gesture.
 
 #### Scenario: Printable input goes to the terminal by default
 - **WHEN** cli-shell is in terminal mode and the user types printable characters
@@ -347,7 +347,7 @@ Cli-shell SHALL forward shell-terminal input to the attached internal terminal b
 #### Scenario: Explicit composer focus sends room message
 - **WHEN** the user enters the Agenter composer through the configured focus gesture
 - **AND** types a message and presses `Enter`
-- **THEN** cli-shell sends that message to the product room
+- **THEN** cli-shell sends that message to the app room
 - **AND** it does not send the message text to the internal terminal
 - **AND** focus returns to terminal mode after sending
 
@@ -379,19 +379,19 @@ Cli-shell SHALL reserve the collapsed one-row toolbar and SHALL configure the ba
 
 ### Requirement: Cli-shell SHALL detach without deleting durable backend resources
 
-Cli-shell process exit SHALL detach the shell-terminal from backend resources. It SHALL NOT delete the internal terminal or product room by default.
+Cli-shell process exit SHALL detach the shell-terminal from backend resources. It SHALL NOT delete the internal terminal or app room by default.
 
-#### Scenario: Product process exits without deleting terminal or room
-- **GIVEN** cli-shell is attached to internal terminal `shell-1` and a product room for `shell-1`
+#### Scenario: App process exits without deleting terminal or room
+- **GIVEN** cli-shell is attached to internal terminal `shell-1` and a app room for `shell-1`
 - **WHEN** the cli-shell process exits
 - **THEN** internal terminal `shell-1` remains in the global terminal catalog
-- **AND** the product room remains reusable by metadata
+- **AND** the app room remains reusable by metadata
 
 #### Scenario: Repeated launch reconnects after detach
 - **GIVEN** a previous cli-shell process detached from `shell-1`
 - **WHEN** the user runs `agenter shell` again
 - **THEN** cli-shell reattaches to existing internal terminal `shell-1`
-- **AND** it reuses the existing product room for `shell-1`
+- **AND** it reuses the existing app room for `shell-1`
 
 #### Scenario: Internal terminal process stop is visible but not destructive
 - **WHEN** the backend terminal process for `shell-1` stops

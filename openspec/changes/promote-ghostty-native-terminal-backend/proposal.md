@@ -1,6 +1,6 @@
 ## Why
 
-`promote-ghostty-native-cli-shell` 已经把 terminal backend 的 durable truth 建到了 terminal-system、client-sdk 和 product-extension-runtime，但 `app-server` 仍然留着一段残缺投影：runtime terminal view、runtime-local descriptor handler、browser-authenticated global terminal create/set-config schema，还没有把同一个 `backend` 字段完整暴露出来。
+`promote-ghostty-native-cli-shell` 已经把 terminal backend 的 durable truth 建到了 terminal-system、client-sdk 和 app-runtime，但 `app-server` 仍然留着一段残缺投影：runtime terminal view、runtime-local descriptor handler、browser-authenticated global terminal create/set-config schema，还没有把同一个 `backend` 字段完整暴露出来。
 
 这会导致平台法则断裂。terminal-system 明明已经把 backend 作为 launch truth 持久化，但 `app-server` 这层仍然要求调用方从 renderer、默认值或产品上下文去猜 backend，破坏了 “backend truth 与 renderer truth 分离” 的既有系统法则。
 

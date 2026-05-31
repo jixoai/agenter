@@ -1,6 +1,6 @@
 ## Why
 
-Manual acceptance found that shell-next now has the right OpenTUI compositor direction, but several interaction contracts still drift from the intended tmux-like product behavior. The remaining gaps are not isolated visuals: button chrome, pane hit testing, selection copy, and resize delivery need to become stable shell-next/opencompose laws before `agenter shell2` can be evaluated as the cli-shell replacement.
+Manual acceptance found that shell-next now has the right OpenTUI compositor direction, but several interaction contracts still drift from the intended tmux-like app behavior. The remaining gaps are not isolated visuals: button chrome, pane hit testing, selection copy, and resize delivery need to become stable shell-next/opencompose laws before `agenter shell2` can be evaluated as the cli-shell replacement.
 
 ## What Changes
 
@@ -16,12 +16,12 @@ Manual acceptance found that shell-next now has the right OpenTUI compositor dir
 ## Capabilities
 
 ### New Capabilities
-- `shell-next-product-runtime`: Shell-next product runtime interaction contracts for pane chrome, statusbar actions, resize delivery, top-layer hit testing, and copy/selection behavior.
+- `shell-next-app-runtime`: Shell-next app runtime interaction contracts for pane chrome, statusbar actions, resize delivery, top-layer hit testing, and copy/selection behavior.
 
 ### Modified Capabilities
 
 ## Impact
 
-- Affects `extensions/shell-next` only for runtime/test implementation.
+- Affects `apps/shell-next` only for runtime/test implementation.
 - Adds OpenSpec artifacts under `openspec/changes/refine-shell-next-interactions`.
-- Does not modify `extensions/cli-shell`, does not introduce tmux/psmux/native-addon work, and does not switch stable `agenter shell`.
+- Does not modify `apps/cli-shell`, does not introduce tmux/psmux/native-addon work, and does not switch stable `agenter shell`.

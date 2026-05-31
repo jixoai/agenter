@@ -2,24 +2,24 @@
 
 ### Requirement: Shell-next SHALL keep shell2 as the incubation entry
 
-Shell-next SHALL remain accessible through `agenter shell2` while it is under validation. The stable `agenter shell` command SHALL continue to start the existing cli-shell product until a later user-approved switch.
+Shell-next SHALL remain accessible through `agenter shell2` while it is under validation. The stable `agenter shell` command SHALL continue to start the existing cli-shell app until a later user-approved switch.
 
 #### Scenario: Shell2 starts shell-next without switching shell
 
 - **WHEN** a developer runs `agenter shell2`
-- **THEN** the launcher starts `agenter-ext-shell-next`
-- **AND** `agenter shell` still starts `agenter-ext-shell`
+- **THEN** the launcher starts `agenter-app-shell-next`
+- **AND** `agenter shell` still starts `agenter-app-shell`
 
-### Requirement: Shell-next SHALL attach through daemon-backed product bootstrap
+### Requirement: Shell-next SHALL attach through daemon-backed app bootstrap
 
-Shell-next SHALL support cli-shell-compatible product attach arguments for host, port, auth-service endpoint, session, Avatar, Avatar creation, and Avatar clearing. Its default product attach path SHALL use daemon/client-sdk bootstrap to ensure the selected AvatarRuntime, TerminalSystem terminal binding, MessageSystem room binding, and managed state.
+Shell-next SHALL support cli-shell-compatible app attach arguments for host, port, auth-service endpoint, session, Avatar, Avatar creation, and Avatar clearing. Its default app attach path SHALL use daemon/client-sdk bootstrap to ensure the selected AvatarRuntime, TerminalSystem terminal binding, MessageSystem room binding, and managed state.
 
 #### Scenario: Explicit shell2 attach binds core resources
 
 - **WHEN** a user runs `agenter shell2 --session=7 --avatar=bangeel`
-- **THEN** shell-next resolves product resource key `shell-7`
+- **THEN** shell-next resolves app resource key `shell-7`
 - **AND** it starts or selects Avatar `bangeel`
-- **AND** it obtains a TerminalSystem terminal binding and a MessageSystem room binding through product runtime APIs
+- **AND** it obtains a TerminalSystem terminal binding and a MessageSystem room binding through app runtime APIs
 - **AND** it does not create tmux pane ids as durable shell truth
 
 #### Scenario: Non-TTY attach requires explicit selection
@@ -33,17 +33,17 @@ Shell-next SHALL render the attached terminal through a terminal protocol source
 
 #### Scenario: Attached shell pane uses live terminal transport
 
-- **WHEN** shell-next completes product bootstrap for a terminal with a transport URL
+- **WHEN** shell-next completes app bootstrap for a terminal with a transport URL
 - **THEN** the initial shell pane uses that live transport as its terminal protocol source
 - **AND** focused input and resize route to TerminalSystem through that protocol source
 
 #### Scenario: Missing terminal transport fails attach
 
-- **WHEN** product bootstrap returns an attached terminal without a transport URL
+- **WHEN** app bootstrap returns an attached terminal without a transport URL
 - **THEN** shell-next fails the attach with a clear missing-transport error
 - **AND** it does not silently fall back to Local BunPTY
 
-### Requirement: Shell-next SHALL render Room as an OpenTUI product surface
+### Requirement: Shell-next SHALL render Room as an OpenTUI app surface
 
 Shell-next Chat SHALL render the bound MessageSystem Room as an OpenTUI surface in the mux layout. Chat SHALL hydrate room snapshots, send user drafts through room APIs, repaint on room updates, and keep terminal approval UI outside the Room transcript.
 
@@ -70,13 +70,13 @@ Shell-next statusbar SHALL show macro runtime, AttentionContext, and AI context 
 
 #### Scenario: Statusbar uses runtime facts
 
-- **WHEN** shell-next is attached to a running product runtime
+- **WHEN** shell-next is attached to a running app runtime
 - **THEN** its statusbar renders runtime status, attention focus counts, and context usage where available
 - **AND** it does not derive those facts solely from local pane counts
 
-### Requirement: Shell-next SHALL own product compatibility without tmux actions
+### Requirement: Shell-next SHALL own app compatibility without tmux actions
 
-Shell-next SHALL provide product-compatible commands for attach, room/chat, top, help-panel, shell/terminal, heartbeat-status, and cleanup where those commands describe product runtime behavior. Shell-next SHALL reject tmux-only actions with an explicit migration error.
+Shell-next SHALL provide app-compatible commands for attach, room/chat, top, help-panel, shell/terminal, heartbeat-status, and cleanup where those commands describe app runtime behavior. Shell-next SHALL reject tmux-only actions with an explicit migration error.
 
 #### Scenario: Tmux-only action is rejected
 
@@ -86,7 +86,7 @@ Shell-next SHALL provide product-compatible commands for attach, room/chat, top,
 
 ### Requirement: Shell-next SHALL remove legacy runtime dependency before replacement readiness
 
-Shell-next MAY reuse safe cli-shell atoms during incubation, but it SHALL NOT claim replacement readiness while stable shell-next depends on legacy `agenter-ext-shell` as a runtime package for shared projection, live mirror, settings, or keybinding behavior.
+Shell-next MAY reuse safe cli-shell atoms during incubation, but it SHALL NOT claim replacement readiness while stable shell-next depends on legacy `agenter-app-shell` as a runtime package for shared projection, live mirror, settings, or keybinding behavior.
 
 #### Scenario: Replacement readiness has no legacy runtime dependency
 

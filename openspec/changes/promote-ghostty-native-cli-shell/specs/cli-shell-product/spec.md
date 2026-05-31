@@ -38,7 +38,7 @@ Cli-shell SHALL accept an optional `--backend=<name>` argument and treat that va
 
 ### Requirement: Cli-shell TUI SHALL intrude only at the bottom of the shell-terminal
 
-Cli-shell SHALL render a terminal-first TUI whose first screen uses the shell-terminal primarily as an ordinary usable terminal surface. In the collapsed default state, the product UI SHALL intrude only as a one-row bottom projection. Any content rendered into that bottom row SHALL be produced by rendering markdown at constrained width and taking only the last rendered line. Multi-row bottom dialogue panels are forbidden.
+Cli-shell SHALL render a terminal-first TUI whose first screen uses the shell-terminal primarily as an ordinary usable terminal surface. In the collapsed default state, the app UI SHALL intrude only as a one-row bottom projection. Any content rendered into that bottom row SHALL be produced by rendering markdown at constrained width and taking only the last rendered line. Multi-row bottom dialogue panels are forbidden.
 
 #### Scenario: First screen shows one active terminal with one-line bottom toolbar
 - **WHEN** cli-shell renders after orchestration succeeds
@@ -48,7 +48,7 @@ Cli-shell SHALL render a terminal-first TUI whose first screen uses the shell-te
 - **AND** no persistent right-side room transcript pane is rendered
 
 #### Scenario: Toolbar uses the required three-zone structure
-- **WHEN** cli-shell renders product metadata
+- **WHEN** cli-shell renders app metadata
 - **THEN** the bottom toolbar includes a status icon zone
 - **AND** it includes a current Heartbeat zone
 - **AND** it includes an action button zone
@@ -60,9 +60,9 @@ Cli-shell SHALL render a terminal-first TUI whose first screen uses the shell-te
 - **AND** it displays only the last rendered visual line in the bottom row
 - **AND** it does not allocate a second bottom content row for wrapped markdown
 
-#### Scenario: Product UI is rendered as terminal cells
+#### Scenario: App UI is rendered as terminal cells
 - **WHEN** cli-shell renders toolbar, dialogue, borders, gutters, scrollbar, controls, backgrounds, or highlights
-- **THEN** every visible product element maps to shell-terminal character cells
+- **THEN** every visible app element maps to shell-terminal character cells
 - **AND** borders are rendered through box-drawing or ASCII characters rather than pixel-only card edges
 - **AND** backgrounds and highlights are applied as cell ranges
 - **AND** wide emoji and CJK glyphs are measured with terminal-width semantics before layout is finalized
@@ -81,7 +81,7 @@ Cli-shell SHALL render a terminal-first TUI whose first screen uses the shell-te
 #### Scenario: Optional separator is not a required content row
 - **WHEN** cli-shell theme renders a separator between terminal body and bottom dock
 - **THEN** the separator is purely visual
-- **AND** the default product content still fits in one bottom row
+- **AND** the default app content still fits in one bottom row
 
 #### Scenario: UI terminology distinguishes shell-terminal and terminal
 - **WHEN** cli-shell renders labels or diagnostics
@@ -122,11 +122,11 @@ Cli-shell's one-line toolbar SHALL expose assistant state through a status icon,
 
 ### Requirement: Cli-shell SHALL provide an explicit TUI dialogue panel
 
-Cli-shell SHALL provide an Agenter dialogue transcript surface for the product room. The transcript surface SHALL be an explicit opened state, not a default pane and not part of the collapsed one-line bottom row. A `bottom` placement request is projection-only mode and SHALL NOT create a multi-row transcript panel.
+Cli-shell SHALL provide an Agenter dialogue transcript surface for the app room. The transcript surface SHALL be an explicit opened state, not a default pane and not part of the collapsed one-line bottom row. A `bottom` placement request is projection-only mode and SHALL NOT create a multi-row transcript panel.
 
 #### Scenario: Dialogue panel opens on the right side
 - **WHEN** the user invokes the configured dialogue-open gesture
-- **THEN** cli-shell renders the product room conversation as a right-side dialogue panel
+- **THEN** cli-shell renders the app room conversation as a right-side dialogue panel
 - **AND** the panel contains visible conversation structure such as user messages, Avatar replies, and a message input area
 - **AND** the terminal remains the single active internal terminal
 
@@ -143,7 +143,7 @@ Cli-shell SHALL provide an Agenter dialogue transcript surface for the product r
 
 #### Scenario: Dialogue panel reads from backend room truth
 - **WHEN** the dialogue panel is open for `shell-1`
-- **THEN** it renders messages from the durable product room for `shell-1`
+- **THEN** it renders messages from the durable app room for `shell-1`
 - **AND** it does not keep a separate local transcript as authoritative truth
 
 #### Scenario: Dialogue panel closes back to one-line default
@@ -155,7 +155,7 @@ Cli-shell SHALL provide an Agenter dialogue transcript surface for the product r
 #### Scenario: Dialogue panel is not default chrome
 - **WHEN** cli-shell renders the dialogue panel
 - **THEN** it is visible only while explicitly opened
-- **AND** it does not reduce the product to a dashboard layout
+- **AND** it does not reduce the app to a dashboard layout
 
 #### Scenario: Dialogue message list renders Markdown with gutters and scrollbar
 - **WHEN** the dialogue panel renders messages
@@ -200,7 +200,7 @@ Cli-shell SHALL support left, right, and floating dialogue panel placement. `bot
 
 ### Requirement: Cli-shell SHALL keep terminal input as the default input owner
 
-Cli-shell SHALL forward shell-terminal input to the attached internal terminal by default. Explicit room input SHALL receive input only after an explicit product focus gesture. The collapsed one-line bottom projection is display-only and SHALL NOT buffer arbitrary terminal typing as compose text.
+Cli-shell SHALL forward shell-terminal input to the attached internal terminal by default. Explicit room input SHALL receive input only after an explicit app focus gesture. The collapsed one-line bottom projection is display-only and SHALL NOT buffer arbitrary terminal typing as compose text.
 
 #### Scenario: Printable input goes to the terminal by default
 - **WHEN** cli-shell is in terminal mode and the user types printable characters
@@ -220,7 +220,7 @@ Cli-shell SHALL forward shell-terminal input to the attached internal terminal b
 #### Scenario: Explicit room input sends room message
 - **WHEN** the user enters explicit room input through the configured focus gesture
 - **AND** types a message and presses `Enter`
-- **THEN** cli-shell sends that message to the product room
+- **THEN** cli-shell sends that message to the app room
 - **AND** it does not send the message text to the internal terminal
 - **AND** focus returns to terminal mode after sending
 

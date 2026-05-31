@@ -1,17 +1,17 @@
 ## ADDED Requirements
 
-### Requirement: Shell-next SHALL incubate a product-free renderable mux core
+### Requirement: Shell-next SHALL incubate a app-free renderable mux core
 
-Shell-next SHALL create a local incubation implementation under `extensions/shell-next` whose generic mux core is free of Agenter product concepts. The mux core SHALL model pane identity, layout tree, focus state, resize allocation, and input routing without importing Avatar, MessageRoom, TerminalSystem, AttentionSystem, product launcher, or cli-shell tmux host modules.
+Shell-next SHALL create a local incubation implementation under `apps/shell-next` whose generic mux core is free of Agenter app concepts. The mux core SHALL model pane identity, layout tree, focus state, resize allocation, and input routing without importing Avatar, MessageRoom, TerminalSystem, AttentionSystem, app launcher, or cli-shell tmux host modules.
 
-#### Scenario: Generic mux core has no product imports
+#### Scenario: Generic mux core has no app imports
 - **WHEN** reviewers inspect shell-next mux core modules
 - **THEN** those modules expose pane/layout/focus/input abstractions only
-- **AND** they do not import Avatar, MessageRoom, TerminalSystem, AttentionSystem, client-sdk bootstrap, product launcher descriptors, or tmux host/action modules
+- **AND** they do not import Avatar, MessageRoom, TerminalSystem, AttentionSystem, client-sdk bootstrap, app launcher descriptors, or tmux host/action modules
 
-#### Scenario: Product wiring consumes the mux core
-- **WHEN** shell-next starts from the `shell2` product entry
-- **THEN** Agenter-specific bootstrap code creates or resolves product resources outside the generic mux core
+#### Scenario: App wiring consumes the mux core
+- **WHEN** shell-next starts from the `shell2` app entry
+- **THEN** Agenter-specific bootstrap code creates or resolves app resources outside the generic mux core
 - **AND** it passes abstract pane sources and action callbacks into the mux renderables
 
 ### Requirement: Shell-next SHALL normalize terminal panes through a protocol channel
@@ -30,7 +30,7 @@ Shell-next SHALL treat the existing terminal protocol channel as the canonical t
 
 #### Scenario: CommandTask source lowers to Bun PTY source
 - **WHEN** shell-next creates a pane from a CommandTask
-- **THEN** the product adapter launches the command through the Bun PTY source path
+- **THEN** the app adapter launches the command through the Bun PTY source path
 - **AND** the pane becomes a terminal protocol channel before it reaches `PaneRenderable`
 
 #### Scenario: OpenTUI renderable source stays non-terminal unless adapted
@@ -40,12 +40,12 @@ Shell-next SHALL treat the existing terminal protocol channel as the canonical t
 
 ### Requirement: Shell-next SHALL use OpenTUI low-level Renderable APIs for the native mux surface
 
-Shell-next SHALL implement its native TTY surface through OpenTUI low-level `Renderable` and layout APIs. The primary output of the incubation shall be reusable Renderable APIs, including terminal pane renderables, layout renderables, and product chrome renderables, rather than a tmux command plan or a product-only screen function.
+Shell-next SHALL implement its native TTY surface through OpenTUI low-level `Renderable` and layout APIs. The primary output of the incubation shall be reusable Renderable APIs, including terminal pane renderables, layout renderables, and app chrome renderables, rather than a tmux command plan or a app-only screen function.
 
 #### Scenario: Pane renderable is reusable
 - **WHEN** shell-next defines the terminal pane projection atom
 - **THEN** it exposes a `PaneRenderable`-style API that can be constructed with an abstract terminal protocol channel and input bridge
-- **AND** it does not create product sessions, rooms, Avatars, daemon clients, Bun PTYs, or CommandTasks by itself
+- **AND** it does not create app sessions, rooms, Avatars, daemon clients, Bun PTYs, or CommandTasks by itself
 
 #### Scenario: Mux surface composes layout-owned child renderables
 - **WHEN** shell-next renders multiple panes or OpenTUI surfaces
@@ -114,17 +114,17 @@ Shell-next SHALL project terminal frames that are owned by a terminal backend or
 - **THEN** selection and copy are not required acceptance criteria
 - **AND** any future selection/copy feature must route through backend-owned terminal interaction events rather than `PaneRenderable` local state
 
-### Requirement: Shell-next SHALL mix terminal panes and OpenTUI product surfaces through layout
+### Requirement: Shell-next SHALL mix terminal panes and OpenTUI app surfaces through layout
 
 Shell-next SHALL allow its layout tree to host both terminal pane renderables and ordinary OpenTUI renderables. Help, statusbar, top-layer approval UI, and Room direct-rendering SHALL be modeled as OpenTUI surfaces rather than as tmux popups.
 
 #### Scenario: Help and statusbar use OpenTUI surfaces
 - **WHEN** shell-next renders Help or statusbar UI
-- **THEN** those surfaces are mounted as OpenTUI renderables controlled by layout/product chrome
+- **THEN** those surfaces are mounted as OpenTUI renderables controlled by layout/app chrome
 - **AND** they do not require tmux popup commands or fake terminal panes
 
 #### Scenario: Source families are selected by source nature
-- **WHEN** shell-next hosts an in-process OpenTUI product surface such as Room, Help, or statusbar
+- **WHEN** shell-next hosts an in-process OpenTUI app surface such as Room, Help, or statusbar
 - **THEN** it may mount that surface directly as an OpenTUI renderable source in the layout tree
 - **AND** when shell-next hosts a process-backed terminal source, it uses the terminal protocol family through protocol channel, Bun PTY, or CommandTask adapters
 - **AND** these source families are independent paths rather than fallback levels
@@ -165,19 +165,19 @@ Shell-next SHALL include a statusbar built with OpenTUI native renderables. The 
 
 Shell-next MAY reuse existing cli-shell code only when the reused module is orthogonal to the old tmux host. It SHALL NOT reuse tmux host planning, tmux status/action dispatch, tmux session option truth, or tmux popup/pane singleton logic as part of the new renderable mux core.
 
-#### Scenario: Safe reuse stays product or projection scoped
-- **WHEN** shell-next copies or imports code from `extensions/cli-shell`
-- **THEN** the reused code is classified as product bootstrap, argument parsing, room/help/top-layer surface, settings, terminal input encoding, terminal frame projection, live mirror, or test harness support
+#### Scenario: Safe reuse stays app or projection scoped
+- **WHEN** shell-next copies or imports code from `apps/cli-shell`
+- **THEN** the reused code is classified as app bootstrap, argument parsing, room/help/top-layer surface, settings, terminal input encoding, terminal frame projection, live mirror, or test harness support
 - **AND** the reuse does not import `tmux-host`, `tmux-statusbar`, or tmux action dispatch into the generic mux core
 
 #### Scenario: Tmux residue is rejected from renderable core
 - **WHEN** a proposed shell-next core module requires tmux socket names, tmux user options, tmux pane ids, tmux status ranges, or `tmux-action`
 - **THEN** that module is not accepted as part of the renderable mux core
-- **AND** the behavior is redesigned as mux model state or product wiring
+- **AND** the behavior is redesigned as mux model state or app wiring
 
 ### Requirement: Shell-next SHALL remain unpublished until acceptance
 
-Shell-next SHALL remain a local incubation product until it passes explicit acceptance. The stable `shell` command SHALL continue to use the existing cli-shell implementation during incubation.
+Shell-next SHALL remain a local incubation app until it passes explicit acceptance. The stable `shell` command SHALL continue to use the existing cli-shell implementation during incubation.
 
 #### Scenario: Shell-next has a temporary local entry
 - **WHEN** a developer runs `bun agenter shell2`

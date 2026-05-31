@@ -183,9 +183,9 @@ Runtime snapshots and terminal realtime publications SHALL expose terminal launc
 
 #### Scenario: Launch cwd stays separate from observed current path
 
-- **WHEN** a terminal was created with launch cwd `/repo/app` but the running shell later `cd`s to `/repo/app/extensions/studio`
+- **WHEN** a terminal was created with launch cwd `/repo/app` but the running shell later `cd`s to `/repo/app/apps/studio`
 - **THEN** the runtime projection preserves `/repo/app` as launch truth
-- **AND** it publishes `/repo/app/extensions/studio` as observed current path
+- **AND** it publishes `/repo/app/apps/studio` as observed current path
 
 #### Scenario: Configured title stays separate from observed current title
 
@@ -259,7 +259,7 @@ Whenever runtime publishes terminal state, renderable terminal state, durable te
 
 ### Requirement: Runtime publications SHALL preserve shared terminal viewport truth
 
-Runtime terminal publications SHALL preserve shared viewport truth for same-terminal attachments when the product contract requires a single visible source of truth. Buffer content, viewport position, and visible input results SHALL remain synchronized across same-terminal clients that participate in that shared terminal attachment.
+Runtime terminal publications SHALL preserve shared viewport truth for same-terminal attachments when the app contract requires a single visible source of truth. Buffer content, viewport position, and visible input results SHALL remain synchronized across same-terminal clients that participate in that shared terminal attachment.
 
 #### Scenario: Same-terminal clients observe the same visible viewport
 - **WHEN** multiple clients attach to the same backend terminal through a shared terminal contract
@@ -273,11 +273,11 @@ Runtime terminal publications SHALL preserve shared viewport truth for same-term
 
 ### Requirement: Runtime publications SHALL distinguish geometry authority from presentation scale
 
-Runtime terminal projections SHALL distinguish backend terminal geometry truth from host-local presentation scaling. When a product host currently owns geometry authority, other projection hosts may present the same terminal grid without silently rewriting backend columns and rows.
+Runtime terminal projections SHALL distinguish backend terminal geometry truth from host-local presentation scaling. When a app host currently owns geometry authority, other projection hosts may present the same terminal grid without silently rewriting backend columns and rows.
 
 #### Scenario: Cli-shell-owned geometry remains explicit to other attachments
 - **WHEN** `cli-shell` owns geometry authority for a terminal through `shell-terminal-view`
-- **THEN** runtime-facing geometry truth remains derived from the native shell window after subtracting reserved product rows
+- **THEN** runtime-facing geometry truth remains derived from the native shell window after subtracting reserved app rows
 - **AND** other attachments can observe that geometry without inferring that they own it
 
 #### Scenario: Web host local resize changes presentation only
@@ -366,19 +366,19 @@ Runtime terminal operations SHALL expose cursor-follow as a backend-owned operat
 - **THEN** runtime SHALL NOT treat that frontend value as the authoritative cursor-follow result
 - **AND** backend cursor-follow remains the primary operation
 
-### Requirement: Runtime terminal contract SHALL keep interaction truth separate from product chrome truth
+### Requirement: Runtime terminal contract SHALL keep interaction truth separate from app chrome truth
 
-Runtime SHALL distinguish backend terminal interaction truth from product chrome state. Product chrome may route events and display results, but terminal selection, copy, cursor-follow, scrollback, and viewport truth SHALL stay attached to the backend or offscreen renderer owner.
+Runtime SHALL distinguish backend terminal interaction truth from app chrome state. App chrome may route events and display results, but terminal selection, copy, cursor-follow, scrollback, and viewport truth SHALL stay attached to the backend or offscreen renderer owner.
 
-#### Scenario: Product action does not become terminal selection truth
-- **WHEN** cli-shell product chrome receives a click or shortcut
-- **THEN** runtime MAY update product state for that action
+#### Scenario: App action does not become terminal selection truth
+- **WHEN** cli-shell app chrome receives a click or shortcut
+- **THEN** runtime MAY update app state for that action
 - **AND** runtime SHALL NOT mutate terminal selection unless the event targets a backend interaction owner
 
-#### Scenario: Terminal selection does not become product-local state
+#### Scenario: Terminal selection does not become app-local state
 - **WHEN** shell backend selection changes
 - **THEN** runtime SHALL publish that selection as terminal interaction projection state
-- **AND** cli-shell product state SHALL NOT store a second authoritative selected range
+- **AND** cli-shell app state SHALL NOT store a second authoritative selected range
 
 ### Requirement: Runtime recovery SHALL compensate dead terminals through terminal-owned killed flow
 Runtime recovery SHALL treat stale previously-running terminals as dead history instances and SHALL invoke terminal-owned compensation instead of reconstructing live state locally.

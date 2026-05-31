@@ -948,7 +948,7 @@ describe("Feature: terminal control plane", () => {
     await plane.dispose();
   });
 
-  test("Scenario: Given a composed terminal-2 runtime When shell truth changes and backend later publishes product surface Then terminal-2 changes only through the composed runtime publication seam", async () => {
+  test("Scenario: Given a composed terminal-2 runtime When shell truth changes and backend later publishes app surface Then terminal-2 changes only through the composed runtime publication seam", async () => {
     const plane = createPlane();
     const source = await plane.create({ terminalId: "shell-1:terminal-1" });
     const composed = await plane.create({

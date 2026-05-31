@@ -2,7 +2,7 @@
 
 The repository currently treats `@agenter/avatar` as a nickname-scoped persona filesystem helper, while `app-server` owns avatar/session icon uploads and deterministic SVG fallback generation. WebUI adds a browser-only `OffscreenCanvas` rasterization step for session icons, which proves the fallback artwork is useful but also shows the current contract is upside-down: clients are compensating for backend media authority instead of consuming a stable media service.
 
-The new product target is broader than “avatar uploads.” We need one service that can:
+The new app target is broader than “avatar uploads.” We need one service that can:
 - own durable profile identity and metadata,
 - bind multiple authenticated identifiers to one profile,
 - expose session/profile icon media through one coherent icon platform,
@@ -112,14 +112,14 @@ Wallet flow:
 3. verify signature server-side
 4. mint profile auth token and optionally create/bind profile
 
-Why: email alone should not be treated as a durable long-term bearer in this product; passkeys provide the durable ownership proof, while wallets already provide cryptographic proof.
+Why: email alone should not be treated as a durable long-term bearer in this app; passkeys provide the durable ownership proof, while wallets already provide cryptographic proof.
 
 Alternative considered: email OTP alone creates durable sessions. Rejected because the user explicitly asked to start WebAuthn registration after email verification.
 
 ### App-server becomes a compatibility adapter over the child service
 `app-server` starts `profile-service` as a child runtime unless an external endpoint is configured. Existing app-server-facing consumers keep using semantic avatar/session URLs and simple client-sdk helpers, but those methods become thin proxies/adapters over the profile-service contract.
 
-Why: this preserves product ergonomics while moving real authority to the new service.
+Why: this preserves app ergonomics while moving real authority to the new service.
 
 Alternative considered: migrate every consumer directly to a second endpoint immediately. Rejected because it would create needless churn across WebUI/client-sdk at the same time as the backend rewrite.
 

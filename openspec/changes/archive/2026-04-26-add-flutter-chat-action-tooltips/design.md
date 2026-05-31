@@ -1,6 +1,6 @@
 ## Context
 
-After the route-depth and detent work, compact product-shell actions are intentionally icon-only: profiles, details, new profile, close, and overflow actions fit in the navigation and sheet chrome without text labels. Semantics labels are present, but visible discoverability for mouse/trackpad users and long-press touch users is still weak.
+After the route-depth and detent work, compact app-shell actions are intentionally icon-only: profiles, details, new profile, close, and overflow actions fit in the navigation and sheet chrome without text labels. Semantics labels are present, but visible discoverability for mouse/trackpad users and long-press touch users is still weak.
 
 ## Goals / Non-Goals
 

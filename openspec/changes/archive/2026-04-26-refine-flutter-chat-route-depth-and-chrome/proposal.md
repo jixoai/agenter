@@ -1,6 +1,6 @@
 ## Why
 
-The current compact Flutter product shell treats profiles, conversation, and room details as equal bottom-tab destinations. That route law makes the active chat page compete with app-level navigation, which conflicts with Apple’s iOS 26 official app evidence: Messages keeps the conversation content and composer as the primary route, while navigation, details, and extra actions move into navigation-bar controls, sheets, menus, or secondary pages.
+The current compact Flutter app shell treats profiles, conversation, and room details as equal bottom-tab destinations. That route law makes the active chat page compete with app-level navigation, which conflicts with Apple’s iOS 26 official app evidence: Messages keeps the conversation content and composer as the primary route, while navigation, details, and extra actions move into navigation-bar controls, sheets, menus, or secondary pages.
 
 This change is needed before adding more secondary/tertiary chat affordances. If the shell keeps the current `IndexedStack + bottom nav` model, every new feature will become tab glue instead of an adaptive route system.
 
@@ -25,7 +25,7 @@ This change is needed before adding more secondary/tertiary chat affordances. If
 
 ### Modified Capabilities
 
-- `flutter-chat-view`: Product-shell adaptive navigation and host-owned chat chrome requirements change from compact bottom-tab parity to conversation-first route depth.
+- `flutter-chat-view`: App-shell adaptive navigation and host-owned chat chrome requirements change from compact bottom-tab parity to conversation-first route depth.
 
 ## Impact
 

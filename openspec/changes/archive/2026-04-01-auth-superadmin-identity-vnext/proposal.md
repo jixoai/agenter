@@ -1,6 +1,6 @@
 ## Why
 
-The backend already knows how to load or generate the root auth key, but the product still behaves like auth is optional setup trivia. At the same time, room and terminal collaboration surfaces still synthesize people from freeform labels and copied tokens instead of flowing through auth-backed actor identity, icon, and status projection.
+The backend already knows how to load or generate the root auth key, but the app still behaves like auth is optional setup trivia. At the same time, room and terminal collaboration surfaces still synthesize people from freeform labels and copied tokens instead of flowing through auth-backed actor identity, icon, and status projection.
 
 ## What Changes
 

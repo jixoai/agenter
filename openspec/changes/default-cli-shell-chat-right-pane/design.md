@@ -1,8 +1,8 @@
 ## Context
 
-There are two competing product stories in the existing history:
+There are two competing app stories in the existing history:
 
-- Older cli-shell product design expected Chat to sit on the right when enough horizontal space exists.
+- Older cli-shell app design expected Chat to sit on the right when enough horizontal space exists.
 - Later tmux migration work made Chat popup/on-demand by default to avoid permanent split complexity.
 
 The user's current requirement chooses the first story again: default Chat belongs on the right and should already be open. That is also the better default for mouse-first users because the status bar remains part of the same tmux pane layout instead of being covered by a modal popup mode.
@@ -15,15 +15,15 @@ The default cli-shell attach creates or focuses the singleton Room surface as a 
 
 If a matching Room pane already exists for the tmux session and Avatar, attach must focus/reuse that pane instead of creating a duplicate.
 
-### 2. Product defaults normalize to dock layouts for attach
+### 2. App defaults normalize to dock layouts for attach
 
-`settings.json` still supports `left`, `right`, and `cover` because the Room titlebar has a cover mode. But startup attach must not use cover as the automatic default. If persisted state says `cover`, attach normalizes startup to `right` so the product starts in a clickable, non-modal surface.
+`settings.json` still supports `left`, `right`, and `cover` because the Room titlebar has a cover mode. But startup attach must not use cover as the automatic default. If persisted state says `cover`, attach normalizes startup to `right` so the app starts in a clickable, non-modal surface.
 
 ### 3. Cover popup is an explicit modal top-layer
 
 tmux documents popups as boxes drawn over panes, and panes are not updated while a popup is present. In a live tmux experiment, status-range clicks wrote `help` in normal pane mode, then stopped writing when a popup was present even though the status bar was still visible. Therefore cover mode cannot promise bottom status-bar mouse controls.
 
-The product law is:
+The app law is:
 
 - default and normal Chat work should use the right pane
 - cover/floating is an explicit modal/top-layer mode
@@ -31,7 +31,7 @@ The product law is:
 
 ### 4. No core-system changes
 
-This change does not alter TerminalSystem, MessageSystem, AvatarRuntime, AttentionSystem, or product binding truth. tmux remains only the local TUI host.
+This change does not alter TerminalSystem, MessageSystem, AvatarRuntime, AttentionSystem, or app binding truth. tmux remains only the local TUI host.
 
 ## Verification Strategy
 

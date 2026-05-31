@@ -31,7 +31,7 @@
 | Turn | Speaker | Objective record | Impact on intent |
 | ---- | ------- | ---------------- | ---------------- |
 | 1 | User | Continue working directly on `main`; other developers may also work there. | Do not create a new feature worktree by default; protect unrelated dirty changes. |
-| 2 | User | Fix the problem that `web-chat-view` needs to be embedded into Studio. | The boundary is an embedding/style contract between `@agenter/web-chat-view` and `agenter-ext-studio`. |
+| 2 | User | Fix the problem that `web-chat-view` needs to be embedded into Studio. | The boundary is an embedding/style contract between `@agenter/web-chat-view` and `agenter-app-studio`. |
 | 3 | User | The problem is especially styling, shown by Image #1. | The fix must be validated visually, not only by typecheck. |
 | 4 | User | Use the new OpenSpec `vision-driven` workflow. | This change must preserve `plans/plan.md` as the intent SSOT, then derive specs, tasks, implementation, and self-review. |
 
@@ -41,7 +41,7 @@
 | ------ | ---- | -------------- |
 | Image #1 | Studio embeds chat but transcript avatars/rendered circular assets become enormous, creating huge dead zones and unreadable transcript density. | This is the target visible failure. |
 | `packages/studio/src/lib/features/messages/message-system-surface.svelte` | Studio mounts `WebChatViewHost` directly with `showHeader={false}` and `class="h-full"`. | Studio is using the shared component as an embedded transcript/composer surface. |
-| `packages/web-chat-view/src/chat-avatar.svelte` | Avatar geometry currently depends on Tailwind utility classes such as `size-[1.625rem]`, `rounded-full`, `h-full`, and `object-cover`. | A reusable package cannot rely on the host product to generate those utilities. |
+| `packages/web-chat-view/src/chat-avatar.svelte` | Avatar geometry currently depends on Tailwind utility classes such as `size-[1.625rem]`, `rounded-full`, `h-full`, and `object-cover`. | A reusable package cannot rely on the host app to generate those utilities. |
 | `packages/web-chat-view/src/message-row.svelte` | Message rows pass class `avatar avatar-${tone}` to `ChatAvatar`, while actual geometry remains inside Tailwind utility strings. | The stable style hook exists, but the sizing law is not package-owned. |
 | `packages/web-chat-view/src/ui/framework7-message.svelte` | Framework7 message wrapping is local, but it does not force avatar child geometry. | The fix should be inside the shared component, not a Studio route patch. |
 | `openspec/specs/web-chat-view/spec.md` | The existing law says the shared package owns transcript/composer shell and canonical avatar rendering. | Extend this law: canonical avatar rendering must include package-owned geometry when embedded. |
@@ -52,7 +52,7 @@
 
 | Checkpoint | Expected commit evidence | Current status |
 | ---------- | ------------------------ | -------------- |
-| OpenSpec artifacts before apply | Commit containing `plans/plan.md`, specs, and `tasks.md` before product-code work starts | Pending |
+| OpenSpec artifacts before apply | Commit containing `plans/plan.md`, specs, and `tasks.md` before app-code work starts | Pending |
 | Task-progress commits | Commit containing current-context task checkbox updates plus matching code/BDD evidence | Pending |
 | Self-review updates | Commit containing review output and any reopened or added OpenSpec tasks before the next apply loop | Pending |
 | Normal archive | Commit containing `openspec archive <change>` result | Pending |
@@ -92,11 +92,11 @@
 
 ### Surface Intent
 
-Studio should embed `web-chat-view` without the chat content exploding visually. Avatars, message bubbles, read indicators, icons, and composer controls should retain sane chat-product proportions inside the Studio messages page.
+Studio should embed `web-chat-view` without the chat content exploding visually. Avatars, message bubbles, read indicators, icons, and composer controls should retain sane chat-app proportions inside the Studio messages page.
 
 ### Underlying Drive
 
-`@agenter/web-chat-view` is now a shared product atom. A shared atom cannot rely on whichever host happens to compile Tailwind utility classes. Its visible geometry must be self-contained and Framework7-aligned so Studio can mount it without emergency CSS patches.
+`@agenter/web-chat-view` is now a shared app atom. A shared atom cannot rely on whichever host happens to compile Tailwind utility classes. Its visible geometry must be self-contained and Framework7-aligned so Studio can mount it without emergency CSS patches.
 
 ### Final Visible Effect
 
@@ -111,7 +111,7 @@ When the operator opens a Studio room:
 
 ## Platform Diagnosis
 
-- Current platform laws: Studio owns product shell and toolbar; `web-chat-view` owns transcript/composer; Framework7 owns chat primitive topology.
+- Current platform laws: Studio owns app shell and toolbar; `web-chat-view` owns transcript/composer; Framework7 owns chat primitive topology.
 - Does this fit as a regular atom: Yes.
 - Does this require law upgrade: Small law upgrade only: package-owned embedded geometry is required for reusable Svelte chat atoms.
 - Breaking update stance: No persistence or API break is needed.
@@ -155,7 +155,7 @@ No durable data change is required. This is presentation ownership:
 
 | Gate | Why confirmation is required | Default until user answers |
 | ---- | ---------------------------- | -------------------------- |
-| Change embedding technology to iframe/custom element | This changes the product integration boundary and event/resize/auth contracts. | Do not change embedding technology in this fix. |
+| Change embedding technology to iframe/custom element | This changes the app integration boundary and event/resize/auth contracts. | Do not change embedding technology in this fix. |
 | Remove Framework7 message primitive | This would reject the current visual law and prior review-shell direction. | Keep Framework7 message topology. |
 
 ## Intent-Driven Plan
@@ -170,7 +170,7 @@ No durable data change is required. This is presentation ownership:
 
 | Question | Why it matters | Default assumption until user answers |
 | -------- | -------------- | ------------------------------------- |
-| Should future isolation use iframe/custom element? | It affects long-term style isolation and product boundaries. | Defer; direct Svelte host is current law. |
+| Should future isolation use iframe/custom element? | It affects long-term style isolation and app boundaries. | Defer; direct Svelte host is current law. |
 
 ## Rejected Paths
 

@@ -4,24 +4,24 @@
 
 The accepted Shell is not a native tmux/psmux addon. The correct direction is an embedded OpenTUI compositor: shell owns pane layout, pane chrome, focus, overlays, renderer mixing, and terminal projection mounting.
 
-The earlier "reuse cli-shell product atoms" framing is now a documented deviation. `cli-shell` is legacy and has moved to `extensions/shell-old`. Shell may preserve copied behavior, but it must not import `agenter-ext-shell-old` or `extensions/shell-old` at runtime and must not preserve legacy naming in the new architecture.
+The earlier "reuse cli-shell app atoms" framing is now a documented deviation. `cli-shell` is legacy and has moved to `apps/shell-old`. Shell may preserve copied behavior, but it must not import `agenter-app-shell-old` or `apps/shell-old` at runtime and must not preserve legacy naming in the new architecture.
 
 Therefore the correct architecture is:
 
-- `shell` owns localized product atoms copied from cli-shell where useful: Room, bootstrap, settings, heartbeat, approval, cleanup, and terminal projection.
-- `opencompose` is incubated inside shell as the product-agnostic compositor law: layout, pane focus, pane chrome, terminal frame display, renderer-pane display, and resize.
-- Product attach uses shell-owned Room code. It does not mount or import the cli-shell Room atom.
+- `shell` owns localized app atoms copied from cli-shell where useful: Room, bootstrap, settings, heartbeat, approval, cleanup, and terminal projection.
+- `opencompose` is incubated inside shell as the app-agnostic compositor law: layout, pane focus, pane chrome, terminal frame display, renderer-pane display, and resize.
+- App attach uses shell-owned Room code. It does not mount or import the cli-shell Room atom.
 - The stable `agenter shell` route now resolves to the new Shell package; the incubation-only `shell2` route is removed.
 
 ## Key Decisions
 
 1. Copy proven cli-shell code, then own it
 
-   The old Room implementation already solved multiline composer, history panel, room hydration, live repaint, send/refresh separation, and approval detection. Shell keeps that copied behavior inside `extensions/shell/src/product-room` and evolves it under shell naming. Runtime imports from `agenter-ext-shell-old` or `extensions/shell-old` are forbidden because shell-old is preserved legacy.
+   The old Room implementation already solved multiline composer, history panel, room hydration, live repaint, send/refresh separation, and approval detection. Shell keeps that copied behavior inside `apps/shell/src/app-room` and evolves it under shell naming. Runtime imports from `agenter-app-shell-old` or `apps/shell-old` are forbidden because shell-old is preserved legacy.
 
 2. Terminal source policy must be explicit
 
-   Product attach gives the first pane a live TerminalSystem source through a product-bound terminal source policy. Local mode gives panes a BunPTY-backed source policy. These are different capabilities, not fallback levels. Until product-bound split is implemented, the product-bound policy simply does not expose a split creator, so the host can show a visible "split unavailable" status without creating a different terminal truth.
+   App attach gives the first pane a live TerminalSystem source through a app-bound terminal source policy. Local mode gives panes a BunPTY-backed source policy. These are different capabilities, not fallback levels. Until app-bound split is implemented, the app-bound policy simply does not expose a split creator, so the host can show a visible "split unavailable" status without creating a different terminal truth.
 
 3. opencompose is the local compositor law
 
@@ -29,7 +29,7 @@ Therefore the correct architecture is:
 
 4. View grammar is singular; management commands stay separate
 
-   `shell` view selection is one attach-time choice, not a family of positional subcommands. The runtime grammar should therefore converge to `--view=none|room|help|status|shell`, where `none` is the default mixed-view host mode. `status` means a single-view projection of the statusbar inline-start summary, not the approval top-layer. Non-view management operations such as `cleanup` stay as their own command because they operate on product-owned resources rather than opening a mux surface.
+   `shell` view selection is one attach-time choice, not a family of positional subcommands. The runtime grammar should therefore converge to `--view=none|room|help|status|shell`, where `none` is the default mixed-view host mode. `status` means a single-view projection of the statusbar inline-start summary, not the approval top-layer. Non-view management operations such as `cleanup` stay as their own command because they operate on app-owned resources rather than opening a mux surface.
 
 5. Statusbar is macro-only and action-oriented
 
@@ -37,7 +37,7 @@ Therefore the correct architecture is:
 
 6. Overlay is one plane, not separate ad-hoc dialogs
 
-   Approval and close-confirm both live in the same top-layer overlay plane. `--view=status` never implies overlay. Pane close uses overlay confirmation with two product actions: keep PTY alive and close the UI, or kill PTY and close the UI. The top-layer must participate in the shared focus event path; it must not install a parallel global key listener.
+   Approval and close-confirm both live in the same top-layer overlay plane. `--view=status` never implies overlay. Pane close uses overlay confirmation with two app actions: keep PTY alive and close the UI, or kill PTY and close the UI. The top-layer must participate in the shared focus event path; it must not install a parallel global key listener.
 
 7. Terminal pane title is source truth
 
@@ -61,4 +61,4 @@ Therefore the correct architecture is:
 
 12. openmux is reference material, not a dependency
 
-   `openmux` is MIT and useful reference material for pane border/title, focus routing, terminal mouse handling, and resize batching. It remains a tmux-like C/S product rather than shell's target architecture, so shell only borrows design ideas and keeps the lightweight embedded layout+pane model. Future extraction name is `opencompose`.
+   `openmux` is MIT and useful reference material for pane border/title, focus routing, terminal mouse handling, and resize batching. It remains a tmux-like C/S app rather than shell's target architecture, so shell only borrows design ideas and keeps the lightweight embedded layout+pane model. Future extraction name is `opencompose`.

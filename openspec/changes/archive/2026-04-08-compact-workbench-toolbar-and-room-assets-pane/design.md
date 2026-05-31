@@ -5,9 +5,9 @@ Two different responsibilities are currently conflated:
 - the shared workbench chrome should only define switched-window structure and fixed chrome slots
 - each page should decide how to spend the toolbar slot it receives
 
-`WorkbenchToolbar` currently violates that separation by deciding row count and height. Room then inherits that policy and cannot compress into the fixed high-density operator header the product now requires.
+`WorkbenchToolbar` currently violates that separation by deciding row count and height. Room then inherits that policy and cannot compress into the fixed high-density operator header the app now requires.
 
-On the data side, room attachment upload and retrieval already exist, but the product still lacks a durable list/read path for "all assets currently owned by this room", which blocks the new `assets` pane.
+On the data side, room attachment upload and retrieval already exist, but the app still lacks a durable list/read path for "all assets currently owned by this room", which blocks the new `assets` pane.
 
 ## Decisions
 

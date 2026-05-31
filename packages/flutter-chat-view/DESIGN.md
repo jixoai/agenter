@@ -4,7 +4,7 @@
 
 ## 1. Goal
 
-- `flutter-chat-view` 的目标不是复刻 `apple.com` 营销页，也不是把 `extensions/studio` 翻译成 Flutter。
+- `flutter-chat-view` 的目标不是复刻 `apple.com` 营销页，也不是把 `apps/studio` 翻译成 Flutter。
 - phase 1 的目标是交付一个 **Web-first、Apple idiom、Cupertino-first** 的独立房间工作台。
 - 后续 iOS / Android / macOS 复用同一套 host-shell law，而不是各端重新长出一套页面语义。
 
@@ -297,8 +297,8 @@ host shell 固定分四层：
 
 ## 11. Apple Platform Law
 
-- The Flutter product shell follows Apple platform semantics, not a generic web-card aesthetic. Use Cupertino navigation, tab, list, sheet, and dynamic color primitives before custom layout.
-- `AppleMaterialSurface` is the only product-shell primitive that may combine background, border, blur, radius, and clipping for app-level sidebar/content/inspector/bar surfaces.
+- The Flutter app shell follows Apple platform semantics, not a generic web-card aesthetic. Use Cupertino navigation, tab, list, sheet, and dynamic color primitives before custom layout.
+- `AppleMaterialSurface` is the only app-shell primitive that may combine background, border, blur, radius, and clipping for app-level sidebar/content/inspector/bar surfaces.
 - Apple spacing is a rhythm law, not an individual style. Shell margins, column gaps, surface radii, and compact edge-to-edge behavior must come from `ApplePlatformTokens` / `appleShellMargins`, not feature-local `EdgeInsets` guesses.
 - Compact iPhone layouts are edge-to-edge under Cupertino navigation and tab bars. Do not wrap the active route in a large rounded card; use grouped backgrounds inside content only when the content semantics require grouping.
 - Regular and expanded layouts default to iPad-style split view: app-level sidebar/content/inspector surfaces are edge-to-edge and separated by thin system dividers. Rounded corners belong to contained semantic groups, sheets, notices, and controls—not to every major route panel.
@@ -309,7 +309,7 @@ host shell 固定分四层：
 - `AppleIconButton` owns icon-only semantics: one localized button label, no unlabeled duplicate button node, and child icon semantics excluded.
 - `AppleIconButton` owns icon-only discoverability: tooltip / long-press help derives from the same localized label and is excluded from semantics.
 - `CompactRouteSheet` owns compact secondary/tertiary route detents. Feature code selects semantic detents (`page`, `inspector`) and must not pass ad-hoc popup heights.
-- Product-shell colors must resolve through `CupertinoDynamicColor` or Apple platform tokens. Fixed raw colors are allowed only inside token definitions.
+- App-shell colors must resolve through `CupertinoDynamicColor` or Apple platform tokens. Fixed raw colors are allowed only inside token definitions.
 - Liquid Glass is modeled as a progressive material primitive on Web: blur/alpha when available, dynamic solid fallback when unavailable. Do not name feature code after unreproducible private system effects.
 - Version-branded visual shims such as `ios26_*` are not allowed in the example shell. If a visual rule is durable, name it by semantic role (`Apple*`, stage, section, transcript) rather than by a speculative OS version.
 
@@ -360,7 +360,7 @@ When implementing Flutter Chat View UI changes:
 
 ## 14. Chat Content Rhythm Law
 
-- Chat content has its own rhythm law separate from product-shell chrome. `ChatSurfaceTokens` is the single source for message max width, bubble radius, message padding, block gap, block padding, composer padding, action hit size, inline gaps, pill padding, transcript padding, notice rhythm, empty-state rhythm, and return-to-latest motion thresholds.
+- Chat content has its own rhythm law separate from app-shell chrome. `ChatSurfaceTokens` is the single source for message max width, bubble radius, message padding, block gap, block padding, composer padding, action hit size, inline gaps, pill padding, transcript padding, notice rhythm, empty-state rhythm, and return-to-latest motion thresholds.
 - `FlutterChatView`, `ChatMessageTile`, `ChatComposer*`, `ChatMarkdownView`, attachments, and interactive/error/reply blocks must read rhythm from `chatTokens(context)` or helpers such as `chatComposerOuterPadding`.
 - Feature code must not introduce one-off `EdgeInsets.fromLTRB(...)`, bubble radii, pill padding, or composer action sizes. If a new content pattern needs spacing, extend `ChatSurfaceTokens` first.
 - Message bubbles remain contained content atoms. They can be rounded, but their radius must be quieter than app-level cards and consistent across text, replies, errors, attachments, and interactive forms.
@@ -372,7 +372,7 @@ When implementing Flutter Chat View UI changes:
 - Transcript scroll is a lifecycle-sensitive platform law. Feature widgets must not call `ScrollController.animateTo` directly from transient gestures unless the call is guarded by `hasClients`, `hasContentDimensions`, `mounted`, and post-frame timing where needed.
 - Return-to-latest is a persistent stage affordance, not a conditional subtree. Keep the control mounted and toggle `Opacity`, `IgnorePointer`, and semantics exposure instead of removing it during the same gesture that starts scroll motion.
 - Stage notices, time dividers, loading affordances, empty transcript copy, and return-to-latest controls are transcript chrome. Their padding, radius, gaps, icon sizes, and thresholds must come from `ChatSurfaceTokens`.
-- Visibility telemetry is not allowed to create rebuild storms. If a scroll or visibility primitive emits high-frequency facts, it must be throttled, coalesced, or kept out of product-shell rebuild paths unless a durable user-visible fact changed.
+- Visibility telemetry is not allowed to create rebuild storms. If a scroll or visibility primitive emits high-frequency facts, it must be throttled, coalesced, or kept out of app-shell rebuild paths unless a durable user-visible fact changed.
 - Scroll commands must be idempotent. Repeated taps, controller updates, viewport changes, or disposal during animation must converge without render assertions or unhandled futures.
 - Virtualized transcript rows must not let `GestureDetector` own semantics while rows are being created and disposed during scroll. Put explicit `Semantics(onTap: ...)` on the stable row atom and set gesture recognizers to exclude their generated semantics.
 - Transcript and Web demo shell surfaces must not mount `SelectableRegion`, `HtmlElementView`, or any other Flutter Web platform view. On Web these create `_PlatformViewPlaceholderBox` post-frame layout callbacks that can outlive disposed rows during scroll animations. Message copying must be provided by stable message actions instead.

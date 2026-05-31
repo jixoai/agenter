@@ -13,9 +13,9 @@ The system SHALL support multiple subscribed avatar sources, and each source SHA
 - **THEN** the UI lists each subscribed avatar source as its own source record
 - **AND** each record exposes a distinguishable source alias instead of collapsing all remote supply into one unnamed bucket
 
-#### Scenario: Source entry remains a visible product surface
+#### Scenario: Source entry remains a visible app surface
 - **WHEN** the operator navigates within the `Avatars` workbench
-- **THEN** the product exposes a first-class `Sources` entry rather than hiding source management only inside unrelated settings
+- **THEN** the app exposes a first-class `Sources` entry rather than hiding source management only inside unrelated settings
 
 ### Requirement: Discover SHALL present remote avatar packages as installable candidates
 The system SHALL project remote avatar packages through a `Discover` surface. Discover rows SHALL treat package name as the primary identity cue and source alias as the secondary cue.
@@ -57,7 +57,7 @@ Installing a remote avatar package SHALL produce a local avatar that retains sou
 - **AND** the UI does not require a separate remote-only operational mode
 
 ### Requirement: Install SHALL be the default durable path even if transient launch exists later
-The system MAY support transient direct launch of remote packages in the future, but the default durable product path for remote acquisition SHALL remain install-first.
+The system MAY support transient direct launch of remote packages in the future, but the default durable app path for remote acquisition SHALL remain install-first.
 
 #### Scenario: Discover emphasizes install as the primary durable action
 - **WHEN** the operator inspects a remote avatar package in `Discover`

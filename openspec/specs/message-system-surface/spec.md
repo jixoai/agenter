@@ -6,7 +6,7 @@ Define the durable operator-facing contract for the standalone message-system ro
 
 ## Requirements
 
-### Requirement: Message-system SHALL present rooms as a standalone product surface
+### Requirement: Message-system SHALL present rooms as a standalone app surface
 
 The WebUI SHALL expose a dedicated message-system route that lists global rooms, renders one selected room transcript through the shared chat surface, and keeps the room transcript/composer workflow as the primary operator task. The route shell and room-management dialogs SHALL use the shared scaffold-family primitives so the transcript, management rail, and dialog detail stage no longer repeat their own stretch-layout contracts. The selected room view SHALL support explicit viewer selection, while room membership, metadata, and access administration move into a dedicated management surface instead of a permanently expanded inline rail. Studio SHALL embed the Web Chat app-view through an iframe boundary for chat mode so the app-view owns Framework7 chat topology and backend room synchronization while Studio keeps room tabs, assets, search, and superadmin controls outside that island.
 

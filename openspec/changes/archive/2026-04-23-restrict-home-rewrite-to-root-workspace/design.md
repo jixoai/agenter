@@ -68,7 +68,7 @@ Anything the runtime needs for local CLI/API discovery may stay available on the
 
 ### 6. The UI must show semantic distinction without implying an ownership wall
 
-The workspace workbench should distinguish `root-workspace` and `public-workspace` the same way the backend does: as different env/CLI surfaces. That distinction must remain factual and visible in the page chrome, but it must not claim that root-workspace is inherently unshareable. In product terms, another avatar may still "visit" a root-workspace if some higher-level sharing/grant model allows it; what stays special is the root-workspace env/CLI profile, not an absolute no-entry policy.
+The workspace workbench should distinguish `root-workspace` and `public-workspace` the same way the backend does: as different env/CLI surfaces. That distinction must remain factual and visible in the page chrome, but it must not claim that root-workspace is inherently unshareable. In app terms, another avatar may still "visit" a root-workspace if some higher-level sharing/grant model allows it; what stays special is the root-workspace env/CLI profile, not an absolute no-entry policy.
 
 ## Risks / Trade-offs
 

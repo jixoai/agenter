@@ -1,6 +1,6 @@
 ## Why
 
-The current WebUI still treats settings as session-owned and keeps most navigation in one large local-state shell. That model no longer matches the product: settings follow a workspace, sessions are runtime instances under that workspace, and background sessions need lightweight unread notifications that survive outside the visible chat view.
+The current WebUI still treats settings as session-owned and keeps most navigation in one large local-state shell. That model no longer matches the app: settings follow a workspace, sessions are runtime instances under that workspace, and background sessions need lightweight unread notifications that survive outside the visible chat view.
 
 ## What Changes
 

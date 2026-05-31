@@ -2,7 +2,7 @@
 
 The current AI provider stack is configured as if it supports multiple vendors, but the runtime still treats provider `kind` as both vendor identity and protocol selector. That coupling makes DeepSeek-style special cases accumulate and prevents correct modeling of vendors that support multiple API standards such as OpenAI-compatible, Anthropic-compatible, and Responses-compatible transports.
 
-This change is needed now because the product must support more model ecosystems without hard-wiring DeepSeek semantics into settings, runtime routing, and debugging surfaces.
+This change is needed now because the app must support more model ecosystems without hard-wiring DeepSeek semantics into settings, runtime routing, and debugging surfaces.
 
 ## What Changes
 

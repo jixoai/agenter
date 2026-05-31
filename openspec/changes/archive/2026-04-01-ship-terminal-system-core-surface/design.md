@@ -1,6 +1,6 @@
 ## Context
 
-The backend and SDK already support global terminal listing, read/write operations, grant management, approval requests, activity history, and focus APIs. The remaining frontend problems are largely product-model errors: treating terminals as workspace-owned, hiding actor context, and exposing terminal-wide focus toggles instead of seat-level state.
+The backend and SDK already support global terminal listing, read/write operations, grant management, approval requests, activity history, and focus APIs. The remaining frontend problems are largely app-model errors: treating terminals as workspace-owned, hiding actor context, and exposing terminal-wide focus toggles instead of seat-level state.
 
 ## Goals / Non-Goals
 

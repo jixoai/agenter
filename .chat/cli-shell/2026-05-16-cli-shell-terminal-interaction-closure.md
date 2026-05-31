@@ -44,11 +44,11 @@
 本轮同步到长期 spec：
 
 - `openspec/specs/terminal-screen-projection-law/spec.md`
-- `openspec/specs/cli-shell-product/spec.md`
+- `openspec/specs/cli-shell-app/spec.md`
 
 当前 `openspec list --json` 剩余状态：
 
-- `separate-cli-shell-product-from-terminal-view-components`：82/86，in-progress
+- `separate-cli-shell-app-from-terminal-view-components`：82/86，in-progress
 - `add-cli-shell-web-host`：26/26，complete
 - `promote-ghostty-native-terminal-backend`：8/8，complete
 - `promote-ghostty-native-cli-shell`：14/14，complete
