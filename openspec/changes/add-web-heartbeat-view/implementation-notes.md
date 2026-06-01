@@ -7,6 +7,7 @@
 - `AgenterHeartbeatConnection` is the first accepted connection boundary name.
 - First apply does not add or reshape backend endpoints. If an endpoint shape change appears necessary, implementation must pause for user discussion.
 - `readonly` is a frontend presentation mode for clean UI. It is not an auth or isolation boundary. Existing `createSession({ autoStart:false })` remains allowed for materializing/reusing stopped session metadata so persisted Heartbeat DB facts can be read.
+- User decision to preserve verbatim: "readonly只是前端上的限制，目的只是为了让界面干净点，真正要做隔离，也不是从接口设计上去隔离，而是要从接口认证上去隔离。"
 
 ## `packages/web-chat-view` Files To Mirror
 
@@ -63,3 +64,14 @@
 ## External UI Reference
 
 Context7 lookup for `/sikandarjodd/ai-elements` confirmed the relevant component families for this package: Conversation, Message, Reasoning, Tool, Context, Loader, and Actions. The reference is a component-pattern source, not a transport or truth-source law.
+
+## Verification Evidence
+
+- `bun run --filter '@agenter/web-heartbeat-view' typecheck`: passed with 0 errors and 0 warnings.
+- `bun run --filter '@agenter/web-heartbeat-view' test`: passed with unit, Storybook browser, and DOM browser projects.
+- `bun run --filter '@agenter/web-heartbeat-view-example' typecheck`: passed with 0 errors and 0 warnings.
+- `bun run --filter '@agenter/web-heartbeat-view-example' test`: passed.
+- Static scan found no `any`, `as any`, or `@ts-nocheck` under `packages/web-heartbeat-view`.
+- Static scan found no backend or Studio code diff in `packages/app-server`, `packages/client-sdk`, or `apps/studio`.
+- Route-level evidence is stored under `.screenshot/web-heartbeat-view/` for mobile and desktop directory/Heartbeat flows.
+- The live acceptance URL for this apply round is `http://127.0.0.1:4180/?wsUrl=ws%3A%2F%2F127.0.0.1%3A4590%2Ftrpc`.

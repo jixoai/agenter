@@ -1,0 +1,38 @@
+{
+  "name": "@agenter/web-heartbeat-view-example",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite dev",
+    "build": "vite build",
+    "preview": "vite preview",
+    "prepare": "svelte-kit sync || echo ''",
+    "typecheck": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.check.json",
+    "test": "vitest run --config ./vitest.config.ts",
+    "start": "bun run ./scripts/start-example.ts"
+  },
+  "dependencies": {
+    "@agenter/client-sdk": "workspace:*",
+    "@agenter/web-heartbeat-view": "workspace:*",
+    "@lucide/svelte": "^1.7.0",
+    "dom7": "^4.0.6",
+    "framework7": "^9.0.4",
+    "framework7-icons": "^5.0.5",
+    "framework7-svelte": "^9.0.4",
+    "idb-keyval": "^6.2.2"
+  },
+  "devDependencies": {
+    "@sveltejs/adapter-auto": "^7.0.1",
+    "@sveltejs/kit": "^2.57.0",
+    "@sveltejs/vite-plugin-svelte": "^7.0.0",
+    "@tailwindcss/vite": "^4.2.2",
+    "@types/bun": "latest",
+    "@types/node": "^24",
+    "svelte": "^5.55.2",
+    "svelte-check": "^4.4.6",
+    "typescript": "latest",
+    "vite": "^8.0.7",
+    "vitest": "^4.1.2"
+  }
+}
