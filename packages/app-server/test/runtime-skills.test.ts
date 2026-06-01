@@ -39,7 +39,7 @@ describe("Feature: runtime built-in skills", () => {
 
     expect(note).toBeTruthy();
     expect(note?.path).toBe(join(repoRoot, "packages", "app-server", "skills", "note", "SKILL.md"));
-    expect(note?.summary).toContain("Record and retrieve avatar-private raw notes");
+    expect(note?.summary).toContain("Record, query, and maintain avatar-private raw notes");
     expect(buildRuntimeSkillsList(skills)).toContain("note");
   });
 
@@ -58,15 +58,18 @@ describe("Feature: runtime built-in skills", () => {
     const content = readRuntimeSkillContent(note);
 
     expect(content).toContain("note draft");
-    expect(content).toContain("note write --notebook <name> --section <name> --page <name>");
-    expect(content).toContain("note list");
+    expect(content).toContain("note write");
     expect(content).toContain("note show");
     expect(content).toContain("note search");
+    expect(content).toContain("note tags");
+    expect(content).toContain("note query");
+    expect(content).toContain("note rename");
+    expect(content).toContain("shell-assistant-book");
     expect(content).toContain("Notes are raw facts");
-    expect(content).toContain("Notes are not user models");
-    expect(content).toContain("--mode append");
-    expect(content).toContain("--mode override");
-    expect(content).toContain("Legacy memory files may exist");
+    expect(content).toContain("not user models");
+    expect(content).toContain('mode": "append"');
+    expect(content).toContain("application/json");
+    expect(content).toContain("References should point at notes");
   });
 
   test("Scenario: Given a runtime root workspace When built-in skills are listed Then concise overviews and reference expansion stay discoverable without workspace writes", () => {

@@ -146,6 +146,7 @@ describe("Feature: app-server trpc procedures", () => {
         section: "shell",
         page: "typed-surface",
         body: "Typed NoteSystem projection keeps Studio away from raw filesystem reads.",
+        tags: ["studio", "contract"],
         now: new Date("2026-05-31T15:30:00.000Z"),
         sourceWorkspace: "/repo",
       });
@@ -167,6 +168,14 @@ describe("Feature: app-server trpc procedures", () => {
         avatarNickname: "note-reader",
         query: "Studio raw filesystem",
       });
+      const tags = await caller.note.tags({
+        avatarNickname: "note-reader",
+        notebook: "ideas",
+      });
+      const sql = await caller.note.query({
+        avatarNickname: "note-reader",
+        sql: "select notebook, section, page from note_pages_view where notebook = 'ideas'",
+      });
 
       expect(catalog.avatar).toMatchObject({
         nickname: "note-reader",
@@ -183,6 +192,8 @@ describe("Feature: app-server trpc procedures", () => {
         section: "shell",
         page: "typed-surface",
         sourceWorkspace: "/repo",
+        tags: ["contract", "studio"],
+        mime: "text/markdown",
       });
       expect(page.page?.body).toContain("Typed NoteSystem projection");
       expect(page.page?.metadata.kind).toBe("note");
@@ -193,6 +204,8 @@ describe("Feature: app-server trpc procedures", () => {
         page: "typed-surface",
       });
       expect(search.results[0]?.snippet).toContain("Studio");
+      expect(tags.tags.map((tag) => tag.name)).toEqual(["contract", "studio"]);
+      expect(sql.rows).toEqual([{ notebook: "ideas", section: "shell", page: "typed-surface" }]);
     } finally {
       await kernel.stop();
     }
@@ -221,6 +234,13 @@ describe("Feature: app-server trpc procedures", () => {
         avatarNickname: "missing-note-avatar",
         query: "anything",
       });
+      const tags = await caller.note.tags({
+        avatarNickname: "missing-note-avatar",
+      });
+      const sql = await caller.note.query({
+        avatarNickname: "missing-note-avatar",
+        sql: "select * from note_pages_view",
+      });
 
       expect(catalog.avatar).toMatchObject({
         nickname: "missing-note-avatar",
@@ -233,6 +253,60 @@ describe("Feature: app-server trpc procedures", () => {
       expect(page.capability.available).toBeFalse();
       expect(search.results).toEqual([]);
       expect(search.capability.available).toBeFalse();
+      expect(tags.tags).toEqual([]);
+      expect(tags.capability.available).toBeFalse();
+      expect(sql.rows).toEqual([]);
+      expect(sql.capability.available).toBeFalse();
+    } finally {
+      await kernel.stop();
+    }
+  });
+
+  test("Scenario: Given explicit NoteSystem references When TRPC write runs Then structured reference metadata resolves before commit", async () => {
+    const root = makeTempDir();
+    const homeDir = join(root, "home");
+    const kernel = new AppKernel({
+      globalSessionRoot: join(root, "sessions"),
+      archiveSessionRoot: join(root, "archive", "sessions"),
+      workspacesPath: join(root, "workspaces.yaml"),
+      homeDir,
+    });
+    await kernel.start();
+    try {
+      const { caller } = await createRootSuperadminCaller(kernel);
+      const created = await caller.avatar.create({
+        nickname: "note-writer",
+        displayName: "Note Writer",
+      });
+      const principalId = created.avatar.avatarPrincipalId;
+      if (!principalId) {
+        throw new Error("expected created avatar principal id");
+      }
+      const avatarHome = resolveGlobalAvatarCanonicalRoot(principalId, homeDir);
+      const target = writeNotePage({
+        avatarHome: [avatarHome],
+        notebook: "ideas",
+        section: "shell",
+        page: "target",
+        body: "Target note.",
+      });
+
+      const written = await caller.note.write({
+        avatarNickname: "note-writer",
+        notebook: "ideas",
+        section: "shell",
+        page: "json-ref",
+        content: '{"ok":true}',
+        mime: "application/json",
+        references: [{ pageId: target.metadata.pageId, label: "target" }],
+      });
+
+      expect(written.page?.metadata.mime).toBe("application/json");
+      expect(written.page?.metadata.references[0]).toMatchObject({
+        label: "target",
+        pageId: target.metadata.pageId,
+        uri: "note:ideas/shell/target",
+      });
     } finally {
       await kernel.stop();
     }

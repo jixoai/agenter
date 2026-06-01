@@ -30,14 +30,14 @@ export default defineConfig({
   webServer: [
     {
       command:
-        `if lsof -ti tcp:${E2E_DAEMON_PORT} >/dev/null; then lsof -ti tcp:${E2E_DAEMON_PORT} | xargs kill; sleep 1; fi && bun run ./tests/e2e/setup-skills-home.ts .playwright/agenter-home && HOME=$PWD/.playwright/agenter-home bun run ../cli/src/bin/agenter.ts daemon --host 127.0.0.1 --port ${E2E_DAEMON_PORT}`,
+        `if lsof -ti tcp:${E2E_DAEMON_PORT} >/dev/null; then lsof -ti tcp:${E2E_DAEMON_PORT} | xargs kill; sleep 1; fi && bun run ./tests/e2e/setup-skills-home.ts .playwright/agenter-home && HOME=$PWD/.playwright/agenter-home AGENTER_INTERNAL_DAEMON_FOREGROUND=1 bun run ../../packages/cli/src/bin/agenter.ts daemon --host 127.0.0.1 --port ${E2E_DAEMON_PORT}`,
       port: E2E_DAEMON_PORT,
       reuseExistingServer: false,
       timeout: 120_000,
     },
     {
       command:
-        `PUBLIC_AGENTER_WS_URL=${E2E_WS_URL} pnpm run build && PUBLIC_AGENTER_WS_URL=${E2E_WS_URL} pnpm exec vite preview --host 127.0.0.1 --port ${E2E_WEB_PORT} --outDir build`,
+        `PUBLIC_AGENTER_WS_URL=${E2E_WS_URL} bun run build && PUBLIC_AGENTER_WS_URL=${E2E_WS_URL} bunx vite preview --host 127.0.0.1 --port ${E2E_WEB_PORT} --outDir build`,
       port: E2E_WEB_PORT,
       reuseExistingServer: false,
       timeout: 300_000,

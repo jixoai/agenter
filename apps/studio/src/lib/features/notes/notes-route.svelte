@@ -1,12 +1,15 @@
 <script lang="ts">
 	import { ScrollView } from '@agenter/svelte-components';
 	import FileTextIcon from '@lucide/svelte/icons/file-text';
+	import DatabaseIcon from '@lucide/svelte/icons/database';
+	import LinkIcon from '@lucide/svelte/icons/link';
 	import NotebookTextIcon from '@lucide/svelte/icons/notebook-text';
 	import RefreshCwIcon from '@lucide/svelte/icons/refresh-cw';
 	import SearchIcon from '@lucide/svelte/icons/search';
+	import TagsIcon from '@lucide/svelte/icons/tags';
 	import { page } from '$app/state';
 
-	import type { NoteCatalogOutput, NotePageOutput, NoteSearchOutput } from '@agenter/client-sdk';
+	import type { NoteCatalogOutput, NotePageOutput, NoteSearchOutput, NoteSqlQueryOutput, NoteTagsOutput } from '@agenter/client-sdk';
 	import { getAppControllerContext } from '$lib/app/controller-context';
 	import { Badge } from '$lib/components/ui/badge/index.js';
 	import { Button } from '$lib/components/ui/button/index.js';
@@ -33,10 +36,15 @@
 	let selectedPage = $state<NotePageIdentity | null>(null);
 	let pageOutput = $state<NotePageOutput | null>(null);
 	let searchOutput = $state<NoteSearchOutput | null>(null);
+	let tagsOutput = $state<NoteTagsOutput | null>(null);
+	let sqlOutput = $state<NoteSqlQueryOutput | null>(null);
 	let searchQuery = $state('');
+	let sqlQuery = $state('select notebook, section, page, mime, updatedAt from note_pages_view order by updatedAt desc');
 	let loadingCatalog = $state(false);
 	let loadingPage = $state(false);
 	let searching = $state(false);
+	let loadingTags = $state(false);
+	let runningSql = $state(false);
 	let error = $state<string | null>(null);
 	let detailOpen = $state(true);
 	let detailCompact = $state(false);
@@ -46,6 +54,7 @@
 
 	const avatars = $derived(controller.runtimeState.globalAvatarCatalog.data);
 	const searchRows = $derived(mapNoteSearchRows(searchOutput?.results ?? []));
+	const tagRows = $derived(tagsOutput?.tags ?? []);
 	const capabilityAvailable = $derived(hasNoteCapability(catalog));
 	const selectedPageKey = $derived(selectedPage ? createNotePageKey(selectedPage) : '');
 	const selectedPageFact = $derived(pageOutput?.page ?? null);
@@ -105,6 +114,10 @@
 			if (!output.capability.available) {
 				pageOutput = null;
 				searchOutput = null;
+				tagsOutput = null;
+				sqlOutput = null;
+			} else {
+				void loadTags();
 			}
 		} catch (caught) {
 			if (requestSeq === catalogRequestSeq) {
@@ -115,6 +128,24 @@
 			if (requestSeq === catalogRequestSeq) {
 				loadingCatalog = false;
 			}
+		}
+	};
+
+	const loadTags = async (): Promise<void> => {
+		if (!capabilityAvailable) {
+			tagsOutput = null;
+			return;
+		}
+		loadingTags = true;
+		try {
+			tagsOutput = await controller.runtimeStore.listNoteTags({
+				avatarNickname: selectedAvatar || undefined,
+			});
+		} catch (caught) {
+			error = caught instanceof Error ? caught.message : 'Failed to load note tags.';
+			tagsOutput = null;
+		} finally {
+			loadingTags = false;
 		}
 	};
 
@@ -168,6 +199,28 @@
 			if (requestSeq === searchRequestSeq) {
 				searching = false;
 			}
+		}
+	};
+
+	const runSql = async (): Promise<void> => {
+		const sql = sqlQuery.trim();
+		if (!sql || !capabilityAvailable) {
+			sqlOutput = null;
+			return;
+		}
+		runningSql = true;
+		error = null;
+		try {
+			sqlOutput = await controller.runtimeStore.queryNotes({
+				avatarNickname: selectedAvatar || undefined,
+				sql,
+				limit: 25,
+			});
+		} catch (caught) {
+			error = caught instanceof Error ? caught.message : 'Failed to query notes.';
+			sqlOutput = null;
+		} finally {
+			runningSql = false;
 		}
 	};
 
@@ -233,7 +286,7 @@
 				{/snippet}
 
 				<div class="grid h-full gap-3 p-3 md:grid-cols-[minmax(13rem,0.72fr)_minmax(0,1fr)] md:p-4">
-					<section class="grid min-h-0 gap-3" aria-label="Note notebooks">
+					<section class="grid h-full gap-3" aria-label="Note notebooks">
 						{#if error}
 							<NoticeBanner tone="destructive" title="Notes unavailable" message={error} />
 						{:else if loadingCatalog && !catalog}
@@ -250,6 +303,50 @@
 							<div class="flex items-center justify-between gap-2 px-1">
 								<div class="text-xs font-medium uppercase tracking-wide text-muted-foreground">Notebooks</div>
 								<Badge variant="outline">{catalog?.totalPages ?? 0} pages</Badge>
+							</div>
+						{/if}
+
+						{#if capabilityAvailable}
+							<div class="grid gap-2 rounded-lg border border-border/60 bg-background/55 p-2" aria-label="Note tags">
+								<div class="flex items-center justify-between gap-2">
+									<div class="flex items-center gap-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+										<TagsIcon class={cn('size-3.5', loadingTags && 'animate-pulse')} />
+										<span>Tags</span>
+									</div>
+									<Badge variant="outline">{tagRows.length}</Badge>
+								</div>
+								<div class="flex flex-wrap gap-1">
+									{#each tagRows as tag (tag.id)}
+										<Button
+											type="button"
+											variant="outline"
+											size="sm"
+											class="h-7 px-2 text-xs"
+											onclick={() => {
+												searchQuery = '';
+												void controller.runtimeStore
+													.searchNotes({
+														avatarNickname: selectedAvatar || undefined,
+														query: '',
+														tags: [tag.name],
+														limit: 50,
+													})
+													.then((output) => {
+														searchOutput = output;
+													})
+													.catch((caught) => {
+														error = caught instanceof Error ? caught.message : 'Failed to filter notes by tag.';
+													});
+											}}
+										>
+											{tag.name}
+											<span class="text-muted-foreground">{tag.count}</span>
+										</Button>
+									{/each}
+									{#if tagRows.length === 0}
+										<span class="text-xs text-muted-foreground">No tags indexed.</span>
+									{/if}
+								</div>
 							</div>
 						{/if}
 
@@ -286,29 +383,59 @@
 						</ScrollView>
 					</section>
 
-					<section class="grid min-h-0 grid-rows-[auto_minmax(0,1fr)] gap-3" aria-label="Note search results">
-						<form
-							class="flex items-center gap-2"
-							onsubmit={(event) => {
-								event.preventDefault();
-								void runSearch();
-							}}
-						>
-							<div class="relative min-w-0 flex-1">
-								<SearchIcon class="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-								<Input
-									class="pl-9"
-									placeholder="Search notes"
-									aria-label="Search notes"
-									disabled={!capabilityAvailable}
-									bind:value={searchQuery}
-								/>
-							</div>
-							<Button type="submit" size="sm" disabled={!capabilityAvailable || searching || !searchQuery.trim()}>
-								<SearchIcon class={cn('size-4', searching && 'animate-pulse')} />
-								Search
-							</Button>
-						</form>
+					<section class="grid h-full grid-rows-[auto_minmax(0,1fr)] gap-3" aria-label="Note search results">
+						<div class="grid gap-2">
+							<form
+								class="flex items-center gap-2"
+								onsubmit={(event) => {
+									event.preventDefault();
+									void runSearch();
+								}}
+							>
+								<div class="relative min-w-0 flex-1">
+									<SearchIcon class="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+									<Input
+										class="pl-9"
+										placeholder="Search notes"
+										aria-label="Search notes"
+										disabled={!capabilityAvailable}
+										bind:value={searchQuery}
+									/>
+								</div>
+								<Button type="submit" size="sm" disabled={!capabilityAvailable || searching || !searchQuery.trim()}>
+									<SearchIcon class={cn('size-4', searching && 'animate-pulse')} />
+									Search
+								</Button>
+							</form>
+							<form
+								class="grid gap-2 rounded-lg border border-border/60 bg-background/55 p-2"
+								aria-label="Read-only note SQL query"
+								onsubmit={(event) => {
+									event.preventDefault();
+									void runSql();
+								}}
+							>
+								<div class="flex items-center justify-between gap-2 text-xs text-muted-foreground">
+									<div class="flex items-center gap-2 font-medium uppercase tracking-wide">
+										<DatabaseIcon class="size-3.5" />
+										<span>Read-only SQL</span>
+									</div>
+									<Button type="submit" size="sm" variant="outline" disabled={!capabilityAvailable || runningSql || !sqlQuery.trim()}>
+										<DatabaseIcon class={cn('size-4', runningSql && 'animate-pulse')} />
+										Query
+									</Button>
+								</div>
+								<Input aria-label="Note SQL query" disabled={!capabilityAvailable} bind:value={sqlQuery} />
+								{#if sqlOutput}
+									<div class="grid gap-1 text-xs text-muted-foreground">
+										<div>{sqlOutput.rows.length} rows</div>
+										<ScrollView class="max-h-36 rounded-md bg-muted/40" contentClass="p-2">
+											<pre class="whitespace-pre-wrap text-[11px] leading-5 text-foreground">{JSON.stringify(sqlOutput.rows, null, 2)}</pre>
+										</ScrollView>
+									</div>
+								{/if}
+							</form>
+						</div>
 
 						<ScrollView class="h-full" contentClass="grid auto-rows-max gap-2 pr-2" viewportTestId="notes-search-scroll">
 							{#if searchOutput && searchRows.length === 0}
@@ -365,6 +492,10 @@
 								<span class="truncate">{createNotePageKey(selectedPageFact.identity)}</span>
 							</div>
 							<div>Avatar: {avatarLabel}</div>
+							<div class="truncate">Book ID: {selectedPageFact.metadata.bookId}</div>
+							<div class="truncate">Section ID: {selectedPageFact.metadata.sectionId}</div>
+							<div class="truncate">Page ID: {selectedPageFact.metadata.pageId}</div>
+							<div>MIME: {selectedPageFact.metadata.mime}</div>
 							<div>Created: {formatTimestamp(selectedPageFact.metadata.createdAt)}</div>
 							<div>Updated: {formatTimestamp(selectedPageFact.metadata.updatedAt)}</div>
 							{#if selectedPageFact.metadata.sourceWorkspace}
@@ -374,6 +505,19 @@
 								<div class="flex flex-wrap gap-1">
 									{#each selectedPageFact.metadata.tags as tag (tag)}
 										<Badge variant="outline">{tag}</Badge>
+									{/each}
+								</div>
+							{/if}
+							{#if selectedPageFact.metadata.references.length > 0}
+								<div class="grid gap-1">
+									<div class="flex items-center gap-1 font-medium text-foreground">
+										<LinkIcon class="size-3.5" />
+										<span>References</span>
+									</div>
+									{#each selectedPageFact.metadata.references as reference (reference.pageId)}
+										<div class="truncate">
+											{reference.notebook} / {reference.section} / {reference.page}
+										</div>
 									{/each}
 								</div>
 							{/if}

@@ -17,12 +17,18 @@ export const renderNoteFile = (metadata: NoteMetadata, body: string): string => 
     "---",
     "kind: note",
     `id: ${formatFrontmatterValue(metadata.id)}`,
+    `bookId: ${formatFrontmatterValue(metadata.bookId)}`,
+    `sectionId: ${formatFrontmatterValue(metadata.sectionId)}`,
+    `pageId: ${formatFrontmatterValue(metadata.pageId)}`,
     `createdAt: ${formatFrontmatterValue(metadata.createdAt)}`,
     `updatedAt: ${formatFrontmatterValue(metadata.updatedAt)}`,
+    `mime: ${formatFrontmatterValue(metadata.mime)}`,
     `notebook: ${formatFrontmatterValue(metadata.notebook)}`,
     `section: ${formatFrontmatterValue(metadata.section)}`,
     `page: ${formatFrontmatterValue(metadata.page)}`,
-    `tags: ${formatFrontmatterValue(metadata.tags)}`,
+    `tags: ${formatFrontmatterValue(metadata.tags ?? [])}`,
+    `tagIds: ${formatFrontmatterValue(metadata.tagIds ?? [])}`,
+    `references: ${formatFrontmatterValue((metadata.references ?? []).map((reference) => reference.uri))}`,
   ];
   if (metadata.sourceWorkspace) {
     lines.push(`sourceWorkspace: ${formatFrontmatterValue(metadata.sourceWorkspace)}`);

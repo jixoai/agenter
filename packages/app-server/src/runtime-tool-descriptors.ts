@@ -263,7 +263,8 @@ export type RuntimeToolNamespace =
   | "terminal"
   | "terminal-manage"
   | "skill"
-  | "mcp";
+  | "mcp"
+  | "note";
 
 type MessageInvitationLike = {
   invitationId: string;

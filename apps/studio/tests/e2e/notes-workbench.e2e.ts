@@ -1,0 +1,131 @@
+import { expect, test, type Locator, type Page } from "@playwright/test";
+
+import { createAgenterClient } from "@agenter/client-sdk";
+
+const AUTH_SESSION_STORAGE_KEY = "agenter:studio:auth-session";
+const E2E_WS_URL = "ws://127.0.0.1:19190/trpc";
+
+const clickStable = async (locator: Locator): Promise<void> => {
+  await locator.scrollIntoViewIfNeeded();
+  try {
+    await locator.click({ timeout: 5_000 });
+  } catch {
+    await locator.click({ force: true });
+  }
+};
+
+const navigateToNotes = async (page: Page): Promise<void> => {
+  await page.goto("/admin", { waitUntil: "domcontentloaded" });
+  await expect(page.getByTestId("admin-route")).toBeVisible({ timeout: 60_000 });
+
+  let notesLink = page.getByRole("link", { name: "Notes" }).first();
+  if (!(await notesLink.isVisible().catch(() => false))) {
+    const toggleSidebarButton = page.getByRole("button", { name: /Toggle (application navigation|Sidebar)/i });
+    await expect(toggleSidebarButton).toBeVisible({ timeout: 15_000 });
+    await clickStable(toggleSidebarButton);
+    notesLink = page.getByRole("link", { name: "Notes" }).first();
+  }
+
+  await clickStable(notesLink);
+  const sidebarDialog = page.getByRole("dialog", { name: "Sidebar" });
+  if (await sidebarDialog.isVisible().catch(() => false)) {
+    await page.keyboard.press("Escape");
+    await expect.poll(async () => await sidebarDialog.isVisible().catch(() => false), { timeout: 2_000 }).toBeFalsy();
+  }
+  await expect(page).toHaveURL(/\/notes(?:\?.*)?$/, { timeout: 15_000 });
+};
+
+test.describe("Feature: Notes workbench route smoke", () => {
+  test("Scenario: Given seeded NoteSystem pages When opening Notes through app navigation Then desktop and iPhone layouts expose metadata tags references and read-only SQL", async ({
+    page,
+  }, testInfo) => {
+    testInfo.setTimeout(Math.max(testInfo.timeout, 120_000));
+    const client = createAgenterClient({ wsUrl: E2E_WS_URL });
+    const suffix = testInfo.project.name.toLowerCase().replace(/[^a-z0-9]+/g, "-");
+    const targetPage = `reference-target-${suffix}`;
+    const sourcePage = `current-task-${suffix}`;
+
+    try {
+      const autoLogin = await client.trpc.auth.autoLogin.mutate();
+      if (!autoLogin.ok) {
+        throw new Error(`expected daemon auto login, got ${autoLogin.reason}: ${autoLogin.message}`);
+      }
+      client.setAuthToken(autoLogin.session.token);
+      await page.addInitScript(
+        ({ key, token }) => {
+          window.localStorage.setItem(key, JSON.stringify({ token }));
+        },
+        { key: AUTH_SESSION_STORAGE_KEY, token: autoLogin.session.token },
+      );
+
+      const target = await client.trpc.note.write.mutate({
+        avatarNickname: "architect",
+        notebook: "shell-assistant-book",
+        section: "working-context",
+        page: targetPage,
+        content: "Reference target for the Notes workbench smoke.",
+        mode: "override",
+        tags: ["playwright", "reference"],
+      });
+      if (!target.page) {
+        throw new Error("expected target note page");
+      }
+      await client.trpc.note.write.mutate({
+        avatarNickname: "architect",
+        notebook: "shell-assistant-book",
+        section: "working-context",
+        page: sourcePage,
+        content: `Notes route smoke for ${suffix}.`,
+        mode: "override",
+        tags: ["playwright", "notes"],
+        references: [{ pageId: target.page.metadata.pageId, label: "target" }],
+      });
+
+      await navigateToNotes(page);
+      await expect(page.getByTestId("notes-workbench")).toBeVisible({ timeout: 30_000 });
+
+      const avatarSelect = page.getByLabel("Notes avatar");
+      await expect(avatarSelect).toBeVisible({ timeout: 15_000 });
+      await expect.poll(async () => await avatarSelect.locator('option[value="architect"]').count(), { timeout: 15_000 }).toBe(1);
+      await avatarSelect.selectOption("architect");
+
+      const sourceButton = page.getByRole("button", { name: new RegExp(sourcePage) }).first();
+      await expect(sourceButton).toBeVisible({ timeout: 30_000 });
+      await clickStable(sourceButton);
+
+      const detail = page.getByTestId("notes-detail");
+      await expect(detail).toBeVisible({ timeout: 15_000 });
+      await expect(detail).toContainText("Book ID:", { timeout: 15_000 });
+      await expect(detail).toContainText("MIME: text/markdown", { timeout: 15_000 });
+      await expect(detail).toContainText("References", { timeout: 15_000 });
+      await expect(detail).toContainText(targetPage, { timeout: 15_000 });
+      await expect(page.getByRole("button", { name: /playwright/i }).first()).toBeVisible({ timeout: 15_000 });
+
+      await clickStable(page.getByRole("button", { name: /Query/i }).first());
+      const sqlRows = page.locator("pre").filter({ hasText: sourcePage }).first();
+      const clickedQuery = await expect(sqlRows)
+        .toBeVisible({ timeout: 3_000 })
+        .then(() => true)
+        .catch(() => false);
+      if (!clickedQuery) {
+        const sqlInput = page.getByRole("textbox", { name: "Note SQL query" });
+        await sqlInput.press("Enter");
+        const submittedByEnter = await expect(sqlRows)
+          .toBeVisible({ timeout: 3_000 })
+          .then(() => true)
+          .catch(() => false);
+        if (!submittedByEnter) {
+          await sqlInput.evaluate((element) => {
+            if (!(element instanceof HTMLInputElement)) {
+              throw new Error("Expected note SQL input");
+            }
+            element.form?.requestSubmit();
+          });
+        }
+      }
+      await expect(sqlRows).toBeVisible({ timeout: 15_000 });
+    } finally {
+      client.close();
+    }
+  });
+});

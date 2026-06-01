@@ -24,6 +24,10 @@ describe('Feature: Studio Notes route contract', () => {
 		expect(routeSource).toContain('controller.runtimeStore.listNoteCatalog');
 		expect(routeSource).toContain('controller.runtimeStore.readNotePage');
 		expect(routeSource).toContain('controller.runtimeStore.searchNotes');
+		expect(routeSource).toContain('controller.runtimeStore.listNoteTags');
+		expect(routeSource).toContain('controller.runtimeStore.queryNotes');
+		expect(routeSource).toContain('Read-only SQL');
+		expect(routeSource).toContain('References');
 		expect(routeSource).toContain('<ScrollView');
 		expect(routeSource).toContain('No NoteSystem capability');
 		expect(routeSource).not.toContain('@agenter/app-server');

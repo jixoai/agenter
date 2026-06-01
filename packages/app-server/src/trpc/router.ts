@@ -217,8 +217,50 @@ const noteCatalogInputSchema = noteAvatarInputSchema
   })
   .optional();
 const noteSearchInputSchema = noteAvatarInputSchema.extend({
-  query: z.string().trim().min(1),
+  query: z.string().optional(),
   limit: z.number().int().positive().max(1000).optional(),
+  tags: z.array(z.string().trim().min(1)).optional(),
+});
+const noteTagsInputSchema = noteAvatarInputSchema.extend({
+  notebook: z.string().trim().min(1).optional(),
+  section: z.string().trim().min(1).optional(),
+});
+const noteSqlQueryInputSchema = noteAvatarInputSchema.extend({
+  sql: z.string().trim().min(1),
+  limit: z.number().int().positive().max(200).optional(),
+});
+const noteReferenceInputSchema = z.union([
+  z.string().trim().min(1),
+  z
+    .object({
+      label: z.string().trim().min(1).optional(),
+      uri: z.string().trim().min(1).optional(),
+      bookId: z.string().trim().min(1).optional(),
+      sectionId: z.string().trim().min(1).optional(),
+      pageId: z.string().trim().min(1).optional(),
+      notebook: z.string().trim().min(1).optional(),
+      section: z.string().trim().min(1).optional(),
+      page: z.string().trim().min(1).optional(),
+      path: z.string().trim().min(1).optional(),
+    })
+    .strict(),
+]);
+const noteRenameInputSchema = noteAvatarInputSchema.extend({
+  notebook: z.string().trim().min(1),
+  section: z.string().trim().min(1),
+  page: z.string().trim().min(1).optional(),
+  toNotebook: z.string().trim().min(1).optional(),
+  toSection: z.string().trim().min(1).optional(),
+  toPage: z.string().trim().min(1).optional(),
+});
+const noteWriteInputSchema = noteIdentityInputSchema.extend({
+  body: z.string().optional(),
+  content: z.string().optional(),
+  mode: z.enum(["append", "override"]).optional(),
+  mime: z.string().trim().min(1).optional(),
+  tags: z.array(z.string().trim().min(1)).optional(),
+  references: z.array(noteReferenceInputSchema).optional(),
+  sourcePath: z.string().trim().min(1).optional(),
 });
 const messageErrorPayloadSchema = z.object({
   title: z.string().trim().min(1).optional(),
@@ -554,6 +596,18 @@ export const appRouter = t.router({
     search: superadminProcedure
       .input(noteSearchInputSchema)
       .query(async ({ ctx, input }) => await ctx.kernel.searchNoteCatalog(input)),
+    tags: superadminProcedure
+      .input(noteTagsInputSchema.optional())
+      .query(async ({ ctx, input }) => await ctx.kernel.listNoteTagCatalog(input ?? {})),
+    query: superadminProcedure
+      .input(noteSqlQueryInputSchema)
+      .query(async ({ ctx, input }) => await ctx.kernel.queryNoteCatalogSql(input)),
+    rename: superadminProcedure
+      .input(noteRenameInputSchema)
+      .mutation(async ({ ctx, input }) => await ctx.kernel.renameNoteCatalogPages(input)),
+    write: superadminProcedure
+      .input(noteWriteInputSchema)
+      .mutation(async ({ ctx, input }) => await ctx.kernel.writeNoteCatalogPage(input)),
   }),
   session: t.router({
     list: superadminProcedure.query(({ ctx }) => ({ sessions: ctx.kernel.listSessions() })),

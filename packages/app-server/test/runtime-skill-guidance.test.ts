@@ -57,13 +57,16 @@ describe("Feature: runtime skill progressive disclosure guidance", () => {
 
     expect(note?.template).toContain("note draft");
     expect(note?.template).toContain("note write");
-    expect(note?.template).toContain("note list");
     expect(note?.template).toContain("note show");
     expect(note?.template).toContain("note search");
+    expect(note?.template).toContain("note tags");
+    expect(note?.template).toContain("note query");
+    expect(note?.template).toContain("note rename");
+    expect(note?.template).toContain("shell-assistant-book");
     expect(note?.template).toContain("Notes are raw facts");
-    expect(note?.template).toContain("Notes are not user models");
-    expect(note?.template).toContain("--mode append");
-    expect(note?.template).toContain("--mode override");
+    expect(note?.template).toContain("not user models");
+    expect(note?.template).toContain('mode": "append"');
+    expect(note?.template).toContain("application/json");
 
     expect(terminal?.template).not.toContain("127.0.0.1");
     expect(terminal?.template).not.toContain("APP-URL:");

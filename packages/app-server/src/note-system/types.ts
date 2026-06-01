@@ -1,4 +1,5 @@
 export type NoteWriteMode = "append" | "override";
+export type NoteMime = "text/markdown" | "application/json" | string;
 
 export interface NoteIdentity {
   notebook: string;
@@ -6,12 +7,49 @@ export interface NoteIdentity {
   page: string;
 }
 
+export interface NoteReference {
+  label?: string;
+  uri: string;
+  bookId: string;
+  sectionId: string;
+  pageId: string;
+  notebook: string;
+  section: string;
+  page: string;
+}
+
+export type NoteReferenceInput =
+  | string
+  | {
+      label?: string;
+      uri?: string;
+      bookId?: string;
+      sectionId?: string;
+      pageId?: string;
+      notebook?: string;
+      section?: string;
+      page?: string;
+      path?: string;
+    };
+
+export interface NoteContentDescriptor {
+  inline: boolean;
+  sizeBytes: number;
+  sourcePath?: string;
+}
+
 export interface NoteMetadata extends NoteIdentity {
   id: string;
+  bookId: string;
+  sectionId: string;
+  pageId: string;
   kind: "note";
   createdAt: string;
   updatedAt: string;
+  mime: NoteMime;
   tags: string[];
+  tagIds: string[];
+  references: NoteReference[];
   sourceWorkspace?: string;
 }
 
@@ -20,6 +58,7 @@ export interface NotePage {
   metadata: NoteMetadata;
   path: string;
   body: string;
+  content: NoteContentDescriptor;
 }
 
 export interface NoteCapabilityState {
@@ -37,9 +76,15 @@ export interface NoteAvatarContext {
 export interface NotePageSummary extends NoteIdentity {
   path: string;
   id: string;
+  bookId: string;
+  sectionId: string;
+  pageId: string;
   createdAt: string;
   updatedAt: string;
+  mime: NoteMime;
   tags: string[];
+  tagIds: string[];
+  referenceCount: number;
   sourceWorkspace?: string;
   preview: string;
 }
@@ -72,8 +117,12 @@ export interface NoteSearchOutput {
 
 export interface NoteWriteInput extends NoteIdentity {
   avatarHome: readonly string[];
-  body: string;
+  body?: string;
   mode?: NoteWriteMode;
+  mime?: NoteMime;
+  tags?: readonly string[];
+  references?: readonly NoteReferenceInput[];
+  sourcePath?: string;
   now?: Date;
   sourceWorkspace?: string;
 }
@@ -101,12 +150,63 @@ export interface NoteSearchInput {
   avatarHome: readonly string[];
   query: string;
   limit?: number;
+  tags?: readonly string[];
 }
 
 export interface NoteSearchResult extends NoteIdentity {
+  id: string;
+  bookId: string;
+  sectionId: string;
+  pageId: string;
   path: string;
   score: number;
   snippet: string;
+  tags: string[];
+  references: NoteReference[];
+}
+
+export interface NoteTagSummary {
+  id: string;
+  name: string;
+  count: number;
+}
+
+export interface NoteTagQueryInput {
+  avatarHome: readonly string[];
+  notebook?: string;
+  section?: string;
+}
+
+export interface NoteTagQueryOutput {
+  capability: NoteCapabilityState;
+  tags: NoteTagSummary[];
+}
+
+export interface NoteSqlQueryInput {
+  avatarHome: readonly string[];
+  sql: string;
+  limit?: number;
+}
+
+export interface NoteSqlQueryOutput {
+  capability: NoteCapabilityState;
+  columns: string[];
+  rows: Array<Record<string, unknown>>;
+}
+
+export interface NoteRenameInput {
+  avatarHome: readonly string[];
+  notebook: string;
+  section: string;
+  page?: string;
+  toNotebook?: string;
+  toSection?: string;
+  toPage?: string;
+}
+
+export interface NoteRenameOutput {
+  capability: NoteCapabilityState;
+  pages: NotePage[];
 }
 
 export interface NoteCliCapabilityProjection {

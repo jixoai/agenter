@@ -46,7 +46,12 @@ import type {
   ModelCallItem,
   NoteCatalogOutput,
   NotePageOutput,
+  NoteReferenceInput,
+  NoteRenameOutput,
   NoteSearchOutput,
+  NoteSqlQueryOutput,
+  NoteTagsOutput,
+  NoteWriteOutput,
   NotificationSnapshotOutput,
   RuntimeAttentionDeliveryState,
   RuntimeAttentionState,
@@ -4114,8 +4119,48 @@ export class RuntimeStore {
     return await this.client.trpc.note.page.query(input);
   }
 
-  async searchNotes(input: { avatarNickname?: string; query: string; limit?: number }): Promise<NoteSearchOutput> {
-    return await this.client.trpc.note.search.query(input);
+  async searchNotes(input: { avatarNickname?: string; query?: string; limit?: number; tags?: readonly string[] }): Promise<NoteSearchOutput> {
+    return await this.client.trpc.note.search.query({ ...input, tags: input.tags ? [...input.tags] : undefined });
+  }
+
+  async listNoteTags(input: { avatarNickname?: string; notebook?: string; section?: string } = {}): Promise<NoteTagsOutput> {
+    return await this.client.trpc.note.tags.query(input);
+  }
+
+  async queryNotes(input: { avatarNickname?: string; sql: string; limit?: number }): Promise<NoteSqlQueryOutput> {
+    return await this.client.trpc.note.query.query(input);
+  }
+
+  async renameNotePages(input: {
+    avatarNickname?: string;
+    notebook: string;
+    section: string;
+    page?: string;
+    toNotebook?: string;
+    toSection?: string;
+    toPage?: string;
+  }): Promise<NoteRenameOutput> {
+    return await this.client.trpc.note.rename.mutate(input);
+  }
+
+  async writeNotePage(input: {
+    avatarNickname?: string;
+    notebook: string;
+    section: string;
+    page: string;
+    body?: string;
+    content?: string;
+    mode?: "append" | "override";
+    mime?: string;
+    tags?: readonly string[];
+    references?: readonly NoteReferenceInput[];
+    sourcePath?: string;
+  }): Promise<NoteWriteOutput> {
+    return await this.client.trpc.note.write.mutate({
+      ...input,
+      tags: input.tags ? [...input.tags] : undefined,
+      references: input.references ? [...input.references] : undefined,
+    });
   }
 
   async readWorkspaceCliCatalog(input: { workspacePath: string; avatar: string }): Promise<WorkspaceCliCatalogOutput> {

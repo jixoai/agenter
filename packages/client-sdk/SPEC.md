@@ -17,4 +17,4 @@
 - runtime store 的订阅发布必须在非浏览器 runtime 中同步落地；只有同时提供 DOM `document`、`requestAnimationFrame` 与 `cancelAnimationFrame` 的真实浏览器帧环境才允许做 frame batching，OpenTUI/TTY 这类 synthetic window 不得等待输入事件才发布 room/terminal/runtime 事实。
 - app-runtime client 固定暴露 generic ensure/query/mutate surface；Shell-specific naming、managed UX、prompt policy 留在 app package。
 - typed router coupling 只允许服务于 shared contract discoverability；authority grammar 与 durable truth 始终由 server-side systems 拥有。
-- runtime store 必须提供 NoteSystem catalog/page/search 的 typed facades。Studio 等 feature routes 只能通过这些 facades 消费 note capability、notebook/section/page grouping、page body、search score/snippet/path metadata，不得创建 route-local transport client 或读取 app-server filesystem internals。
+- runtime store 必须提供 NoteSystem catalog/page/search/tags/query/write/rename 的 typed facades。Studio 等 feature routes 只能通过这些 facades 消费 note capability、notebook/section/page grouping、stable IDs、MIME、tags、references、page body、search score/snippet/path metadata 和 read-only SQL rows，不得创建 route-local transport client 或读取 app-server filesystem internals。

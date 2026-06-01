@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -12,7 +12,10 @@ import {
   NOTE_DRAFT_NOTEBOOK,
   draftNotePage,
   listNotePages,
+  listNoteTags,
   projectNoteCliCapabilities,
+  queryNoteSql,
+  renameNotePages,
   showNotePage,
   writeNotePage,
 } from "../src/note-system/storage";
@@ -260,6 +263,293 @@ describe("Feature: NoteSystem avatar-private note projection", () => {
     expect(result.exitCode).toBe(0);
     expect(result.stdout).toContain("ideas/shell/cli");
     expect(readFileSync(join(avatarHome, "notes", "ideas", "shell", "cli.md"), "utf8")).toContain("CLI body.");
+  });
+
+  test("Scenario: Given descriptor-backed note CLI When help and JSON write run Then schema help and structured metadata are returned", async () => {
+    const avatarHome = createTempRoot();
+    const command = createNoteCommand();
+
+    const help = await command.execute(["write", "--help"], {
+      fs: new InMemoryFs(),
+      cwd: "/repo",
+      env: new Map([[AVATAR_HOME_ENV, serializeEnvAvatarHome([avatarHome])]]),
+      stdin: "",
+    });
+    const result = await command.execute(
+      [
+        "write",
+        JSON.stringify({
+          notebook: "shell-assistant-book",
+          section: "working-context",
+          page: "json-cli",
+          content: "JSON CLI body.",
+          tags: ["Task", "Terminal"],
+        }),
+      ],
+      {
+        fs: new InMemoryFs(),
+        cwd: "/repo",
+        env: new Map([[AVATAR_HOME_ENV, serializeEnvAvatarHome([avatarHome])]]),
+        stdin: "",
+      },
+    );
+
+    expect(help.stdout).toContain("Input JSON schema");
+    expect(help.stdout).toContain("Only canonical JSON input is accepted");
+    expect(result.exitCode).toBe(0);
+    const page = JSON.parse(result.stdout) as Awaited<ReturnType<typeof writeNotePage>>;
+    expect(page.metadata).toMatchObject({
+      notebook: "shell-assistant-book",
+      section: "working-context",
+      page: "json-cli",
+      mime: "text/markdown",
+      tags: ["task", "terminal"],
+    });
+    expect(page.metadata.bookId).toStartWith("book_");
+    expect(page.metadata.sectionId).toStartWith("section_");
+    expect(page.metadata.pageId).toStartWith("page_");
+    expect(page.metadata.tagIds).toHaveLength(2);
+  });
+
+  test("Scenario: Given markdown notes with tags and relative links When write completes Then SQLite IDs references and note URI frontmatter are returned", () => {
+    const avatarHome = createTempRoot();
+    const target = writeNotePage({
+      avatarHome: [avatarHome],
+      notebook: "shell-assistant-book",
+      section: "working-context",
+      page: "target",
+      body: "Target body.",
+      tags: ["Anchor"],
+      now: new Date("2026-06-01T08:00:00.000Z"),
+    });
+
+    const source = writeNotePage({
+      avatarHome: [avatarHome],
+      notebook: "shell-assistant-book",
+      section: "working-context",
+      page: "source",
+      body: "See [target](./target.md).",
+      tags: ["Terminal", "Preference"],
+      now: new Date("2026-06-01T08:01:00.000Z"),
+    });
+
+    expect(source.metadata.references).toEqual([
+      expect.objectContaining({
+        uri: "note:shell-assistant-book/working-context/target",
+        pageId: target.metadata.pageId,
+        notebook: "shell-assistant-book",
+        section: "working-context",
+        page: "target",
+      }),
+    ]);
+    expect(source.body).toBe("See [target](note:shell-assistant-book/working-context/target).");
+    const stored = readFileSync(source.path, "utf8");
+    expect(stored).toContain("bookId: book_");
+    expect(stored).toContain('tags: ["preference","terminal"]');
+    expect(stored).toContain('references: ["note:shell-assistant-book/working-context/target"]');
+  });
+
+  test("Scenario: Given existing markdown files When note index builds Then files are indexed without rewriting user content", () => {
+    const avatarHome = createTempRoot();
+    const pagePath = join(avatarHome, "notes", "ideas", "shell", "manual.md");
+    mkdirSync(join(avatarHome, "notes", "ideas", "shell"), { recursive: true });
+    const original = "# Manual\n\nExisting note without frontmatter.\n";
+    writeFileSync(pagePath, original, "utf8");
+
+    const pages = listNotePages({ avatarHome: [avatarHome] });
+
+    expect(pages[0]?.metadata.pageId).toStartWith("page_");
+    expect(pages[0]?.body).toContain("Existing note without frontmatter.");
+    expect(readFileSync(pagePath, "utf8")).toBe(original);
+  });
+
+  test("Scenario: Given tagged pages When tags are queried Then notebook section and tag-filtered search are supported", () => {
+    const avatarHome = createTempRoot();
+    writeNotePage({
+      avatarHome: [avatarHome],
+      notebook: "shell-assistant-book",
+      section: "semantic-rules",
+      page: "terminal",
+      body: "Terminal preference.",
+      tags: ["terminal", "preference"],
+    });
+    writeNotePage({
+      avatarHome: [avatarHome],
+      notebook: "shell-assistant-book",
+      section: "working-context",
+      page: "task",
+      body: "Task context.",
+      tags: ["task"],
+    });
+
+    expect(listNoteTags({ avatarHome: [avatarHome], notebook: "shell-assistant-book" }).map((tag) => [tag.name, tag.count])).toEqual([
+      ["preference", 1],
+      ["task", 1],
+      ["terminal", 1],
+    ]);
+    expect(listNoteTags({ avatarHome: [avatarHome], notebook: "shell-assistant-book", section: "semantic-rules" }).map((tag) => tag.name)).toEqual([
+      "preference",
+      "terminal",
+    ]);
+    expect(searchNotes({ avatarHome: [avatarHome], query: "", tags: ["terminal", "preference"] }).map((page) => page.page)).toEqual([
+      "terminal",
+    ]);
+  });
+
+  test("Scenario: Given note facts When SQL query runs Then SELECT succeeds and mutating statements are rejected", () => {
+    const avatarHome = createTempRoot();
+    writeNotePage({
+      avatarHome: [avatarHome],
+      notebook: "shell-assistant-book",
+      section: "working-context",
+      page: "sql",
+      body: "SQL visible.",
+      tags: ["query"],
+    });
+
+    const result = queryNoteSql({
+      avatarHome: [avatarHome],
+      sql: "select notebook, section, page from note_pages_view where notebook = 'shell-assistant-book'",
+    });
+
+    expect(result.columns).toEqual(["notebook", "section", "page"]);
+    expect(result.rows).toEqual([{ notebook: "shell-assistant-book", section: "working-context", page: "sql" }]);
+    expect(() => queryNoteSql({ avatarHome: [avatarHome], sql: "delete from note_pages" })).toThrow("read-only");
+  });
+
+  test("Scenario: Given MIME writes When JSON and binary-like source inputs run Then JSON is compacted and source files are copied safely", () => {
+    const avatarHome = createTempRoot();
+    const sourcePath = join(createTempRoot(), "payload.bin");
+    writeFileSync(sourcePath, "binary-ish", "utf8");
+
+    const json = writeNotePage({
+      avatarHome: [avatarHome],
+      notebook: "shell-assistant-book",
+      section: "working-context",
+      page: "json",
+      body: '{ "b": 2, "a": [1, true] }',
+      mime: "application/json",
+    });
+    const binary = writeNotePage({
+      avatarHome: [avatarHome],
+      notebook: "shell-assistant-book",
+      section: "working-context",
+      page: "asset",
+      mime: "application/octet-stream",
+      sourcePath,
+    });
+
+    expect(json.path.endsWith(".json")).toBeTrue();
+    expect(readFileSync(json.path, "utf8")).toBe('{"b":2,"a":[1,true]}');
+    expect(binary.path.endsWith(".bin")).toBeTrue();
+    expect(readFileSync(binary.path, "utf8")).toBe("binary-ish");
+    expect(() =>
+      writeNotePage({
+        avatarHome: [avatarHome],
+        notebook: "shell-assistant-book",
+        section: "working-context",
+        page: "json",
+        body: "{ invalid",
+        mime: "application/json",
+        mode: "override",
+      }),
+    ).toThrow("note JSON body is invalid");
+    expect(readFileSync(json.path, "utf8")).toBe('{"b":2,"a":[1,true]}');
+  });
+
+  test("Scenario: Given invalid and explicit references When notes are written Then invalid references fail and explicit ID references resolve", () => {
+    const avatarHome = createTempRoot();
+    const target = writeNotePage({
+      avatarHome: [avatarHome],
+      notebook: "shell-assistant-book",
+      section: "semantic-rules",
+      page: "target",
+      body: "Target.",
+    });
+
+    expect(() =>
+      writeNotePage({
+        avatarHome: [avatarHome],
+        notebook: "shell-assistant-book",
+        section: "semantic-rules",
+        page: "broken",
+        body: "Broken [missing](./missing.md).",
+      }),
+    ).toThrow("note reference target not found");
+    expect(existsSync(join(avatarHome, "notes", "shell-assistant-book", "semantic-rules", "broken.md"))).toBeFalse();
+
+    const json = writeNotePage({
+      avatarHome: [avatarHome],
+      notebook: "shell-assistant-book",
+      section: "semantic-rules",
+      page: "json-ref",
+      body: '{"ok":true}',
+      mime: "application/json",
+      references: [{ pageId: target.metadata.pageId, label: "target" }],
+    });
+    expect(json.metadata.references[0]).toMatchObject({
+      pageId: target.metadata.pageId,
+      uri: "note:shell-assistant-book/semantic-rules/target",
+      label: "target",
+    });
+  });
+
+  test("Scenario: Given referenced pages When rename runs Then pageId and reference edges survive and conflicts are rejected", () => {
+    const avatarHome = createTempRoot();
+    const target = writeNotePage({
+      avatarHome: [avatarHome],
+      notebook: "shell-assistant-book",
+      section: "working-context",
+      page: "target",
+      body: "Target.",
+    });
+    writeNotePage({
+      avatarHome: [avatarHome],
+      notebook: "shell-assistant-book",
+      section: "working-context",
+      page: "source",
+      body: "See [target](./target.md).",
+    });
+    writeNotePage({
+      avatarHome: [avatarHome],
+      notebook: "shell-assistant-book",
+      section: "working-context",
+      page: "conflict",
+      body: "Conflict.",
+    });
+
+    const renamed = renameNotePages({
+      avatarHome: [avatarHome],
+      notebook: "shell-assistant-book",
+      section: "working-context",
+      page: "target",
+      toPage: "renamed",
+    });
+    const source = showNotePage({
+      avatarHome: [avatarHome],
+      notebook: "shell-assistant-book",
+      section: "working-context",
+      page: "source",
+    });
+
+    expect(renamed[0]?.metadata.pageId).toBe(target.metadata.pageId);
+    expect(renamed[0]?.identity.page).toBe("renamed");
+    expect(source?.metadata.references[0]).toMatchObject({
+      pageId: target.metadata.pageId,
+      page: "renamed",
+    });
+    expect(() =>
+      renameNotePages({
+        avatarHome: [avatarHome],
+        notebook: "shell-assistant-book",
+        section: "working-context",
+        page: "renamed",
+        toPage: "conflict",
+      }),
+    ).toThrow("note rename conflict");
+    expect(showNotePage({ avatarHome: [avatarHome], notebook: "shell-assistant-book", section: "working-context", page: "renamed" })?.metadata.pageId).toBe(
+      target.metadata.pageId,
+    );
   });
 
   test("Scenario: Given notes exist under AVATAR_HOME When note catalog is requested Then notebooks sections pages and capability state are returned", () => {

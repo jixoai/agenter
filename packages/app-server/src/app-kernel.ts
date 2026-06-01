@@ -158,12 +158,20 @@ import { repairRoomParticipantsIfNeeded } from "./message-room-participant-repai
 import { resolveModelCapabilities } from "./model-capabilities";
 import {
   listNoteCatalog,
+  listNoteTagCatalog,
+  queryNoteCatalogSql,
   readNotePage,
+  renameNoteCatalogPages,
   searchNoteCatalog,
+  writeNoteCatalogPage,
   type NoteAvatarContext,
   type NoteCatalogOutput,
   type NotePageOutput,
+  type NoteReferenceInput,
+  type NoteRenameOutput,
   type NoteSearchOutput,
+  type NoteSqlQueryOutput,
+  type NoteTagQueryOutput,
 } from "./note-system";
 import {
   settingsKindSchema,
@@ -2062,7 +2070,7 @@ export class AppKernel {
     };
   }
 
-  async searchNoteCatalog(input: { avatarNickname?: string | null; query: string; limit?: number }): Promise<
+  async searchNoteCatalog(input: { avatarNickname?: string | null; query?: string; limit?: number; tags?: readonly string[] }): Promise<
     NoteSearchOutput & {
       avatar: NoteAvatarContext;
     }
@@ -2072,8 +2080,104 @@ export class AppKernel {
       avatar,
       ...searchNoteCatalog({
         avatarHome: avatar.avatarHome,
-        query: input.query,
+        query: input.query ?? "",
         limit: input.limit,
+        tags: input.tags,
+      }),
+    };
+  }
+
+  async listNoteTagCatalog(input: { avatarNickname?: string | null; notebook?: string; section?: string } = {}): Promise<
+    NoteTagQueryOutput & {
+      avatar: NoteAvatarContext;
+    }
+  > {
+    const avatar = await this.resolveNoteAvatarContext(input);
+    return {
+      avatar,
+      ...listNoteTagCatalog({
+        avatarHome: avatar.avatarHome,
+        notebook: input.notebook,
+        section: input.section,
+      }),
+    };
+  }
+
+  async queryNoteCatalogSql(input: { avatarNickname?: string | null; sql: string; limit?: number }): Promise<
+    NoteSqlQueryOutput & {
+      avatar: NoteAvatarContext;
+    }
+  > {
+    const avatar = await this.resolveNoteAvatarContext(input);
+    return {
+      avatar,
+      ...queryNoteCatalogSql({
+        avatarHome: avatar.avatarHome,
+        sql: input.sql,
+        limit: input.limit,
+      }),
+    };
+  }
+
+  async renameNoteCatalogPages(input: {
+    avatarNickname?: string | null;
+    notebook: string;
+    section: string;
+    page?: string;
+    toNotebook?: string;
+    toSection?: string;
+    toPage?: string;
+  }): Promise<
+    NoteRenameOutput & {
+      avatar: NoteAvatarContext;
+    }
+  > {
+    const avatar = await this.resolveNoteAvatarContext(input);
+    return {
+      avatar,
+      ...renameNoteCatalogPages({
+        avatarHome: avatar.avatarHome,
+        notebook: input.notebook,
+        section: input.section,
+        page: input.page,
+        toNotebook: input.toNotebook,
+        toSection: input.toSection,
+        toPage: input.toPage,
+      }),
+    };
+  }
+
+  async writeNoteCatalogPage(input: {
+    avatarNickname?: string | null;
+    notebook: string;
+    section: string;
+    page: string;
+    body?: string;
+    content?: string;
+    mode?: "append" | "override";
+    mime?: string;
+    tags?: readonly string[];
+    references?: readonly NoteReferenceInput[];
+    sourcePath?: string;
+  }): Promise<
+    NotePageOutput & {
+      avatar: NoteAvatarContext;
+    }
+  > {
+    const avatar = await this.resolveNoteAvatarContext(input);
+    return {
+      avatar,
+      ...writeNoteCatalogPage({
+        avatarHome: avatar.avatarHome,
+        notebook: input.notebook,
+        section: input.section,
+        page: input.page,
+        body: input.content ?? input.body,
+        mode: input.mode,
+        mime: input.mime,
+        tags: input.tags,
+        references: input.references,
+        sourcePath: input.sourcePath,
       }),
     };
   }

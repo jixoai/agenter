@@ -530,7 +530,44 @@ const createMockClient = (input: {
     section: string;
     page: string;
   }) => Promise<unknown>;
-  noteSearchQuery?: (input: { avatarNickname?: string; query: string; limit?: number }) => Promise<unknown>;
+  noteSearchQuery?: (input: { avatarNickname?: string; query?: string; limit?: number; tags?: string[] }) => Promise<unknown>;
+  noteTagsQuery?: (input: { avatarNickname?: string; notebook?: string; section?: string }) => Promise<unknown>;
+  noteSqlQuery?: (input: { avatarNickname?: string; sql: string; limit?: number }) => Promise<unknown>;
+  noteRenameMutation?: (input: {
+    avatarNickname?: string;
+    notebook: string;
+    section: string;
+    page?: string;
+    toNotebook?: string;
+    toSection?: string;
+    toPage?: string;
+  }) => Promise<unknown>;
+  noteWriteMutation?: (input: {
+    avatarNickname?: string;
+    notebook: string;
+    section: string;
+    page: string;
+    body?: string;
+    content?: string;
+    mode?: "append" | "override";
+    mime?: string;
+    tags?: string[];
+    references?: Array<
+      | string
+      | {
+          label?: string;
+          uri?: string;
+          bookId?: string;
+          sectionId?: string;
+          pageId?: string;
+          notebook?: string;
+          section?: string;
+          page?: string;
+          path?: string;
+        }
+    >;
+    sourcePath?: string;
+  }) => Promise<unknown>;
   authActorsQuery?: () => Promise<{
     items: Array<{
       actorId: string;
@@ -2216,10 +2253,67 @@ const createMockClient = (input: {
               : { capability: { available: false, readableRoots: [], writableRoot: null }, page: null },
         },
         search: {
-          query: async (payload: { avatarNickname?: string; query: string; limit?: number }) =>
+          query: async (payload: { avatarNickname?: string; query?: string; limit?: number; tags?: string[] }) =>
             input.noteSearchQuery
               ? await input.noteSearchQuery(payload)
               : { capability: { available: false, readableRoots: [], writableRoot: null }, results: [] },
+        },
+        tags: {
+          query: async (payload: { avatarNickname?: string; notebook?: string; section?: string }) =>
+            input.noteTagsQuery
+              ? await input.noteTagsQuery(payload)
+              : { capability: { available: false, readableRoots: [], writableRoot: null }, tags: [] },
+        },
+        query: {
+          query: async (payload: { avatarNickname?: string; sql: string; limit?: number }) =>
+            input.noteSqlQuery
+              ? await input.noteSqlQuery(payload)
+              : { capability: { available: false, readableRoots: [], writableRoot: null }, columns: [], rows: [] },
+        },
+        rename: {
+          mutate: async (payload: {
+            avatarNickname?: string;
+            notebook: string;
+            section: string;
+            page?: string;
+            toNotebook?: string;
+            toSection?: string;
+            toPage?: string;
+          }) =>
+            input.noteRenameMutation
+              ? await input.noteRenameMutation(payload)
+              : { capability: { available: false, readableRoots: [], writableRoot: null }, pages: [] },
+        },
+        write: {
+          mutate: async (payload: {
+            avatarNickname?: string;
+            notebook: string;
+            section: string;
+            page: string;
+            body?: string;
+            content?: string;
+            mode?: "append" | "override";
+            mime?: string;
+            tags?: string[];
+            references?: Array<
+              | string
+              | {
+                  label?: string;
+                  uri?: string;
+                  bookId?: string;
+                  sectionId?: string;
+                  pageId?: string;
+                  notebook?: string;
+                  section?: string;
+                  page?: string;
+                  path?: string;
+                }
+            >;
+            sourcePath?: string;
+          }) =>
+            input.noteWriteMutation
+              ? await input.noteWriteMutation(payload)
+              : { capability: { available: false, readableRoots: [], writableRoot: null }, page: null },
         },
       },
       notification: {
@@ -11029,10 +11123,16 @@ describe("Feature: runtime store synchronization", () => {
                   section: "shell",
                   page: "note-system",
                   path: "/avatar/shell-assistant/notes/ideas/shell/note-system.md",
-                  id: "ideas/shell/note-system",
+                  id: "page_note_system",
+                  bookId: "book_ideas",
+                  sectionId: "section_shell",
+                  pageId: "page_note_system",
                   createdAt: "2026-05-31T15:30:00.000Z",
                   updatedAt: "2026-05-31T15:31:00.000Z",
+                  mime: "text/markdown",
                   tags: [],
+                  tagIds: [],
+                  referenceCount: 0,
                   preview: "NoteSystem contract.",
                 },
               ],
@@ -11052,17 +11152,28 @@ describe("Feature: runtime store synchronization", () => {
           page: "note-system",
         },
         metadata: {
-          id: "ideas/shell/note-system",
+          id: "page_note_system",
+          bookId: "book_ideas",
+          sectionId: "section_shell",
+          pageId: "page_note_system",
           kind: "note" as const,
           createdAt: "2026-05-31T15:30:00.000Z",
           updatedAt: "2026-05-31T15:31:00.000Z",
+          mime: "text/markdown",
           notebook: "ideas",
           section: "shell",
           page: "note-system",
           tags: [],
+          tagIds: [],
+          references: [],
         },
         path: "/avatar/shell-assistant/notes/ideas/shell/note-system.md",
         body: "NoteSystem contract.",
+        content: {
+          inline: true,
+          sizeBytes: 20,
+          sourcePath: "/avatar/shell-assistant/notes/ideas/shell/note-system.md",
+        },
       },
     };
     const searchOutput = {
@@ -11073,11 +11184,33 @@ describe("Feature: runtime store synchronization", () => {
           notebook: "ideas",
           section: "shell",
           page: "note-system",
+          id: "page_note_system",
+          bookId: "book_ideas",
+          sectionId: "section_shell",
+          pageId: "page_note_system",
           path: "/avatar/shell-assistant/notes/ideas/shell/note-system.md",
           score: 1,
           snippet: "NoteSystem contract.",
+          tags: [],
+          references: [],
         },
       ],
+    };
+    const tagsOutput = {
+      avatar: catalogOutput.avatar,
+      capability: catalogOutput.capability,
+      tags: [{ id: "tag_terminal", name: "terminal", count: 1 }],
+    };
+    const sqlOutput = {
+      avatar: catalogOutput.avatar,
+      capability: catalogOutput.capability,
+      columns: ["page"],
+      rows: [{ page: "note-system" }],
+    };
+    const writeOutput = {
+      avatar: catalogOutput.avatar,
+      capability: catalogOutput.capability,
+      page: pageOutput.page,
     };
     const calls: unknown[] = [];
     const store = new RuntimeStore(
@@ -11094,6 +11227,18 @@ describe("Feature: runtime store synchronization", () => {
           calls.push(["search", input]);
           return searchOutput;
         },
+        noteTagsQuery: async (input) => {
+          calls.push(["tags", input]);
+          return tagsOutput;
+        },
+        noteSqlQuery: async (input) => {
+          calls.push(["query", input]);
+          return sqlOutput;
+        },
+        noteWriteMutation: async (input) => {
+          calls.push(["write", input]);
+          return writeOutput;
+        },
       }),
     );
 
@@ -11109,6 +11254,21 @@ describe("Feature: runtime store synchronization", () => {
     expect(await store.searchNotes({ avatarNickname: "shell-assistant", query: "contract", limit: 10 })).toEqual(
       searchOutput,
     );
+    expect(await store.listNoteTags({ avatarNickname: "shell-assistant", notebook: "ideas" })).toEqual(tagsOutput);
+    expect(await store.queryNotes({ avatarNickname: "shell-assistant", sql: "select page from note_pages_view" })).toEqual(
+      sqlOutput,
+    );
+    expect(
+      await store.writeNotePage({
+        avatarNickname: "shell-assistant",
+        notebook: "ideas",
+        section: "shell",
+        page: "note-system-json",
+        content: '{"ok":true}',
+        mime: "application/json",
+        references: [{ pageId: "page_note_system", label: "canonical" }],
+      }),
+    ).toEqual(writeOutput);
     expect(calls).toEqual([
       ["catalog", { avatarNickname: "shell-assistant", limit: 50 }],
       [
@@ -11121,6 +11281,20 @@ describe("Feature: runtime store synchronization", () => {
         },
       ],
       ["search", { avatarNickname: "shell-assistant", query: "contract", limit: 10 }],
+      ["tags", { avatarNickname: "shell-assistant", notebook: "ideas" }],
+      ["query", { avatarNickname: "shell-assistant", sql: "select page from note_pages_view" }],
+      [
+        "write",
+        {
+          avatarNickname: "shell-assistant",
+          notebook: "ideas",
+          section: "shell",
+          page: "note-system-json",
+          content: '{"ok":true}',
+          mime: "application/json",
+          references: [{ pageId: "page_note_system", label: "canonical" }],
+        },
+      ],
     ]);
   });
 
