@@ -74,9 +74,22 @@ export const CodeMirrorResourceProjection = {
     expect(bubbleView?.state.facet(EditorView.editable)).toBe(false);
 
     expect(composerHost?.querySelectorAll("[part='message-resource-token']")).toHaveLength(1);
-    expect(bubbleHost?.querySelectorAll("[part='message-resource-token']")).toHaveLength(2);
+    expect(bubbleHost?.querySelectorAll("[part='message-resource-token']")).toHaveLength(3);
+    expect(
+      Array.from(composerHost?.querySelectorAll<HTMLElement>("[part='message-resource-token']") ?? []).map(
+        (element) => element.dataset.resourceNumber,
+      ),
+    ).toEqual(["1"]);
+    expect(
+      Array.from(bubbleHost?.querySelectorAll<HTMLElement>("[part='message-resource-token']") ?? []).map(
+        (element) => element.dataset.resourceNumber,
+      ),
+    ).toEqual(["1", "1", "1"]);
     expect(bubbleHost?.textContent).not.toContain("[^Comment 1]:");
-    expect(bubbleHost?.querySelector("[part='message-attachments']")).not.toBeNull();
+    const resourceBar = bubbleHost?.querySelector<HTMLElement>("[part='message-attachments']") ?? null;
+    expect(resourceBar).not.toBeNull();
+    expect(resourceBar?.scrollWidth ?? 0).toBeLessThanOrEqual((resourceBar?.clientWidth ?? 0) + 1);
+    expect(resourceBar?.scrollHeight ?? 0).toBeLessThanOrEqual((resourceBar?.clientHeight ?? 0) + 1);
 
     composerHost
       ?.querySelector<HTMLElement>("[part='message-resource-token']")

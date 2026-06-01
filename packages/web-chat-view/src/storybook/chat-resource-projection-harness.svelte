@@ -15,6 +15,17 @@
 
   const resources = [
     {
+      id: "image-1",
+      label: "Image 1",
+      tokenText: "[^Image 1]",
+      kind: "image",
+      detailText: "Annotated capture",
+      fileName: "thread.png",
+      extension: "png",
+      url: "https://assets.example/thread.png",
+      previewUrl: "https://assets.example/thread.png",
+    },
+    {
       id: "comment-1",
       label: "Comment 1",
       tokenText: "[^Comment 1]",
@@ -52,8 +63,9 @@
   );
 
   const bubbleMarkdown = [
-    "Readonly bubble projects [^Comment 1] and [^File 1].",
+    "Readonly bubble projects [^Image 1], [^Comment 1], and [^File 1].",
     "",
+    "[^Image 1]: [!thread.png](https://assets.example/thread.png)",
     "[^Comment 1]: [Line scoped note](msg://review-room/1#L42)",
     "[^File 1]: [!brief.pdf](https://assets.example/brief.pdf)",
   ].join("\n");

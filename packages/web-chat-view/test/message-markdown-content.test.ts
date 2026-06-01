@@ -213,16 +213,25 @@ describe("Feature: Message markdown content preview", () => {
     try {
       const tokenButtons = harness.target.querySelectorAll("[part='message-resource-token']");
       expect(tokenButtons).toHaveLength(2);
-      expect(Array.from(tokenButtons).map((element) => element.textContent)).toEqual(["[^Image 1]", "[^Comment 1]"]);
-      expect(harness.target.querySelector(".message-resource-token-icon")).toBeNull();
+      expect(Array.from(tokenButtons).map((element) => (element as HTMLElement).dataset.resourceNumber)).toEqual([
+        "1",
+        "1",
+      ]);
+      const tokenText = Array.from(tokenButtons)
+        .map((element) => element.textContent ?? "")
+        .join(" ");
+      expect(tokenText).not.toContain("[^Image 1]");
+      expect(tokenText).not.toContain("[^Comment 1]");
       expect(harness.target.textContent).not.toContain("[^Image 1]:");
       expect(harness.target.textContent).not.toContain("[^Comment 1]:");
 
       const resourceBar = harness.target.querySelector("[part='message-attachments']");
       expect(resourceBar).not.toBeNull();
-      expect(resourceBar?.textContent).toContain("PNG");
-      const commentIndex = resourceBar?.querySelector(".resource-card-comment-index");
-      expect(commentIndex?.textContent).toContain("1");
+      const resourceIcons = resourceBar?.querySelectorAll("[part='resource-icon-with-number']");
+      expect(resourceIcons).toHaveLength(2);
+      expect(
+        Array.from(resourceIcons ?? []).map((element) => (element as HTMLElement).dataset.resourceNumber),
+      ).toEqual(["1", "1"]);
     } finally {
       unmount(harness.component);
     }

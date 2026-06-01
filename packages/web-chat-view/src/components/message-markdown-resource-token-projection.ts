@@ -47,10 +47,10 @@ export const refreshMarkdownResourceTokenProjectionEffect = StateEffect.define<n
 
 const tokenHostTheme = EditorView.baseTheme({
   ".cm-md-resource-token-host": {
-    display: "inline",
+    display: "inline-block",
     maxWidth: "100%",
     verticalAlign: "baseline",
-    whiteSpace: "normal",
+    whiteSpace: "nowrap",
   },
 });
 

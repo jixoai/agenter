@@ -52,13 +52,14 @@ export const markdownPreviewTheme = EditorView.baseTheme({
   },
   ".cm-md-image": { display: "inline-block" },
   ".cm-md-resource-token-host": {
-    display: "inline",
+    display: "inline-block",
     maxWidth: "100%",
     verticalAlign: "baseline",
-    whiteSpace: "normal",
+    whiteSpace: "nowrap",
   },
   ".cm-md-resource-bar-host": {
     display: "block",
+    overflow: "visible",
     maxWidth: "100%",
   },
   ".cm-md-olist": {

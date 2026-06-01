@@ -78,7 +78,8 @@ describe("Feature: Shared CodeMirror resource token projection", () => {
 
     const token = target.querySelector<HTMLElement>("[part='message-resource-token']");
     expect(token).not.toBeNull();
-    expect(token?.textContent).toBe("[^Comment 1]");
+    expect(token?.dataset.resourceNumber).toBe("1");
+    expect(token?.textContent).not.toContain("[^Comment 1]");
     token?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     expect(openedResourceId).toBe("comment-1");
   });

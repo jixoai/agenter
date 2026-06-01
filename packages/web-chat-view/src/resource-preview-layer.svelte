@@ -3,14 +3,12 @@
   import Copy from "@lucide/svelte/icons/copy";
   import Download from "@lucide/svelte/icons/download";
   import ExternalLink from "@lucide/svelte/icons/external-link";
-  import FileText from "@lucide/svelte/icons/file-text";
-  import ImageIcon from "@lucide/svelte/icons/image";
-  import MessageSquareDot from "@lucide/svelte/icons/message-square-dot";
-  import Video from "@lucide/svelte/icons/video";
 
   import { formatAttachmentSize } from "./chat-attachment-utils";
   import { writeClipboardText } from "./clipboard";
   import CommentInspector from "./comment-inspector.svelte";
+  import ResourceIconWithNumber, { type ResourceIconWithNumberKind } from "./components/resource-icon-with-number.svelte";
+  import { resolveResourceIconNumber } from "./components/resource-icon-number";
   import { Block, BlockTitle, Link, List, ListItem } from "./framework7-components";
   import { showFramework7Toast } from "./framework7-toast";
   import ResourcePreviewShell from "./resource-preview-shell.svelte";
@@ -86,18 +84,16 @@
     return parts.join(" · ");
   });
 
-  const ResourceIcon = $derived.by(() => {
-    switch (activeResource?.kind) {
-      case "image":
-        return ImageIcon;
-      case "video":
-        return Video;
-      case "comment":
-        return MessageSquareDot;
-      default:
-        return FileText;
+  const resourceIconKind = $derived.by<ResourceIconWithNumberKind>(() => {
+    if (activeResource?.kind === "comment") {
+      return "comment";
     }
+    if (activeResource?.kind === "image") {
+      return "image";
+    }
+    return "file";
   });
+  const resourceIconNumber = $derived(activeResource ? resolveResourceIconNumber(activeResource) : "*");
 
   const handleOpenChange = (next: boolean): void => {
     onOpenChange?.(next);
@@ -228,12 +224,13 @@
           >
             {#snippet media()}
               <div class="resource-preview-fallback-tile">
-                <ResourceIcon class="resource-preview-icon" />
-                {#if activeResource.kind === "comment"}
-                  <span class="resource-preview-comment-index">
-                    {activeResource.label.replace(/^[^\d]*/u, "") || "1"}
-                  </span>
-                {/if}
+                <ResourceIconWithNumber
+                  kind={resourceIconKind}
+                  number={resourceIconNumber}
+                  extension={activeResource.extension}
+                  fileName={activeResource.fileName}
+                  class="resource-preview-icon-atom"
+                />
               </div>
             {/snippet}
           </ListItem>
@@ -314,42 +311,10 @@
     display: flex;
     align-items: center;
     justify-content: center;
+    --resource-icon-tile-size: 2.46rem;
     width: 2.46rem;
     height: 2.46rem;
-    border-radius: 0.74rem;
-    background: rgba(15, 23, 42, 0.96);
-    color: white;
-  }
-
-  .resource-preview-document-stack[data-kind="comment"] .resource-preview-fallback-tile {
-    background:
-      radial-gradient(circle at 50% 44%, rgba(255, 255, 255, 0.78), rgba(255, 255, 255, 0) 54%),
-      linear-gradient(180deg, #fbfbfd 0%, #ececf4 100%);
-    color: #1f2937;
-  }
-
-  :global(.resource-preview-icon) {
-    width: 1.18rem;
-    height: 1.18rem;
-  }
-
-  .resource-preview-document-stack[data-kind="comment"] :global(.resource-preview-icon) {
-    width: 1.32rem;
-    height: 1.32rem;
-    opacity: 0.22;
-    transform: translateY(-0.12rem);
-  }
-
-  .resource-preview-comment-index {
-    position: absolute;
-    inset: 0;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 0.84rem;
-    font-weight: 700;
-    color: #0f172a;
-    transform: translateY(0.06rem);
+    line-height: 0;
   }
 
   :global(.resource-preview-summary-list.list),

@@ -21,6 +21,11 @@ const resourcePreviewShellSource = readFileSync(
   "utf8",
 );
 const commentInspectorSource = readFileSync(resolve(import.meta.dirname, "../src/comment-inspector.svelte"), "utf8");
+const resourceCardSource = readFileSync(resolve(import.meta.dirname, "../src/resource-card.svelte"), "utf8");
+const resourceIconWithNumberSource = readFileSync(
+  resolve(import.meta.dirname, "../src/components/resource-icon-with-number.svelte"),
+  "utf8",
+);
 
 describe("Feature: comment resource reopen contract", () => {
   test("Scenario: Given a sent message resource affordance When reading the implementation Then comment resources reopen through the shared preview shell with a comment-specific stage", () => {
@@ -129,14 +134,15 @@ describe("Feature: comment resource reopen contract", () => {
   test("Scenario: Given comment surfaces When reading the implementation Then the requested dot comment icon and accessible icon actions are used", () => {
     for (const source of [
       messageSourcePopupSource,
-      resourcePreviewLayerSource,
       commentInspectorSource,
       readFileSync(resolve(import.meta.dirname, "../src/comment-anchor-badge.svelte"), "utf8"),
-      readFileSync(resolve(import.meta.dirname, "../src/resource-card.svelte"), "utf8"),
+      resourceIconWithNumberSource,
     ]) {
       expect(source).toContain("MessageSquareDot");
       expect(source).not.toContain("MessageSquareMore");
     }
+    expect(resourceCardSource).toContain("ResourceIconWithNumber");
+    expect(resourcePreviewLayerSource).toContain("ResourceIconWithNumber");
 
     expect(messageSourcePopupSource).toContain('aria-label="Comment on selected source line"');
     expect(messageSourcePopupSource).toContain('aria-label="Cancel comment edit"');

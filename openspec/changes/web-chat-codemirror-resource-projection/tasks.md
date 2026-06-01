@@ -12,9 +12,9 @@
 - [x] 3.4 Run `bun run openspec:vision -- validate web-chat-codemirror-resource-projection` and `bun run openspec:vision -- check web-chat-codemirror-resource-projection`.
 - [x] 4.1 Write self-review with screenshot paths, command evidence, deviations, and final user walkthrough entry.
 - [x] 5.1 Record the visual-acceptance rework in OpenSpec plan/spec/tasks before changing product code.
-- [ ] 5.2 Add a shared icon-with-number resource visual atom for comment/file/image variants, including `1..9` and `*` fallback display.
-- [ ] 5.3 Refactor inline CodeMirror resource tokens and `ResourceCard` to consume the shared visual atom instead of bracket text or duplicated icon overlays.
-- [ ] 5.4 Rework `message-markdown-resource-bar` layout so normal message bars own stable child sizing and do not show uncontrolled scrollbars.
-- [ ] 5.5 Update unit/Storybook DOM coverage for icon-with-number projection and resource bar sizing.
-- [ ] 5.6 Re-run typecheck, targeted tests, OpenSpec validation/check, and desktop/iPhone 14 screenshot walk-through.
-- [ ] 5.7 Update self-review with the rework evidence and final walkthrough entry.
+- [x] 5.2 Add a shared icon-with-number resource visual atom for comment/file/image variants, including `1..9` and `*` fallback display.
+- [x] 5.3 Refactor inline CodeMirror resource tokens and `ResourceCard` to consume the shared visual atom instead of bracket text or duplicated icon overlays.
+- [x] 5.4 Rework `message-markdown-resource-bar` layout so normal message bars own stable child sizing and do not show uncontrolled scrollbars.
+- [x] 5.5 Update unit/Storybook DOM coverage for icon-with-number projection and resource bar sizing.
+- [x] 5.6 Re-run typecheck, targeted tests, OpenSpec validation/check, and desktop/iPhone 14 screenshot walk-through.
+- [x] 5.7 Update self-review with the rework evidence and final walkthrough entry.

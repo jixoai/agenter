@@ -1,4 +1,6 @@
 <script lang="ts">
+  import ResourceIconWithNumber, { type ResourceIconWithNumberKind } from "./resource-icon-with-number.svelte";
+  import { resolveResourceIconNumber } from "./resource-icon-number";
   import type { WebChatResourceReference } from "../types";
 
   let {
@@ -11,7 +13,17 @@
     onOpen?: (() => void) | undefined;
   } = $props();
 
-  const tokenText = $derived(resource.tokenText || `[^${resource.label}]`);
+  const iconKind = $derived.by<ResourceIconWithNumberKind>(() => {
+    if (resource.kind === "comment") {
+      return "comment";
+    }
+    if (resource.kind === "image") {
+      return "image";
+    }
+    return "file";
+  });
+  const iconNumber = $derived(resolveResourceIconNumber(resource));
+  const tokenTitle = $derived(resource.fileName ?? resource.detailText ?? resource.tokenText ?? resource.label);
 </script>
 
 <span
@@ -20,9 +32,10 @@
   class="message-resource-token"
   data-tone={tone}
   data-kind={resource.kind}
+  data-resource-number={iconNumber}
   part="message-resource-token"
   aria-label={`Open ${resource.kind} resource ${resource.label}`}
-  title={resource.fileName ?? resource.detailText ?? resource.label}
+  title={tokenTitle}
   onclick={() => {
     onOpen?.();
   }}
@@ -33,26 +46,33 @@
     }
   }}
 >
-  {tokenText}
+  <ResourceIconWithNumber
+    kind={iconKind}
+    number={iconNumber}
+    extension={resource.extension}
+    fileName={resource.fileName}
+    size="inline"
+  />
 </span>
 
 <style>
   .message-resource-token {
-    display: inline;
-    inline-size: fit-content;
-    max-inline-size: fit-content;
+    display: inline-flex;
+    align-items: baseline;
+    inline-size: auto;
+    max-inline-size: 100%;
     border: 0;
-    border-radius: 4px;
-    padding: 0 0.03em;
+    border-radius: 0.38em;
+    padding: 0 0.04em;
     background: transparent;
     color: var(--f7-theme-color, #007aff);
     font: inherit;
-    font-size: 0.9em;
+    font-size: 1em;
     font-weight: 500;
-    line-height: inherit;
+    line-height: 1;
     text-decoration: none;
     white-space: nowrap;
-    vertical-align: baseline;
+    vertical-align: -0.16em;
     cursor: pointer;
   }
 
@@ -61,9 +81,7 @@
   }
 
   .message-resource-token:hover {
-    text-decoration-line: underline;
-    text-decoration-thickness: 1px;
-    text-underline-offset: 0.14em;
+    background: color-mix(in srgb, currentColor 10%, transparent);
   }
 
   .message-resource-token:focus-visible {

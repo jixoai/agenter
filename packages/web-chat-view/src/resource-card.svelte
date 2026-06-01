@@ -1,10 +1,8 @@
 <script lang="ts">
-  import FileText from "@lucide/svelte/icons/file-text";
-  import ImageIcon from "@lucide/svelte/icons/image";
-  import MessageSquareDot from "@lucide/svelte/icons/message-square-dot";
-  import Video from "@lucide/svelte/icons/video";
   import X from "@lucide/svelte/icons/x";
 
+  import ResourceIconWithNumber, { type ResourceIconWithNumberKind } from "./components/resource-icon-with-number.svelte";
+  import { resolveResourceIconNumber } from "./components/resource-icon-number";
   import type { WebChatResourceReference } from "./types";
 
   let {
@@ -21,22 +19,16 @@
     onOpen?: (() => void) | undefined;
   } = $props();
 
-  const ResourceIcon = $derived.by(() => {
-    switch (resource.kind) {
-      case "image":
-        return ImageIcon;
-      case "video":
-        return Video;
-      case "comment":
-        return MessageSquareDot;
-      default:
-        return FileText;
+  const iconKind = $derived.by<ResourceIconWithNumberKind>(() => {
+    if (resource.kind === "comment") {
+      return "comment";
     }
+    if (resource.kind === "image") {
+      return "image";
+    }
+    return "file";
   });
-
-  const extensionLabel = $derived(resource.extension?.toUpperCase() ?? resource.kind.toUpperCase());
-  const commentIndexLabel = $derived(resource.label.replace(/^[^\d]*/u, "") || "1");
-  const showPreviewImage = $derived(resource.kind === "image" && typeof resource.previewUrl === "string");
+  const iconNumber = $derived(resolveResourceIconNumber(resource));
   const hasAction = $derived(
     mode === "pending" ? Boolean(onOpen || onRemove) : Boolean(resource.url || onOpen),
   );
@@ -67,19 +59,13 @@
     }}
   >
     <div class="resource-card-tile" data-kind={resource.kind} part="resource-card-tile">
-      {#if showPreviewImage}
-        <img src={resource.previewUrl} alt={resource.fileName ?? resource.label} class="resource-card-image" />
-      {:else}
-        <ResourceIcon class="resource-card-icon" />
-        {#if resource.kind === "comment"}
-          <span class="resource-card-comment-index">
-            {commentIndexLabel}
-          </span>
-        {/if}
-      {/if}
-      {#if resource.kind !== "comment"}
-        <span class="resource-card-extension">{extensionLabel}</span>
-      {/if}
+      <ResourceIconWithNumber
+        kind={iconKind}
+        number={iconNumber}
+        extension={resource.extension}
+        fileName={resource.fileName}
+        class="resource-card-icon-atom"
+      />
     </div>
     <span class="resource-card-copy sr-only">
       {resource.label} {resource.fileName ?? resource.detailText ?? resource.tokenText}
@@ -102,16 +88,25 @@
 <style>
   .resource-card {
     position: relative;
-    min-width: 0;
+    width: var(--resource-card-size, 2.28rem);
+    height: var(--resource-card-size, 2.28rem);
+    min-width: var(--resource-card-size, 2.28rem);
+    min-height: var(--resource-card-size, 2.28rem);
+    max-width: var(--resource-card-size, 2.28rem);
+    max-height: var(--resource-card-size, 2.28rem);
     display: block;
     line-height: 0;
+    overflow: clip;
   }
 
   .resource-card-hitbox {
     display: block;
-    width: 2.28rem;
-    height: 2.28rem;
-    min-width: 2.28rem;
+    width: var(--resource-card-size, 2.28rem);
+    height: var(--resource-card-size, 2.28rem);
+    min-width: var(--resource-card-size, 2.28rem);
+    min-height: var(--resource-card-size, 2.28rem);
+    max-width: var(--resource-card-size, 2.28rem);
+    max-height: var(--resource-card-size, 2.28rem);
     border: 0;
     background: transparent;
     padding: 0;
@@ -132,74 +127,13 @@
     justify-content: center;
     width: 100%;
     height: 100%;
-    overflow: hidden;
-    border-radius: 11px;
-    border: 1px solid rgba(60, 60, 67, 0.16);
-    background: #f2f2f7;
-    color: var(--f7-text-color, #111827);
-    box-shadow: none;
+    overflow: visible;
+    line-height: 0;
   }
 
-  .resource-card-tile[data-kind="image"] {
-    background: #e9edf5;
-    color: #475569;
-  }
-
-  .resource-card-tile[data-kind="video"],
-  .resource-card-tile[data-kind="file"] {
-    background: #f2f2f7;
-  }
-
-  .resource-card-tile[data-kind="comment"] {
-    background:
-      radial-gradient(circle at 50% 44%, rgba(255, 255, 255, 0.78), rgba(255, 255, 255, 0) 54%),
-      linear-gradient(180deg, #fbfbfd 0%, #ececf4 100%);
-    color: #1f2937;
-  }
-
-  .resource-card-image {
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
-  }
-
-  :global(.resource-card-icon) {
-    width: 0.84rem;
-    height: 0.84rem;
-  }
-
-  .resource-card-tile[data-kind="comment"] :global(.resource-card-icon) {
-    width: 1.06rem;
-    height: 1.06rem;
-    opacity: 0.22;
-    transform: translateY(-0.08rem);
-  }
-
-  .resource-card-comment-index {
-    position: absolute;
-    inset: 0;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 0.78rem;
-    font-weight: 700;
-    letter-spacing: 0;
-    color: #0f172a;
-    transform: translateY(0.02rem);
-  }
-
-  .resource-card-extension {
-    position: absolute;
-    left: 0.18rem;
-    bottom: 0.18rem;
-    font-size: 0.4rem;
-    font-weight: 700;
-    letter-spacing: 0;
-    text-transform: uppercase;
-    border-radius: 999px;
-    background: rgba(60, 60, 67, 0.78);
-    color: white;
-    padding: 0.05rem 0.2rem;
+  :global(.resource-card-icon-atom) {
+    --resource-icon-tile-size: var(--resource-card-size, 2.28rem);
+    display: inline-flex;
   }
 
   :global(.resource-card-action) {
@@ -231,10 +165,12 @@
 
   .sr-only {
     position: absolute;
+    top: 0;
+    left: 0;
     width: 1px;
     height: 1px;
     padding: 0;
-    margin: -1px;
+    margin: 0;
     overflow: hidden;
     clip: rect(0 0 0 0);
     white-space: nowrap;

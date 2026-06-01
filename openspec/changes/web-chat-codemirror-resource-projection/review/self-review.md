@@ -2,37 +2,42 @@
 
 ## 结论
 
-本轮实现与 `plans/plan.md` 对齐，可以进入用户走查。数据库与发送边界没有重新引入 `webChatCommentResources` 或其它 WebChat 结构化资源 sidecar；本轮只升级前端投影层。composer 现在仍是 writable CodeMirror，能够把 `[^Comment 1]` 这类 Markdown footnote token 投影成资源节点；message bubble 仍是 readonly CodeMirror，继续隐藏 footnote definition，并从同一资源引用解析入口渲染 inline token 与 in-bubble resource bar。
+本轮实现与 `plans/plan.md` 的 Round 2 视觉返工对齐，可以进入用户走查。数据库与发送边界没有重新引入 `webChatCommentResources` 或其它 WebChat 结构化资源 sidecar；本轮只升级前端投影层。composer 现在仍是 writable CodeMirror，能够把 `[^Comment 1]` 这类 Markdown footnote token 投影成 icon-with-number 资源节点；message bubble 仍是 readonly CodeMirror，继续隐藏 footnote definition，并从同一资源引用解析入口渲染 inline token 与 in-bubble resource bar。
 
 ## 法则变动
 
 - 新增共享 CodeMirror 资源 token 投影原子：`message-markdown-resource-token-projection.ts`。
+- 新增共享资源视觉原子：`resource-icon-with-number.svelte` + `resource-icon-number.ts`，统一 comment/file/image 的编号显示；编号只保留 `1..9`，超出显示 `*`。
 - readonly bubble 的 token 解析从 bubble-only preview 实现迁移到共享原子；bubble 自己仍只负责 readonly mode policy：隐藏 definition、结构化 Markdown preview、resource bar。
 - writable composer 只启用 inline token decoration，不隐藏 footnote definition/source block，避免把编辑器变成预览器。
 - composer token activation 走 `WebChatResourceReference`，并接入 composer 侧 `ResourcePreviewLayer`；pending comment 仍保留空内容删除与保存语义。
+- `message-markdown-resource-bar` 改为固定 tile 尺寸、可换行、无默认滚动条的 icon strip；本轮定位并修复了 `ResourceCard` 内 sr-only 文案导致 bar 垂直 scrollHeight 被撑大的问题。
 
 ## 原子产出
 
 - `ChatDraftEditor`：接入 `markdownResourceTokenProjection(...)`，通过 refresh effect 响应资源引用变化，保留 typing、cursor、Enter submit、completion。
 - `MessageMarkdownContent` / `messageMarkdownPreview`：继续 readonly，复用共享 token 解析。
+- `MessageMarkdownResourceToken`：不再把 `[^Comment 1]` 作为可见 bracket 文本，改为同一 icon-with-number atom，并保留 aria-label/title。
+- `ResourceCard` / `ResourcePreviewLayer`：移除重复手写 icon overlay，复用同一个 icon-with-number atom。
 - `CodeMirrorResourceProjection` Storybook story：真实挂载 `ChatDraftEditor` + `MessageMarkdownContent`，在 Chromium 中断言 writable/readonly facets、token 数量、definition 隐藏、resource bar、token open、编辑和 Enter submit。
-- `resource-projection` example route：用于最终人工走查与截图，不依赖不稳定的 Storybook dev iframe。
+- `resource-projection` example route：用于最终人工走查与截图，不依赖不稳定的 Storybook dev iframe；现在同时展示 image/comment/file 三种图标变体。
 
 ## 证据
 
-- OpenSpec apply commit-check：通过，latest spec commit `b583eb29 docs(spec): define web chat codemirror resource projection`。
+- OpenSpec apply commit-check：通过，latest spec commit `793f6efa docs(spec): refine web chat resource icon projection`。
 - Before screenshots：
   - `.screenshot/before/web-chat-example-desktop-before.png`
   - `.screenshot/before/web-chat-example-iphone14-before.png`
 - After screenshots：
   - `.screenshot/after/web-chat-resource-projection-desktop-after.png`
   - `.screenshot/after/web-chat-resource-projection-iphone14-after.png`
-- Screenshot DOM facts：desktop/mobile 均为 `composerTokenCount=1`、`bubbleTokenCount=2`、`bubbleHasRawFootnoteDefinition=false`、`bubbleHasResourceBar=true`、`hasFrameworkOverlay=false`。
+- Screenshot DOM facts：desktop/mobile 均为 `tokenCount=4`、`iconCount=7`、`hasRawDefinition=false`，resource bar 为 `scrollWidth=clientWidth=118`、`scrollHeight=clientHeight=36`、`overflowX=visible`、`overflowY=visible`。
 - `bun run typecheck` in `packages/web-chat-view`：0 errors / 0 warnings。
 - `bun run typecheck` in `packages/web-chat-view/example`：0 errors / 0 warnings。
-- `bun run test:unit -- test/message-markdown-resource-token-projection.test.ts test/message-markdown-content.test.ts`：2 files / 9 tests passed。
-- `bun run test:dom -- test/storybook/chat-composer-stage.stories.test.ts`：1 file / 2 tests passed。
+- `bun run test:unit -- test/resource-icon-number.test.ts test/message-markdown-resource-token-projection.test.ts test/message-markdown-content.test.ts test/comment-resource-reopen-contract.test.ts`：4 files / 22 tests passed。
+- `bun run test:dom -- test/storybook/chat-composer-stage.stories.test.ts test/storybook/resource-square-tile-blueprint.stories.test.ts`：2 files / 3 tests passed。
 - `bun run openspec:vision -- validate web-chat-codemirror-resource-projection`：valid。
+- `bun run openspec:vision -- check web-chat-codemirror-resource-projection`：ok。
 - `git diff --check`：通过。
 
 ## 偏移清单
