@@ -2,17 +2,17 @@ import { TRPCError } from "@trpc/server";
 import { observable } from "@trpc/server/observable";
 import { z } from "zod";
 
-import { AVATAR_CLASSIFY_VALUES } from "@agenter/auth-service";
-import type { MessageContactId } from "@agenter/message-system";
-import { isPrincipalId } from "@agenter/principal-crypto";
 import {
   appAttentionCommitInputSchema,
   appAttentionQueryInputSchema,
   appAttentionSettleInputSchema,
-  appMemoryPackEnsureInputSchema,
   appAvatarPromptSeedInputSchema,
+  appMemoryPackEnsureInputSchema,
   appPrivateTextAssetEnsureInputSchema,
 } from "@agenter/app-runtime";
+import { AVATAR_CLASSIFY_VALUES } from "@agenter/auth-service";
+import type { MessageContactId } from "@agenter/message-system";
+import { isPrincipalId } from "@agenter/principal-crypto";
 import { TERMINAL_BACKEND_KINDS, type TerminalActorId } from "@agenter/terminal-system";
 import {
   authDraftCreateInputSchema,
@@ -253,15 +253,19 @@ const noteRenameInputSchema = noteAvatarInputSchema.extend({
   toSection: z.string().trim().min(1).optional(),
   toPage: z.string().trim().min(1).optional(),
 });
-const noteWriteInputSchema = noteIdentityInputSchema.extend({
-  body: z.string().optional(),
-  content: z.string().optional(),
-  mode: z.enum(["append", "override"]).optional(),
-  mime: z.string().trim().min(1).optional(),
-  tags: z.array(z.string().trim().min(1)).optional(),
-  references: z.array(noteReferenceInputSchema).optional(),
-  sourcePath: z.string().trim().min(1).optional(),
-});
+const noteWriteInputSchema = noteIdentityInputSchema
+  .extend({
+    content: z.string().optional(),
+    contentFile: z.string().trim().min(1).optional(),
+    mode: z.enum(["append", "override"]).optional(),
+    mime: z.string().trim().min(1),
+    tags: z.array(z.string().trim().min(1)).optional(),
+    references: z.array(noteReferenceInputSchema).optional(),
+  })
+  .refine((input) => (input.content !== undefined) !== (input.contentFile !== undefined), {
+    message: "note write requires exactly one content source: content or contentFile",
+    path: ["content"],
+  });
 const messageErrorPayloadSchema = z.object({
   title: z.string().trim().min(1).optional(),
   code: z.string().trim().min(1).optional(),

@@ -530,7 +530,12 @@ const createMockClient = (input: {
     section: string;
     page: string;
   }) => Promise<unknown>;
-  noteSearchQuery?: (input: { avatarNickname?: string; query?: string; limit?: number; tags?: string[] }) => Promise<unknown>;
+  noteSearchQuery?: (input: {
+    avatarNickname?: string;
+    query?: string;
+    limit?: number;
+    tags?: string[];
+  }) => Promise<unknown>;
   noteTagsQuery?: (input: { avatarNickname?: string; notebook?: string; section?: string }) => Promise<unknown>;
   noteSqlQuery?: (input: { avatarNickname?: string; sql: string; limit?: number }) => Promise<unknown>;
   noteRenameMutation?: (input: {
@@ -547,10 +552,10 @@ const createMockClient = (input: {
     notebook: string;
     section: string;
     page: string;
-    body?: string;
     content?: string;
+    contentFile?: string;
     mode?: "append" | "override";
-    mime?: string;
+    mime: string;
     tags?: string[];
     references?: Array<
       | string
@@ -566,7 +571,6 @@ const createMockClient = (input: {
           path?: string;
         }
     >;
-    sourcePath?: string;
   }) => Promise<unknown>;
   authActorsQuery?: () => Promise<{
     items: Array<{
@@ -2239,15 +2243,14 @@ const createMockClient = (input: {
           query: async (payload: { avatarNickname?: string; limit?: number }) =>
             input.noteCatalogQuery
               ? await input.noteCatalogQuery(payload)
-              : { capability: { available: false, readableRoots: [], writableRoot: null }, notebooks: [], totalPages: 0 },
+              : {
+                  capability: { available: false, readableRoots: [], writableRoot: null },
+                  notebooks: [],
+                  totalPages: 0,
+                },
         },
         page: {
-          query: async (payload: {
-            avatarNickname?: string;
-            notebook: string;
-            section: string;
-            page: string;
-          }) =>
+          query: async (payload: { avatarNickname?: string; notebook: string; section: string; page: string }) =>
             input.notePageQuery
               ? await input.notePageQuery(payload)
               : { capability: { available: false, readableRoots: [], writableRoot: null }, page: null },
@@ -2290,10 +2293,10 @@ const createMockClient = (input: {
             notebook: string;
             section: string;
             page: string;
-            body?: string;
             content?: string;
+            contentFile?: string;
             mode?: "append" | "override";
-            mime?: string;
+            mime: string;
             tags?: string[];
             references?: Array<
               | string
@@ -2309,7 +2312,6 @@ const createMockClient = (input: {
                   path?: string;
                 }
             >;
-            sourcePath?: string;
           }) =>
             input.noteWriteMutation
               ? await input.noteWriteMutation(payload)
@@ -11255,9 +11257,9 @@ describe("Feature: runtime store synchronization", () => {
       searchOutput,
     );
     expect(await store.listNoteTags({ avatarNickname: "shell-assistant", notebook: "ideas" })).toEqual(tagsOutput);
-    expect(await store.queryNotes({ avatarNickname: "shell-assistant", sql: "select page from note_pages_view" })).toEqual(
-      sqlOutput,
-    );
+    expect(
+      await store.queryNotes({ avatarNickname: "shell-assistant", sql: "select page from note_pages_view" }),
+    ).toEqual(sqlOutput);
     expect(
       await store.writeNotePage({
         avatarNickname: "shell-assistant",

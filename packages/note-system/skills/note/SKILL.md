@@ -23,11 +23,13 @@ Key laws:
 - Human-inspectable artifacts remain on disk, but stable identity comes from SQLite: `bookId`, `sectionId`, `pageId`, tag IDs, and reference edges.
 - `note draft` writes to the automatic `_draft/<date>/<time>` notebook/section/page path for low-friction capture.
 - `note write` is strict. Search or show before writing when a collision is possible, then choose `append` or `override` deliberately.
+- Every write/draft payload must include `mime`. Markdown is `text/markdown`.
+- Use exactly one content source: `content` for inline text-like payloads, or `contentFile` for a file already produced by a script/download.
 - Tags are first-class grouping facts. Use them for cross-section grouping without changing the notebook -> section -> page hierarchy.
 - References should point at notes through `note:<notebook>/<section>/<page>` or stable IDs. Markdown relative links are normalized when a page is written.
 - `note rename` changes human labels and file artifacts while preserving stable IDs and database reference edges.
 - `note query` is read-only SQL over bounded NoteSystem views; use it for flexible inspection, never mutation.
-- MIME defaults to `text/markdown`. `application/json` is parsed and compacted. Binary-like MIME writes require `sourcePath`.
+- `application/json` is parsed and compacted. Binary-like MIME writes require `contentFile`; do not pass raw binary as inline `content`.
 
 ShellAssistant convention:
 
@@ -42,7 +44,7 @@ ShellAssistant convention:
 Canonical examples:
 
 ```bash
-note draft '{"content":"The user corrected that app-shell recording should use NoteSystem, not memory files."}'
+note draft '{"content":"The user corrected that app-shell recording should use NoteSystem, not memory files.","mime":"text/markdown"}'
 ```
 
 ```bash
@@ -51,8 +53,20 @@ note write '{
   "section": "working-context",
   "page": "current-task",
   "content": "Upgrade NoteSystem first, then return to app-shell ShellAssistant.mdx.",
+  "mime": "text/markdown",
   "mode": "append",
   "tags": ["task", "decision"]
+}'
+```
+
+```bash
+note write '{
+  "notebook": "shell-assistant-book",
+  "section": "episodic-archive",
+  "page": "downloaded-trace",
+  "contentFile": "/tmp/trace.json",
+  "mime": "application/json",
+  "tags": ["evidence"]
 }'
 ```
 

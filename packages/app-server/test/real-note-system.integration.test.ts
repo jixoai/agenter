@@ -15,7 +15,8 @@ const resolveNoteSystemRealAiProviderGate = (): { available: boolean; reason: st
   if (process.env.AGENTER_RUN_REAL_LOOPBUS !== "1") {
     return {
       available: false,
-      reason: "Set AGENTER_RUN_REAL_LOOPBUS=1 and configure a real model provider to run NoteSystem real-AI validation.",
+      reason:
+        "Set AGENTER_RUN_REAL_LOOPBUS=1 and configure a real model provider to run NoteSystem real-AI validation.",
     };
   }
   if (!resolveRealModelConfig(REAL_MODEL_PROJECT_ROOT)) {
@@ -47,7 +48,10 @@ const extractRootWorkspaceBashRuns = (
       return [
         {
           command: (entry.input as { command: string }).command,
-          stdin: typeof (entry.input as { stdin?: unknown }).stdin === "string" ? (entry.input as { stdin: string }).stdin : "",
+          stdin:
+            typeof (entry.input as { stdin?: unknown }).stdin === "string"
+              ? (entry.input as { stdin: string }).stdin
+              : "",
           stdout:
             output && typeof output === "object" && typeof (output as { stdout?: unknown }).stdout === "string"
               ? (output as { stdout: string }).stdout
@@ -95,9 +99,9 @@ describe("Feature: real AI NoteSystem validation", () => {
           [
             "请完成一次 NoteSystem 真实 AI 验证。",
             "必须先通过 root_bash 执行 `skill info note`。",
-            `然后必须通过 root_bash 执行 note CLI 写入包含精确片段 ${NOTE_SYSTEM_REAL_AI_OBSERVATION} 的 raw note。`,
+            `然后必须通过 root_bash 执行 note CLI 写入包含精确片段 ${NOTE_SYSTEM_REAL_AI_OBSERVATION} 的 raw note，写入 JSON 必须包含 "mime":"text/markdown" 和 content/contentFile 之一。`,
             "可以使用 `note draft` 或 `note write`，但不能直接 mkdir/cat/tee/printf 到 notes 文件。",
-            `写入后必须通过 root_bash 执行 \`note search ${NOTE_SYSTEM_REAL_AI_OBSERVATION}\` 或等价 \`note show\` 验证能读回该片段。`,
+            `写入后必须通过 root_bash 执行 \`note search '{"query":"${NOTE_SYSTEM_REAL_AI_OBSERVATION}"}'\` 或等价 \`note show\` JSON 命令验证能读回该片段。`,
             `验证成功后，只向 ${primaryRoomId} 发送最终结果：${NOTE_SYSTEM_REAL_AI_REPLY}`,
             "完成后把 attention 收敛到 0。",
           ].join("\n"),

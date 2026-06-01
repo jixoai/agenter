@@ -115,25 +115,33 @@ export interface NoteSearchOutput {
   results: NoteSearchResult[];
 }
 
-export interface NoteWriteInput extends NoteIdentity {
+export type NoteContentInput =
+  | {
+      content: string;
+      contentFile?: undefined;
+    }
+  | {
+      content?: undefined;
+      contentFile: string;
+    };
+
+export type NoteWriteInput = NoteIdentity & {
   avatarHome: readonly string[];
-  body?: string;
   mode?: NoteWriteMode;
-  mime?: NoteMime;
+  mime: NoteMime;
   tags?: readonly string[];
   references?: readonly NoteReferenceInput[];
-  sourcePath?: string;
   now?: Date;
   sourceWorkspace?: string;
-}
+} & NoteContentInput;
 
-export interface NoteDraftInput {
+export type NoteDraftInput = {
   avatarHome: readonly string[];
-  body: string;
+  mime: NoteMime;
   now?: Date;
   idSuffix?: string;
   sourceWorkspace?: string;
-}
+} & NoteContentInput;
 
 export interface NoteReadInput extends NoteIdentity {
   avatarHome: readonly string[];

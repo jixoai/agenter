@@ -64,6 +64,7 @@ test.describe("Feature: Notes workbench route smoke", () => {
         section: "working-context",
         page: targetPage,
         content: "Reference target for the Notes workbench smoke.",
+        mime: "text/markdown",
         mode: "override",
         tags: ["playwright", "reference"],
       });
@@ -76,6 +77,7 @@ test.describe("Feature: Notes workbench route smoke", () => {
         section: "working-context",
         page: sourcePage,
         content: `Notes route smoke for ${suffix}.`,
+        mime: "text/markdown",
         mode: "override",
         tags: ["playwright", "notes"],
         references: [{ pageId: target.page.metadata.pageId, label: "target" }],
@@ -86,7 +88,9 @@ test.describe("Feature: Notes workbench route smoke", () => {
 
       const avatarSelect = page.getByLabel("Notes avatar");
       await expect(avatarSelect).toBeVisible({ timeout: 15_000 });
-      await expect.poll(async () => await avatarSelect.locator('option[value="architect"]').count(), { timeout: 15_000 }).toBe(1);
+      await expect
+        .poll(async () => await avatarSelect.locator('option[value="architect"]').count(), { timeout: 15_000 })
+        .toBe(1);
       await avatarSelect.selectOption("architect");
 
       const sourceButton = page.getByRole("button", { name: new RegExp(sourcePage) }).first();

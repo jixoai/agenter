@@ -69,6 +69,8 @@ describe("Feature: runtime built-in skills", () => {
     expect(content).toContain("Notes are raw facts");
     expect(content).toContain("not user models");
     expect(content).toContain('mode": "append"');
+    expect(content).toContain('"mime": "text/markdown"');
+    expect(content).toContain("contentFile");
     expect(content).toContain("application/json");
     expect(content).toContain("References should point at notes");
   });
@@ -112,7 +114,9 @@ describe("Feature: runtime built-in skills", () => {
     expect(content).toContain("Keep a single source of truth for shared contracts and ownership.");
     expect(content).toContain("Claim ownership once.");
     expect(content).toContain("workspace or terminal work");
-    expect(content).toContain("Another participant's acknowledgement does not by itself mean you need to answer again.");
+    expect(content).toContain(
+      "Another participant's acknowledgement does not by itself mean you need to answer again.",
+    );
     expect(content).toContain("Private reminders are coordination hints");
     expect(content).toContain("References:");
     expect(content).toContain("references/shared-room-protocols.md");
@@ -151,9 +155,11 @@ describe("Feature: runtime built-in skills", () => {
     expect(messageContent).toContain("send one short acknowledgement before the deeper tool work starts");
     expect(messageContent).toContain("preserve that fact exactly instead of silently normalizing it");
     expect(messageContent).toContain("switch to `attention` and settle");
-    expect(messageContent).toContain("Keep room-visible updates concise and timely without narrating every internal step");
+    expect(messageContent).toContain(
+      "Keep room-visible updates concise and timely without narrating every internal step",
+    );
     expect(messageContent).toContain("Private reminders");
-    expect(messageContent).toContain("\"I'm asking them now\" is progress, not the delivered answer");
+    expect(messageContent).toContain('"I\'m asking them now" is progress, not the delivered answer');
     expect(messageContent).toContain("deliver that answer back into the origin room");
     expect(messageContent).toContain("Terminal success alone is not the room-visible result");
     expect(messageContent).toContain("prefer `command=message send` plus JSON `stdin`");
@@ -196,7 +202,9 @@ describe("Feature: runtime built-in skills", () => {
 
     const terminalContent = readRuntimeSkillContent(terminal!);
     expect(terminalContent).toContain("A runtime does not start with a terminal by default.");
-    expect(terminalContent).toContain("Run `terminal list` first to inspect `processPhase`, `currentPath`, `currentTitle`");
+    expect(terminalContent).toContain(
+      "Run `terminal list` first to inspect `processPhase`, `currentPath`, `currentTitle`",
+    );
     expect(terminalContent).toContain("Public `terminal create` auto-bootstraps by default");
     expect(terminalContent).toContain("`terminal get-config`");
     expect(terminalContent).toContain("run `terminal bootstrap` before expecting read/write to work");
@@ -252,7 +260,9 @@ describe("Feature: runtime built-in skills", () => {
       "utf8",
     );
     expect(terminalLifecycleReference).toContain("anything that binds a port or serves HTTP belongs in a terminal");
-    expect(terminalLifecycleReference).toContain("use `terminal list` to inspect `processPhase`, `currentPath`, `currentTitle`, and stop facts");
+    expect(terminalLifecycleReference).toContain(
+      "use `terminal list` to inspect `processPhase`, `currentPath`, `currentTitle`, and stop facts",
+    );
     expect(terminalLifecycleReference).toContain("auto-bootstraps new terminals by default");
     expect(terminalLifecycleReference).toContain("`lifecycleTransition` is `bootstrapping` or `killing`");
     expect(terminalLifecycleReference).toContain("run `terminal bootstrap`");
@@ -419,17 +429,9 @@ describe("Feature: runtime built-in skills", () => {
       mkdirSync(skillDir, { recursive: true });
       writeFileSync(
         join(skillDir, "SKILL.md"),
-        [
-          "---",
-          `name: ${skillName}`,
-          `description: ${description}`,
-          "---",
-          "",
-          `# ${skillName}`,
-          "",
-          body,
-          "",
-        ].join("\n"),
+        ["---", `name: ${skillName}`, `description: ${description}`, "---", "", `# ${skillName}`, "", body, ""].join(
+          "\n",
+        ),
         "utf8",
       );
     }

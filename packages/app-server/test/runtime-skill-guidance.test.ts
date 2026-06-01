@@ -66,12 +66,16 @@ describe("Feature: runtime skill progressive disclosure guidance", () => {
     expect(note?.template).toContain("Notes are raw facts");
     expect(note?.template).toContain("not user models");
     expect(note?.template).toContain('mode": "append"');
+    expect(note?.template).toContain('"mime": "text/markdown"');
+    expect(note?.template).toContain("contentFile");
     expect(note?.template).toContain("application/json");
 
     expect(terminal?.template).not.toContain("127.0.0.1");
     expect(terminal?.template).not.toContain("APP-URL:");
     expect(terminal?.template).not.toContain("localhost");
-    expect(terminal?.template).toContain("Run `terminal list` first to inspect `processPhase`, `currentPath`, `currentTitle`");
+    expect(terminal?.template).toContain(
+      "Run `terminal list` first to inspect `processPhase`, `currentPath`, `currentTitle`",
+    );
     expect(terminal?.template).toContain("`terminal create` auto-bootstraps by default");
     expect(terminal?.template).toContain("`terminal get-config`");
     expect(terminal?.template).toContain("run `terminal bootstrap` before expecting read/write to work");

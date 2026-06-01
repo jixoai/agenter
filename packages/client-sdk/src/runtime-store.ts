@@ -4119,11 +4119,18 @@ export class RuntimeStore {
     return await this.client.trpc.note.page.query(input);
   }
 
-  async searchNotes(input: { avatarNickname?: string; query?: string; limit?: number; tags?: readonly string[] }): Promise<NoteSearchOutput> {
+  async searchNotes(input: {
+    avatarNickname?: string;
+    query?: string;
+    limit?: number;
+    tags?: readonly string[];
+  }): Promise<NoteSearchOutput> {
     return await this.client.trpc.note.search.query({ ...input, tags: input.tags ? [...input.tags] : undefined });
   }
 
-  async listNoteTags(input: { avatarNickname?: string; notebook?: string; section?: string } = {}): Promise<NoteTagsOutput> {
+  async listNoteTags(
+    input: { avatarNickname?: string; notebook?: string; section?: string } = {},
+  ): Promise<NoteTagsOutput> {
     return await this.client.trpc.note.tags.query(input);
   }
 
@@ -4148,13 +4155,12 @@ export class RuntimeStore {
     notebook: string;
     section: string;
     page: string;
-    body?: string;
     content?: string;
+    contentFile?: string;
     mode?: "append" | "override";
-    mime?: string;
+    mime: string;
     tags?: readonly string[];
     references?: readonly NoteReferenceInput[];
-    sourcePath?: string;
   }): Promise<NoteWriteOutput> {
     return await this.client.trpc.note.write.mutate({
       ...input,

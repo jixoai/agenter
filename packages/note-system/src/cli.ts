@@ -1,21 +1,20 @@
 import { defineCommand } from "just-bash";
+import { isAbsolute, resolve } from "node:path";
 import { z, type ZodTypeAny } from "zod";
 
-import {
-  parseNoteCliInput,
-  renderNoteCliHelp,
-  type NoteCliDescriptor,
-} from "./cli-descriptor";
+import { parseNoteCliInput, renderNoteCliHelp, type NoteCliDescriptor } from "./cli-descriptor";
 import { NOTE_AVATAR_HOME_ENV, parseNoteAvatarHomeEnv } from "./env";
 import { searchNotes } from "./search";
-import { draftNotePage, listNotePages, listNoteTags, queryNoteSql, renameNotePages, showNotePage, writeNotePage } from "./storage";
-import type { NotePage, NoteReferenceInput, NoteSearchResult, NoteWriteMode } from "./types";
-
-interface ParsedLegacyNoteArgs {
-  positional: string[];
-  options: Map<string, string>;
-  json: boolean;
-}
+import {
+  draftNotePage,
+  listNotePages,
+  listNoteTags,
+  queryNoteSql,
+  renameNotePages,
+  showNotePage,
+  writeNotePage,
+} from "./storage";
+import type { NoteContentInput, NoteReferenceInput } from "./types";
 
 const noteReferenceInputSchema = z.union([
   z.string().trim().min(1),
@@ -39,21 +38,29 @@ const noteWriteSchema = z
     notebook: z.string().trim().min(1),
     section: z.string().trim().min(1),
     page: z.string().trim().min(1),
-    body: z.string().optional(),
     content: z.string().optional(),
+    contentFile: z.string().trim().min(1).optional(),
     mode: z.enum(["append", "override"]).optional(),
-    mime: z.string().trim().min(1).optional(),
+    mime: z.string().trim().min(1),
     tags: z.array(z.string().trim().min(1)).optional(),
     references: z.array(noteReferenceInputSchema).optional(),
-    sourcePath: z.string().trim().min(1).optional(),
+  })
+  .refine((input) => (input.content !== undefined) !== (input.contentFile !== undefined), {
+    message: "note write requires exactly one content source: content or contentFile",
+    path: ["content"],
   })
   .strict();
 
 const noteDraftSchema = z
   .object({
-    body: z.string().optional(),
     content: z.string().optional(),
+    contentFile: z.string().trim().min(1).optional(),
+    mime: z.string().trim().min(1),
     idSuffix: z.string().trim().min(1).optional(),
+  })
+  .refine((input) => (input.content !== undefined) !== (input.contentFile !== undefined), {
+    message: "note draft requires exactly one content source: content or contentFile",
+    path: ["content"],
   })
   .strict();
 
@@ -126,23 +133,31 @@ const noteDescriptors = [
           section: "working-context",
           page: "current-task",
           content: "The active task is upgrading NoteSystem before app-shell.",
+          mime: "text/markdown",
           mode: "append",
           tags: ["task", "notes"],
         },
       },
     ],
     helpNotes: [
-      "Use `content` or `body` for inline text. Non-inline MIME writes require `sourcePath`.",
-      "A non-empty existing page requires explicit `mode:\"append\"` or `mode:\"override\"`.",
+      "`mime` is required. Markdown must use `text/markdown`.",
+      "Use `content` for inline text-like payloads. Use `contentFile` when a script already produced JSON, Markdown, media, or another file payload.",
+      "Binary-like MIME writes require `contentFile`; inline `content` is only for text-like MIME.",
+      'A non-empty existing page requires explicit `mode:"append"` or `mode:"override"`.',
     ],
-    compactFields: ["notebook", "section", "page", "content", "mode", "tags", "references", "mime", "sourcePath"],
+    compactFields: ["notebook", "section", "page", "mime", "content", "contentFile", "mode", "tags", "references"],
   }),
   defineNoteDescriptor({
     name: "draft",
     description: "Capture a low-friction note under the automatic _draft date section.",
     inputSchema: noteDraftSchema,
-    examples: [{ kind: "stdin", payload: { content: "Temporary evidence captured without naming a page." } }],
-    compactFields: ["content", "idSuffix"],
+    examples: [
+      {
+        kind: "stdin",
+        payload: { content: "Temporary evidence captured without naming a page.", mime: "text/markdown" },
+      },
+    ],
+    compactFields: ["mime", "content", "contentFile", "idSuffix"],
   }),
   defineNoteDescriptor({
     name: "list",
@@ -155,7 +170,12 @@ const noteDescriptors = [
     name: "show",
     description: "Read one note page by notebook, section, and page labels.",
     inputSchema: noteShowSchema,
-    examples: [{ kind: "stdin", payload: { notebook: "shell-assistant-book", section: "working-context", page: "current-task" } }],
+    examples: [
+      {
+        kind: "stdin",
+        payload: { notebook: "shell-assistant-book", section: "working-context", page: "current-task" },
+      },
+    ],
     compactFields: ["notebook", "section", "page"],
   }),
   defineNoteDescriptor({
@@ -176,7 +196,9 @@ const noteDescriptors = [
     name: "query",
     description: "Run read-only SQL over bounded NoteSystem views.",
     inputSchema: noteQuerySchema,
-    examples: [{ kind: "stdin", payload: { sql: "select page, updatedAt from note_pages_view order by updatedAt desc" } }],
+    examples: [
+      { kind: "stdin", payload: { sql: "select page, updatedAt from note_pages_view order by updatedAt desc" } },
+    ],
     helpNotes: [
       "Available views: note_pages_view, note_tags_view, note_page_tags_view, note_references_view.",
       "Only SELECT/WITH statements are accepted; mutating SQL is rejected before execution.",
@@ -217,86 +239,27 @@ const renderNoteNamespaceHelp = (): string =>
     "",
   ].join("\n");
 
-const parseLegacyNoteArgs = (args: readonly string[]): ParsedLegacyNoteArgs => {
-  const positional: string[] = [];
-  const options = new Map<string, string>();
-  let json = false;
-  for (let index = 0; index < args.length; index += 1) {
-    const arg = args[index]!;
-    if (arg === "--json") {
-      json = true;
-      continue;
-    }
-    if (arg.startsWith("--")) {
-      const key = arg.slice(2);
-      const value = args[index + 1];
-      if (!key || !value || value.startsWith("--")) {
-        throw new Error(`note option requires value: ${arg}`);
-      }
-      options.set(key, value);
-      index += 1;
-      continue;
-    }
-    positional.push(arg);
-  }
-  return { positional, options, json };
-};
-
-const requireOption = (options: Map<string, string>, key: string): string => {
-  const value = options.get(key);
-  if (!value) {
-    throw new Error(`note requires --${key}`);
-  }
-  return value;
-};
-
-const parseMode = (value: string | undefined): NoteWriteMode | undefined => {
-  if (value === undefined) {
-    return undefined;
-  }
-  if (value === "append" || value === "override") {
-    return value;
-  }
-  throw new Error(`note mode must be append or override: ${value}`);
-};
-
-const resolveLegacyBody = (parsed: ParsedLegacyNoteArgs, stdin: string): string => {
-  const body = parsed.positional.join(" ").trim() || stdin.trimEnd();
-  if (!body) {
-    throw new Error("note body is required");
-  }
-  return body;
-};
-
-const resolveJsonBody = (input: { body?: string; content?: string }): string => {
-  const body = input.content ?? input.body;
-  if (!body) {
-    throw new Error("note content is required");
-  }
-  return body;
-};
-
-const renderPage = (page: NotePage): string => `${page.identity.notebook}/${page.identity.section}/${page.identity.page} ${page.path}\n`;
-
-const renderSearchResult = (result: NoteSearchResult): string =>
-  `${result.notebook}/${result.section}/${result.page} score=${result.score.toFixed(4)} ${result.path}\n${result.snippet}\n`;
-
 export interface NoteCommandOptions {
   readAvatarHome?: (env: ReadonlyMap<string, string>) => readonly string[];
 }
 
-const parseAvatarHomeFromEnv = (
-  env: ReadonlyMap<string, string>,
-  options: NoteCommandOptions,
-): string[] => [...(options.readAvatarHome?.(env) ?? parseNoteAvatarHomeEnv(env.get(NOTE_AVATAR_HOME_ENV)))];
+const parseAvatarHomeFromEnv = (env: ReadonlyMap<string, string>, options: NoteCommandOptions): string[] => [
+  ...(options.readAvatarHome?.(env) ?? parseNoteAvatarHomeEnv(env.get(NOTE_AVATAR_HOME_ENV))),
+];
 
 const isHelpArg = (value: string | undefined): boolean => value === "--help" || value === "-h";
 
-const wantsLegacyFlags = (args: readonly string[]): boolean =>
-  args.some((arg) => arg.startsWith("--") && arg !== "--json" && arg !== "--compact");
+const resolveCliContentFile = (contentFile: string, cwd: string): string =>
+  isAbsolute(contentFile) ? contentFile : resolve(cwd, contentFile);
 
-const wantsLegacyPositionalBody = (args: readonly string[], stdin: string): boolean =>
-  args.length > 0 && !args[0]?.trim().startsWith("{") && stdin.trim().length === 0;
+const resolveCliContentInput = (input: { content?: string; contentFile?: string }, cwd: string): NoteContentInput =>
+  input.contentFile !== undefined
+    ? { contentFile: resolveCliContentFile(input.contentFile, cwd) }
+    : input.content !== undefined
+      ? { content: input.content }
+      : (() => {
+          throw new Error("note requires exactly one content source: content or contentFile");
+        })();
 
 export const createNoteCommand = (options: NoteCommandOptions = {}): ReturnType<typeof defineCommand> =>
   defineCommand("note", async (args, ctx) => {
@@ -329,26 +292,8 @@ export const createNoteCommand = (options: NoteCommandOptions = {}): ReturnType<
         };
       }
       const compactMode = rest.includes("--compact");
-      const payloadArgs = rest.filter((item) => item !== "--json" && item !== "--compact");
-      const jsonMode = !wantsLegacyFlags(rest);
+      const payloadArgs = rest.filter((item) => item !== "--compact");
       if (subcommand === "write") {
-        if (wantsLegacyFlags(rest)) {
-          const parsed = parseLegacyNoteArgs(rest);
-          const page = writeNotePage({
-            avatarHome,
-            notebook: requireOption(parsed.options, "notebook"),
-            section: requireOption(parsed.options, "section"),
-            page: requireOption(parsed.options, "page"),
-            mode: parseMode(parsed.options.get("mode")),
-            body: resolveLegacyBody(parsed, ctx.stdin),
-            sourceWorkspace: ctx.cwd,
-          });
-          return {
-            stdout: parsed.json ? `${JSON.stringify(page)}\n` : renderPage(page),
-            stderr: "",
-            exitCode: 0,
-          };
-        }
         const input = noteWriteSchema.parse(
           parseNoteCliInput(descriptor, payloadArgs, ctx.stdin, compactMode ? "compact" : "object"),
         );
@@ -357,107 +302,66 @@ export const createNoteCommand = (options: NoteCommandOptions = {}): ReturnType<
           notebook: input.notebook,
           section: input.section,
           page: input.page,
-          body: input.sourcePath ? input.body ?? input.content : resolveJsonBody(input),
+          ...resolveCliContentInput(input, ctx.cwd),
           mode: input.mode,
           mime: input.mime,
           tags: input.tags,
           references: input.references as readonly NoteReferenceInput[] | undefined,
-          sourcePath: input.sourcePath,
           sourceWorkspace: ctx.cwd,
         });
         return { stdout: `${JSON.stringify(page, null, 2)}\n`, stderr: "", exitCode: 0 };
       }
       if (subcommand === "draft") {
-        if (wantsLegacyPositionalBody(rest, ctx.stdin)) {
-          const parsed = parseLegacyNoteArgs(rest);
-          const page = draftNotePage({
-            avatarHome,
-            body: resolveLegacyBody(parsed, ctx.stdin),
-            sourceWorkspace: ctx.cwd,
-          });
-          return { stdout: parsed.json ? `${JSON.stringify(page)}\n` : renderPage(page), stderr: "", exitCode: 0 };
-        }
         const input = noteDraftSchema.parse(
           parseNoteCliInput(descriptor, payloadArgs, ctx.stdin, compactMode ? "compact" : "object"),
         );
         const page = draftNotePage({
           avatarHome,
-          body: resolveJsonBody(input),
+          ...resolveCliContentInput(input, ctx.cwd),
+          mime: input.mime,
           idSuffix: input.idSuffix,
           sourceWorkspace: ctx.cwd,
         });
         return { stdout: `${JSON.stringify(page, null, 2)}\n`, stderr: "", exitCode: 0 };
       }
       if (subcommand === "list") {
-        const input = jsonMode
-          ? noteListSchema.parse(
-              parseNoteCliInput(descriptor, payloadArgs, ctx.stdin, compactMode ? "compact" : "object"),
-            )
-          : (() => {
-              const parsed = parseLegacyNoteArgs(rest);
-              return {
-                notebook: parsed.options.get("notebook"),
-                section: parsed.options.get("section"),
-                limit: parsed.options.get("limit") ? Number(parsed.options.get("limit")) : undefined,
-                legacyJson: parsed.json,
-              };
-            })();
+        const input = noteListSchema.parse(
+          parseNoteCliInput(descriptor, payloadArgs, ctx.stdin, compactMode ? "compact" : "object"),
+        );
         const pages = listNotePages({
           avatarHome,
           notebook: input.notebook,
           section: input.section,
           limit: input.limit,
         });
-        const legacyJson = "legacyJson" in input ? input.legacyJson === true : false;
         return {
-          stdout: jsonMode || legacyJson ? `${JSON.stringify(pages, null, 2)}\n` : pages.map(renderPage).join(""),
+          stdout: `${JSON.stringify(pages, null, 2)}\n`,
           stderr: "",
           exitCode: 0,
         };
       }
       if (subcommand === "show") {
-        const input = jsonMode
-          ? noteShowSchema.parse(
-              parseNoteCliInput(descriptor, payloadArgs, ctx.stdin, compactMode ? "compact" : "object"),
-            )
-          : (() => {
-              const parsed = parseLegacyNoteArgs(rest);
-              return {
-                notebook: requireOption(parsed.options, "notebook"),
-                section: requireOption(parsed.options, "section"),
-                page: requireOption(parsed.options, "page"),
-                legacyJson: parsed.json,
-              };
-            })();
+        const input = noteShowSchema.parse(
+          parseNoteCliInput(descriptor, payloadArgs, ctx.stdin, compactMode ? "compact" : "object"),
+        );
         const page = showNotePage({ avatarHome, notebook: input.notebook, section: input.section, page: input.page });
         if (!page) {
           throw new Error("note page not found");
         }
-        const legacyJson = "legacyJson" in input ? input.legacyJson === true : false;
-        return { stdout: jsonMode || legacyJson ? `${JSON.stringify(page, null, 2)}\n` : `${page.body}\n`, stderr: "", exitCode: 0 };
+        return { stdout: `${JSON.stringify(page, null, 2)}\n`, stderr: "", exitCode: 0 };
       }
       if (subcommand === "search") {
-        const input = jsonMode
-          ? noteSearchSchema.parse(
-              parseNoteCliInput(descriptor, payloadArgs, ctx.stdin, compactMode ? "compact" : "object"),
-            )
-          : (() => {
-              const parsed = parseLegacyNoteArgs(rest);
-              return {
-                query: parsed.positional.join(" "),
-                limit: parsed.options.get("limit") ? Number(parsed.options.get("limit")) : undefined,
-                legacyJson: parsed.json,
-              };
-            })();
+        const input = noteSearchSchema.parse(
+          parseNoteCliInput(descriptor, payloadArgs, ctx.stdin, compactMode ? "compact" : "object"),
+        );
         const results = searchNotes({
           avatarHome,
           query: input.query ?? "",
           limit: input.limit,
           tags: "tags" in input ? input.tags : undefined,
         });
-        const legacyJson = "legacyJson" in input ? input.legacyJson === true : false;
         return {
-          stdout: jsonMode || legacyJson ? `${JSON.stringify(results, null, 2)}\n` : results.map(renderSearchResult).join(""),
+          stdout: `${JSON.stringify(results, null, 2)}\n`,
           stderr: "",
           exitCode: 0,
         };

@@ -37,7 +37,6 @@ export const JSON_NOTE_MIME = "application/json";
 export const NOTE_URI_PREFIX = "note:";
 
 const SEGMENT_CONTROL_PATTERN = /[\u0000-\u001f\u007f]/u;
-const NOTE_ARTIFACT_EXTENSIONS = new Set([".md", ".markdown", ".json", ".txt", ".bin"]);
 
 const padDatePart = (value: number, width: number): string => value.toString().padStart(width, "0");
 
@@ -86,31 +85,39 @@ const normalizeIdentity = (identity: NoteIdentity, input: { allowDraftNotebook?:
   page: validateNoteSegment(identity.page, { label: "page" }),
 });
 
-const createNoteKey = (identity: NoteIdentity): string =>
-  `${identity.notebook}/${identity.section}/${identity.page}`;
+const createNoteKey = (identity: NoteIdentity): string => `${identity.notebook}/${identity.section}/${identity.page}`;
 
 const createNoteUri = (identity: NoteIdentity): string =>
   `${NOTE_URI_PREFIX}${identity.notebook}/${identity.section}/${identity.page}`;
 
-const normalizeMime = (mime: NoteMime | undefined): NoteMime => {
+const normalizeRequiredMime = (mime: NoteMime | undefined): NoteMime => {
   const normalized = mime?.trim().toLowerCase();
-  return normalized && normalized.length > 0 ? normalized : DEFAULT_NOTE_MIME;
+  if (!normalized) {
+    throw new Error("note mime is required");
+  }
+  return normalized;
+};
+
+const normalizeOptionalMime = (mime: string | undefined): NoteMime | undefined => {
+  const normalized = mime?.trim().toLowerCase();
+  return normalized && normalized.length > 0 ? normalized : undefined;
 };
 
 const isMarkdownMime = (mime: NoteMime): boolean => mime === DEFAULT_NOTE_MIME || mime === "text/x-markdown";
 
 const isJsonMime = (mime: NoteMime): boolean => mime === JSON_NOTE_MIME;
 
-const isInlineTextMime = (mime: NoteMime): boolean => isMarkdownMime(mime) || isJsonMime(mime) || mime.startsWith("text/");
+const isInlineTextMime = (mime: NoteMime): boolean =>
+  isMarkdownMime(mime) || isJsonMime(mime) || mime.startsWith("text/");
 
-const artifactExtensionForMime = (mime: NoteMime, sourcePath?: string): string => {
+const artifactExtensionForMime = (mime: NoteMime, contentPath?: string): string => {
   if (isMarkdownMime(mime)) {
     return ".md";
   }
   if (isJsonMime(mime)) {
     return ".json";
   }
-  const sourceExtension = sourcePath ? extname(sourcePath) : "";
+  const sourceExtension = contentPath ? extname(contentPath) : "";
   return sourceExtension.length > 0 ? sourceExtension : ".bin";
 };
 
@@ -118,13 +125,13 @@ const resolveNoteArtifactPath = (
   noteRoot: string,
   identity: NoteIdentity,
   mime: NoteMime,
-  sourcePath?: string,
+  contentPath?: string,
 ): string => {
   const path = resolve(
     noteRoot,
     identity.notebook,
     identity.section,
-    `${identity.page}${artifactExtensionForMime(mime, sourcePath)}`,
+    `${identity.page}${artifactExtensionForMime(mime, contentPath)}`,
   );
   const relation = relative(noteRoot, path);
   if (relation.startsWith("..") || isAbsolute(relation)) {
@@ -167,7 +174,7 @@ const identityFromNoteArtifactPath = (noteRoot: string, path: string): NoteIdent
     return null;
   }
   const extension = extname(parts[2]!);
-  if (!NOTE_ARTIFACT_EXTENSIONS.has(extension)) {
+  if (extension.length === 0) {
     return null;
   }
   try {
@@ -195,17 +202,20 @@ const listNoteArtifactFiles = (root: string): string[] => {
       files.push(...listNoteArtifactFiles(path));
       continue;
     }
-    if (entry.isFile() && NOTE_ARTIFACT_EXTENSIONS.has(extname(entry.name))) {
+    if (entry.isFile() && extname(entry.name).length > 0) {
       files.push(path);
     }
   }
   return files;
 };
 
-const inferMimeForArtifact = (path: string, frontmatter: Record<string, string>): NoteMime => {
-  const frontmatterMime = normalizeMime(frontmatter.mime);
-  if (frontmatter.mime) {
+const inferMimeForArtifact = (path: string, frontmatter: Record<string, string>, existingMime?: NoteMime): NoteMime => {
+  const frontmatterMime = normalizeOptionalMime(frontmatter.mime);
+  if (frontmatterMime) {
     return frontmatterMime;
+  }
+  if (existingMime) {
+    return existingMime;
   }
   if (path.endsWith(".json")) {
     return JSON_NOTE_MIME;
@@ -268,9 +278,10 @@ const recordToPage = (record: NoteDbPageRecord): NotePage => {
   };
 };
 
-const normalizeTags = (tags: readonly string[] | undefined): string[] => [
-  ...new Set((tags ?? []).map((tag) => tag.trim().toLowerCase()).filter((tag) => tag.length > 0)),
-].sort((left, right) => left.localeCompare(right));
+const normalizeTags = (tags: readonly string[] | undefined): string[] =>
+  [...new Set((tags ?? []).map((tag) => tag.trim().toLowerCase()).filter((tag) => tag.length > 0))].sort(
+    (left, right) => left.localeCompare(right),
+  );
 
 const parseNoteUriIdentity = (uri: string): NoteIdentity | null => {
   if (!uri.startsWith(NOTE_URI_PREFIX)) {
@@ -458,9 +469,15 @@ const indexNoteRoot = (noteRoot: string): NoteDatabase => {
     if (!identity) {
       continue;
     }
-    const rawFrontmatter = path.endsWith(".md") || path.endsWith(".markdown") ? splitNoteFrontmatter(safeReadUtf8(path)) : null;
+    const rawFrontmatter =
+      path.endsWith(".md") || path.endsWith(".markdown") ? splitNoteFrontmatter(safeReadUtf8(path)) : null;
     const frontmatter = rawFrontmatter?.frontmatter ?? {};
-    const mime = inferMimeForArtifact(path, frontmatter);
+    const existingRecord = db.getPageRecordByIdentity(identity);
+    const mime = inferMimeForArtifact(
+      path,
+      frontmatter,
+      existingRecord?.path === path ? existingRecord.mime : undefined,
+    );
     const { body } = rawFrontmatter ?? readArtifactBody(path, mime);
     const stats = statSync(path);
     db.indexExistingPage({
@@ -504,11 +521,39 @@ const withIndexedDatabase = <T>(avatarHome: string, fn: (db: NoteDatabase, noteR
   }
 };
 
-const readWriteBody = (input: NoteWriteInput, mime: NoteMime, existing: NotePage | null): string => {
-  const raw = input.sourcePath ? safeReadUtf8(resolve(input.sourcePath)) : input.body;
-  if (raw === undefined) {
-    throw new Error("note body is required unless sourcePath is supplied");
+type WriteContentSource =
+  | {
+      kind: "inline";
+      content: string;
+    }
+  | {
+      kind: "file";
+      path: string;
+    };
+
+const resolveWriteContentSource = (input: Pick<NoteWriteInput, "content" | "contentFile">): WriteContentSource => {
+  const hasInlineContent = input.content !== undefined;
+  const hasContentFile = input.contentFile !== undefined;
+  if (hasInlineContent === hasContentFile) {
+    throw new Error("note write requires exactly one content source: content or contentFile");
   }
+  if (hasInlineContent) {
+    return { kind: "inline", content: input.content ?? "" };
+  }
+  const contentFile = input.contentFile?.trim() ?? "";
+  if (contentFile.length === 0) {
+    throw new Error("note contentFile is required");
+  }
+  return { kind: "file", path: resolve(contentFile) };
+};
+
+const readWriteTextContent = (
+  input: NoteWriteInput,
+  mime: NoteMime,
+  existing: NotePage | null,
+  contentSource: WriteContentSource,
+): string => {
+  const raw = contentSource.kind === "file" ? safeReadUtf8(contentSource.path) : contentSource.content;
   if (isJsonMime(mime)) {
     if (input.mode === "append" && existing && existing.body.trim().length > 0) {
       throw new Error("note JSON writes do not support append mode");
@@ -527,7 +572,7 @@ const readWriteBody = (input: NoteWriteInput, mime: NoteMime, existing: NotePage
 const materializeArtifact = (input: {
   page: NotePage;
   body: string;
-  sourcePath?: string;
+  contentSource: WriteContentSource;
   previousPath?: string;
 }): void => {
   mkdirSync(dirname(input.page.path), { recursive: true });
@@ -543,10 +588,10 @@ const materializeArtifact = (input: {
     writeFileSync(input.page.path, input.body, "utf8");
     return;
   }
-  if (!input.sourcePath) {
-    throw new Error("note binary-like MIME writes require sourcePath");
+  if (input.contentSource.kind !== "file") {
+    throw new Error("note binary-like MIME writes require contentFile");
   }
-  copyFileSync(resolve(input.sourcePath), input.page.path);
+  copyFileSync(input.contentSource.path, input.page.path);
 };
 
 const writeNotePageInternal = (
@@ -560,23 +605,31 @@ const writeNotePageInternal = (
     const identity = normalizeIdentity(input, {
       allowDraftNotebook: options.allowDraftNotebook,
     });
-    const mime = normalizeMime(input.mime);
-    if (!isInlineTextMime(mime) && !input.sourcePath) {
-      throw new Error("note binary-like MIME writes require sourcePath");
+    const mime = normalizeRequiredMime(input.mime);
+    const contentSource = resolveWriteContentSource(input);
+    if (!isInlineTextMime(mime) && contentSource.kind !== "file") {
+      throw new Error("note binary-like MIME writes require contentFile");
     }
     const existingRecord = db.getPageRecordByIdentity(identity);
     const existingPage = existingRecord ? recordToPage(existingRecord) : null;
     if (existingPage && (existsSync(existingPage.path) || existingPage.body.trim().length > 0) && !input.mode) {
       throw new Error("note page already has content; pass mode append or override");
     }
-    const rawBody = isInlineTextMime(mime) ? readWriteBody(input, mime, existingPage) : "";
+    const rawBody = isInlineTextMime(mime) ? readWriteTextContent(input, mime, existingPage, contentSource) : "";
     const normalizedMarkdown = isMarkdownMime(mime)
       ? normalizeMarkdownReferences(db, identity, rawBody)
       : { body: rawBody, references: [] };
-    const explicitReferences = (input.references ?? []).map((reference) => resolveReferenceInput(db, identity, reference));
+    const explicitReferences = (input.references ?? []).map((reference) =>
+      resolveReferenceInput(db, identity, reference),
+    );
     const references = dedupeReferences([...normalizedMarkdown.references, ...explicitReferences]);
     const now = (input.now ?? new Date()).toISOString();
-    const path = resolveNoteArtifactPath(noteRoot, identity, mime, input.sourcePath);
+    const path = resolveNoteArtifactPath(
+      noteRoot,
+      identity,
+      mime,
+      contentSource.kind === "file" ? contentSource.path : undefined,
+    );
     const record = db.upsertPage({
       identity,
       path,
@@ -600,16 +653,14 @@ const writeNotePageInternal = (
     materializeArtifact({
       page,
       body,
-      sourcePath: input.sourcePath,
+      contentSource,
       previousPath: existingRecord?.path,
     });
     return { ...page, body };
   });
 };
 
-export const projectNoteCliCapabilities = (input: {
-  avatarHome: readonly string[];
-}): NoteCliCapabilityProjection[] => {
+export const projectNoteCliCapabilities = (input: { avatarHome: readonly string[] }): NoteCliCapabilityProjection[] => {
   const normalized = normalizeAvatarHome(input.avatarHome);
   const writableRoot = normalized.at(-1);
   return writableRoot
@@ -633,17 +684,20 @@ export const draftNotePage = (input: NoteDraftInput): NotePage => {
     padDatePart(now.getUTCSeconds(), 2),
     padDatePart(now.getUTCMilliseconds(), 3),
   ].join("");
+  const writeInputBase = {
+    avatarHome: input.avatarHome,
+    notebook: NOTE_DRAFT_NOTEBOOK,
+    section: now.toISOString().slice(0, 10),
+    page: `${timePage}-${input.idSuffix ?? randomUUID().slice(0, 8)}`,
+    mime: input.mime,
+    now,
+    sourceWorkspace: input.sourceWorkspace,
+    mode: "override" as const,
+  };
   return writeNotePageInternal(
-    {
-      avatarHome: input.avatarHome,
-      notebook: NOTE_DRAFT_NOTEBOOK,
-      section: now.toISOString().slice(0, 10),
-      page: `${timePage}-${input.idSuffix ?? randomUUID().slice(0, 8)}`,
-      body: input.body,
-      now,
-      sourceWorkspace: input.sourceWorkspace,
-      mode: "override",
-    },
+    input.contentFile !== undefined
+      ? { ...writeInputBase, contentFile: input.contentFile }
+      : { ...writeInputBase, content: input.content },
     { allowDraftNotebook: true },
   );
 };
@@ -675,14 +729,17 @@ export const listNotePages = (input: NoteListInput): NotePage[] => {
     }
   }
   const limit = Math.max(1, Math.min(input.limit ?? 100, 1_000));
-  return [...visible.values()]
-    .sort((left, right) => left.path.localeCompare(right.path))
-    .slice(0, limit);
+  return [...visible.values()].sort((left, right) => left.path.localeCompare(right.path)).slice(0, limit);
 };
 
 export const listNoteTags = (input: NoteTagQueryInput): NoteTagSummary[] => {
   const counts = new Map<string, { id: string; name: string; count: number }>();
-  for (const page of listNotePages({ avatarHome: input.avatarHome, notebook: input.notebook, section: input.section, limit: 1_000 })) {
+  for (const page of listNotePages({
+    avatarHome: input.avatarHome,
+    notebook: input.notebook,
+    section: input.section,
+    limit: 1_000,
+  })) {
     page.metadata.tags.forEach((tag, index) => {
       const current = counts.get(tag);
       counts.set(tag, {
@@ -709,9 +766,7 @@ export const renameNotePages = (input: NoteRenameInput): NotePage[] => {
     });
     const section = validateNoteSegment(input.section, { label: "section" });
     const page = input.page ? validateNoteSegment(input.page, { label: "page" }) : undefined;
-    const toNotebook = input.toNotebook
-      ? validateNoteSegment(input.toNotebook, { label: "notebook" })
-      : undefined;
+    const toNotebook = input.toNotebook ? validateNoteSegment(input.toNotebook, { label: "notebook" }) : undefined;
     const toSection = input.toSection ? validateNoteSegment(input.toSection, { label: "section" }) : undefined;
     const toPage = input.toPage ? validateNoteSegment(input.toPage, { label: "page" }) : undefined;
     const records = db.rename({
@@ -726,7 +781,11 @@ export const renameNotePages = (input: NoteRenameInput): NotePage[] => {
     return records.map((record) => {
       const pageRecord = recordToPage(record);
       if (isMarkdownMime(pageRecord.metadata.mime)) {
-        materializeArtifact({ page: pageRecord, body: pageRecord.body });
+        materializeArtifact({
+          page: pageRecord,
+          body: pageRecord.body,
+          contentSource: { kind: "inline", content: pageRecord.body },
+        });
       }
       return pageRecord;
     });

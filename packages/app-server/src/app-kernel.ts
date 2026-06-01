@@ -71,6 +71,23 @@ import {
   type MessageSourceSubscriptionRecord,
   type MessageTranscriptPage,
 } from "@agenter/message-system";
+import {
+  listNoteCatalog,
+  listNoteTagCatalog,
+  queryNoteCatalogSql,
+  readNotePage,
+  renameNoteCatalogPages,
+  searchNoteCatalog,
+  writeNoteCatalogPage,
+  type NoteAvatarContext,
+  type NoteCatalogOutput,
+  type NotePageOutput,
+  type NoteReferenceInput,
+  type NoteRenameOutput,
+  type NoteSearchOutput,
+  type NoteSqlQueryOutput,
+  type NoteTagQueryOutput,
+} from "@agenter/note-system";
 import { isPrincipalId, normalizePrincipalId } from "@agenter/principal-crypto";
 import {
   SessionDb,
@@ -157,23 +174,6 @@ import { readLocalEnvValue, resolveLocalEnvPath, writeLocalEnvValue } from "./lo
 import { repairRoomParticipantsIfNeeded } from "./message-room-participant-repair";
 import { resolveModelCapabilities } from "./model-capabilities";
 import {
-  listNoteCatalog,
-  listNoteTagCatalog,
-  queryNoteCatalogSql,
-  readNotePage,
-  renameNoteCatalogPages,
-  searchNoteCatalog,
-  writeNoteCatalogPage,
-  type NoteAvatarContext,
-  type NoteCatalogOutput,
-  type NotePageOutput,
-  type NoteReferenceInput,
-  type NoteRenameOutput,
-  type NoteSearchOutput,
-  type NoteSqlQueryOutput,
-  type NoteTagQueryOutput,
-} from "@agenter/note-system";
-import {
   settingsKindSchema,
   type AnyRuntimeEvent,
   type RuntimeEventEnvelope,
@@ -240,8 +240,8 @@ import {
   resolveWorkspaceAvatarAssetRoot,
   resolveWorkspaceGrantModeFromAbsolutePath,
   resolveWorkspacePublicAssetRoot,
-  WorkspaceSystemStore,
   serializeEnvAvatarHome,
+  WorkspaceSystemStore,
   type WorkspaceAssetRoots,
   type WorkspaceBashExecResult,
   type WorkspaceGrantInput,
@@ -2070,7 +2070,12 @@ export class AppKernel {
     };
   }
 
-  async searchNoteCatalog(input: { avatarNickname?: string | null; query?: string; limit?: number; tags?: readonly string[] }): Promise<
+  async searchNoteCatalog(input: {
+    avatarNickname?: string | null;
+    query?: string;
+    limit?: number;
+    tags?: readonly string[];
+  }): Promise<
     NoteSearchOutput & {
       avatar: NoteAvatarContext;
     }
@@ -2087,7 +2092,9 @@ export class AppKernel {
     };
   }
 
-  async listNoteTagCatalog(input: { avatarNickname?: string | null; notebook?: string; section?: string } = {}): Promise<
+  async listNoteTagCatalog(
+    input: { avatarNickname?: string | null; notebook?: string; section?: string } = {},
+  ): Promise<
     NoteTagQueryOutput & {
       avatar: NoteAvatarContext;
     }
@@ -2152,19 +2159,29 @@ export class AppKernel {
     notebook: string;
     section: string;
     page: string;
-    body?: string;
     content?: string;
+    contentFile?: string;
     mode?: "append" | "override";
-    mime?: string;
+    mime: string;
     tags?: readonly string[];
     references?: readonly NoteReferenceInput[];
-    sourcePath?: string;
   }): Promise<
     NotePageOutput & {
       avatar: NoteAvatarContext;
     }
   > {
     const avatar = await this.resolveNoteAvatarContext(input);
+    const contentInput =
+      input.contentFile !== undefined
+        ? input.content !== undefined
+          ? null
+          : { contentFile: input.contentFile }
+        : input.content !== undefined
+          ? { content: input.content }
+          : null;
+    if (!contentInput) {
+      throw new Error("note write requires exactly one content source: content or contentFile");
+    }
     return {
       avatar,
       ...writeNoteCatalogPage({
@@ -2172,12 +2189,11 @@ export class AppKernel {
         notebook: input.notebook,
         section: input.section,
         page: input.page,
-        body: input.content ?? input.body,
+        ...contentInput,
         mode: input.mode,
         mime: input.mime,
         tags: input.tags,
         references: input.references,
-        sourcePath: input.sourcePath,
       }),
     };
   }

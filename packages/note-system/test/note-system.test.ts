@@ -6,13 +6,13 @@ import { join } from "node:path";
 import { InMemoryFs } from "just-bash";
 
 import {
-  NOTE_DRAFT_NOTEBOOK,
   NOTE_AVATAR_HOME_ENV,
+  NOTE_DRAFT_NOTEBOOK,
   createNoteCommand,
   draftNotePage,
+  listNoteCatalog,
   listNotePages,
   listNoteTags,
-  listNoteCatalog,
   parseNoteAvatarHomeEnv,
   projectNoteCliCapabilities,
   queryNoteSql,
@@ -67,7 +67,8 @@ describe("Feature: NoteSystem avatar-private note projection", () => {
       notebook: "ideas",
       section: "shell",
       page: "env-first",
-      body: "Capture capability projection as env law.",
+      content: "Capture capability projection as env law.",
+      mime: "text/markdown",
       now: new Date("2026-05-31T15:30:00.000Z"),
       sourceWorkspace: "/repo",
     });
@@ -88,7 +89,8 @@ describe("Feature: NoteSystem avatar-private note projection", () => {
       notebook: "产品想法",
       section: "shell",
       page: "note-system",
-      body: "# Note\n\nUse markdown.",
+      content: "# Note\n\nUse markdown.",
+      mime: "text/markdown",
       now: new Date("2026-05-31T15:30:00.000Z"),
     });
 
@@ -110,7 +112,8 @@ describe("Feature: NoteSystem avatar-private note projection", () => {
         notebook: "../escape",
         section: "shell",
         page: "bad",
-        body: "bad",
+        content: "bad",
+        mime: "text/markdown",
       }),
     ).toThrow("note notebook segment is unsafe");
     expect(existsSync(join(avatarHome, "escape.md"))).toBeFalse();
@@ -121,7 +124,8 @@ describe("Feature: NoteSystem avatar-private note projection", () => {
 
     const result = draftNotePage({
       avatarHome: [avatarHome],
-      body: "Fast capture.",
+      content: "Fast capture.",
+      mime: "text/markdown",
       now: new Date("2026-05-31T15:30:00.123Z"),
       idSuffix: "abc123",
     });
@@ -139,7 +143,8 @@ describe("Feature: NoteSystem avatar-private note projection", () => {
       notebook: "ideas",
       section: "shell",
       page: "conflict",
-      body: "Original body.",
+      content: "Original body.",
+      mime: "text/markdown",
       now: new Date("2026-05-31T15:30:00.000Z"),
     });
 
@@ -149,12 +154,13 @@ describe("Feature: NoteSystem avatar-private note projection", () => {
         notebook: "ideas",
         section: "shell",
         page: "conflict",
-        body: "New body.",
+        content: "New body.",
+        mime: "text/markdown",
       }),
     ).toThrow("note page already has content; pass mode append or override");
-    expect(showNotePage({ avatarHome: [avatarHome], notebook: "ideas", section: "shell", page: "conflict" })?.body).toBe(
-      first.body,
-    );
+    expect(
+      showNotePage({ avatarHome: [avatarHome], notebook: "ideas", section: "shell", page: "conflict" })?.body,
+    ).toBe(first.body);
   });
 
   test("Scenario: Given a non-empty page When append mode is used Then content is appended and metadata is updated", () => {
@@ -164,7 +170,8 @@ describe("Feature: NoteSystem avatar-private note projection", () => {
       notebook: "ideas",
       section: "shell",
       page: "append",
-      body: "Original body.",
+      content: "Original body.",
+      mime: "text/markdown",
       now: new Date("2026-05-31T15:30:00.000Z"),
     });
 
@@ -173,7 +180,8 @@ describe("Feature: NoteSystem avatar-private note projection", () => {
       notebook: "ideas",
       section: "shell",
       page: "append",
-      body: "Appended body.",
+      content: "Appended body.",
+      mime: "text/markdown",
       mode: "append",
       now: new Date("2026-05-31T15:31:00.000Z"),
     });
@@ -190,7 +198,8 @@ describe("Feature: NoteSystem avatar-private note projection", () => {
       notebook: "ideas",
       section: "shell",
       page: "override",
-      body: "Original body.",
+      content: "Original body.",
+      mime: "text/markdown",
       now: new Date("2026-05-31T15:30:00.000Z"),
     });
 
@@ -199,7 +208,8 @@ describe("Feature: NoteSystem avatar-private note projection", () => {
       notebook: "ideas",
       section: "shell",
       page: "override",
-      body: "Replacement body.",
+      content: "Replacement body.",
+      mime: "text/markdown",
       mode: "override",
       now: new Date("2026-05-31T15:32:00.000Z"),
     });
@@ -216,7 +226,8 @@ describe("Feature: NoteSystem avatar-private note projection", () => {
       notebook: "ideas",
       section: "shell",
       page: "searchable",
-      body: "Env first capability projection should be searchable.",
+      content: "Env first capability projection should be searchable.",
+      mime: "text/markdown",
     });
 
     const results = searchNotes({ avatarHome: [avatarHome], query: "capability projection" });
@@ -238,34 +249,44 @@ describe("Feature: NoteSystem avatar-private note projection", () => {
       notebook: "ideas",
       section: "shell",
       page: "current",
-      body: "Current workspace note.",
+      content: "Current workspace note.",
+      mime: "text/markdown",
     });
     writeNotePage({
       avatarHome: [otherAvatarHome],
       notebook: "ideas",
       section: "shell",
       page: "other",
-      body: "Other workspace hidden note.",
+      content: "Other workspace hidden note.",
+      mime: "text/markdown",
     });
 
     expect(listNotePages({ avatarHome: [currentAvatarHome] }).map((page) => page.identity.page)).toEqual(["current"]);
-    expect(showNotePage({ avatarHome: [currentAvatarHome], notebook: "ideas", section: "shell", page: "other" })).toBeNull();
+    expect(
+      showNotePage({ avatarHome: [currentAvatarHome], notebook: "ideas", section: "shell", page: "other" }),
+    ).toBeNull();
     expect(searchNotes({ avatarHome: [currentAvatarHome], query: "hidden" })).toEqual([]);
   });
 
-  test("Scenario: Given note CLI has AVATAR_HOME When note write runs Then stdin content is written through the command", async () => {
+  test("Scenario: Given note CLI has AVATAR_HOME When note write runs Then JSON stdin content is written through the command", async () => {
     const avatarHome = createTempRoot();
     const command = createNoteCommand();
 
-    const result = await command.execute(["write", "--notebook", "ideas", "--section", "shell", "--page", "cli"], {
+    const result = await command.execute(["write"], {
       fs: new InMemoryFs(),
       cwd: "/repo",
       env: new Map([[NOTE_AVATAR_HOME_ENV, serializeNoteAvatarHomeEnv([avatarHome])]]),
-      stdin: "CLI body.",
+      stdin: JSON.stringify({
+        notebook: "ideas",
+        section: "shell",
+        page: "cli",
+        content: "CLI body.",
+        mime: "text/markdown",
+      }),
     });
 
     expect(result.exitCode).toBe(0);
-    expect(result.stdout).toContain("ideas/shell/cli");
+    expect(result.stdout).toContain('"page": "cli"');
     expect(readFileSync(join(avatarHome, "notes", "ideas", "shell", "cli.md"), "utf8")).toContain("CLI body.");
   });
 
@@ -287,6 +308,7 @@ describe("Feature: NoteSystem avatar-private note projection", () => {
           section: "working-context",
           page: "json-cli",
           content: "JSON CLI body.",
+          mime: "text/markdown",
           tags: ["Task", "Terminal"],
         }),
       ],
@@ -315,6 +337,83 @@ describe("Feature: NoteSystem avatar-private note projection", () => {
     expect(page.metadata.tagIds).toHaveLength(2);
   });
 
+  test("Scenario: Given note CLI contentFile input When the file is relative Then it resolves from the command cwd", async () => {
+    const avatarHome = createTempRoot();
+    const cwd = createTempRoot();
+    const command = createNoteCommand();
+    writeFileSync(join(cwd, "payload.json"), '{ "z": 3, "ok": true }', "utf8");
+
+    const result = await command.execute(["write"], {
+      fs: new InMemoryFs(),
+      cwd,
+      env: new Map([[NOTE_AVATAR_HOME_ENV, serializeNoteAvatarHomeEnv([avatarHome])]]),
+      stdin: JSON.stringify({
+        notebook: "shell-assistant-book",
+        section: "working-context",
+        page: "json-file",
+        contentFile: "payload.json",
+        mime: "application/json",
+      }),
+    });
+
+    expect(result.exitCode).toBe(0);
+    expect(
+      readFileSync(join(avatarHome, "notes", "shell-assistant-book", "working-context", "json-file.json"), "utf8"),
+    ).toBe('{"z":3,"ok":true}');
+  });
+
+  test("Scenario: Given invalid note CLI write sources When schema validation runs Then MIME and content source laws are enforced", async () => {
+    const avatarHome = createTempRoot();
+    const cwd = createTempRoot();
+    const command = createNoteCommand();
+    const contentFile = join(cwd, "payload.md");
+    writeFileSync(contentFile, "File content.", "utf8");
+
+    const missingMime = await command.execute(["write"], {
+      fs: new InMemoryFs(),
+      cwd,
+      env: new Map([[NOTE_AVATAR_HOME_ENV, serializeNoteAvatarHomeEnv([avatarHome])]]),
+      stdin: JSON.stringify({
+        notebook: "shell-assistant-book",
+        section: "working-context",
+        page: "missing-mime",
+        content: "Missing MIME.",
+      }),
+    });
+    const duplicateSource = await command.execute(["write"], {
+      fs: new InMemoryFs(),
+      cwd,
+      env: new Map([[NOTE_AVATAR_HOME_ENV, serializeNoteAvatarHomeEnv([avatarHome])]]),
+      stdin: JSON.stringify({
+        notebook: "shell-assistant-book",
+        section: "working-context",
+        page: "duplicate-source",
+        content: "Inline content.",
+        contentFile,
+        mime: "text/markdown",
+      }),
+    });
+    const binaryInline = await command.execute(["write"], {
+      fs: new InMemoryFs(),
+      cwd,
+      env: new Map([[NOTE_AVATAR_HOME_ENV, serializeNoteAvatarHomeEnv([avatarHome])]]),
+      stdin: JSON.stringify({
+        notebook: "shell-assistant-book",
+        section: "working-context",
+        page: "binary-inline",
+        content: "not really binary",
+        mime: "video/mp4",
+      }),
+    });
+
+    expect(missingMime.exitCode).toBe(1);
+    expect(missingMime.stderr).toContain("mime");
+    expect(duplicateSource.exitCode).toBe(1);
+    expect(duplicateSource.stderr).toContain("content source");
+    expect(binaryInline.exitCode).toBe(1);
+    expect(binaryInline.stderr).toContain("contentFile");
+  });
+
   test("Scenario: Given a host env reader When note CLI runs Then the package does not own host env parsing", async () => {
     const avatarHome = createTempRoot();
     const command = createNoteCommand({
@@ -329,6 +428,7 @@ describe("Feature: NoteSystem avatar-private note projection", () => {
           section: "shell",
           page: "host-env",
           content: "Host env reader injected.",
+          mime: "text/markdown",
         }),
       ],
       {
@@ -352,7 +452,8 @@ describe("Feature: NoteSystem avatar-private note projection", () => {
       notebook: "shell-assistant-book",
       section: "working-context",
       page: "target",
-      body: "Target body.",
+      content: "Target body.",
+      mime: "text/markdown",
       tags: ["Anchor"],
       now: new Date("2026-06-01T08:00:00.000Z"),
     });
@@ -362,7 +463,8 @@ describe("Feature: NoteSystem avatar-private note projection", () => {
       notebook: "shell-assistant-book",
       section: "working-context",
       page: "source",
-      body: "See [target](./target.md).",
+      content: "See [target](./target.md).",
+      mime: "text/markdown",
       tags: ["Terminal", "Preference"],
       now: new Date("2026-06-01T08:01:00.000Z"),
     });
@@ -404,7 +506,8 @@ describe("Feature: NoteSystem avatar-private note projection", () => {
       notebook: "shell-assistant-book",
       section: "semantic-rules",
       page: "terminal",
-      body: "Terminal preference.",
+      content: "Terminal preference.",
+      mime: "text/markdown",
       tags: ["terminal", "preference"],
     });
     writeNotePage({
@@ -412,22 +515,26 @@ describe("Feature: NoteSystem avatar-private note projection", () => {
       notebook: "shell-assistant-book",
       section: "working-context",
       page: "task",
-      body: "Task context.",
+      content: "Task context.",
+      mime: "text/markdown",
       tags: ["task"],
     });
 
-    expect(listNoteTags({ avatarHome: [avatarHome], notebook: "shell-assistant-book" }).map((tag) => [tag.name, tag.count])).toEqual([
+    expect(
+      listNoteTags({ avatarHome: [avatarHome], notebook: "shell-assistant-book" }).map((tag) => [tag.name, tag.count]),
+    ).toEqual([
       ["preference", 1],
       ["task", 1],
       ["terminal", 1],
     ]);
-    expect(listNoteTags({ avatarHome: [avatarHome], notebook: "shell-assistant-book", section: "semantic-rules" }).map((tag) => tag.name)).toEqual([
-      "preference",
-      "terminal",
-    ]);
-    expect(searchNotes({ avatarHome: [avatarHome], query: "", tags: ["terminal", "preference"] }).map((page) => page.page)).toEqual([
-      "terminal",
-    ]);
+    expect(
+      listNoteTags({ avatarHome: [avatarHome], notebook: "shell-assistant-book", section: "semantic-rules" }).map(
+        (tag) => tag.name,
+      ),
+    ).toEqual(["preference", "terminal"]);
+    expect(
+      searchNotes({ avatarHome: [avatarHome], query: "", tags: ["terminal", "preference"] }).map((page) => page.page),
+    ).toEqual(["terminal"]);
   });
 
   test("Scenario: Given note facts When SQL query runs Then SELECT succeeds and mutating statements are rejected", () => {
@@ -437,7 +544,8 @@ describe("Feature: NoteSystem avatar-private note projection", () => {
       notebook: "shell-assistant-book",
       section: "working-context",
       page: "sql",
-      body: "SQL visible.",
+      content: "SQL visible.",
+      mime: "text/markdown",
       tags: ["query"],
     });
 
@@ -453,15 +561,15 @@ describe("Feature: NoteSystem avatar-private note projection", () => {
 
   test("Scenario: Given MIME writes When JSON and binary-like source inputs run Then JSON is compacted and source files are copied safely", () => {
     const avatarHome = createTempRoot();
-    const sourcePath = join(createTempRoot(), "payload.bin");
-    writeFileSync(sourcePath, "binary-ish", "utf8");
+    const contentFile = join(createTempRoot(), "payload.mp4");
+    writeFileSync(contentFile, "binary-ish", "utf8");
 
     const json = writeNotePage({
       avatarHome: [avatarHome],
       notebook: "shell-assistant-book",
       section: "working-context",
       page: "json",
-      body: '{ "b": 2, "a": [1, true] }',
+      content: '{ "b": 2, "a": [1, true] }',
       mime: "application/json",
     });
     const binary = writeNotePage({
@@ -469,13 +577,13 @@ describe("Feature: NoteSystem avatar-private note projection", () => {
       notebook: "shell-assistant-book",
       section: "working-context",
       page: "asset",
-      mime: "application/octet-stream",
-      sourcePath,
+      contentFile,
+      mime: "video/mp4",
     });
 
     expect(json.path.endsWith(".json")).toBeTrue();
     expect(readFileSync(json.path, "utf8")).toBe('{"b":2,"a":[1,true]}');
-    expect(binary.path.endsWith(".bin")).toBeTrue();
+    expect(binary.path.endsWith(".mp4")).toBeTrue();
     expect(readFileSync(binary.path, "utf8")).toBe("binary-ish");
     expect(() =>
       writeNotePage({
@@ -483,7 +591,7 @@ describe("Feature: NoteSystem avatar-private note projection", () => {
         notebook: "shell-assistant-book",
         section: "working-context",
         page: "json",
-        body: "{ invalid",
+        content: "{ invalid",
         mime: "application/json",
         mode: "override",
       }),
@@ -498,7 +606,8 @@ describe("Feature: NoteSystem avatar-private note projection", () => {
       notebook: "shell-assistant-book",
       section: "semantic-rules",
       page: "target",
-      body: "Target.",
+      content: "Target.",
+      mime: "text/markdown",
     });
 
     expect(() =>
@@ -507,7 +616,8 @@ describe("Feature: NoteSystem avatar-private note projection", () => {
         notebook: "shell-assistant-book",
         section: "semantic-rules",
         page: "broken",
-        body: "Broken [missing](./missing.md).",
+        content: "Broken [missing](./missing.md).",
+        mime: "text/markdown",
       }),
     ).toThrow("note reference target not found");
     expect(existsSync(join(avatarHome, "notes", "shell-assistant-book", "semantic-rules", "broken.md"))).toBeFalse();
@@ -517,7 +627,7 @@ describe("Feature: NoteSystem avatar-private note projection", () => {
       notebook: "shell-assistant-book",
       section: "semantic-rules",
       page: "json-ref",
-      body: '{"ok":true}',
+      content: '{"ok":true}',
       mime: "application/json",
       references: [{ pageId: target.metadata.pageId, label: "target" }],
     });
@@ -535,21 +645,24 @@ describe("Feature: NoteSystem avatar-private note projection", () => {
       notebook: "shell-assistant-book",
       section: "working-context",
       page: "target",
-      body: "Target.",
+      content: "Target.",
+      mime: "text/markdown",
     });
     writeNotePage({
       avatarHome: [avatarHome],
       notebook: "shell-assistant-book",
       section: "working-context",
       page: "source",
-      body: "See [target](./target.md).",
+      content: "See [target](./target.md).",
+      mime: "text/markdown",
     });
     writeNotePage({
       avatarHome: [avatarHome],
       notebook: "shell-assistant-book",
       section: "working-context",
       page: "conflict",
-      body: "Conflict.",
+      content: "Conflict.",
+      mime: "text/markdown",
     });
 
     const renamed = renameNotePages({
@@ -581,9 +694,14 @@ describe("Feature: NoteSystem avatar-private note projection", () => {
         toPage: "conflict",
       }),
     ).toThrow("note rename conflict");
-    expect(showNotePage({ avatarHome: [avatarHome], notebook: "shell-assistant-book", section: "working-context", page: "renamed" })?.metadata.pageId).toBe(
-      target.metadata.pageId,
-    );
+    expect(
+      showNotePage({
+        avatarHome: [avatarHome],
+        notebook: "shell-assistant-book",
+        section: "working-context",
+        page: "renamed",
+      })?.metadata.pageId,
+    ).toBe(target.metadata.pageId);
   });
 
   test("Scenario: Given notes exist under AVATAR_HOME When note catalog is requested Then notebooks sections pages and capability state are returned", () => {
@@ -593,7 +711,8 @@ describe("Feature: NoteSystem avatar-private note projection", () => {
       notebook: "ideas",
       section: "shell",
       page: "catalog",
-      body: "Catalog body.",
+      content: "Catalog body.",
+      mime: "text/markdown",
       now: new Date("2026-05-31T15:30:00.000Z"),
       sourceWorkspace: "/repo",
     });
@@ -624,7 +743,8 @@ describe("Feature: NoteSystem avatar-private note projection", () => {
       notebook: "ideas",
       section: "shell",
       page: "detail",
-      body: "# Detail\n\nNote body.",
+      content: "# Detail\n\nNote body.",
+      mime: "text/markdown",
     });
 
     const found = readNotePage({ avatarHome: [avatarHome], notebook: "ideas", section: "shell", page: "detail" });
@@ -643,7 +763,8 @@ describe("Feature: NoteSystem avatar-private note projection", () => {
       notebook: "ideas",
       section: "shell",
       page: "search-api",
-      body: "Searchable capability projection note body.",
+      content: "Searchable capability projection note body.",
+      mime: "text/markdown",
     });
 
     const result = searchNoteCatalog({ avatarHome: [avatarHome], query: "projection" });

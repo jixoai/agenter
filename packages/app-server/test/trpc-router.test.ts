@@ -6,6 +6,7 @@ import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
 
 import { resolveGlobalAvatarCanonicalRoot } from "@agenter/avatar";
 import type { MessageControlPlane } from "@agenter/message-system";
+import { writeNotePage } from "@agenter/note-system";
 import {
   DEFAULT_TERMINAL_BACKEND,
   TerminalDb,
@@ -14,7 +15,6 @@ import {
   type TerminalControlPlane,
 } from "@agenter/terminal-system";
 import { AppKernel, SessionDb, appRouter, createTrpcContext } from "../src";
-import { writeNotePage } from "@agenter/note-system";
 import { UsageAnalyticsDb } from "../src/usage-analytics-db";
 import { resolveUsageAnalyticsDbPathFromAvatarRoot } from "../src/usage-analytics-paths";
 import { GLOBAL_WORKSPACE_PATH } from "../src/workspace-target";
@@ -111,11 +111,9 @@ const createWalletAuthCaller = async (kernel: AppKernel) => {
 };
 
 type TestObservable<T> = {
-  subscribe(observer: {
-    next?: (value: T) => void;
-    error?: (error: unknown) => void;
-    complete?: () => void;
-  }): { unsubscribe(): void };
+  subscribe(observer: { next?: (value: T) => void; error?: (error: unknown) => void; complete?: () => void }): {
+    unsubscribe(): void;
+  };
 };
 
 describe("Feature: app-server trpc procedures", () => {
@@ -145,7 +143,8 @@ describe("Feature: app-server trpc procedures", () => {
         notebook: "ideas",
         section: "shell",
         page: "typed-surface",
-        body: "Typed NoteSystem projection keeps Studio away from raw filesystem reads.",
+        content: "Typed NoteSystem projection keeps Studio away from raw filesystem reads.",
+        mime: "text/markdown",
         tags: ["studio", "contract"],
         now: new Date("2026-05-31T15:30:00.000Z"),
         sourceWorkspace: "/repo",
@@ -288,7 +287,8 @@ describe("Feature: app-server trpc procedures", () => {
         notebook: "ideas",
         section: "shell",
         page: "target",
-        body: "Target note.",
+        content: "Target note.",
+        mime: "text/markdown",
       });
 
       const written = await caller.note.write({
@@ -1751,23 +1751,17 @@ describe("Feature: app-server trpc procedures", () => {
       | { type: "request"; request: TerminalApprovalRequestRecord }
     > = [];
 
-    const globalSubscription = (
-      await observer.caller.terminal.permissionRequests()
-    ).subscribe({
+    const globalSubscription = (await observer.caller.terminal.permissionRequests()).subscribe({
       next: (event) => {
         globalEvents.push(event);
       },
     });
-    const alphaSubscription = (
-      await observer.caller.terminal.permissionRequests({ terminalId: alphaId })
-    ).subscribe({
+    const alphaSubscription = (await observer.caller.terminal.permissionRequests({ terminalId: alphaId })).subscribe({
       next: (event) => {
         alphaEvents.push(event);
       },
     });
-    const hiddenSubscription = (
-      await hidden.caller.terminal.permissionRequests()
-    ).subscribe({
+    const hiddenSubscription = (await hidden.caller.terminal.permissionRequests()).subscribe({
       next: (event) => {
         hiddenEvents.push(event);
       },
