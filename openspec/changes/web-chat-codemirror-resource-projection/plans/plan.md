@@ -2,8 +2,10 @@
 
 ## Current Round
 
-- Round: 4
-- Status: layered SVG consistency rework for resource icon projection
+- Round: 5
+- Round: 6
+- Round: 13
+- Status: add radius-derived safe padding for SVG icon containers
 - Previous plan backup: none
 
 ## Workflow Command Surface
@@ -42,6 +44,113 @@
 
 > 我看到效果了，不过会有一些一致性的问题。我建议，可以统一使用svg来绘制内部，也就是说最终是两个svg叠在一起，底层是icon图层，上层是info图层。这样行为会更加一致
 
+> 有点问题，你截图的时候，简化一下，放大地来截图，像我这样只要300*150你就可以看到非常清晰的问题：
+> 1. image 的No没有在圆形中心
+> 2. comment 的icon不是官方的`<MessageSquareDot />`图标，好像是你自己花的，No可以在目前基础上适当缩小到80%
+> 3. file的问题更多，我手动微调了，给你一个最终的结果，但是这个结果还需要你手动将样式换算到属性中：
+> ```
+> <svg class="resource-icon-layer resource-icon-info-layer svelte-19v52e" data-resource-icon-layer="info" viewBox="0 0 24 24" role="presentation" focusable="false" style="
+>     scale: 0.8;
+>     top: 2px;
+> "><text class="resource-icon-info-text resource-icon-file-number svelte-19v52e" x="12" y="12.5">1</text><g class="resource-icon-file-extension-badge svelte-19v52e"><rect class="resource-icon-file-extension-badge-fill svelte-19v52e" x="12" y="18" width="11" height="4.8" rx="1.05"></rect><text class="resource-icon-info-text resource-icon-file-extension svelte-19v52e" x="17.5" y="22.3" style="top: 1px;--resource-icon-extension-width-scale: 1;font-size: 1.2rem;">PDF</text></g><!----></svg>
+> ```
+
+> 你不用看截图，你直接按我说的微调好，我来看，这样比较快
+
+> 你先统一修改一个问题：
+> ```
+> .resource-icon-layer {
+>     position: absolute;
+>     inset: 0;
+> ```
+>
+> 不要用这种绝对定位去缝合两个图层。
+> 使用display:grid，然后将两个svg声明控制在同一个网格内。
+> 你先改好这个布局方案，再说。
+>
+> 还有顺便一个问题：
+>
+> ```
+> .resource-icon-comment-base {
+>     opacity: 0.24;
+> }
+> ```
+>
+> 为什么这个透明度的控制和其它的不一样？请统一
+
+> grid布局有问题，你要用named area来将两个svg锁定在同一个地方
+
+> 我看了， 你还是没做好，我刚才的要求是，你要用 grid-area 来将两个 svg控制在同一个区域
+
+> info  的 zindex 必须高于 icon
+
+> 我手动给你做了一些微调
+> 1. comment图标，原本的info-svg是：
+> ```
+> <svg data-resource-icon-layer="info" viewBox="0 0 24 24" role="presentation" focusable="false" class="resource-icon-layer resource-icon-info-layer svelte-19v52e"><text class="resource-icon-info-text resource-icon-comment-number svelte-19v52e" x="12" y="12.35">1</text><!----></svg>
+> ```
+> 改进成：
+> ```
+> <svg data-resource-icon-layer="info" viewBox="0 0 24 24" role="presentation" focusable="false" class="resource-icon-layer resource-icon-info-layer svelte-19v52e"><text class="resource-icon-info-text resource-icon-comment-number svelte-19v52e" x="10.2" y="11">1</text><!----></svg>
+> ```
+> 2. file图标，原本的info-svg是：
+> ```
+> <svg data-resource-icon-layer="info" viewBox="0 0 24 24" role="presentation" focusable="false" class="resource-icon-layer resource-icon-info-layer resource-icon-file-info-layer svelte-19v52e"><text class="resource-icon-info-text resource-icon-file-number svelte-19v52e" x="12" y="12.5">1</text><g class="resource-icon-file-extension-badge svelte-19v52e"><rect class="resource-icon-file-extension-badge-fill svelte-19v52e" x="12" y="18" width="11" height="4.8" rx="1.05"></rect><text class="resource-icon-info-text resource-icon-file-extension svelte-19v52e" x="17.5" y="22.3" style="--resource-icon-extension-width-scale: 1;">PDF</text></g><!----></svg>
+> ```
+> 改进成：
+> ```
+> <svg data-resource-icon-layer="info" viewBox="0 0 24 24" role="presentation" focusable="false" class="resource-icon-layer resource-icon-info-layer resource-icon-file-info-layer svelte-19v52e"><text class="resource-icon-info-text resource-icon-file-number svelte-19v52e" x="12" y="11.8">1</text><g class="resource-icon-file-extension-badge svelte-19v52e"><rect class="resource-icon-file-extension-badge-fill svelte-19v52e" x="12" y="19" width="11" height="4.8" rx="1.05"></rect><text class="resource-icon-info-text resource-icon-file-extension svelte-19v52e" x="17.5" y="21.2" style="--resource-icon-extension-width-scale: 1;">PDF</text></g><!----></svg>
+> ```
+> 还有一个样式改动：
+> ```
+> .resource-icon-file-extension-badge-fill {
+>     fill: var(--resource-icon-badge-surface-resolved);
+>     /*stroke: var(--resource-icon-badge-border-resolved);*/
+>     stroke-width: 0.5;
+>     stroke: currentColor;
+> }
+> ```
+
+> 1. image 的info-svg
+> 原版：
+> ```
+> <svg data-resource-icon-layer="info" viewBox="0 0 24 24" role="presentation" focusable="false" class="resource-icon-layer resource-icon-info-layer svelte-19v52e"><g class="resource-icon-image-number-badge svelte-19v52e"><circle class="resource-icon-image-number-badge-fill svelte-19v52e" cx="17.8" cy="6.2" r="4.05"></circle><text class="resource-icon-info-text resource-icon-image-number svelte-19v52e" x="17.8" y="6.2">1</text></g><!----></svg>
+> ```
+> 改进：
+> ```
+> <svg data-resource-icon-layer="info" viewBox="0 0 24 24" role="presentation" focusable="false" class="resource-icon-layer resource-icon-info-layer svelte-19v52e"><g class="resource-icon-image-number-badge svelte-19v52e"><circle class="resource-icon-image-number-badge-fill svelte-19v52e" cx="18" cy="6" r="4.2"></circle><text class="resource-icon-info-text resource-icon-image-number svelte-19v52e" x="18" y="5.8">0</text></g><!----></svg>
+> ```
+> ```
+> .resource-icon-image-number-badge-fill{
+>     fill: var(--resource-icon-badge-surface-resolved);
+>     /*stroke: var(--resource-icon-badge-border-resolved);*/
+>     stroke-width: 0.5;
+>     stroke: currentColor;
+> }
+> ```
+
+> 然后我有一个疑问，就是迷你版本和标准版本好像有点尺寸异常或者错位：
+> 迷你: [Image #1]
+> 标准: [Image #2]
+>
+> 看pdf这个文件后缀可以看得出来，迷你版本的pdf错位到icon-svg外面了，而标准版本的pdf是在icon-svg的内部的。
+
+> 我发现问题了，你这里用了：
+> ```
+> .resource-icon-file-info-layer {
+>     transform: translateY(2px) scale(var(--resource-icon-file-info-scale));
+> ```
+>
+> 这个代码是我刚才临时调整给你的样式，我的要求是你把这个样式推理计算到info-svg 内部，而不是仍然在整个svg上去做transform。我们最终的效果是默认情况下 icon-svg和info-svg就是同样的尺寸叠在一起。
+
+> 很好，图标的绘制基本没问题了，接下来就是图标容器的问题。
+>
+> 主要的问题是border-radius + overflow-hidden 导致的裁剪
+> 所以我们需要提供一个安全的padding来控制内部的 图标的渲染。
+> 因为现在内部已经是svg，所以很容易缩放。因此只需要控制padding就行。
+> 我自己测试过了，`padding = border-radius/4` 按照这个比例来就行。
+> 不过要注意，border-radius理论上是可以溢出的，所以要和图标的容器做`min(br,wh)`做计算
+
 ## Objective Record
 
 ### Requirement-Bearing Q&A
@@ -54,6 +163,16 @@
 | 4 | User | Inline resource tokens should render as dynamic icon-with-No widgets, and the resource bar must stop producing uncontrolled scrollbars. | The shared projection atom must become visual-icon first; resource bar layout must be fixed-size and no-scrollbar by default. |
 | 5 | User | The icon atom is directionally correct, but image ink must be unified, file extension must move to a bottom-right badge, text sizing must use `1rem + scale`, and the demo must show color/background generality. | The atom needs CSS-variable-driven theming and browser-min-font-safe text scaling before final visual acceptance. |
 | 6 | User | The icon atom still has consistency problems; draw the internals as two overlaid SVG layers: a base icon layer and an info layer. | Replace mixed SVG + HTML overlay internals with a shared two-layer SVG drawing law while keeping the same public atom API. |
+| 7 | User | Image No must be centered in its badge; comment must use the official `<MessageSquareDot />` icon and shrink No to about 80% of the current visual; file info layer should adopt the provided scale/offset/badge coordinates; the user asked to skip screenshot checking and let them inspect directly. | Round 5 should make user-directed micro-alignment edits directly, with code/test verification and a live walkthrough URL instead of a new screenshot gate. |
+| 8 | User | The two SVG layers must not be stitched with `position: absolute; inset: 0`; the component should use `display: grid` and put both SVGs in the same grid cell. Comment base opacity should not be a special-case value and must be unified. | Round 6 should convert the atom to grid-owned layer overlap and replace per-kind opacity constants with one shared base-opacity law. |
+| 9 | User | Grid overlap should use a named area to lock the two SVG layers to the same place, not anonymous grid line coordinates. | Round 7 should define a named grid area on the icon atom and bind both SVG layers to that named area. |
+| 10 | User | The implementation still does not actually control both SVG layers with `grid-area`. | Round 8 should account for Svelte scoping and ensure both the lucide-generated base SVG and local info SVG receive the same grid-area rule, then verify it in browser DOM. |
+| 11 | User | The info SVG layer z-index must be higher than the icon/base layer. | Round 9 should make stacking order explicit in the shared layer CSS and verify computed z-index in browser DOM. |
+| 12 | User | Apply user-tuned comment/file info SVG coordinates and change file extension badge stroke to currentColor with stroke-width 0.5. | Round 10 should copy those coordinate/stroke values into the component and update DOM/source checks. |
+| 13 | User | Apply user-tuned image info SVG coordinates and change image number badge stroke to currentColor with stroke-width 0.5. | Round 11 should copy the image badge circle/text coordinate values into the component while preserving dynamic display number. |
+| 14 | User | Mini and standard file icons differ: the mini PDF badge appears shifted outside the icon while the standard PDF badge stays inside. | Round 11 should remove the inline-only file extension badge translation so both sizes use the same SVG coordinate law, with only text scale differing by size. |
+| 15 | User | The file info layer must not use whole-SVG transform; the temporary translate/scale must be folded into the internal SVG coordinates so icon SVG and info SVG are the same size by default. | Round 12 should remove `resource-icon-file-info-layer` transform and compute the final file number/badge/extension coordinates plus text scales directly. |
+| 16 | User | Icon drawing is basically correct; the container now needs safe padding because `border-radius + overflow-hidden` clips the inner SVG. Padding should be `min(border-radius, width, height) / 4`. | Round 13 should make the icon atom expose width/height/radius variables and derive container padding from the clamped radius. |
 
 ### Evidence Read
 
@@ -213,6 +332,32 @@ One Markdown message is like one sheet of paper under two lamps. The composer la
 - [ ] 16. Rework `ResourceIconWithNumber` internals to two stacked SVG layers: base icon layer plus info layer.
 - [ ] 17. Preserve public kind/number/extension/theming behavior while removing HTML overlay drift from the visible marks.
 - [ ] 18. Refresh DOM checks and screenshots for the layered-SVG icon atom.
+- [ ] 19. Switch base glyph drawing to the official lucide `MessageSquareDot`, `Image`, and `File` SVG components inside the base layer.
+- [ ] 20. Center the image badge number and shrink the comment number from the previous visual size.
+- [ ] 21. Translate the user-provided file info-layer scale/offset/badge coordinates into component attributes and CSS variables while preserving `1rem + scale` text sizing.
+- [ ] 22. Run targeted code verification and provide the existing walkthrough route for user inspection without taking a new screenshot in this round.
+- [ ] 23. Replace absolute/inset SVG layer stitching with grid-owned overlap inside `ResourceIconWithNumber`.
+- [ ] 24. Unify base glyph opacity through one shared variable instead of a comment-specific opacity exception.
+- [ ] 25. Re-run targeted checks for the component layout law.
+- [ ] 26. Replace anonymous `grid-area: 1 / 1` layer overlap with a named grid area shared by both SVG layers.
+- [ ] 27. Re-run targeted checks for the named-area layer law.
+- [ ] 28. Make the named grid-area layer rule apply to both the lucide-generated base SVG and the local info SVG.
+- [ ] 29. Add a browser DOM assertion for the computed grid-area of both SVG layers.
+- [ ] 30. Add explicit base/info z-index ordering so the info layer always stacks above the base icon layer.
+- [ ] 31. Add browser DOM coverage for the computed z-index ordering.
+- [ ] 32. Apply user-tuned comment and file info-layer coordinates.
+- [ ] 33. Change file extension badge stroke to currentColor with stroke-width 0.5.
+- [ ] 34. Re-run targeted checks for the tuned visual values.
+- [ ] 35. Apply user-tuned image info-layer circle/text coordinates and radius.
+- [ ] 36. Change image number badge stroke to currentColor with stroke-width 0.5.
+- [ ] 37. Remove inline-only file extension badge translation so mini and standard file badges share one coordinate law.
+- [ ] 38. Re-run targeted checks for the image tuned visual values and file mini/standard badge alignment law.
+- [ ] 39. Remove whole-SVG `resource-icon-file-info-layer` transform.
+- [ ] 40. Fold the previous file layer scale/offset into internal file number, badge, and extension coordinates and text scale variables.
+- [ ] 41. Re-run targeted checks to prove base/info SVGs remain same-size grid layers without file layer transform.
+- [ ] 42. Add a safe padding law to `ResourceIconWithNumber`: `padding = min(border-radius, width, height) / 4`.
+- [ ] 43. Replace raw radius/size literals with component variables that can drive this padding calculation.
+- [ ] 44. Re-run targeted checks for tile and inline icon padding.
 
 ## Open Questions
 

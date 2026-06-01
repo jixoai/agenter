@@ -33,10 +33,34 @@
 
 - **GIVEN** the shared resource icon atom renders a comment, file, or image variant
 - **WHEN** the visible icon internals are constructed
-- **THEN** the base resource glyph is drawn in a base SVG layer
+- **THEN** the base resource glyph is drawn in a base SVG layer using the official lucide glyph for that kind
 - **AND** the resource number, badge, and extension marks are drawn in a separate info SVG layer
 - **AND** the two SVG layers share one stable viewBox coordinate system
+- **AND** the two real SVG elements, including the lucide-generated base SVG and the local info SVG, are placed into the same named grid area by the component layout rather than stitched together with absolute positioning or anonymous grid-line coordinates
+- **AND** the info SVG layer has an explicit stacking order above the base icon SVG layer
+- **AND** base glyph opacity is controlled by one shared component law instead of kind-specific opacity exceptions
 - **AND** token, card, preview, and resource bar surfaces do not add their own visible HTML overlays for the resource number or extension
+
+#### Scenario: Resource icon container protects SVG layers from rounded clipping
+
+- **GIVEN** the shared resource icon atom has a border radius and hidden overflow
+- **WHEN** the base and info SVG layers render inside the icon container
+- **THEN** the container provides safe padding derived from the effective corner radius
+- **AND** the padding equals `min(border-radius, width, height) / 4`
+- **AND** the base and info SVG layers remain same-size grid layers inside the padded content box
+
+#### Scenario: Resource icon atom follows user-directed optical alignment
+
+- **GIVEN** the shared resource icon atom renders image, comment, and file variants
+- **WHEN** the info layer draws each variant-specific mark
+- **THEN** the image number is centered inside its circular badge
+- **AND** user-tuned image badge SVG coordinates and radius are preserved as component attributes
+- **AND** the image number badge stroke uses currentColor with a thin `0.5` stroke width
+- **AND** the comment variant uses the official `MessageSquareDot` base glyph with a smaller centered number
+- **AND** the file variant offsets and scales the info layer so the file number remains centered while the extension badge sits at the bottom-right corner
+- **AND** user-tuned comment/file SVG coordinates are preserved as component attributes
+- **AND** the file extension badge stroke uses currentColor with a thin `0.5` stroke width
+- **AND** the file extension still uses scaled `1rem` text rather than browser-minimum font-size dependency
 
 #### Scenario: File resource icon uses extension as a badge
 
@@ -44,6 +68,9 @@
 - **WHEN** the file resource icon renders
 - **THEN** the file number is centered inside the file icon
 - **AND** the extension renders as a bottom-right corner badge
+- **AND** inline and tile sizes share the same badge SVG coordinate law rather than applying an inline-only badge translation
+- **AND** the file info SVG layer is not resized or repositioned as a whole layer
+- **AND** any file-specific optical scale or offset is folded into internal SVG coordinates and text scale variables
 - **AND** the extension text uses scaled `1rem` text rather than a browser-minimum font-size dependency
 
 #### Scenario: Readonly bubble keeps sent projection semantics

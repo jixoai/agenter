@@ -11,6 +11,10 @@ Sent-message resource presentation SHALL be driven from the same serialized sour
 - **AND** the widget family renders comment, file, and image references through one shared icon-with-number visual atom
 - **AND** the visual atom accepts ink/surface/border variables without requiring token, card, or bar-specific drawing forks
 - **AND** the visual atom draws its visible internals as two stacked SVG layers: base icon layer plus info layer
+- **AND** the base icon layer uses the official lucide resource glyphs rather than hand-drawn lookalike paths
+- **AND** the stacked real SVG layers, including the lucide-generated base SVG and the local info SVG, are owned by a shared named grid area instead of absolute-position overlay stitching or anonymous grid-line coordinates
+- **AND** the info SVG layer stacks above the base icon SVG layer by explicit z-index ordering
+- **AND** comment, file, and image base glyphs share one opacity rule unless a future spec names a separate visual state
 - **AND** visual differences are mode policy differences rather than separate parsing implementations
 - **AND** Framework7 resource preview activation receives the same `WebChatResourceReference` from either surface
 
