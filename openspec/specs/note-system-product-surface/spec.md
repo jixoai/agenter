@@ -3,7 +3,9 @@
 ## Purpose
 
 Define NoteSystem as the avatar-private raw-note recording and inspection surface, including typed backend contracts, package-owned skill guidance, and real-AI validation.
+
 ## Requirements
+
 ### Requirement: NoteSystem SHALL be the avatar-private recording system
 
 NoteSystem SHALL be the first-class system for recording raw human/action notes. A note SHALL remain a note fact stored as Markdown plus frontmatter under the active writable `AVATAR_HOME`. NoteSystem MUST NOT present notes as distilled memory, user model, or preference truth unless a later derivation system explicitly creates that projection.
@@ -145,13 +147,20 @@ NoteSystem SHALL store tags as first-class records with stable IDs and page-tag 
 
 ### Requirement: NoteSystem SHALL support MIME-aware content writes
 
-NoteSystem SHALL store page content with a `mime` field. The default MIME SHALL be markdown. JSON content SHALL be parsed, validated, and compacted before storage. Non-text or binary-capable content SHALL be written from a supplied file path or asset source rather than raw inline content. Unsupported MIME writes MUST fail before mutating note state.
+NoteSystem SHALL store page content with a required `mime` field. Markdown callers MUST pass `text/markdown`. A write or draft MUST provide exactly one content source: inline `content` or file-backed `contentFile`. JSON content SHALL be parsed, validated, and compacted before storage. Non-text or binary-capable content SHALL be written from `contentFile` rather than raw inline content. Unsupported MIME writes MUST fail before mutating note state.
 
-#### Scenario: Markdown is the default MIME
+#### Scenario: Markdown MIME is explicit
 
-- **WHEN** a caller writes a note without specifying MIME
-- **THEN** NoteSystem stores it as markdown
+- **WHEN** a caller writes a markdown note
+- **THEN** the input includes `mime: "text/markdown"`
+- **AND** NoteSystem stores it as markdown
 - **AND** markdown reference extraction applies
+
+#### Scenario: Missing MIME is rejected
+
+- **WHEN** a caller writes or drafts a note without `mime`
+- **THEN** NoteSystem rejects the request
+- **AND** no note files or database records are modified
 
 #### Scenario: JSON content is validated and compacted
 
@@ -163,7 +172,7 @@ NoteSystem SHALL store page content with a `mime` field. The default MIME SHALL 
 #### Scenario: Binary-like content uses source file input
 
 - **WHEN** a caller writes a binary or non-inline MIME note
-- **THEN** NoteSystem requires a source file path or equivalent asset source
+- **THEN** NoteSystem requires `contentFile`
 - **AND** it records MIME metadata and safe storage path without treating raw CLI text as binary payload
 
 ### Requirement: NoteSystem SHALL normalize references to stable page identities

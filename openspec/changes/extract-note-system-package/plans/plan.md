@@ -33,6 +33,9 @@
 | 1 | User | `这个包的结构参考现有成熟的 *-system 的其它包` | Package layout should mirror mature packages such as `message-system`, `attention-system`, `session-system`, `task-system`, and `terminal-system`. |
 | Prior | User | `note-cli 没有和 skill-cli、message-cli一样的架构设计，否则它的输入一定会是 JSON 的这种数据结构` | The extracted package must preserve JSON-first CLI descriptor behavior; extraction cannot downgrade CLI shape. |
 | Prior | User | `noteSystem自身没有提供 tags分组、references引用、rename重命名` | The package must continue to own tags, references, rename, MIME, and SQLite-backed identity. |
+| Later | User | `note cli 还需要支持 contentFile 参数，可以做到先写入到临时文件中，再用contentFile来传递这个文件。比如我用脚本生产或者下载了json/md/mp4 等各种文件，都可以用contentFile字段来传递` | The write/draft contract must support file-backed content through `contentFile`, including JSON, Markdown, and binary/media payloads. |
+| Later | User | `不用考虑兼容或者 legacy，直接做，只留content和contentFile` | Remove legacy write inputs such as `body` and `sourcePath`; do not keep compatibility shims. |
+| Later | User | `mime为必选，不可以缺省（markdown 的mime 是  \`text/markdown\`）` | `mime` is required for writes/drafts; markdown callers must pass `text/markdown` explicitly. |
 
 ### Evidence Read
 

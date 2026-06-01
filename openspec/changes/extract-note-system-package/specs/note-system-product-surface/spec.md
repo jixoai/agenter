@@ -33,7 +33,9 @@ The `note` CLI implementation SHALL live in `@agenter/note-system` and SHALL rem
 
 - **WHEN** an AI runs `note write --help` or a JSON-first `note write` command
 - **THEN** the package-owned CLI renders schema/help and parses JSON input with the same observable contract as before extraction
-- **AND** legacy compatibility flags, if retained, remain secondary to the JSON contract
+- **AND** it accepts exactly one of `content` or `contentFile`
+- **AND** it requires explicit `mime`, with markdown represented as `text/markdown`
+- **AND** it does not retain legacy `body` or `sourcePath` write inputs
 
 ## MODIFIED Requirements
 

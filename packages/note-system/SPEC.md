@@ -11,6 +11,8 @@
 - The package owns the JSON-first `note` CLI implementation. Hosts may inject their env parser, but NoteSystem must not import app-server runtime or workspace internals.
 - The package owns the built-in `note` skill under `skills/note/SKILL.md`.
 - Notes are raw facts, not distilled memory or prompt truth. Any memory/model projection must be created by a separate system.
+- Writes and drafts require an explicit `mime`; Markdown is represented as `text/markdown`.
+- Writes and drafts accept exactly one content source: inline `content` or file-backed `contentFile`. Binary-like MIME writes require `contentFile`.
 - Existing user note artifacts must not be rewritten during package extraction or indexing unless an explicit write, rename, or normalization action requested it.
 
 ## Public Surface
