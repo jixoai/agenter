@@ -43,6 +43,7 @@
   const resolvedExtension = $derived(
     activeResource?.extension?.toUpperCase() ?? activeResource?.kind.toUpperCase() ?? "",
   );
+  const resolvedReferenceLabel = $derived(activeResource?.label ?? "");
   const resolvedTitle = $derived(activeResource?.fileName ?? activeResource?.label ?? "Resource");
   const previewTone = $derived(
     activeResource?.kind === "image" || activeResource?.kind === "video" ? "media" : "document",
@@ -150,7 +151,7 @@
   <ResourcePreviewShell
     open={resolvedOpen}
     title={resolvedTitle}
-    eyebrow={resolvedExtension}
+    eyebrow={resolvedReferenceLabel}
     meta={resolvedMeta}
     tone={previewTone}
     onOpenChange={handleOpenChange}

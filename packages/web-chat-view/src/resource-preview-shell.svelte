@@ -301,8 +301,7 @@
   .resource-preview-shell-eyebrow {
     font-size: 0.72rem;
     font-weight: 700;
-    letter-spacing: 0.06em;
-    text-transform: uppercase;
+    letter-spacing: 0;
     color: #0f766e;
   }
 

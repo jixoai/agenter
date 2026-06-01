@@ -38,9 +38,9 @@
   import Framework7Runtime from "./framework7-runtime.svelte";
   import MessageRow from "./message-row.svelte";
   import {
+    commentResourceToReference,
     createCommentResourcePayload,
     mergeResourceReferences,
-    resolveMessageResourceReferences,
   } from "./resource-contract";
   import { Badge } from "./ui/badge";
   import {
@@ -342,51 +342,13 @@
       return null;
     }
     const attachmentsEnabled = submitMessage ? composerCapabilities?.attachmentEnabled ?? true : false;
-    const transcriptResourceReferences = transcriptMessages.flatMap((message) =>
-      mergeResourceReferences(
-        resolveMessageResourceReferences({
-          attachments: message.attachments ?? [],
-          metadata: message.metadata,
-          content: message.content,
-          messageId: message.messageId,
-          viewKey: message.viewKey,
-          senderActorId: message.senderContactId ?? null,
-          from: message.from,
-        }),
-        resolveMessageResources?.({
-          channel,
-          message,
-          viewerActorId: effectiveViewerActorId,
-          isAssistant: isAssistantMessage(channel, message),
-          onSubmitInteractive: async (text) => {
-            await handleSubmit({ text, assets: [] });
-          },
-        }) ?? [],
-      ),
+    const draftedCommentResourceReferences = draftedCommentResources.map((resource) =>
+      commentResourceToReference(resource),
     );
-    const effectiveResourceReferences = mergeResourceReferences(
-      mergeResourceReferences(composerCapabilities?.resourceReferences ?? [], transcriptResourceReferences),
-      liveComposerResourceReferences,
-    ).concat([
-      ...draftedCommentResources.map((resource) => ({
-        id: resource.id,
-        label: resource.label,
-        tokenText: resource.tokenText,
-        kind: "comment" as const,
-        detailText: resource.commentText,
-        extension: "cmt",
-        commentText: resource.commentText,
-        commentAnchor: {
-          sourceMessageId: resource.sourceMessageId,
-          sourceViewKey: resource.sourceViewKey,
-          sourceLineNumber: resource.sourceLineNumber,
-          selectedText: resource.selectedText,
-          sourceActorId: resource.sourceActorId,
-          sourceActorLabel: resource.sourceActorLabel,
-          sourceUri: resource.sourceUri,
-        },
-      })),
-    ]);
+    const composerScopedResourceReferences = mergeResourceReferences(
+      mergeResourceReferences(composerCapabilities?.resourceReferences ?? [], liveComposerResourceReferences),
+      draftedCommentResourceReferences,
+    );
     return {
       channel,
       disabled: disabled || sending || (!submitMessage && connectionState !== "connected"),
@@ -398,7 +360,7 @@
         attachmentEnabled: attachmentsEnabled,
         imageEnabled: attachmentsEnabled && (composerCapabilities?.imageEnabled ?? true),
         screenshotEnabled: attachmentsEnabled && (composerCapabilities?.screenshotEnabled ?? true),
-        resourceReferences: effectiveResourceReferences,
+        resourceReferences: composerScopedResourceReferences,
         resolveMentionSuggestions:
           resolveComposerMentionSuggestions
             ? async (query: string) =>
@@ -409,7 +371,7 @@
                 })
             : composerCapabilities?.resolveMentionSuggestions,
       },
-      liveResourceReferences: effectiveResourceReferences,
+      liveResourceReferences: composerScopedResourceReferences,
       draftInsertions: composerDraftInsertions,
       commentResourceInsertions: composerCommentResourceInsertions,
       onDraftInsertionApplied: (id: string) => {
@@ -708,9 +670,7 @@
     if (!channel) {
       return;
     }
-    const existingCommentCount =
-      (composerCapabilities?.resourceReferences ?? []).filter((reference) => reference.kind === "comment").length +
-      draftedCommentResources.length;
+    const existingCommentCount = draftedCommentResources.length;
     const payload = createCommentResourcePayload({
       id:
         typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"

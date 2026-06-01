@@ -90,3 +90,49 @@
 
 - 如果未来要让 composer 内 token 与 pending resource rail 共用同一个 preview owner，应把 composer/rail 的 preview 状态提升成明确 composer-level preview law；本轮保持最小正交实现，没有重写 pending strip。
 - 若后续继续依赖 Storybook dev iframe 做截图，需要单独开 change 处理 Bun workspace + Storybook Svelte runtime 的 dev-server 兼容问题。
+
+## Round 17 复盘
+
+### 法则变动
+
+- Composer resource pool 从“host + transcript + live + draft comments”的混合池收口为“host composer-scoped + live current composer + draft comments”。Sent transcript resources 只留在 message row / room resource 面板等 readonly projection 路径，不再进入 composer completion。
+- Review example 不再把 `shellState.resourceReferences` 传给 `composerCapabilities.resourceReferences`；room resources 仍保留在资源面板里展示，但不再污染 `@` / `^` 输入。
+- Draft comment 编号只按当前 composer draft 里的 comment resources 递增，不再参考全局/历史 resource list。
+- Pending image/file 被接受后立即把对应 pending resource id 设为 preview target，等价于自动点击资源栏图标。
+- Resource preview header eyebrow 使用引用名（如 `Image 1` / `File 1`）并取消 uppercase 变形；completion row detail 优先显示 file name。
+
+### 原子产出
+
+- `WebChatViewRoot`：移除 transcript-derived composer resource merge，复用 `commentResourceToReference` 构造 draft comment reference。
+- `DefaultComposer`：上传成功后自动打开新 pending asset preview；删除当前 preview asset 时同步关闭 preview。
+- `ResourcePreviewLayer` / `ResourcePreviewShell`：preview header 使用 reference label 原样显示。
+- `composer-contract`：resource completion detail 从 `detailText ?? fileName` 改为 `fileName ?? detailText`。
+- `review-shell-client`：host example 不再把 room resource references 当 composer resource references 传入。
+- `composer-resource-scope-contract.test.ts`：新增 source-level contract，锁住 composer scoping、upload auto-preview、preview header copy 和 example host 边界。
+
+### 证据
+
+- `bun run typecheck` in `packages/web-chat-view`：0 errors / 0 warnings。
+- `bun run typecheck` in `packages/web-chat-view/example`：0 errors / 0 warnings。
+- `bun run test:unit -- test/composer-live-resource-completion-contract.test.ts test/composer-resource-scope-contract.test.ts test/comment-resource-reopen-contract.test.ts`：3 files / 14 tests passed。
+- `bun run test:dom -- test/storybook/chat-composer-stage.stories.test.ts`：1 file / 2 tests passed。
+- `bun run openspec:vision -- validate web-chat-codemirror-resource-projection`：valid。
+- `bun run openspec:vision -- check web-chat-codemirror-resource-projection`：ok。
+- `git diff --check`：通过。
+- Desktop Playwright walkthrough：
+  - Blank `@` completion no longer contains historical `ios26-thread.png` or `Keep the pendant row` transcript resources.
+  - Image upload auto-open header: `Image 1 | round17-sample.png | IMAGE · 70 B · image/png`。
+  - File upload auto-open header: `File 1 | round17-spec.pdf | FILE · 18 B · application/pdf`。
+  - After image upload, `@` completion shows `@Image 1 | round17-sample.png`。
+  - After file upload, `@` completion shows `@File 1 | round17-spec.pdf`。
+- iPhone 14 Playwright walkthrough：
+  - Mobile `@` completion no longer contains historical image/comment transcript resources.
+  - Mobile image upload auto-open header: `Image 1 | mobile-round17.png | IMAGE · 70 B · image/png`。
+- Screenshots:
+  - `.screenshot/after/web-chat-round17-upload-preview.png`
+  - `.screenshot/after/web-chat-round17-file-preview.png`
+  - `.screenshot/after/web-chat-round17-upload-preview-iphone14.png`
+
+### 用户走查入口
+
+- 当前 example：`http://127.0.0.1:6120/`

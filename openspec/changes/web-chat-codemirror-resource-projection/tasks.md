@@ -69,3 +69,9 @@
 - [x] 16.3 Preserve same-size base/info SVG grid layers inside the padded content box.
 - [x] 16.4 Add DOM/source coverage for tile and inline safe padding.
 - [x] 16.5 Re-run targeted typecheck/tests/OpenSpec validation.
+- [x] 17.1 Record the Round 17 message-local resource scoping and upload-preview feedback in OpenSpec plan/spec/tasks.
+- [x] 17.2 Remove transcript-derived resources from composer completion inputs while preserving readonly transcript projection.
+- [x] 17.3 Keep draft comment numbering scoped to current composer message resources.
+- [x] 17.4 Auto-open the resource preview layer for newly accepted pending image/file uploads.
+- [x] 17.5 Change image/file preview headers to use the reference label and make completion rows prefer file names in detail text.
+- [x] 17.6 Refresh focused unit/source/DOM contracts, typecheck, OpenSpec validation/check, and review evidence.

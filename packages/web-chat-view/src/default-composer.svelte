@@ -117,7 +117,11 @@
       seen.push(signature);
       return true;
     });
-    pendingAssets = [...pendingAssets, ...merged.map((file) => createPendingAsset(file))];
+    const acceptedAssets = merged.map((file) => createPendingAsset(file));
+    pendingAssets = [...pendingAssets, ...acceptedAssets];
+    if (acceptedAssets[0]) {
+      previewingEditorResourceId = acceptedAssets[0].id;
+    }
   };
 
   const removePendingAsset = (assetId: string): void => {
@@ -126,6 +130,9 @@
       revokePendingAssetPreview(target);
     }
     pendingAssets = pendingAssets.filter((asset) => asset.id !== assetId);
+    if (previewingEditorResourceId === assetId) {
+      previewingEditorResourceId = null;
+    }
   };
 
   const removePendingCommentResource = (resourceId: string): void => {

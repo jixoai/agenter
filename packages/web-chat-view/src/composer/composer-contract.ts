@@ -1,3 +1,4 @@
+import { normalizeResourceReferenceQuery, resourceReferenceMatchesQuery } from "../resource-contract";
 import type {
   WebChatComposerCapabilities,
   WebChatComposerCommandSuggestion,
@@ -10,7 +11,6 @@ import type {
   WebChatComposerMentionSuggestion,
   WebChatResourceReference,
 } from "../types";
-import { normalizeResourceReferenceQuery, resourceReferenceMatchesQuery } from "../resource-contract";
 
 export interface ComposerToken {
   from: number;
@@ -34,9 +34,7 @@ export interface ResolvedWebChatComposerCapabilities {
   completionProviders: readonly WebChatComposerCompletionProvider[];
   resolveMentionSuggestions?: (
     query: string,
-  ) =>
-    | readonly WebChatComposerMentionSuggestion[]
-    | Promise<readonly WebChatComposerMentionSuggestion[]>;
+  ) => readonly WebChatComposerMentionSuggestion[] | Promise<readonly WebChatComposerMentionSuggestion[]>;
 }
 
 export interface ResolvedWebChatComposerProvider extends WebChatComposerCompletionProvider {
@@ -116,9 +114,7 @@ const defaultCommandSuggestions = (screenshotEnabled: boolean): readonly WebChat
   return [{ label: "/screenshot", detail: "capture screen" }];
 };
 
-const mentionSuggestionToCompletionItem = (
-  item: WebChatComposerMentionSuggestion,
-): WebChatComposerCompletionItem => ({
+const mentionSuggestionToCompletionItem = (item: WebChatComposerMentionSuggestion): WebChatComposerCompletionItem => ({
   id: item.id,
   label: item.label,
   insertText: item.apply ?? `@${item.label}`,
@@ -130,16 +126,14 @@ const resourceReferenceToCompletionItem = (reference: WebChatResourceReference):
   id: reference.id,
   label: reference.label,
   insertText: reference.tokenText,
-  detail: reference.detailText ?? reference.fileName,
+  detail: reference.fileName ?? reference.detailText,
   aliases: reference.aliases,
   fileName: reference.fileName,
   iconUrl: reference.iconUrl,
   resource: reference,
 });
 
-const commandSuggestionToCompletionItem = (
-  item: WebChatComposerCommandSuggestion,
-): WebChatComposerCompletionItem => ({
+const commandSuggestionToCompletionItem = (item: WebChatComposerCommandSuggestion): WebChatComposerCompletionItem => ({
   id: item.label,
   label: item.label,
   insertText: item.label,
@@ -216,7 +210,9 @@ const createResourceProvider = (
   detection: "embedded",
   suggestions: references.map(resourceReferenceToCompletionItem),
   resolveSuggestions: (query: string) =>
-    references.filter((reference) => resourceReferenceMatchesQuery(reference, query)).map(resourceReferenceToCompletionItem),
+    references
+      .filter((reference) => resourceReferenceMatchesQuery(reference, query))
+      .map(resourceReferenceToCompletionItem),
 });
 
 const createCommandProvider = (
@@ -357,11 +353,7 @@ const needsTrailingSpace = (value: string, to: number): boolean => {
   return Boolean(next) && !isTokenBoundary(next);
 };
 
-export const padInsertedCompletion = (
-  value: string,
-  token: ComposerToken,
-  insertText: string,
-): string => {
+export const padInsertedCompletion = (value: string, token: ComposerToken, insertText: string): string => {
   const prefix = needsLeadingSpace(value, token.from) ? " " : "";
   const suffix = needsTrailingSpace(value, token.to) ? " " : "";
   return `${prefix}${insertText}${suffix}`;

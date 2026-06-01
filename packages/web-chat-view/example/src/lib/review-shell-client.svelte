@@ -1322,7 +1322,6 @@
           imageEnabled: shellState.activeProfile?.appViewMode !== "room",
           screenshotEnabled: shellState.activeProfile?.appViewMode !== "room",
           placeholder: shellState.activeProfile?.appViewMode === "room" ? "Message room" : "Message review room",
-          resourceReferences: shellState.resourceReferences,
         }}
         {resolveComposerMentionSuggestions}
       />

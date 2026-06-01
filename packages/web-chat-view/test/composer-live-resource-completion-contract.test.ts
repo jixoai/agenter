@@ -1,12 +1,7 @@
 import { describe, expect, test } from "vitest";
 
-import {
-  pendingAssetToResourceReference,
-} from "../src/resource-contract";
-import {
-  resolveComposerCapabilities,
-  resolveCompletionProviders,
-} from "../src/composer/composer-contract";
+import { resolveCompletionProviders, resolveComposerCapabilities } from "../src/composer/composer-contract";
+import { pendingAssetToResourceReference } from "../src/resource-contract";
 
 describe("Feature: live resource completion law", () => {
   test("Scenario: Given pending resources in the composer When completion providers resolve suggestions Then @ and ^ can complete those pending resource tokens by file name", async () => {
@@ -35,8 +30,10 @@ describe("Feature: live resource completion law", () => {
 
     const mentionMatches = await mentionProvider.resolveSuggestions?.("src-img", { trigger: "@" });
     const resourceMatches = await resourceProvider.resolveSuggestions?.("src-img", { trigger: "^" });
+    const imageMention = mentionMatches?.find((item) => item.insertText === "[^Image 1]");
 
-    expect(mentionMatches?.some((item) => item.insertText === "[^Image 1]")).toBe(true);
+    expect(imageMention?.label).toBe("Image 1");
+    expect(imageMention?.detail).toBe("src-img.png");
     expect(resourceMatches?.some((item) => item.insertText === "[^Image 1]")).toBe(true);
   });
 });
