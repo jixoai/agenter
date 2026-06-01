@@ -2,8 +2,8 @@
 
 ## Current Round
 
-- Round: 3
-- Status: visual generality rework for resource icon projection
+- Round: 4
+- Status: layered SVG consistency rework for resource icon projection
 - Previous plan backup: none
 
 ## Workflow Command Surface
@@ -40,6 +40,8 @@
 > 2. 改进一些File这个图标，把文件后缀做到右下角去作为角标，No居中
 > 3. 字体尺寸不要只用 font-size 控制，要用fontsize-1rem + scale，因为font-size会被了浏览器的最小字体大小限制
 
+> 我看到效果了，不过会有一些一致性的问题。我建议，可以统一使用svg来绘制内部，也就是说最终是两个svg叠在一起，底层是icon图层，上层是info图层。这样行为会更加一致
+
 ## Objective Record
 
 ### Requirement-Bearing Q&A
@@ -51,6 +53,7 @@
 | 3 | User | Use OpenSpec, inspect screenshots, confirm expected behavior, then let the user walk through. | Completion requires OpenSpec artifacts, automated/targeted verification, browser screenshot evidence, and a final user walkthrough URL/path. |
 | 4 | User | Inline resource tokens should render as dynamic icon-with-No widgets, and the resource bar must stop producing uncontrolled scrollbars. | The shared projection atom must become visual-icon first; resource bar layout must be fixed-size and no-scrollbar by default. |
 | 5 | User | The icon atom is directionally correct, but image ink must be unified, file extension must move to a bottom-right badge, text sizing must use `1rem + scale`, and the demo must show color/background generality. | The atom needs CSS-variable-driven theming and browser-min-font-safe text scaling before final visual acceptance. |
+| 6 | User | The icon atom still has consistency problems; draw the internals as two overlaid SVG layers: a base icon layer and an info layer. | Replace mixed SVG + HTML overlay internals with a shared two-layer SVG drawing law while keeping the same public atom API. |
 
 ### Evidence Read
 
@@ -71,6 +74,7 @@
 | `packages/web-chat-view/src/components/message-markdown-resource-bar.svelte` | The bar uses auto overflow and thin scrollbars. | Rework it as a fixed-height wrap-capable resource icon strip with no default scrollbar. |
 | `packages/web-chat-view/src/components/resource-icon-with-number.svelte` | Round 2 centralizes icon drawing but still uses kind-specific hardcoded colors and `font-size: calc(...)`. | Upgrade to CSS variables and `font-size: 1rem` plus transform scale for small glyphs. |
 | `packages/web-chat-view/src/storybook/chat-resource-projection-harness.svelte` | The walkthrough route shows core icon projection but not multiple ink/surface combinations. | Add a compact color/background matrix so the same atom is visibly generic. |
+| `packages/web-chat-view/src/components/resource-icon-with-number.svelte` | Round 3 still mixes lucide SVG base icons with HTML span overlays for number and extension badges. | Refactor internals to two stacked SVG layers so base icon and info marks share one coordinate system. |
 
 ### Git Evidence
 
@@ -126,7 +130,7 @@ The previous change fixed the durable "bottom layer": DB content is Markdown. Th
 
 ### Final Visible Effect
 
-In the composer, a comment/image/file reference looks like a compact icon with a visible resource number instead of dead bracket text, while the user can still type, move the cursor, and submit normally. In the transcript bubble, the same reference appears as a readonly icon token and resource bar; raw footnote definitions are hidden from normal reading. The resource bar lays out stable icon tiles without surprise horizontal or vertical scrollbars. Screenshots show both states before final user walkthrough.
+In the composer, a comment/image/file reference looks like a compact icon with a visible resource number instead of dead bracket text, while the user can still type, move the cursor, and submit normally. In the transcript bubble, the same reference appears as a readonly icon token and resource bar; raw footnote definitions are hidden from normal reading. The resource bar lays out stable icon tiles without surprise horizontal or vertical scrollbars. Internally, each icon atom uses the same two-layer SVG model: a base icon SVG layer and an info SVG layer. Screenshots show both states before final user walkthrough.
 
 ## Platform Diagnosis
 
@@ -160,6 +164,7 @@ One Markdown message is like one sheet of paper under two lamps. The composer la
   - comment: `MessageSquareDot` base icon, centered number.
   - file: `File` base icon, centered number, bottom-right extension badge.
   - image: `Image` base icon, corner number badge with the same ink color as the image glyph.
+  - internal drawing: two stacked SVG layers, where the base icon layer owns the resource glyph and the info layer owns number/badge/extension marks.
 - Readonly bubble mode may hide definition lines and render an aggregated bar.
 - Writable composer mode should not hide source blocks or definitions unexpectedly; it only decorates inline resource references.
 
@@ -170,12 +175,14 @@ One Markdown message is like one sheet of paper under two lamps. The composer la
 - Projection: CodeMirror decorations/widgets for inline tokens and resource bars.
 - Visual atom data: resource kind, display number, optional file extension. Display number supports `1..9`; values outside that range render as `*`.
 - Visual atom text sizing: numeric labels and extension labels use `font-size: 1rem` plus transform scaling, rather than shrinking the actual font-size below browser minimums.
+- Visual atom drawing: all internal glyph, number, and badge marks are SVG children inside one coordinate model; the outer component remains a semantic Svelte wrapper for sizing, theming, and accessibility.
 - Forbidden: `metadata.webChatCommentResources` or a hidden composer-only durable sidecar.
 
 ### Architecture Shape
 
 - Shared CodeMirror projection atoms live under `src/components` or `src/composer` only if mode-specific.
 - Resource icon composition lives behind a dedicated component and is consumed by inline token, sent/pending resource card, and resource bar surfaces.
+- Resource icon internals should not mix HTML spans and SVG icon geometry for visible marks; the shared atom owns a layered SVG primitive so surfaces get consistent rendering by construction.
 - Feature code must not parse Markdown twice with incompatible regexes.
 - Composer must consume the same `WebChatResourceReference` shape used by readonly bubbles.
 - Tests must cover behavior through public UI surfaces rather than private state fields.
@@ -203,6 +210,9 @@ One Markdown message is like one sheet of paper under two lamps. The composer la
 - [ ] 13. Rework file icon layout to put No in the center and the file extension in a bottom-right badge.
 - [ ] 14. Replace small text font-size shrinking with `font-size: 1rem` plus scale transforms.
 - [ ] 15. Add a multi-color/multi-background walkthrough matrix and refresh tests/screenshots.
+- [ ] 16. Rework `ResourceIconWithNumber` internals to two stacked SVG layers: base icon layer plus info layer.
+- [ ] 17. Preserve public kind/number/extension/theming behavior while removing HTML overlay drift from the visible marks.
+- [ ] 18. Refresh DOM checks and screenshots for the layered-SVG icon atom.
 
 ## Open Questions
 

@@ -29,6 +29,15 @@
 - **AND** the image glyph and image number use the same ink color
 - **AND** small numeric and extension text uses `font-size: 1rem` with transform scale instead of shrinking only through `font-size`
 
+#### Scenario: Resource icon atom draws visible marks through layered SVG
+
+- **GIVEN** the shared resource icon atom renders a comment, file, or image variant
+- **WHEN** the visible icon internals are constructed
+- **THEN** the base resource glyph is drawn in a base SVG layer
+- **AND** the resource number, badge, and extension marks are drawn in a separate info SVG layer
+- **AND** the two SVG layers share one stable viewBox coordinate system
+- **AND** token, card, preview, and resource bar surfaces do not add their own visible HTML overlays for the resource number or extension
+
 #### Scenario: File resource icon uses extension as a badge
 
 - **GIVEN** a file resource has a resolved extension such as `PDF`

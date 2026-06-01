@@ -10,6 +10,7 @@ Sent-message resource presentation SHALL be driven from the same serialized sour
 - **THEN** both surfaces use one shared CodeMirror resource-token widget family
 - **AND** the widget family renders comment, file, and image references through one shared icon-with-number visual atom
 - **AND** the visual atom accepts ink/surface/border variables without requiring token, card, or bar-specific drawing forks
+- **AND** the visual atom draws its visible internals as two stacked SVG layers: base icon layer plus info layer
 - **AND** visual differences are mode policy differences rather than separate parsing implementations
 - **AND** Framework7 resource preview activation receives the same `WebChatResourceReference` from either surface
 
