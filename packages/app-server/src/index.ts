@@ -298,6 +298,5 @@ export {
   createInProcessWorkspaceToolProvider,
   type InProcessWorkspaceToolProviderInput,
 } from "./workspace-tool-provider";
-export * from "./note-system";
 export * from "./system-cli-projection";
 export { WorkspacesStore } from "./workspaces-store";

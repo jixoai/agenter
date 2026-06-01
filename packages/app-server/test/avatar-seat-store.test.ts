@@ -54,12 +54,16 @@ describe("Feature: avatar seat identity allocation", () => {
       const frontendAlias = resolveWorkspaceAvatarAliasRoot(workspacePath, "frontend", homeDir);
       const backendRoot = resolveWorkspaceAvatarPrivateRoot(workspacePath, "backend", homeDir);
       const frontendRoot = resolveWorkspaceAvatarPrivateRoot(workspacePath, "frontend", homeDir);
+      const backendCanonicalPath = resolveAvatarSeatSettingsPath(workspacePath, "backend", homeDir);
+      const frontendCanonicalPath = resolveAvatarSeatSettingsPath(workspacePath, "frontend", homeDir);
 
       expect(backendDoc.principalId).toBe(backendPrincipal.principalId);
       expect(frontendDoc.principalId).toBe(frontendPrincipal.principalId);
       expect(backendDoc.principalId).not.toBe(frontendDoc.principalId);
-      expect(existsSync(backendPath)).toBeTrue();
-      expect(existsSync(frontendPath)).toBeTrue();
+      expect(backendCanonicalPath).toBe(join(backendRoot, "settings.local.json"));
+      expect(frontendCanonicalPath).toBe(join(frontendRoot, "settings.local.json"));
+      expect(existsSync(backendCanonicalPath)).toBeTrue();
+      expect(existsSync(frontendCanonicalPath)).toBeTrue();
       expect(lstatSync(backendAlias).isSymbolicLink()).toBeTrue();
       expect(lstatSync(frontendAlias).isSymbolicLink()).toBeTrue();
       expect(realpathSync(backendAlias)).toBe(backendRoot);

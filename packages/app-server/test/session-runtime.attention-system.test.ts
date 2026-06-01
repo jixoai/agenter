@@ -615,7 +615,41 @@ const attachPrimaryRoom = (runtime: SessionRuntime): void => {
 const getRuntimeSessionId = (runtime: SessionRuntime): string =>
   (Reflect.get(runtime, "options") as { sessionId: string }).sessionId;
 
-const createRuntime = (): SessionRuntime => {
+const createAvatarRootWorkspaceAuthorities = (input: { root: string; sessionId: string }) => {
+  const timestamp = new Date(0).toISOString();
+  const mountId = `mount-${input.sessionId}`;
+  return () => [
+    {
+      mount: {
+        mountId,
+        runtimeId: input.sessionId,
+        workspaceId: `workspace-${input.sessionId}`,
+        runtimeWorkspaceId: 0,
+        alias: "root",
+        workspacePath: input.root,
+        kind: "avatar-root" as const,
+        env: {},
+        createdAt: timestamp,
+        updatedAt: timestamp,
+      },
+      workspaceRoot: input.root,
+      grants: [
+        {
+          grantId: `grant-${input.sessionId}`,
+          mountId,
+          workspacePath: input.root,
+          pattern: "/",
+          ruleIndex: 0,
+          mode: "rw" as const,
+          createdAt: timestamp,
+        },
+      ],
+      defaultCwd: input.root,
+    },
+  ];
+};
+
+const createRuntime = (input: { withWorkspaceAuthority?: boolean } = {}): SessionRuntime => {
   const root = mkdtempSync(join(tmpdir(), "agenter-session-runtime-"));
   const sessionId = `s-${Date.now()}`;
   const runtime = new SessionRuntime({
@@ -635,6 +669,9 @@ const createRuntime = (): SessionRuntime => {
       ok: true,
       cwd: input.cwd ?? root,
     }),
+    listRuntimeWorkspaceAuthorities: input.withWorkspaceAuthority
+      ? createAvatarRootWorkspaceAuthorities({ root, sessionId })
+      : undefined,
   });
   attachPrimaryRoom(runtime);
   return runtime;
@@ -3655,7 +3692,7 @@ describe("Feature: session runtime attention-system loop inputs", () => {
   });
 
   test("Scenario: Given a skill reminder becomes dirty while room and terminal work are already active When collectLoopInputs runs Then the runtime keeps skill churn out of the current task round", async () => {
-    const runtime = createRuntime();
+    const runtime = createRuntime({ withWorkspaceAuthority: true });
     const internal = runtime as unknown as RuntimeInternal & {
       ensureRuntimeSkillSystem: () => RuntimeSkillSystem;
       handleRuntimeSkillRefreshResult: (
@@ -6281,7 +6318,7 @@ describe("Feature: session runtime attention-system loop inputs", () => {
   });
 
   test("Scenario: Given a watched skill file changes before the next round When collectLoopInputs runs Then the runtime flushes one aggregated skill reminder at that collection boundary", async () => {
-    const runtime = createRuntime();
+    const runtime = createRuntime({ withWorkspaceAuthority: true });
     const internal = runtime as unknown as RuntimeInternal & {
       ensureRuntimeSkillSystem: () => RuntimeSkillSystem;
       handleRuntimeSkillRefreshResult: (
@@ -6369,6 +6406,10 @@ describe("Feature: session runtime attention-system loop inputs", () => {
           ok: true,
           cwd: input.cwd ?? root,
         }),
+        listRuntimeWorkspaceAuthorities: createAvatarRootWorkspaceAuthorities({
+          root,
+          sessionId: "s-skill-restart",
+        }),
       });
       attachPrimaryRoom(runtime);
       return runtime;
@@ -6409,7 +6450,7 @@ describe("Feature: session runtime attention-system loop inputs", () => {
   });
 
   test("Scenario: Given root bash mutates a runtime skill When the next rounds are collected Then added updated and removed skill reminders all enter attention input", async () => {
-    const runtime = createRuntime();
+    const runtime = createRuntime({ withWorkspaceAuthority: true });
     const internal = runtime as unknown as RuntimeInternal & {
       ensureRuntimeSkillSystem: () => RuntimeSkillSystem;
       handleRuntimeSkillRefreshResult: (

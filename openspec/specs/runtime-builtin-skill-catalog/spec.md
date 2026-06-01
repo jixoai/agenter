@@ -13,6 +13,13 @@ The system SHALL store each runtime built-in skill in the owning package under `
 - **THEN** its source of truth lives under `packages/terminal-system/skills/**/SKILL.md`
 - **AND** `app-server` does not hand-write a second full copy of that skill body in runtime code
 
+#### Scenario: Note skill is owned by note-system
+
+- **WHEN** the runtime exposes the built-in `note` skill
+- **THEN** its source of truth lives under `packages/note-system/skills/**/SKILL.md`
+- **AND** generated catalog metadata names `@agenter/note-system` as the owning package
+- **AND** `app-server` does not hand-write a second full copy of that skill body in runtime code
+
 ### Requirement: Build tooling SHALL aggregate package-owned skill sources into one runtime catalog
 The system SHALL aggregate package-owned skill sources into a generated runtime catalog that app-server can load directly at runtime.
 

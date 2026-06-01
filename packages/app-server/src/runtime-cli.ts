@@ -1,10 +1,10 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
+import { createNoteCommand } from "@agenter/note-system";
 import { defineCommand } from "just-bash";
 
 import { createRootWorkspaceHelpcenterCommand } from "./cli-command-catalog";
-import { createNoteCommand } from "./note-system";
 import {
   projectWorkspaceSystemClis,
   type SystemCliCommandName,
@@ -14,6 +14,7 @@ import {
   AVATAR_HOME_ENV,
   SKILLS_HOME_ENV,
   deriveEnvSkillsHome,
+  parseEnvAvatarHome,
   serializeEnvAvatarHome,
   serializeEnvSkillsHome,
 } from "./workspace-system";
@@ -450,7 +451,9 @@ export const createRuntimeShellCommands = (input: {
     baseUrl: input.baseUrl,
     privateKey: input.privateKey,
   });
-  const note = createNoteCommand();
+  const note = createNoteCommand({
+    readAvatarHome: (env) => parseEnvAvatarHome(env.get(AVATAR_HOME_ENV)),
+  });
   const helpcenter = createRootWorkspaceHelpcenterCommand();
 
   const tool = defineCommand("tool", async (args, ctx) => {

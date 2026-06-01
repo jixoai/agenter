@@ -14,7 +14,7 @@ import {
   type TerminalControlPlane,
 } from "@agenter/terminal-system";
 import { AppKernel, SessionDb, appRouter, createTrpcContext } from "../src";
-import { writeNotePage } from "../src/note-system/storage";
+import { writeNotePage } from "@agenter/note-system";
 import { UsageAnalyticsDb } from "../src/usage-analytics-db";
 import { resolveUsageAnalyticsDbPathFromAvatarRoot } from "../src/usage-analytics-paths";
 import { GLOBAL_WORKSPACE_PATH } from "../src/workspace-target";

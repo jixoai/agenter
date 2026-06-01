@@ -21,6 +21,7 @@ packages:
   - packages/managed-seat-invitation-handshake
   - packages/mdx2md
   - packages/message-system
+  - packages/note-system
   - packages/principal-crypto
   - packages/profile-cli
   - packages/profile-service

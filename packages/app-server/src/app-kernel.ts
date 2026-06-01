@@ -172,7 +172,7 @@ import {
   type NoteSearchOutput,
   type NoteSqlQueryOutput,
   type NoteTagQueryOutput,
-} from "./note-system";
+} from "@agenter/note-system";
 import {
   settingsKindSchema,
   type AnyRuntimeEvent,

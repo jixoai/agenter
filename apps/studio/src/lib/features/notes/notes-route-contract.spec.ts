@@ -31,6 +31,7 @@ describe('Feature: Studio Notes route contract', () => {
 		expect(routeSource).toContain('<ScrollView');
 		expect(routeSource).toContain('No NoteSystem capability');
 		expect(routeSource).not.toContain('@agenter/app-server');
+		expect(routeSource).not.toContain('@agenter/note-system');
 		expect(routeSource).not.toContain('packages/app-server/src/note-system');
 	});
 });

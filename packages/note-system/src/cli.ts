@@ -1,12 +1,12 @@
 import { defineCommand } from "just-bash";
 import { z, type ZodTypeAny } from "zod";
 
-import { AVATAR_HOME_ENV, parseEnvAvatarHome } from "../workspace-system";
 import {
-  parseRuntimeToolCliInput,
-  renderRuntimeToolHelp,
-  type RuntimeToolDescriptor,
-} from "../runtime-tool-descriptors";
+  parseNoteCliInput,
+  renderNoteCliHelp,
+  type NoteCliDescriptor,
+} from "./cli-descriptor";
+import { NOTE_AVATAR_HOME_ENV, parseNoteAvatarHomeEnv } from "./env";
 import { searchNotes } from "./search";
 import { draftNotePage, listNotePages, listNoteTags, queryNoteSql, renameNotePages, showNotePage, writeNotePage } from "./storage";
 import type { NotePage, NoteReferenceInput, NoteSearchResult, NoteWriteMode } from "./types";
@@ -107,13 +107,9 @@ const noteRenameSchema = z
   .strict();
 
 const defineNoteDescriptor = <TInput extends ZodTypeAny>(
-  descriptor: Omit<RuntimeToolDescriptor<TInput>, "namespace" | "route" | "handler">,
-): RuntimeToolDescriptor<TInput> => ({
+  descriptor: Omit<NoteCliDescriptor<TInput>, "namespace">,
+): NoteCliDescriptor<TInput> => ({
   namespace: "note",
-  route: `/v1/note/${descriptor.name}`,
-  handler: () => {
-    throw new Error("note descriptors are CLI-local and are not exposed as runtime HTTP handlers");
-  },
   ...descriptor,
 });
 
@@ -139,36 +135,42 @@ const noteDescriptors = [
       "Use `content` or `body` for inline text. Non-inline MIME writes require `sourcePath`.",
       "A non-empty existing page requires explicit `mode:\"append\"` or `mode:\"override\"`.",
     ],
+    compactFields: ["notebook", "section", "page", "content", "mode", "tags", "references", "mime", "sourcePath"],
   }),
   defineNoteDescriptor({
     name: "draft",
     description: "Capture a low-friction note under the automatic _draft date section.",
     inputSchema: noteDraftSchema,
     examples: [{ kind: "stdin", payload: { content: "Temporary evidence captured without naming a page." } }],
+    compactFields: ["content", "idSuffix"],
   }),
   defineNoteDescriptor({
     name: "list",
     description: "List pages grouped by notebook, section, and page labels.",
     inputSchema: noteListSchema,
     examples: [{ kind: "stdin", payload: { notebook: "shell-assistant-book", limit: 50 } }],
+    compactFields: ["notebook", "section", "limit"],
   }),
   defineNoteDescriptor({
     name: "show",
     description: "Read one note page by notebook, section, and page labels.",
     inputSchema: noteShowSchema,
     examples: [{ kind: "stdin", payload: { notebook: "shell-assistant-book", section: "working-context", page: "current-task" } }],
+    compactFields: ["notebook", "section", "page"],
   }),
   defineNoteDescriptor({
     name: "search",
     description: "Search pages by text and optional tags.",
     inputSchema: noteSearchSchema,
     examples: [{ kind: "stdin", payload: { query: "terminal preference", tags: ["terminal"], limit: 10 } }],
+    compactFields: ["query", "limit", "tags"],
   }),
   defineNoteDescriptor({
     name: "tags",
     description: "List tag IDs, names, and counts globally, by notebook, or by section.",
     inputSchema: noteTagsSchema,
     examples: [{ kind: "stdin", payload: { notebook: "shell-assistant-book", section: "semantic-rules" } }],
+    compactFields: ["notebook", "section"],
   }),
   defineNoteDescriptor({
     name: "query",
@@ -179,6 +181,7 @@ const noteDescriptors = [
       "Available views: note_pages_view, note_tags_view, note_page_tags_view, note_references_view.",
       "Only SELECT/WITH statements are accepted; mutating SQL is rejected before execution.",
     ],
+    compactFields: ["sql", "limit"],
   }),
   defineNoteDescriptor({
     name: "rename",
@@ -195,10 +198,11 @@ const noteDescriptors = [
         },
       },
     ],
+    compactFields: ["notebook", "section", "page", "toNotebook", "toSection", "toPage"],
   }),
 ] as const;
 
-const noteDescriptorByName = new Map<string, RuntimeToolDescriptor>(
+const noteDescriptorByName = new Map<string, NoteCliDescriptor>(
   noteDescriptors.map((descriptor) => [descriptor.name, descriptor]),
 );
 
@@ -277,7 +281,14 @@ const renderPage = (page: NotePage): string => `${page.identity.notebook}/${page
 const renderSearchResult = (result: NoteSearchResult): string =>
   `${result.notebook}/${result.section}/${result.page} score=${result.score.toFixed(4)} ${result.path}\n${result.snippet}\n`;
 
-const parseAvatarHomeFromEnv = (env: Map<string, string>): string[] => parseEnvAvatarHome(env.get(AVATAR_HOME_ENV));
+export interface NoteCommandOptions {
+  readAvatarHome?: (env: ReadonlyMap<string, string>) => readonly string[];
+}
+
+const parseAvatarHomeFromEnv = (
+  env: ReadonlyMap<string, string>,
+  options: NoteCommandOptions,
+): string[] => [...(options.readAvatarHome?.(env) ?? parseNoteAvatarHomeEnv(env.get(NOTE_AVATAR_HOME_ENV)))];
 
 const isHelpArg = (value: string | undefined): boolean => value === "--help" || value === "-h";
 
@@ -287,7 +298,7 @@ const wantsLegacyFlags = (args: readonly string[]): boolean =>
 const wantsLegacyPositionalBody = (args: readonly string[], stdin: string): boolean =>
   args.length > 0 && !args[0]?.trim().startsWith("{") && stdin.trim().length === 0;
 
-export const createNoteCommand = (): ReturnType<typeof defineCommand> =>
+export const createNoteCommand = (options: NoteCommandOptions = {}): ReturnType<typeof defineCommand> =>
   defineCommand("note", async (args, ctx) => {
     try {
       const [subcommand, ...rest] = args;
@@ -307,9 +318,9 @@ export const createNoteCommand = (): ReturnType<typeof defineCommand> =>
         };
       }
       if (rest.some(isHelpArg)) {
-        return { stdout: renderRuntimeToolHelp(descriptor), stderr: "", exitCode: 0 };
+        return { stdout: renderNoteCliHelp(descriptor), stderr: "", exitCode: 0 };
       }
-      const avatarHome = parseAvatarHomeFromEnv(ctx.env);
+      const avatarHome = parseAvatarHomeFromEnv(ctx.env, options);
       if (avatarHome.length === 0) {
         return {
           stdout: "",
@@ -339,7 +350,7 @@ export const createNoteCommand = (): ReturnType<typeof defineCommand> =>
           };
         }
         const input = noteWriteSchema.parse(
-          parseRuntimeToolCliInput(descriptor, payloadArgs, ctx.stdin, compactMode ? "compact" : "object"),
+          parseNoteCliInput(descriptor, payloadArgs, ctx.stdin, compactMode ? "compact" : "object"),
         );
         const page = writeNotePage({
           avatarHome,
@@ -367,7 +378,7 @@ export const createNoteCommand = (): ReturnType<typeof defineCommand> =>
           return { stdout: parsed.json ? `${JSON.stringify(page)}\n` : renderPage(page), stderr: "", exitCode: 0 };
         }
         const input = noteDraftSchema.parse(
-          parseRuntimeToolCliInput(descriptor, payloadArgs, ctx.stdin, compactMode ? "compact" : "object"),
+          parseNoteCliInput(descriptor, payloadArgs, ctx.stdin, compactMode ? "compact" : "object"),
         );
         const page = draftNotePage({
           avatarHome,
@@ -380,7 +391,7 @@ export const createNoteCommand = (): ReturnType<typeof defineCommand> =>
       if (subcommand === "list") {
         const input = jsonMode
           ? noteListSchema.parse(
-              parseRuntimeToolCliInput(descriptor, payloadArgs, ctx.stdin, compactMode ? "compact" : "object"),
+              parseNoteCliInput(descriptor, payloadArgs, ctx.stdin, compactMode ? "compact" : "object"),
             )
           : (() => {
               const parsed = parseLegacyNoteArgs(rest);
@@ -407,7 +418,7 @@ export const createNoteCommand = (): ReturnType<typeof defineCommand> =>
       if (subcommand === "show") {
         const input = jsonMode
           ? noteShowSchema.parse(
-              parseRuntimeToolCliInput(descriptor, payloadArgs, ctx.stdin, compactMode ? "compact" : "object"),
+              parseNoteCliInput(descriptor, payloadArgs, ctx.stdin, compactMode ? "compact" : "object"),
             )
           : (() => {
               const parsed = parseLegacyNoteArgs(rest);
@@ -428,7 +439,7 @@ export const createNoteCommand = (): ReturnType<typeof defineCommand> =>
       if (subcommand === "search") {
         const input = jsonMode
           ? noteSearchSchema.parse(
-              parseRuntimeToolCliInput(descriptor, payloadArgs, ctx.stdin, compactMode ? "compact" : "object"),
+              parseNoteCliInput(descriptor, payloadArgs, ctx.stdin, compactMode ? "compact" : "object"),
             )
           : (() => {
               const parsed = parseLegacyNoteArgs(rest);
@@ -453,7 +464,7 @@ export const createNoteCommand = (): ReturnType<typeof defineCommand> =>
       }
       if (subcommand === "tags") {
         const input = noteTagsSchema.parse(
-          parseRuntimeToolCliInput(descriptor, payloadArgs, ctx.stdin, compactMode ? "compact" : "object"),
+          parseNoteCliInput(descriptor, payloadArgs, ctx.stdin, compactMode ? "compact" : "object"),
         );
         return {
           stdout: `${JSON.stringify(listNoteTags({ avatarHome, notebook: input.notebook, section: input.section }), null, 2)}\n`,
@@ -463,7 +474,7 @@ export const createNoteCommand = (): ReturnType<typeof defineCommand> =>
       }
       if (subcommand === "query") {
         const input = noteQuerySchema.parse(
-          parseRuntimeToolCliInput(descriptor, payloadArgs, ctx.stdin, compactMode ? "compact" : "object"),
+          parseNoteCliInput(descriptor, payloadArgs, ctx.stdin, compactMode ? "compact" : "object"),
         );
         return {
           stdout: `${JSON.stringify(queryNoteSql({ avatarHome, sql: input.sql, limit: input.limit }), null, 2)}\n`,
@@ -473,7 +484,7 @@ export const createNoteCommand = (): ReturnType<typeof defineCommand> =>
       }
       if (subcommand === "rename") {
         const input = noteRenameSchema.parse(
-          parseRuntimeToolCliInput(descriptor, payloadArgs, ctx.stdin, compactMode ? "compact" : "object"),
+          parseNoteCliInput(descriptor, payloadArgs, ctx.stdin, compactMode ? "compact" : "object"),
         );
         return {
           stdout: `${JSON.stringify(renameNotePages({ avatarHome, ...input }), null, 2)}\n`,

@@ -47,13 +47,14 @@ The backend SHALL expose typed NoteSystem contracts over the current avatar-priv
 
 ### Requirement: NoteSystem SHALL own package-provided skill guidance
 
-NoteSystem SHALL provide its own package-owned runtime skill under the app-server skill catalog. The skill SHALL teach descriptor-backed note commands for draft, write, list, show, search, tag query, SQL query, rename, MIME-aware writes, and reference validation. The skill SHALL preserve the boundary between raw notes and derived memory.
+NoteSystem SHALL provide its own package-owned runtime skill from `packages/note-system/skills/**/SKILL.md`, and the app-server skill catalog SHALL aggregate it as a package-owned built-in entry. The skill SHALL teach descriptor-backed note commands for draft, write, list, show, search, tag query, SQL query, rename, MIME-aware writes, and reference validation. The skill SHALL preserve the boundary between raw notes and derived memory.
 
 #### Scenario: Note skill is discoverable
 
 - **WHEN** runtime skills are listed
 - **THEN** a package-owned `note` skill is visible
-- **AND** `skill info note` returns NoteSystem-owned guidance rather than relying on the general runtime skill to explain notes
+- **AND** `skill info note` returns NoteSystem-owned guidance whose catalog metadata names `@agenter/note-system` as the owning package
+- **AND** app-server does not keep a second full NoteSystem skill body as the source of truth
 
 #### Scenario: Note skill teaches low-friction capture
 

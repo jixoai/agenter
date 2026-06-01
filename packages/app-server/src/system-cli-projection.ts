@@ -1,3 +1,5 @@
+import { projectNoteCliCapabilities } from "@agenter/note-system";
+
 import {
   AVATAR_HOME_ENV,
   SKILLS_HOME_ENV,
@@ -7,7 +9,6 @@ import {
   serializeEnvAvatarHome,
   serializeEnvSkillsHome,
 } from "./workspace-system";
-import { projectNoteCliCapabilities } from "./note-system";
 
 export type SystemCliCommandName = "skill" | "note";
 export type SystemCliCapability = "workspace-pwd" | "avatar-private";

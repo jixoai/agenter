@@ -38,7 +38,8 @@ describe("Feature: runtime built-in skills", () => {
     const note = skills.find((skill) => skill.name === "note");
 
     expect(note).toBeTruthy();
-    expect(note?.path).toBe(join(repoRoot, "packages", "app-server", "skills", "note", "SKILL.md"));
+    expect(note?.path).toBe(join(repoRoot, "packages", "note-system", "skills", "note", "SKILL.md"));
+    expect(note?.packageName).toBe("@agenter/note-system");
     expect(note?.summary).toContain("Record, query, and maintain avatar-private raw notes");
     expect(buildRuntimeSkillsList(skills)).toContain("note");
   });

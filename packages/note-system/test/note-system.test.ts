@@ -5,21 +5,25 @@ import { join } from "node:path";
 
 import { InMemoryFs } from "just-bash";
 
-import { createNoteCommand } from "../src/note-system/cli";
-import { searchNotes } from "../src/note-system/search";
-import { listNoteCatalog, readNotePage, searchNoteCatalog } from "../src/note-system/surface";
 import {
   NOTE_DRAFT_NOTEBOOK,
+  NOTE_AVATAR_HOME_ENV,
+  createNoteCommand,
   draftNotePage,
   listNotePages,
   listNoteTags,
+  listNoteCatalog,
+  parseNoteAvatarHomeEnv,
   projectNoteCliCapabilities,
   queryNoteSql,
+  readNotePage,
   renameNotePages,
+  searchNoteCatalog,
+  searchNotes,
+  serializeNoteAvatarHomeEnv,
   showNotePage,
   writeNotePage,
-} from "../src/note-system/storage";
-import { AVATAR_HOME_ENV, serializeEnvAvatarHome } from "../src/workspace-system";
+} from "../src";
 
 const tempDirs: string[] = [];
 
@@ -256,7 +260,7 @@ describe("Feature: NoteSystem avatar-private note projection", () => {
     const result = await command.execute(["write", "--notebook", "ideas", "--section", "shell", "--page", "cli"], {
       fs: new InMemoryFs(),
       cwd: "/repo",
-      env: new Map([[AVATAR_HOME_ENV, serializeEnvAvatarHome([avatarHome])]]),
+      env: new Map([[NOTE_AVATAR_HOME_ENV, serializeNoteAvatarHomeEnv([avatarHome])]]),
       stdin: "CLI body.",
     });
 
@@ -272,7 +276,7 @@ describe("Feature: NoteSystem avatar-private note projection", () => {
     const help = await command.execute(["write", "--help"], {
       fs: new InMemoryFs(),
       cwd: "/repo",
-      env: new Map([[AVATAR_HOME_ENV, serializeEnvAvatarHome([avatarHome])]]),
+      env: new Map([[NOTE_AVATAR_HOME_ENV, serializeNoteAvatarHomeEnv([avatarHome])]]),
       stdin: "",
     });
     const result = await command.execute(
@@ -289,7 +293,7 @@ describe("Feature: NoteSystem avatar-private note projection", () => {
       {
         fs: new InMemoryFs(),
         cwd: "/repo",
-        env: new Map([[AVATAR_HOME_ENV, serializeEnvAvatarHome([avatarHome])]]),
+        env: new Map([[NOTE_AVATAR_HOME_ENV, serializeNoteAvatarHomeEnv([avatarHome])]]),
         stdin: "",
       },
     );
@@ -309,6 +313,36 @@ describe("Feature: NoteSystem avatar-private note projection", () => {
     expect(page.metadata.sectionId).toStartWith("section_");
     expect(page.metadata.pageId).toStartWith("page_");
     expect(page.metadata.tagIds).toHaveLength(2);
+  });
+
+  test("Scenario: Given a host env reader When note CLI runs Then the package does not own host env parsing", async () => {
+    const avatarHome = createTempRoot();
+    const command = createNoteCommand({
+      readAvatarHome: (env) => parseNoteAvatarHomeEnv(env.get("HOST_AVATAR_HOME")),
+    });
+
+    const result = await command.execute(
+      [
+        "write",
+        JSON.stringify({
+          notebook: "ideas",
+          section: "shell",
+          page: "host-env",
+          content: "Host env reader injected.",
+        }),
+      ],
+      {
+        fs: new InMemoryFs(),
+        cwd: "/repo",
+        env: new Map([["HOST_AVATAR_HOME", serializeNoteAvatarHomeEnv([avatarHome])]]),
+        stdin: "",
+      },
+    );
+
+    expect(result.exitCode).toBe(0);
+    expect(readFileSync(join(avatarHome, "notes", "ideas", "shell", "host-env.md"), "utf8")).toContain(
+      "Host env reader injected.",
+    );
   });
 
   test("Scenario: Given markdown notes with tags and relative links When write completes Then SQLite IDs references and note URI frontmatter are returned", () => {

@@ -18,6 +18,7 @@ describe("Feature: runtime built-in skill catalog generation", () => {
       "agenter-runtime",
       "agenter-terminal",
       "agenter-workspace",
+      "note",
     ]);
   });
 

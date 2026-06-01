@@ -161,6 +161,8 @@ Script management SHALL initially be modeled as script source/home projection, n
 
 NoteSystem SHALL expose its AI-facing CLI through the same descriptor-backed JSON command law used by runtime tool namespaces. The primary contract SHALL accept empty input, one JSON argv payload, or JSON stdin as defined by the shared runtime CLI parser. Positional `note write --notebook ...` style commands MAY remain as a temporary compatibility surface only when deterministic tests preserve it, but the note skill and ShellAssistant prompt MUST teach the JSON descriptor form.
 
+The command implementation and note capability helper SHALL be owned by `@agenter/note-system`. Runtime hosts MAY inject their current `AVATAR_HOME` env parser, but NoteSystem MUST NOT import app-server workspace-system or runtime internals.
+
 #### Scenario: Note command accepts JSON object input
 
 - **GIVEN** `AVATAR_HOME` resolves a writable active Avatar home
@@ -180,6 +182,13 @@ NoteSystem SHALL expose its AI-facing CLI through the same descriptor-backed JSO
 - **WHEN** WorkspaceSystem computes CLI projections
 - **THEN** the Avatar-private `note` command is not projected
 - **AND** descriptor-backed note commands do not fall back to root workspace or project workspace paths
+
+#### Scenario: Note command consumes host env as an injected boundary
+
+- **GIVEN** app-server projects `note` for a workspace with non-empty `AVATAR_HOME`
+- **WHEN** the command resolves avatar-private note roots
+- **THEN** app-server supplies the current env parser to `@agenter/note-system`
+- **AND** the package-owned command receives explicit avatar-home paths without importing app-server internals
 
 ### Requirement: Note skill SHALL bind to descriptor-backed commands
 

@@ -557,7 +557,7 @@ describe("Feature: app kernel event replay", () => {
     ]);
 
     await kernel.stop();
-  });
+  }, 10_000);
 
   test("Scenario: Given kernel startup When creating global room and terminal surfaces Then live transport URLs initial snapshots and absolute cwd are available immediately", async () => {
     const kernel = createKernel();

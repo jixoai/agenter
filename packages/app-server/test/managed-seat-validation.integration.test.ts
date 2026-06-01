@@ -11,6 +11,8 @@ import {
   runManagedSeatSameInstanceScenario,
 } from "../test-support/managed-seat-validation-harness";
 
+const MANAGED_SEAT_VALIDATION_TIMEOUT_MS = 15_000;
+
 describe("Feature: managed-seat backend validation harness", () => {
   test("Scenario: Given a same-instance pair-debugging archetype When the runner validates room-routed collaboration Then descriptor transport and shared terminal truth both hold", async () => {
     const result = await runManagedSeatSameInstanceScenario(getManagedSeatValidationScenario("terminal-pair-debugging"));
@@ -22,7 +24,7 @@ describe("Feature: managed-seat backend validation harness", () => {
     expect(result.bobCanReadDescriptorTransport).toBe(true);
     expect(result.bobReadText).toContain(result.marker);
     expect(result.aliceReadText).toContain(result.marker);
-  });
+  }, MANAGED_SEAT_VALIDATION_TIMEOUT_MS);
 
   test("Scenario: Given unilateral-config and revoke-or-expiry archetypes When lifecycle mutation runs Then post-accept containment is unilateral and stale descriptors cannot activate authority", async () => {
     const result = await runManagedSeatLifecycleMutationScenario(
@@ -36,7 +38,7 @@ describe("Feature: managed-seat backend validation harness", () => {
     expect(result.renewedExpiresAt).toBeGreaterThan(result.firstExpiresAt);
     expect(result.staleAcceptError.toLowerCase()).toContain("revoked");
     expect(result.revokedAcceptError.toLowerCase()).toContain("revoked");
-  });
+  }, MANAGED_SEAT_VALIDATION_TIMEOUT_MS);
 
   test("Scenario: Given a management-handoff archetype When terminal TM is accepted Then admin-candidate truth appears without flattening current-admin semantics", async () => {
     const result = await runManagedSeatManagementHandoffScenario(
@@ -47,7 +49,7 @@ describe("Feature: managed-seat backend validation harness", () => {
     expect(result.bobAdminCandidateRank).not.toBeNull();
     expect(result.currentAdminCount).toBe(1);
     expect(result.aliceCurrentAdmin || result.bobCurrentAdmin).toBe(true);
-  });
+  }, MANAGED_SEAT_VALIDATION_TIMEOUT_MS);
 
   test("Scenario: Given a cross-instance collaboration archetype When room transport and terminal authority live on different kernels Then remote room and remote terminal facts both stay coherent", async () => {
     const result = await runManagedSeatCrossInstanceScenario(
@@ -60,7 +62,7 @@ describe("Feature: managed-seat backend validation harness", () => {
     expect(result.aliceRemoteReadText).toContain(result.marker);
     expect(result.bobLocalReadText).toContain(result.marker);
     expect(result.roomAuthorityUrl).not.toBe(result.terminalAuthorityUrl);
-  });
+  }, MANAGED_SEAT_VALIDATION_TIMEOUT_MS);
 
   test("Scenario: Given the catalog powers backend runners When the suite compares implemented runners to required archetypes Then every currently implemented runner maps to one catalog entry", () => {
     const implementedScenarioIds = new Set([

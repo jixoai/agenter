@@ -6,7 +6,7 @@ Define the Studio Notes workbench as the operator-facing inspection surface for 
 ## Requirements
 ### Requirement: Studio SHALL expose Notes as a primary system workbench
 
-Studio SHALL expose a primary app-shell navigation item named `Notes` that opens `/notes`. The Notes route SHALL consume runtime/client-sdk NoteSystem contracts and SHALL NOT import app-server NoteSystem implementation internals.
+Studio SHALL expose a primary app-shell navigation item named `Notes` that opens `/notes`. The Notes route SHALL consume runtime/client-sdk NoteSystem contracts and SHALL NOT import app-server host internals or `@agenter/note-system` implementation internals.
 
 #### Scenario: Notes route is reachable from app shell
 
@@ -19,7 +19,7 @@ Studio SHALL expose a primary app-shell navigation item named `Notes` that opens
 
 - **WHEN** reviewers inspect the Notes route and feature source
 - **THEN** it imports note data through Studio app controller and client runtime-store facades
-- **AND** it does not import `packages/app-server/src/note-system/*` or runtime internals
+- **AND** it does not import `@agenter/note-system` implementation files, `packages/app-server/src/*` runtime internals, or raw note artifact files
 
 ### Requirement: Notes workbench SHALL show capability state explicitly
 

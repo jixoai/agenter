@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Self Review: extract-note-system-package</title>
+    <style>
+      body {
+        font-family: system-ui, sans-serif;
+        line-height: 1.45;
+        max-width: 880px;
+        margin: 32px auto;
+        padding: 0 24px;
+      }
+      code {
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      }
+      .status {
+        border: 1px solid #d0d7de;
+        border-radius: 8px;
+        padding: 16px;
+        background: #f6f8fa;
+      }
+      .risk {
+        border-color: #d29922;
+        background: #fff8c5;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Self Review: extract-note-system-package</h1>
+    <section class="status risk">
+      <h2>Verdict</h2>
+      <p>Partial alignment with residual full-suite risk.</p>
+      <p>
+        NoteSystem is now package-owned by <code>@agenter/note-system</code>, while app-server remains the runtime and
+        projection host. The remaining risk is an unrelated app-server full-suite teardown issue in
+        <code>test/workspace-system.test.ts</code>.
+      </p>
+    </section>
+    <h2>Aligned Deltas</h2>
+    <ul>
+      <li><code>note-system-product-surface</code>: package-owned source, storage, CLI, skill, tests, and SPEC.</li>
+      <li><code>runtime-builtin-skill-catalog</code>: generated <code>note</code> owner is <code>@agenter/note-system</code>.</li>
+      <li><code>runtime-system-cli-projection</code>: app-server injects env parsing and consumes package APIs.</li>
+      <li>Durable specs: root, app-server, client-sdk, Studio Notes, and runtime specs document the new boundary.</li>
+    </ul>
+    <h2>Verification</h2>
+    <ul>
+      <li>Pass: <code>bun run --filter '@agenter/note-system' test</code></li>
+      <li>Pass: <code>bun run --filter '@agenter/note-system' typecheck</code></li>
+      <li>Pass: targeted app-server NoteSystem/projection/runtime skill tests</li>
+      <li>Pass: client-sdk NoteSystem runtime-store test</li>
+      <li>Pass: <code>bun test packages/app-server/test/app-kernel.test.ts</code></li>
+      <li>Pass: <code>bun run --filter '@agenter/app-server' typecheck</code></li>
+      <li>Pass: <code>bun run typecheck</code></li>
+      <li>Pass: <code>bun run openspec:vision -- validate extract-note-system-package</code></li>
+      <li>Pass: <code>git diff --check</code></li>
+      <li>
+        Residual: <code>bun run --filter '@agenter/app-server' test</code> failed after NoteSystem paths passed, with
+        post-test async terminal lifecycle work touching a closed message DB.
+      </li>
+    </ul>
+    <h2>Radar</h2>
+    <p>
+      Do not archive this change as fully green until the workspace-system teardown race is fixed or explicitly accepted
+      as unrelated full-suite flake.
+    </p>
+  </body>
+</html>
