@@ -78,7 +78,7 @@ The default `shell-assistant` `AGENTER.mdx` SHALL bias the Avatar toward underst
 
 ### Requirement: Shell-assistant SHALL use NoteSystem recording guidance from AGENTER.mdx
 
-Shell-assistant SHALL use NoteSystem as the default durable raw-recording surface for terminal pair programming, self-evolution, and managed-mode continuity. `AGENTER.mdx` SHALL name the `note` CLI and the NoteSystem skill, and SHALL instruct the Avatar when to draft, search, show, append, or override notes so context compaction does not erase useful evidence.
+Shell-assistant SHALL use NoteSystem as the default durable raw-recording surface for terminal pair programming, self-evolution, and managed-mode continuity. `AGENTER.mdx` SHALL name the `note` CLI and the NoteSystem skill, and SHALL instruct the Avatar when to draft, list, search, show, append, or override notes so context compaction does not erase useful evidence. Note guidance SHALL teach the mandatory `mime` field and the mutually exclusive `content` / `contentFile` input law.
 
 #### Scenario: Default recording surface is NoteSystem
 - **WHEN** cli-shell initializes missing shell-assistant prompt resources
