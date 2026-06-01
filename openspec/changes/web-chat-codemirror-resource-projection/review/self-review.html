@@ -67,11 +67,11 @@
     <main>
       <section>
         <h1>Web Chat CodeMirror Resource Projection Review</h1>
-        <p class="ok">结论：Round 3 视觉通用性返工已通过 targeted tests、typecheck 和截图走查，等待用户最终验收。</p>
+        <p class="ok">结论：Round 4 layered-SVG 一致性返工已通过 targeted tests、typecheck 和截图走查，等待用户最终验收。</p>
         <p>
           本轮只升级前端投影层：DB/send boundary 仍只存 raw Markdown。composer 是 writable CodeMirror；message bubble 是 readonly
           CodeMirror；两者共享资源 token 解析、icon-with-number 原子与 widget 家族。image 图标与编号同色，file 编号居中且后缀为右下角标，小文本使用
-          <code>font-size: 1rem</code> 加 transform scale。
+          <code>font-size: 1rem</code> 加 transform scale。可见图标内部已统一为两层 SVG：base icon layer + info layer。
         </p>
       </section>
       <section>
@@ -88,11 +88,12 @@
         </div>
       </section>
       <section>
-        <h2>Round 3 视觉事实</h2>
+        <h2>Round 4 视觉事实</h2>
         <ul>
-          <li>desktop/mobile 均为 <code>tokenCount=4</code>、<code>iconCount=19</code>、<code>paletteIconCount=12</code>、<code>hasRawDefinition=false</code></li>
+          <li>desktop/mobile 均为 <code>tokenCount=4</code>、<code>iconCount=19</code>、<code>baseLayerCount=19</code>、<code>infoLayerCount=19</code>、<code>everyIconHasTwoSvgLayers=true</code></li>
+          <li>palette 仍为 <code>paletteIconCount=12</code>，resource bar 仍为 <code>scrollWidth=clientWidth</code>、<code>scrollHeight=clientHeight</code></li>
           <li>image glyph 与 image number 计算色均为 <code>rgb(51, 65, 85)</code></li>
-          <li>file No 中心偏移为 <code>x=0</code> / <code>y=0.33px</code>，extension badge 位于右下角，尺寸约 <code>8px x 5.31px</code></li>
+          <li>file No 中心偏移为 <code>x=0</code> / <code>y=-0.58px</code>，extension badge 仍位于右下角</li>
           <li>file No 与 extension 计算字号均为 <code>16px</code>，实际缩放来自 transform scale</li>
         </ul>
       </section>

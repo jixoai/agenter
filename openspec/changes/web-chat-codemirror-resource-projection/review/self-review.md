@@ -2,7 +2,7 @@
 
 ## 结论
 
-本轮实现与 `plans/plan.md` 的 Round 3 视觉通用性返工对齐，可以进入用户走查。数据库与发送边界没有重新引入 `webChatCommentResources` 或其它 WebChat 结构化资源 sidecar；本轮只升级前端投影层。composer 现在仍是 writable CodeMirror，能够把 `[^Comment 1]` 这类 Markdown footnote token 投影成 icon-with-number 资源节点；message bubble 仍是 readonly CodeMirror，继续隐藏 footnote definition，并从同一资源引用解析入口渲染 inline token 与 in-bubble resource bar。共享图标原子现在支持不同 ink/surface/border/badge 变量，image 图标和数字同色，file 图标保持 No 居中并把文件后缀放到右下角标。
+本轮实现与 `plans/plan.md` 的 Round 4 layered-SVG 一致性返工对齐，可以进入用户走查。数据库与发送边界没有重新引入 `webChatCommentResources` 或其它 WebChat 结构化资源 sidecar；本轮只升级前端投影层。composer 现在仍是 writable CodeMirror，能够把 `[^Comment 1]` 这类 Markdown footnote token 投影成 icon-with-number 资源节点；message bubble 仍是 readonly CodeMirror，继续隐藏 footnote definition，并从同一资源引用解析入口渲染 inline token 与 in-bubble resource bar。共享图标原子现在支持不同 ink/surface/border/badge 变量，image 图标和数字同色，file 图标保持 No 居中并把文件后缀放到右下角标。可见图标内部已统一为两层 SVG：底层 base icon layer，上层 info layer。
 
 ## 法则变动
 
@@ -10,6 +10,7 @@
 - 新增共享资源视觉原子：`resource-icon-with-number.svelte` + `resource-icon-number.ts`，统一 comment/file/image 的编号显示；编号只保留 `1..9`，超出显示 `*`。
 - `resource-icon-with-number.svelte` 升级为 CSS-variable-driven 视觉原子，支持 `--resource-icon-ink`、`--resource-icon-surface`、`--resource-icon-border`、`--resource-icon-badge-surface`、`--resource-icon-badge-border`。
 - 图标内小文本统一使用 `font-size: 1rem` 加 transform scale，避免依赖浏览器可能钳制的小字号。
+- `resource-icon-with-number.svelte` 的可见内部绘制从 lucide SVG + HTML span overlay 改为两张叠加 SVG：`data-resource-icon-layer="base"` 绘制资源 glyph，`data-resource-icon-layer="info"` 绘制编号、badge、extension。
 - readonly bubble 的 token 解析从 bubble-only preview 实现迁移到共享原子；bubble 自己仍只负责 readonly mode policy：隐藏 definition、结构化 Markdown preview、resource bar。
 - writable composer 只启用 inline token decoration，不隐藏 footnote definition/source block，避免把编辑器变成预览器。
 - composer token activation 走 `WebChatResourceReference`，并接入 composer 侧 `ResourcePreviewLayer`；pending comment 仍保留空内容删除与保存语义。
@@ -19,7 +20,7 @@
 
 - `ChatDraftEditor`：接入 `markdownResourceTokenProjection(...)`，通过 refresh effect 响应资源引用变化，保留 typing、cursor、Enter submit、completion。
 - `MessageMarkdownContent` / `messageMarkdownPreview`：继续 readonly，复用共享 token 解析。
-- `MessageMarkdownResourceToken`：不再把 `[^Comment 1]` 作为可见 bracket 文本，改为同一 icon-with-number atom，并保留 aria-label/title。
+- `MessageMarkdownResourceToken`：不再把 `[^Comment 1]` 作为可见 bracket 文本，改为同一 icon-with-number atom，并保留 aria-label/title；其 visible marks 不再由 token surface 自己叠 HTML。
 - `ResourceCard` / `ResourcePreviewLayer`：移除重复手写 icon overlay，复用同一个 icon-with-number atom。
 - `CodeMirrorResourceProjection` Storybook story：真实挂载 `ChatDraftEditor` + `MessageMarkdownContent`，在 Chromium 中断言 writable/readonly facets、token 数量、definition 隐藏、resource bar、token open、编辑和 Enter submit。
 - `resource-projection` example route：用于最终人工走查与截图，不依赖不稳定的 Storybook dev iframe；现在同时展示 image/comment/file 三种图标变体和 4 组不同 ink/surface 背景矩阵。
@@ -33,9 +34,9 @@
 - After screenshots：
   - `.screenshot/after/web-chat-resource-projection-desktop-after.png`
   - `.screenshot/after/web-chat-resource-projection-iphone14-after.png`
-- Latest route screenshots recaptured after the final file-badge adjustment at `2026-06-01 12:18` local time.
-- Screenshot DOM facts：desktop/mobile 均为 `tokenCount=4`、`iconCount=19`、`paletteIconCount=12`、`hasRawDefinition=false`，resource bar 为 `scrollWidth=clientWidth=118`、`scrollHeight=clientHeight=36`。
-- Round 3 visual facts：image icon glyph and image number both compute to `rgb(51, 65, 85)`；file No center delta is `x=0` / `y=0.33px`；file extension badge is bottom-right with `8px x 5.31px` rect；file No and extension computed font-size are both `16px` with transform scale matrices.
+- Latest route screenshots recaptured after the layered-SVG refactor at `2026-06-01 13:04` local time.
+- Screenshot DOM facts：desktop/mobile 均为 `tokenCount=4`、`iconCount=19`、`baseLayerCount=19`、`infoLayerCount=19`、`everyIconHasTwoSvgLayers=true`、`paletteIconCount=12`、`hasRawDefinition=false`，resource bar 为 `scrollWidth=clientWidth=118`、`scrollHeight=clientHeight=36`。
+- Round 4 visual facts：image icon glyph and image number both compute to `rgb(51, 65, 85)`；file No center delta is `x=0` / `y=-0.58px`；file extension badge remains bottom-right；file No and extension computed font-size are both `16px` with transform scale matrices.
 - `bun run typecheck` in `packages/web-chat-view`：0 errors / 0 warnings。
 - `bun run typecheck` in `packages/web-chat-view/example`：0 errors / 0 warnings。
 - `bun run test:unit -- test/resource-icon-number.test.ts test/message-markdown-resource-token-projection.test.ts test/message-markdown-content.test.ts test/comment-resource-reopen-contract.test.ts`：4 files / 22 tests passed。

@@ -1,8 +1,4 @@
 <script lang="ts">
-  import FileIcon from "@lucide/svelte/icons/file";
-  import ImageIcon from "@lucide/svelte/icons/image";
-  import MessageSquareDot from "@lucide/svelte/icons/message-square-dot";
-
   import {
     getResourceIconExtensionScale,
     normalizeResourceIconExtension,
@@ -42,23 +38,67 @@
   part="resource-icon-with-number"
   aria-hidden="true"
 >
-  {#if kind === "comment"}
-    <MessageSquareDot class="resource-icon-base resource-icon-comment-base" />
-    <span class="resource-icon-comment-number">{displayNumber}</span>
-  {:else if kind === "image"}
-    <ImageIcon class="resource-icon-base resource-icon-image-base" />
-    <span class="resource-icon-image-number-badge">
-      <span class="resource-icon-image-number">{displayNumber}</span>
-    </span>
-  {:else}
-    <FileIcon class="resource-icon-base resource-icon-file-base" />
-    <span class="resource-icon-file-number">{displayNumber}</span>
-    <span class="resource-icon-file-extension-badge">
-      <span class="resource-icon-file-extension" style={`--resource-icon-extension-width-scale: ${extensionScale}`}>
-        {extensionLabel}
-      </span>
-    </span>
-  {/if}
+  <svg
+    class="resource-icon-layer resource-icon-base-layer"
+    data-resource-icon-layer="base"
+    viewBox="0 0 24 24"
+    role="presentation"
+    focusable="false"
+  >
+    {#if kind === "comment"}
+      <g class="resource-icon-base resource-icon-comment-base">
+        <path d="M5.2 4.7h13.6a2.1 2.1 0 0 1 2.1 2.1v9a2.1 2.1 0 0 1-2.1 2.1H9l-5.9 3.8V6.8a2.1 2.1 0 0 1 2.1-2.1Z" />
+        <circle cx="17.35" cy="7.75" r="1.55" />
+      </g>
+    {:else if kind === "image"}
+      <g class="resource-icon-base resource-icon-image-base">
+        <rect x="4.25" y="4.25" width="15.5" height="15.5" rx="2.6" />
+        <circle cx="8.85" cy="8.85" r="1.55" />
+        <path d="m4.9 17.8 5.35-5.35 3.1 3.1 2.3-2.3 3.45 3.45" />
+      </g>
+    {:else}
+      <g class="resource-icon-base resource-icon-file-base">
+        <path d="M7.15 2.9h7.65l4.05 4.05v14.15H7.15a2 2 0 0 1-2-2V4.9a2 2 0 0 1 2-2Z" />
+        <path d="M14.65 3.1v4.15h4.1" />
+      </g>
+    {/if}
+  </svg>
+
+  <svg
+    class="resource-icon-layer resource-icon-info-layer"
+    data-resource-icon-layer="info"
+    viewBox="0 0 24 24"
+    role="presentation"
+    focusable="false"
+  >
+    {#if kind === "comment"}
+      <text class="resource-icon-info-text resource-icon-comment-number" x="12" y="12.35">
+        {displayNumber}
+      </text>
+    {:else if kind === "image"}
+      <g class="resource-icon-image-number-badge">
+        <circle class="resource-icon-image-number-badge-fill" cx="17.55" cy="6.45" r="4.05" />
+        <text class="resource-icon-info-text resource-icon-image-number" x="17.55" y="6.55">
+          {displayNumber}
+        </text>
+      </g>
+    {:else}
+      <text class="resource-icon-info-text resource-icon-file-number" x="12" y="12.5">
+        {displayNumber}
+      </text>
+      <g class="resource-icon-file-extension-badge">
+        <rect class="resource-icon-file-extension-badge-fill" x="16.1" y="18.35" width="7" height="4.65" rx="1.05" />
+        <text
+          class="resource-icon-info-text resource-icon-file-extension"
+          x="19.6"
+          y="20.75"
+          style={`--resource-icon-extension-width-scale: ${extensionScale}`}
+        >
+          {extensionLabel}
+        </text>
+      </g>
+    {/if}
+  </svg>
 </span>
 
 <style>
@@ -134,131 +174,86 @@
     --resource-icon-default-surface: #e9edf5;
   }
 
+  .resource-icon-layer {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    display: block;
+    color: currentColor;
+    pointer-events: none;
+  }
+
   .resource-icon-base {
-    width: calc(var(--resource-icon-size) * 0.68);
-    height: calc(var(--resource-icon-size) * 0.68);
-    stroke-width: 1.8;
+    fill: none;
+    stroke: currentColor;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    stroke-width: 1.75;
   }
 
   .resource-icon-comment-base {
-    width: calc(var(--resource-icon-size) * 0.7);
-    height: calc(var(--resource-icon-size) * 0.7);
     opacity: 0.24;
-    transform: translateY(calc(var(--resource-icon-size) * -0.025));
-  }
-
-  .resource-icon-comment-number {
-    position: absolute;
-    inset: 0;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    color: currentColor;
-    font-size: 1rem;
-    font-weight: 800;
-    transform: translateY(calc(var(--resource-icon-size) * 0.018))
-      scale(var(--resource-icon-comment-number-scale));
+    transform: translateY(-0.6px);
   }
 
   .resource-icon-image-base {
-    width: calc(var(--resource-icon-size) * 0.66);
-    height: calc(var(--resource-icon-size) * 0.66);
     opacity: 0.78;
   }
 
-  .resource-icon-image-number-badge {
-    position: absolute;
-    top: calc(var(--resource-icon-size) * 0.1);
-    right: calc(var(--resource-icon-size) * 0.1);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: calc(var(--resource-icon-size) * 0.38);
-    height: calc(var(--resource-icon-size) * 0.38);
-    border-radius: 999px;
-    border: 1px solid var(--resource-icon-badge-border-resolved);
-    background: var(--resource-icon-badge-surface-resolved);
-    color: currentColor;
-    box-shadow: 0 0 0 1px color-mix(in srgb, white 55%, transparent);
-  }
-
-  .resource-icon-image-number {
-    color: currentColor;
-    font-size: 1rem;
-    font-weight: 800;
-    line-height: 1;
-    transform: scale(var(--resource-icon-image-number-scale));
-  }
-
   .resource-icon-file-base {
-    width: calc(var(--resource-icon-size) * 0.8);
-    height: calc(var(--resource-icon-size) * 0.8);
     opacity: 0.48;
   }
 
-  .resource-icon-file-number {
-    position: absolute;
-    inset: 0;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    color: currentColor;
-    font-size: 1rem;
-    font-weight: 850;
-    line-height: 1;
-    text-align: center;
-    transform: translateY(calc(var(--resource-icon-size) * 0.018)) scale(var(--resource-icon-file-number-scale));
-    z-index: 1;
+  .resource-icon-info-layer {
+    overflow: visible;
   }
 
-  .resource-icon-file-extension-badge {
-    position: absolute;
-    right: calc(var(--resource-icon-size) * 0.04);
-    bottom: calc(var(--resource-icon-size) * 0.04);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: calc(var(--resource-icon-size) * 0.38);
-    height: calc(var(--resource-icon-size) * 0.22);
-    border: 1px solid var(--resource-icon-badge-border-resolved);
-    border-radius: calc(var(--resource-icon-size) * 0.07);
-    background: var(--resource-icon-badge-surface-resolved);
-    color: currentColor;
-    overflow: hidden;
-    padding-inline: calc(var(--resource-icon-size) * 0.01);
-    z-index: 2;
+  .resource-icon-info-text {
+    fill: currentColor;
+    font-family: var(--font-sans, system-ui, sans-serif);
+    font-size: 1rem;
+    font-weight: 800;
+    line-height: 1;
+    dominant-baseline: middle;
+    text-anchor: middle;
+    transform-box: fill-box;
+    transform-origin: center;
+    user-select: none;
+  }
+
+  .resource-icon-comment-number {
+    transform: translateY(0.42px) scale(var(--resource-icon-comment-number-scale));
+  }
+
+  .resource-icon-image-number-badge-fill {
+    fill: var(--resource-icon-badge-surface-resolved);
+    stroke: var(--resource-icon-badge-border-resolved);
+    stroke-width: 1;
+  }
+
+  .resource-icon-image-number {
+    transform: scale(var(--resource-icon-image-number-scale));
+  }
+
+  .resource-icon-file-number {
+    font-weight: 850;
+    transform: translateY(0.42px) scale(var(--resource-icon-file-number-scale));
+  }
+
+  .resource-icon-file-extension-badge-fill {
+    fill: var(--resource-icon-badge-surface-resolved);
+    stroke: var(--resource-icon-badge-border-resolved);
+    stroke-width: 1;
   }
 
   .resource-icon-file-extension {
-    position: absolute;
-    top: 50%;
-    left: 50%;
-    max-width: none;
-    color: currentColor;
-    display: block;
-    font-size: 1rem;
     font-weight: 800;
-    letter-spacing: 0;
-    line-height: 1;
     text-transform: uppercase;
-    transform: translate(-50%, -50%) scale(var(--resource-icon-file-extension-scale))
-      scaleX(var(--resource-icon-extension-width-scale));
-    transform-origin: center;
-    white-space: nowrap;
-  }
-
-  .resource-icon-with-number[data-size="inline"] .resource-icon-image-number-badge {
-    top: calc(var(--resource-icon-size) * 0.04);
-    right: calc(var(--resource-icon-size) * 0.04);
-    width: calc(var(--resource-icon-size) * 0.44);
-    height: calc(var(--resource-icon-size) * 0.44);
+    transform: scale(var(--resource-icon-file-extension-scale)) scaleX(var(--resource-icon-extension-width-scale));
   }
 
   .resource-icon-with-number[data-size="inline"] .resource-icon-file-extension-badge {
-    right: 0;
-    bottom: 0;
-    width: calc(var(--resource-icon-size) * 0.38);
-    height: calc(var(--resource-icon-size) * 0.22);
-    border-radius: calc(var(--resource-icon-size) * 0.06);
+    transform: translate(0.75px, 0.55px);
   }
 </style>

@@ -96,6 +96,9 @@ export const CodeMirrorResourceProjection = {
     const imageNumber = imageIcon?.querySelector<HTMLElement>(".resource-icon-image-number") ?? null;
     expect(imageBase).not.toBeNull();
     expect(imageNumber).not.toBeNull();
+    expect(imageIcon?.querySelectorAll("svg[data-resource-icon-layer]")).toHaveLength(2);
+    expect(imageIcon?.querySelector("svg[data-resource-icon-layer='base']")).not.toBeNull();
+    expect(imageIcon?.querySelector("svg[data-resource-icon-layer='info']")).not.toBeNull();
     expect(getComputedStyle(imageBase!).color).toBe(getComputedStyle(imageNumber!).color);
 
     const fileIcon = bubbleHost?.querySelector<HTMLElement>('[part="resource-icon-with-number"][data-kind="file"]');
@@ -105,6 +108,7 @@ export const CodeMirrorResourceProjection = {
     expect(fileNumber).not.toBeNull();
     expect(fileExtensionBadge).not.toBeNull();
     expect(fileExtension).not.toBeNull();
+    expect(fileIcon?.querySelectorAll("svg[data-resource-icon-layer]")).toHaveLength(2);
     expect(getComputedStyle(fileNumber!).fontSize).toBe("16px");
     expect(getComputedStyle(fileExtension!).fontSize).toBe("16px");
 

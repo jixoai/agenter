@@ -136,11 +136,13 @@ describe("Feature: comment resource reopen contract", () => {
       messageSourcePopupSource,
       commentInspectorSource,
       readFileSync(resolve(import.meta.dirname, "../src/comment-anchor-badge.svelte"), "utf8"),
-      resourceIconWithNumberSource,
     ]) {
       expect(source).toContain("MessageSquareDot");
       expect(source).not.toContain("MessageSquareMore");
     }
+    expect(resourceIconWithNumberSource).toContain("resource-icon-comment-base");
+    expect(resourceIconWithNumberSource).toContain('<circle cx="17.35" cy="7.75" r="1.55"');
+    expect(resourceIconWithNumberSource).not.toContain("MessageSquareMore");
     expect(resourceCardSource).toContain("ResourceIconWithNumber");
     expect(resourcePreviewLayerSource).toContain("ResourceIconWithNumber");
 

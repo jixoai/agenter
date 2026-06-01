@@ -26,8 +26,8 @@
 - [x] 6.6 Refresh unit/Storybook DOM coverage, typecheck, OpenSpec validation/check, and desktop/iPhone 14 screenshots.
 - [x] 6.7 Update self-review with Round 3 evidence and walkthrough entry.
 - [x] 7.1 Record the Round 4 layered-SVG consistency feedback in OpenSpec plan/spec/tasks before changing product code.
-- [ ] 7.2 Refactor `ResourceIconWithNumber` visible internals into two stacked SVG layers: base icon layer plus info layer.
-- [ ] 7.3 Preserve image/comment/file public behavior, CSS-variable theming, `1..9`/`*` number normalization, and file extension badge placement.
-- [ ] 7.4 Refresh Storybook DOM assertions so the icon atom exposes base/info SVG layer structure.
-- [ ] 7.5 Re-run typecheck, targeted tests, OpenSpec validation/check, and desktop/iPhone 14 screenshots.
-- [ ] 7.6 Update self-review with Round 4 evidence and walkthrough entry.
+- [x] 7.2 Refactor `ResourceIconWithNumber` visible internals into two stacked SVG layers: base icon layer plus info layer.
+- [x] 7.3 Preserve image/comment/file public behavior, CSS-variable theming, `1..9`/`*` number normalization, and file extension badge placement.
+- [x] 7.4 Refresh Storybook DOM assertions so the icon atom exposes base/info SVG layer structure.
+- [x] 7.5 Re-run typecheck, targeted tests, OpenSpec validation/check, and desktop/iPhone 14 screenshots.
+- [x] 7.6 Update self-review with Round 4 evidence and walkthrough entry.
