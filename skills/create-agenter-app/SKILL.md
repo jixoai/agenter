@@ -15,6 +15,8 @@ Use this skill when creating or validating an Agenter app package. Agenter is th
 - Compatibility belongs in the app package: `peerDependencies.agenter`.
 - Discovery metadata such as `keywords: ["agenter-app"]` or catalog entries can identify candidates, but it is not compatibility proof.
 - Launch metadata is data: app id, command, package name, bin, optional main export, source policy, and capability hints.
+- App-owned reusable resources such as prompt MDX files live in the app package and should be reachable through package exports. Prefer `<Slot src="app:<app-id>/<file>" />` for app-facing prompt composition and `npm:<package-name>/<file>` when the package identity itself is the subject.
+- `npm:<package-name>/<relative-file>` resolves through `package.json` `exports` first and package-relative paths second. Export prompt/resource files deliberately instead of relying on hidden source paths.
 - Do not add host-owned version lock tables when creating a community app.
 
 ## Workflow

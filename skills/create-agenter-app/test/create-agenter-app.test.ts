@@ -29,6 +29,8 @@ describe("Feature: create-agenter-app skill scripts", () => {
     expect(skill).toContain("name: create-agenter-app");
     expect(skill).toContain("Create or update Agenter app packages");
     expect(skill).toContain("peerDependencies.agenter");
+    expect(skill).toContain("app:<app-id>/<file>");
+    expect(skill).toContain("npm:<package-name>/<relative-file>");
   });
 
   test("Scenario: Given external mode When scaffolding an app Then peer compatibility and app descriptor metadata are generated", async () => {
@@ -57,10 +59,12 @@ describe("Feature: create-agenter-app skill scripts", () => {
       const pkg = JSON.parse(readFileSync(join(target, "package.json"), "utf8")) as {
         name?: string;
         peerDependencies?: Record<string, string>;
+        exports?: Record<string, string>;
       };
       const descriptor = readFileSync(join(target, "src", "app.ts"), "utf8");
       expect(pkg.name).toBe("agenter-app-weather");
       expect(pkg.peerDependencies?.agenter).toBe(">=1.0.0 <1.1.0");
+      expect(pkg.exports?.["./package.json"]).toBe("./package.json");
       expect(descriptor).toContain('appId: "weather"');
       expect(descriptor).toContain('command: "weather"');
       expect(descriptor).toContain('packageName: "agenter-app-weather"');

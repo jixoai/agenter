@@ -4,6 +4,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 
+import { ResourceLoader } from "@agenter/settings";
+
 import { FilePromptStore } from "../src/prompt-store";
 
 describe("Feature: prompt store URL Slot composition", () => {
@@ -119,5 +121,66 @@ describe("Feature: prompt store URL Slot composition", () => {
     await store.reload();
 
     await expect(store.buildMd(store.getDoc("AGENTER"))).resolves.toBe("global-public-shared");
+  });
+
+  test("Scenario: Given AGENTER uses an app Slot When rendered Then the package-owned app prompt composes through ResourceLoader", async () => {
+    const baseDir = await mkdtemp(join(tmpdir(), "agenter-prompt-store-app-slot-"));
+    const projectRoot = join(baseDir, "project");
+    const packageRoot = join(projectRoot, "apps", "shell");
+    const privateRoot = join(baseDir, "home", ".agenter", "avatars", "by-principal", "0x888bb66a5ec389d52df0c9ff3e19a61dec890a66");
+
+    await mkdir(join(packageRoot, "prompts"), { recursive: true });
+    await mkdir(privateRoot, { recursive: true });
+    await writeFile(
+      join(packageRoot, "package.json"),
+      JSON.stringify(
+        {
+          name: "agenter-app-shell",
+          type: "module",
+          exports: {
+            "./ShellAssistant.mdx": "./prompts/ShellAssistant.mdx",
+          },
+          agenter: {
+            app: {
+              appId: "shell",
+              command: "shell",
+              bin: "agenter-shell",
+              descriptor: "./src/app.ts",
+            },
+          },
+        },
+        null,
+        2,
+      ),
+      "utf8",
+    );
+    await writeFile(
+      join(packageRoot, "prompts", "ShellAssistant.mdx"),
+      "# Shell Assistant\n\nYou are <Slot name=\"AVATAR_NAME\" />.\n\nUse shell-assistant-book.",
+      "utf8",
+    );
+    await writeFile(join(privateRoot, "AGENTER.mdx"), '<Slot src="app:shell/ShellAssistant.mdx" />', "utf8");
+
+    const store = new FilePromptStore({
+      rootDir: privateRoot,
+      privateRootDir: privateRoot,
+      agenterPath: join(privateRoot, "AGENTER.mdx"),
+      loader: new ResourceLoader({
+        context: {
+          projectRoot,
+          cwd: projectRoot,
+          homeDir: join(baseDir, "home"),
+        },
+      }),
+    });
+    await store.reload();
+
+    const rendered = await store.buildMd(store.getDoc("AGENTER"), {
+      slots: {
+        AVATAR_NAME: "Bob",
+      },
+    });
+    expect(rendered).toContain("You are Bob.");
+    expect(rendered).toContain("shell-assistant-book");
   });
 });

@@ -438,4 +438,65 @@ describe("@agenter/settings", () => {
     expect(resource.path).toBe(settingsPath);
     await expect(loader.readText(url)).resolves.toContain('"lang": "en"');
   });
+
+  test("Scenario: Given npm package resources When exports and package files exist Then exports win before package-relative fallback", async () => {
+    const projectRoot = await mkdtemp(join(tmpdir(), "agenter-settings-npm-resource-"));
+    const packageRoot = join(projectRoot, "apps", "shell");
+    await writeJson(join(packageRoot, "package.json"), {
+      name: "agenter-app-shell",
+      type: "module",
+      exports: {
+        "./ShellAssistant.mdx": "./prompts/ShellAssistant.mdx",
+      },
+    });
+    await mkdir(join(packageRoot, "prompts"), { recursive: true });
+    await writeFile(join(packageRoot, "ShellAssistant.mdx"), "package-relative fallback", "utf8");
+    await writeFile(join(packageRoot, "prompts", "ShellAssistant.mdx"), "exported prompt", "utf8");
+    await writeFile(join(packageRoot, "extra.md"), "fallback extra", "utf8");
+
+    const loader = new ResourceLoader({
+      context: {
+        projectRoot,
+        cwd: projectRoot,
+        homeDir: join(projectRoot, "home"),
+      },
+    });
+
+    await expect(loader.readText("npm:agenter-app-shell/ShellAssistant.mdx")).resolves.toBe("exported prompt");
+    await expect(loader.readText("npm:agenter-app-shell/extra.md")).resolves.toBe("fallback extra");
+  });
+
+  test("Scenario: Given an app resource When a workspace package declares agenter app metadata Then app protocol resolves through that package", async () => {
+    const projectRoot = await mkdtemp(join(tmpdir(), "agenter-settings-app-resource-"));
+    const packageRoot = join(projectRoot, "apps", "shell");
+    await writeJson(join(packageRoot, "package.json"), {
+      name: "agenter-app-shell",
+      type: "module",
+      exports: {
+        "./ShellAssistant.mdx": "./prompts/ShellAssistant.mdx",
+      },
+      agenter: {
+        app: {
+          appId: "shell",
+          command: "shell",
+          bin: "agenter-shell",
+          descriptor: "./src/app.ts",
+        },
+      },
+    });
+    await mkdir(join(packageRoot, "prompts"), { recursive: true });
+    await writeFile(join(packageRoot, "prompts", "ShellAssistant.mdx"), "app prompt", "utf8");
+
+    const loader = new ResourceLoader({
+      context: {
+        projectRoot,
+        cwd: projectRoot,
+        homeDir: join(projectRoot, "home"),
+      },
+    });
+
+    const resource = loader.resolve("app:shell/ShellAssistant.mdx");
+    expect(resource.path).toBe(join(packageRoot, "prompts", "ShellAssistant.mdx"));
+    await expect(loader.readText(resource)).resolves.toBe("app prompt");
+  });
 });

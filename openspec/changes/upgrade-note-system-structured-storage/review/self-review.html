@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>upgrade-note-system-structured-storage self review</title>
+    <style>
+      body {
+        color: #111827;
+        font-family:
+          ui-sans-serif,
+          system-ui,
+          -apple-system,
+          BlinkMacSystemFont,
+          "Segoe UI",
+          sans-serif;
+        line-height: 1.55;
+        margin: 2rem auto;
+        max-width: 960px;
+      }
+      h1,
+      h2 {
+        line-height: 1.2;
+      }
+      table {
+        border-collapse: collapse;
+        margin: 1rem 0 1.5rem;
+        width: 100%;
+      }
+      th,
+      td {
+        border: 1px solid #d1d5db;
+        padding: 0.55rem 0.7rem;
+        text-align: left;
+        vertical-align: top;
+      }
+      th {
+        background: #f3f4f6;
+      }
+      code {
+        background: #f3f4f6;
+        border-radius: 4px;
+        padding: 0.1rem 0.25rem;
+      }
+      .pass {
+        color: #047857;
+        font-weight: 700;
+      }
+      .risk {
+        color: #92400e;
+        font-weight: 700;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Self Review: upgrade-note-system-structured-storage</h1>
+    <p>
+      Verdict:
+      <span class="pass">aligned for the NoteSystem foundation loop and app-shell follow-up loop</span>.
+      Archive/check tasks remain separate from this implementation batch.
+    </p>
+
+    <h2>Scope</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>Area</th>
+          <th>Evidence</th>
+          <th>Result</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>NoteSystem foundation</td>
+          <td>SQLite identity, tags, references, MIME, rename, read-only SQL, JSON-first note CLI, router/client/studio coverage.</td>
+          <td class="pass">Pass</td>
+        </tr>
+        <tr>
+          <td>ShellAssistant prompt</td>
+          <td>
+            <code>AGENTER.mdx</code> is a thin <code>app:shell/ShellAssistant.mdx</code> Slot wrapper.
+            <code>ShellAssistant.mdx</code> uses <code>AVATAR_NAME</code> Slot and teaches <code>shell-assistant-book</code>.
+          </td>
+          <td class="pass">Pass</td>
+        </tr>
+        <tr>
+          <td>Resource protocols</td>
+          <td>
+            ResourceLoader resolves <code>npm:&lt;package&gt;/&lt;file&gt;</code> through package exports before package-relative fallback and maps
+            <code>app:&lt;app-id&gt;/&lt;file&gt;</code> through app package metadata.
+          </td>
+          <td class="pass">Pass</td>
+        </tr>
+        <tr>
+          <td>create-agenter-app skill</td>
+          <td>Skill guidance now names app/package resource protocols; scaffold exports <code>./package.json</code>.</td>
+          <td class="pass">Pass</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <h2>Verification</h2>
+    <ul>
+      <li><code>bun test packages/settings/test/load-settings.test.ts</code></li>
+      <li><code>bun test packages/app-server/test/prompt-store.test.ts</code></li>
+      <li><code>bun run --filter 'agenter-app-shell' test</code></li>
+      <li><code>bun test skills/create-agenter-app/test/create-agenter-app.test.ts</code></li>
+      <li><code>bun run typecheck</code></li>
+      <li><code>bun run openspec:vision -- validate upgrade-note-system-structured-storage</code></li>
+      <li><code>git diff --check</code></li>
+    </ul>
+
+    <h2>Residual Risk</h2>
+    <p>
+      <span class="risk">Known follow-up:</span>
+      <code>app:</code> currently uses workspace package metadata first and then the conventional
+      <code>agenter-app-&lt;appId&gt;</code> package name. Future non-conventional installed app names should move through a
+      richer descriptor discovery authority.
+    </p>
+  </body>
+</html>

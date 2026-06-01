@@ -2,9 +2,9 @@
 
 ## Verdict
 
-Status: aligned for the NoteSystem foundation loop.
+Status: aligned for the NoteSystem foundation loop and app-shell follow-up loop.
 
-The implementation satisfies the NoteSystem portion of the intent document and delta specs. App-shell follow-up tasks remain intentionally open in section 6 and should start after this NoteSystem batch is committed.
+The implementation satisfies the NoteSystem portion of the intent document and the dependent app-shell prompt/resource follow-up. Archive/check tasks remain open because this change has not been archived yet.
 
 ## Scope Reviewed
 
@@ -18,6 +18,9 @@ The implementation satisfies the NoteSystem portion of the intent document and d
 - client-sdk runtime-store integration
 - Studio `/notes` route and Playwright smoke
 - durable `SPEC.md` updates
+- app-shell prompt seed and package-owned `ShellAssistant.mdx`
+- ResourceLoader `npm:` / `app:` package resource protocols
+- create-agenter-app skill guidance and scaffold output
 
 ## Alignment Notes
 
@@ -28,6 +31,12 @@ The implementation satisfies the NoteSystem portion of the intent document and d
 - The tRPC and client-sdk write surfaces accept structured reference objects, so JSON/non-markdown references can use stable IDs as requested.
 - Studio `/notes` shows structured IDs, MIME, tags, references, read-only SQL, and is covered by desktop and iPhone 14 Playwright route smoke.
 - The package-owned `note` skill now teaches `shell-assistant-book`, adaptive sections, JSON command shape, references, tags, rename, MIME, and SQL.
+- `apps/shell/src/app-runtime/AGENTER.mdx` is now only `<Slot src="app:shell/ShellAssistant.mdx" />`, preserving user-owned Avatar prompt truth while letting the Shell package update its own assistant guidance.
+- `ShellAssistant.mdx` uses `<Slot name="AVATAR_NAME" />` instead of TS string interpolation, so inherited prompts can render Bob, Max, Jane, or other Avatar names correctly.
+- ShellAssistant guidance now names notebook `shell-assistant-book`, recommends adaptive sections, and teaches JSON-first NoteSystem usage instead of legacy memory files.
+- Resource loading supports `npm:<package>/<file>` with package `exports` first and package-relative fallback second; `app:<app-id>/<file>` maps through app package metadata.
+- Nested prompt Slots now inherit parent slot variables, so app package prompts can use the same variable injection as the outer `AGENTER.mdx`.
+- `skills/create-agenter-app` now teaches app/package resource exports and scaffolds `./package.json` export metadata for app packages.
 
 ## Verification
 
@@ -43,6 +52,11 @@ The implementation satisfies the NoteSystem portion of the intent document and d
 - `git diff --check`
 - `bun run openspec:vision -- commit-check upgrade-note-system-structured-storage --phase apply`
 - `bun run openspec:vision -- commit-check upgrade-note-system-structured-storage --phase self-review`
+- `bun test packages/settings/test/load-settings.test.ts`
+- `bun test packages/app-server/test/prompt-store.test.ts`
+- `bun run --filter 'agenter-app-shell' test`
+- `bun test skills/create-agenter-app/test/create-agenter-app.test.ts`
+- `bun run typecheck`
 
 ## Residual Risk
 
@@ -50,7 +64,8 @@ The implementation satisfies the NoteSystem portion of the intent document and d
 - SQL currently exposes read-only bounded views and rejects mutating statements with conservative string checks. If richer SQL is needed later, the next law should remain read-only and add a stronger parser/authorizer rather than opening mutation.
 - Rich binary preview/upload UX is not implemented. This batch implements MIME metadata and safe `sourcePath` writes only.
 - The Studio Playwright config had stale package paths and pnpm commands; this batch fixes the entry so route smoke can actually run.
+- `app:` currently resolves app package identity from workspace package metadata first and then the conventional `agenter-app-<appId>` package name. If future apps use non-conventional installed names without workspace metadata, app descriptor discovery should become the authority.
 
 ## Next Step
 
-Commit this NoteSystem batch, then return to app-shell tasks 6.1-6.6: `ShellAssistant.mdx`, `npm:`/`app:` resource resolution, thin `AGENTER.mdx` Slot wrapper, and `skills/create-agenter-app` update via skill-creator.
+Run final diff checks, commit the app-shell/resource follow-up batch, then run the OpenSpec `check` gate and decide whether to archive.

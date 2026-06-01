@@ -14,7 +14,7 @@
 
 - package 只定义 generic contract，不定义具体 app grammar、terminal naming、toolbar layout、prompt wording 或 local UI state。
 - app-owned assistant initialization 固定是 seed-if-missing：缺失 prompt 可补齐，已有 global Avatar principal-root 文件始终是真源。prompt seed/read 的 identity 必须是 global Avatar principal canonical root（`~/.agenter/avatars/by-principal/<principalId>/AGENTER.mdx`）；raw recording 默认属于 NoteSystem 的 `AVATAR_HOME` note facts，而不是 app-runtime 自己的 memory pack。nickname 只能用于发现，不能成为 prompt/note 真源；普通 workspace 不得作为 app-owned prompt 或默认记录 root authority。
-- app prompt seed API 只允许 seed `AGENTER.mdx`。产品不得通过 session id、settings prompt path、nickname alias、`AGENTER_SYSTEM`、`SYSTEM_TEMPLATE` 或 `RESPONSE_CONTRACT` 创建第二套 prompt authority；复杂混合必须交给 `AGENTER.mdx` 内的 URL Slot。
+- app prompt seed API 只允许 seed `AGENTER.mdx`。产品不得通过 session id、settings prompt path、nickname alias、`AGENTER_SYSTEM`、`SYSTEM_TEMPLATE` 或 `RESPONSE_CONTRACT` 创建第二套 prompt authority；复杂混合必须交给 `AGENTER.mdx` 内的 URL Slot。app-owned prompt body 应作为 package resource 暴露，并由 `app:<app-id>/<file>` 或 `npm:<package-name>/<file>` Slot 引入。
 - workspace-private text assets 仍可用于显式 workspace overlay/artifact，但不得作为 app-owned assistant 默认记录路径；legacy memory pack APIs 只能保留兼容/显式调用语义，不能在 shell-assistant 默认启动中创建记录资产。
 - app-owned resource binding 固定使用 `appId + resourceKey + resourceKind`，而 terminal、room、AvatarRuntime、attention 的 authority owner 仍分别属于对应 system。
 - GUI apps 与 terminal apps 使用同一套 app runtime law。`agenter-app-studio` 只能通过 descriptor、launcher env、daemon/client-sdk、resource binding 与 attention contracts 消费平台能力，不能因为同仓库而 import core runtime internals。

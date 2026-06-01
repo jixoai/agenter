@@ -51,7 +51,7 @@
 
 ## 5. Self-Review Loop
 
-- [x] 5.1 Generate `review/self-review.md` comparing implementation against `plans/plan.md` and every spec delta.
+- [x] 5.1 Generate `review/self-review.md` and `review/self-review.html` comparing implementation against `plans/plan.md` and every spec delta.
 - [x] 5.2 Record whether the implementation fully aligns, partially aligns with residual risk, or needs another loop.
 - [x] 5.3 If review updates OpenSpec artifacts or reopens tasks, commit those artifact changes before the next apply loop.
 - [ ] 5.4 If review is entering a real loop, run `bun run openspec:vision -- review-state upgrade-note-system-structured-storage` to persist iteration/recurrence state.
@@ -61,9 +61,9 @@
 
 ## 6. Deferred App-Shell Follow-Up
 
-- [ ] 6.1 After NoteSystem is complete, return to app-shell and replace `shell-assistant-seeds.ts` prompt text with package-owned `ShellAssistant.mdx`.
-- [ ] 6.2 Add `npm:` package resource protocol with `package.json` `exports` first, package-relative fallback second.
-- [ ] 6.3 Add `app:` resource protocol as descriptor-backed alias over `npm:`.
-- [ ] 6.4 Seed `AGENTER.mdx` as a thin Slot wrapper and inject avatar/display variables through `<Slot name="..." />` rather than TS string interpolation.
-- [ ] 6.5 Update ShellAssistant guidance to use `shell-assistant-book` and the final NoteSystem section/tag/reference model.
-- [ ] 6.6 Use `$skill-creator` to update `skills/create-agenter-app` after app-shell upgrade is complete.
+- [x] 6.1 After NoteSystem is complete, return to app-shell and replace `shell-assistant-seeds.ts` prompt text with package-owned `ShellAssistant.mdx`.
+- [x] 6.2 Add `npm:` package resource protocol with `package.json` `exports` first, package-relative fallback second.
+- [x] 6.3 Add `app:` resource protocol as descriptor-backed alias over `npm:`.
+- [x] 6.4 Seed `AGENTER.mdx` as a thin Slot wrapper and inject avatar/display variables through `<Slot name="..." />` rather than TS string interpolation.
+- [x] 6.5 Update ShellAssistant guidance to use `shell-assistant-book` and the final NoteSystem section/tag/reference model.
+- [x] 6.6 Use `$skill-creator` to update `skills/create-agenter-app` after app-shell upgrade is complete.

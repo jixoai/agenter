@@ -133,6 +133,7 @@ const scaffold = async (args: ScaffoldArgs): Promise<string> => {
     },
     exports: {
       ".": "./src/index.ts",
+      "./package.json": "./package.json",
     },
     scripts: {
       test: "bun test",

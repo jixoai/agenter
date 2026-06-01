@@ -211,7 +211,7 @@ export class FilePromptStore implements PromptStore {
   async buildMd(document: PromptDocument, context: PromptBuildContext = {}): Promise<string> {
     return this.builder.buildMd(document, {
       ...context,
-      readSlot: context.readSlot ?? ((input) => this.readSlot(input)),
+      readSlot: context.readSlot ?? ((input) => this.readSlot(input, context)),
     });
   }
 
@@ -333,7 +333,7 @@ export class FilePromptStore implements PromptStore {
     src: string;
     document: PromptDocument;
     source?: PromptDocumentSource;
-  }): Promise<string> {
+  }, context: PromptBuildContext = {}): Promise<string> {
     const uri = this.resolveSlotUri(input.src, input.source ?? input.document.source);
     if (uri.length === 0) {
       return "";
@@ -347,7 +347,10 @@ export class FilePromptStore implements PromptStore {
       content,
       source: this.toDocumentSource(uri, "AGENTER"),
     };
-    return await this.buildMd(document);
+    return await this.buildMd(document, {
+      ...context,
+      source: document.source,
+    });
   }
 
   private async loadDefaultDocs(): Promise<PromptDocRecord> {

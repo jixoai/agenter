@@ -9,6 +9,11 @@
   "bin": {
     "agenter-shell": "./src/bin/agenter-shell.ts"
   },
+  "exports": {
+    ".": "./src/index.ts",
+    "./ShellAssistant.mdx": "./src/app-runtime/ShellAssistant.mdx",
+    "./package.json": "./package.json"
+  },
   "scripts": {
     "demo:renderer-grid": "bun run src/bin/agenter-shell.ts renderer-grid-demo",
     "test": "bun test test/*.test.ts",
@@ -25,6 +30,17 @@
   },
   "peerDependencies": {
     "agenter": ">=0.0.7 <0.1.0"
+  },
+  "keywords": [
+    "agenter-app"
+  ],
+  "agenter": {
+    "app": {
+      "appId": "shell",
+      "command": "shell",
+      "bin": "agenter-shell",
+      "descriptor": "./src/app-runtime/app.ts"
+    }
   },
   "devDependencies": {
     "agenter": "workspace:*",
