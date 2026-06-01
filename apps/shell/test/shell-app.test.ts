@@ -648,7 +648,6 @@ const createAttachedRoom = (store: RecordingAttachedRoomStore): ShellRoomBootstr
       hostingContextId: "context-1",
     },
     promptSeeded: false,
-    memoryFiles: [],
     managed: {
       managed: false,
       contextId: "context-1",

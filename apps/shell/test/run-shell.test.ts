@@ -7,7 +7,7 @@ import { bootstrapShellRoom } from "../src/app-runtime/bootstrap";
 import { SHELL_APP_ID } from "../src/app-runtime/app";
 import { createShellRuntimeApprovalStore } from "../src/app-runtime/approval-store";
 import { parseShellArgs } from "../src/app-runtime/argv";
-import { loadShellAssistantPromptSeed } from "../src/app-runtime/shell-assistant-seeds";
+import { loadShellAssistantPromptSeed } from "../src/app-runtime/shell-assistant-prompt";
 import type { ShellAppRunDependencies } from "../src/app-runtime/runtime";
 import type { ChildLayoutNode } from "../src/renderable-mux/layout";
 import { createPaneSourceId, type PaneSource, type TerminalFrameSnapshot } from "../src/renderable-mux/pane-source";

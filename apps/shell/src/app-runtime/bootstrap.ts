@@ -1,5 +1,4 @@
 import type {
-  AppAvatarMemoryPackEnsureOutput,
   AppEnsureBindingResult,
   AppRuntimeStore,
   AuthSessionOutput,
@@ -14,7 +13,7 @@ import type {
 
 import { SHELL_APP_ID, SHELL_DEFAULT_AVATAR, createShellAppRuntimeClient } from "./app";
 import { readShellManagedState, type ShellManagedState } from "./managed";
-import { SHELL_ASSISTANT_DISPLAY_NAME, loadShellAssistantPromptSeed } from "./shell-assistant-seeds";
+import { SHELL_ASSISTANT_DISPLAY_NAME, loadShellAssistantPromptSeed } from "./shell-assistant-prompt";
 
 export type ShellAutoLoginResult =
   | { ok: true; session: { token: string } }
@@ -82,7 +81,6 @@ export interface ShellBootstrapResult {
   room: AppEnsureBindingResult<GlobalRoomEntry>;
   binding: ShellBindingProjection;
   promptSeeded: boolean;
-  memoryFiles: AppAvatarMemoryPackEnsureOutput;
   managed: ShellManagedState;
 }
 
@@ -155,7 +153,6 @@ const resolveShellAvatarRuntime = async (input: {
   clearedRuntimeSessionIds: string[];
   avatarActorId: string;
   promptSeeded: boolean;
-  memoryFiles: AppAvatarMemoryPackEnsureOutput;
 }> => {
   const runtimeClient = createShellAppRuntimeClient(input.store);
   const resolvedAvatar = await resolveSelectedAvatar(input.store, input.avatarNickname, input.createAvatar === true);
@@ -177,7 +174,6 @@ const resolveShellAvatarRuntime = async (input: {
   const avatarActorId = requireSessionAvatarPrincipalId(session);
 
   let promptSeeded = false;
-  let memoryFiles: AppAvatarMemoryPackEnsureOutput = [];
   if (avatar.nickname === SHELL_DEFAULT_AVATAR) {
     const avatarPrincipalId = requireSessionAvatarPrincipalId(session);
     const prompt = await runtimeClient.ensureAvatarPromptSeedIfMissing({
@@ -197,7 +193,6 @@ const resolveShellAvatarRuntime = async (input: {
     clearedRuntimeSessionIds,
     avatarActorId,
     promptSeeded,
-    memoryFiles,
   };
 };
 
@@ -294,7 +289,6 @@ export const bootstrapShellRoom = async (input: ShellRoomBootstrapInput): Promis
     room,
     binding,
     promptSeeded: resolved.promptSeeded,
-    memoryFiles: resolved.memoryFiles,
     managed,
   };
 };
