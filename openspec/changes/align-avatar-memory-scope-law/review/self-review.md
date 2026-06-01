@@ -4,21 +4,21 @@ Generated: 2026-05-31 12:16:50 +0800
 
 ## Verdict
 
-The implementation matches the selected law: Shell's default app-owned Memory pack is now addressed by `avatarPrincipalId` under the global Avatar principal root, while WorkspaceSystem private memory remains an explicit overlay/tool artifact.
+The implementation now matches the selected law after cleanup: Shell has no app-owned Memory pack path. Shell's default prompt is still addressed by `avatarPrincipalId` under the global Avatar principal root, while durable raw recording belongs to NoteSystem through active `AVATAR_HOME`. WorkspaceSystem private memory remains an explicit overlay/tool artifact.
 
 Follow-up project-hard-code audit also removed remaining app/runtime/session API residue that still exposed project workspace as assistant/session identity authority.
 
 ## Plan Alignment
 
-- `@agenter/app-runtime` now rejects `workspacePath + avatarNickname` for default memory-pack seeding and accepts only `avatarPrincipalId + roles`.
-- `@agenter/app-server` exposes `appRuntime.ensureAvatarMemoryPack` and writes role files under `~/.agenter/avatars/by-principal/<principalId>/memory/*`.
-- `@agenter/client-sdk` routes `AppRuntimeClient.ensureMemoryPackIfMissing` through the app-runtime global Avatar memory route instead of `workspace.ensurePrivateTextAsset`.
-- `apps/shell` passes the session `avatarPrincipalId` for default Memory pack initialization and prompt wording names global Avatar memory explicitly.
+- `@agenter/app-runtime` no longer exposes an app-owned memory-pack schema or type.
+- `@agenter/app-server` no longer exposes an app-runtime route that writes app-owned memory role files.
+- `@agenter/client-sdk` no longer exposes an app-owned memory-pack facade.
+- `apps/shell` only seeds the missing `AGENTER.mdx` wrapper and teaches NoteSystem recording through `ShellAssistant.mdx`.
 - `apps/shell` and `apps/shell-old` no longer pass `workspacePath` to assistant ensure or `workspacePath + avatarNickname` to runtime clear; clear uses `avatarPrincipalId`.
 - `@agenter/app-server` now names session identity derivation as Avatar-scoped (`resolveAvatarSessionId`) and removed the internal workspace/avatar lookup wrapper.
 - Root workspace discovery now lists active apps explicitly and excludes `packages/*-bak`, so `apps/shell-old` and bak snapshots remain reference code instead of active projects.
 - Workspace private text assets remain supported through `WorkspaceSystem` for explicit overlays.
-- Durable specs now say project workspace is a tool surface, not the default owner for app-owned prompt or identity memory.
+- Durable specs now say project workspace is a tool surface, not the default owner for app-owned prompt or ShellAssistant recording.
 
 ## Evidence
 

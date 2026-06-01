@@ -2,8 +2,8 @@
 
 ## Current Round
 
-- Round: 3
-- Status: Option A implemented; follow-up project-hard-code residue audit added after user asked to solve remaining direct project logic dependencies first.
+- Round: 5
+- Status: NoteSystem extraction is complete enough to resume the app-shell prompt mainline. User refined the prompt inheritance law: daemon startup still overwrites platform builtin prompt files under `~/.agenter/builtin/`, but builtin prompts are not an `AVATAR_HOME` layer and must be referenced explicitly through `global:builtin/$LANG/*`. `super:` remains a pure parent prompt-layer protocol.
 - Previous plan backup: `plans/plan-v2.md`
 
 ## Workflow Command Surface
@@ -46,6 +46,11 @@
 
 > 现在的重点是，项目中哪里还有硬编码对project的逻辑依赖。先解决这个，我再提出新版的解决方案
 
+> 不，直接这样改：
+>
+> 1. agenter启动的时候，直接到~/.agenter/builtin/ 目录下写入提示词文件（直接覆盖写入，每次启动daemon都会做写入，因为可能升级更新了内置的提示词）。
+> 2. 然后用我们自己的已有的协议技术，去指向这个目录。可能是 super/parent ?
+
 ## Objective Record
 
 ### Requirement-Bearing Q&A
@@ -58,14 +63,16 @@
 | 4    | User    | Use OpenSpec vision to proceed.                                                                                                                                                                                                                                                    | This change uses the `vision-driven` schema and keeps `plans/plan.md` as the Intent Document SSOT.                                                                                            |
 | 5    | User    | User approves direct cleanup, and states that `project workspace` is now almost never a directly used product concept; asks to investigate whether the system still hard-codes project-workspace semantics; says project workspace is now only a "tool" with shortcut affordances. | This confirms Option A direction and upgrades the investigation: memory pack must not treat project workspace as a default identity/memory owner. Cleanup is approved after evidence capture. |
 | 6    | User    | User states the current priority is finding and solving remaining hard-coded project logic dependencies before proposing the newer solution.                                                                                                                                       | Reopen implementation around API shapes and naming residues, not only memory-pack storage.                                                                                                    |
+| 7    | User    | User rejects new protocol-first handling and decides that daemon startup must overwrite builtin prompt files under `~/.agenter/builtin/`, then existing protocol technology such as `super` / `parent` should point to that directory.                                             | Use the existing `super:` Slot law and define the builtin prompt root as the parent of global Avatar `AGENTER.mdx`; do not add an `app-server` branch that knows Shell semantics.             |
+| 8    | User    | User clarifies that `super` should be associated with `AVATAR_HOME` paths, then updates the decision: builtin prompt files are special enough that `global:builtin/$LANG/*` has the lowest mental overhead; `~/.agenter` should not become the first `AVATAR_HOME` ring, because `AVATAR_HOME` should stay pure, isolated, and workspace/avatar-root oriented. | Replace builtin-through-`super` with explicit `global:builtin/$LANG/AGENTER.mdx`; keep `super:` for real parent prompt layers only and keep builtin outside `AVATAR_HOME`. |
 
 ### Evidence Read
 
 | Source                                                                                                 | Fact                                                                                                                                                                                                                       | Why it matters                                                                                                                                         |
 | ------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `apps/shell/src/app-runtime/shell-assistant-seeds.ts`                                                  | Current Shell product prompt seed still contains the `Memory pack` section and five role paths as bare filenames.                                                                                                          | The user-observed text is live in `app/shell`, not only old cli-shell residue.                                                                         |
-| `apps/shell/src/app-runtime/bootstrap.ts`                                                              | Initial audit found Shell seeded `AGENTER.mdx` with `ensureAvatarPromptSeedIfMissing({ avatarPrincipalId })`, then seeded memory with `ensureMemoryPackIfMissing({ workspacePath, avatarNickname, roles })`.               | Prompt and memory used two different identity axes. Prompt was principal-addressed global; memory was workspace + nickname addressed.                  |
-| `packages/client-sdk/src/app-runtime.ts`                                                               | Initial audit found `ensureMemoryPackIfMissing` looped roles and called `store.ensureWorkspacePrivateTextAsset({ workspacePath, avatarNickname, assetKind: "memory", relativePath })`.                                     | The SDK contract hardcoded memory pack seeding as workspace-private text assets.                                                                       |
+| `apps/shell/src/app-runtime/bootstrap.ts`                                                              | Initial audit found Shell seeded `AGENTER.mdx` by principal, then used a legacy memory-pack facade keyed by `workspacePath + avatarNickname`.                                                                                | Prompt and memory used two different identity axes. Prompt was principal-addressed global; memory was workspace + nickname addressed.                  |
+| `packages/client-sdk/src/app-runtime.ts`                                                               | Initial audit found the legacy memory-pack facade looped roles and called `store.ensureWorkspacePrivateTextAsset({ workspacePath, avatarNickname, assetKind: "memory", relativePath })`.                                    | The SDK contract hardcoded memory pack seeding as workspace-private text assets.                                                                       |
 | `packages/app-server/src/workspace-workbench.ts`                                                       | `ensureWorkspacePrivateTextAsset` writes under `resolveWorkspaceAvatarAssetRoot(workspacePath, avatar, assetKind)`.                                                                                                        | The server implementation confirms the memory pack target is the WorkspaceSystem private asset tree.                                                   |
 | `packages/app-server/src/workspace-system/paths.ts`                                                    | `resolveWorkspaceAvatarPrivateRoot(workspacePath, avatar)` returns global avatar root only when `workspacePath` is the global workspace; otherwise it resolves `<workspace>/.agenter/avatars/...`.                         | This directly explains why launching Shell from a project creates project-scope avatar-private memory files.                                           |
 | `packages/app-server/src/app-kernel.ts`                                                                | `ensureAvatarPromptSeed` resolves prompt seed through the canonical avatar prompt seed path; it no longer accepts workspace path.                                                                                          | The previous prompt-root cleanup succeeded for `AGENTER.mdx`, but did not cover memory pack ownership.                                                 |
@@ -180,15 +187,15 @@ The preferred visible effect is stronger: starting Shell from a regular project 
 The operator starts Shell in `/repo`. Shell ensures `shell-assistant` exists and seeds missing defaults. The operator sees or inspects:
 
 - `AGENTER.mdx` lives under the global Avatar principal root.
-- The Memory pack named by `AGENTER.mdx` lives in a predictable matching Avatar memory root.
-- If project-local memory exists, it is labeled as a project override or workspace note, not silently treated as the same role.
+- ShellAssistant default raw recording is NoteSystem data under active `AVATAR_HOME`.
+- If project-local memory exists, it is labeled as a project override or workspace artifact, not silently treated as ShellAssistant's default recording surface.
 
 ### Interface Shape
 
 Recommended interface shape:
 
-- Add a generic app-runtime memory seed contract that accepts `avatarPrincipalId` for global Avatar memory roles.
-- Stop making app-level memory pack initialization depend on `workspacePath + avatarNickname`.
+- Do not add or preserve a generic app-runtime memory seed contract.
+- Stop making app-level recording initialization depend on `workspacePath + avatarNickname`.
 - Remove project-shaped API/naming residue from app-owned assistant ensure, runtime clear, and session id derivation.
 - If workspace-private memory overlays remain useful, expose them through a distinct API/name such as workspace private memory asset, not as the default app memory pack.
 
@@ -199,14 +206,14 @@ Facts that must not be confused:
 - Global Avatar identity: principal-address root, stable across workspaces.
 - Workspace private asset: project-local overlay, isolated per workspace and Avatar.
 - Prompt truth: global `AGENTER.mdx`.
-- Memory role truth: currently ambiguous; recommended to make Shell's default role files global Avatar memory.
+- Recording truth: ShellAssistant raw facts belong to NoteSystem, not app-runtime role files.
 - Migration residue: existing `.agenter/avatars/.../memory/*.md` files are data, not proof of intended current law.
 
 ### Architecture Shape
 
 Recommended platform law:
 
-- `AppRuntimeClient.ensureMemoryPackIfMissing` should become a global Avatar memory initializer for app-owned memory roles, analogous to prompt seeding by `avatarPrincipalId`.
+- The legacy app-owned memory-pack facade should be removed; ShellAssistant recording should use NoteSystem instead of app-runtime role files.
 - WorkspaceSystem `ensureWorkspacePrivateTextAsset` remains valid for explicitly workspace-scoped private artifacts.
 - Project workspace remains a tool surface: cwd, mount, grants, workspace workbench, one-shot exec, and explicit private overlays.
 - Shell product supplies role definitions and prompt wording only; it must not know filesystem layout.
@@ -223,7 +230,7 @@ Forbidden couplings:
 
 | Gate                                              | Why confirmation is required                                  | Default until user answers                                      |
 | ------------------------------------------------- | ------------------------------------------------------------- | --------------------------------------------------------------- |
-| Adopt global memory pack law                      | Changes where future Shell memory roles are seeded and read.  | Confirmed by user direction.                                    |
+| Adopt NoteSystem recording law                    | Changes where future ShellAssistant continuity notes are written. | Confirmed by user direction.                                 |
 | Migrate existing project-local memory files       | Existing files may contain user-authored durable preferences. | Do not migrate or delete automatically.                         |
 | Clean local `.agenter/avatars/.../memory` residue | Cleanup removes local data and affects manual verification.   | Approved for current repo-local residue after evidence capture. |
 
@@ -231,14 +238,14 @@ Forbidden couplings:
 
 ### Option A: Paradigm Shift, Recommended
 
-Define app-owned memory roles as global Avatar memory by principal id. Implement a new or modified generic contract parallel to prompt seed:
+Remove app-owned memory role initialization from app-runtime entirely. Keep prompt seed as the only app-runtime assistant seed surface, and let ShellAssistant recording flow through NoteSystem:
 
-- Input: `avatarPrincipalId`, role/path/seed content.
-- Target: `~/.agenter/avatars/by-principal/<principalId>/memory/<role-path>` or an equivalent global Avatar memory directory.
-- Shell bootstrap: pass `avatarPrincipalId`, not `workspacePath + avatarNickname`, for the default Memory pack.
-- Prompt wording: say the role files are under the global Avatar memory pack, and name any explicit workspace overlay separately if it exists.
-- Specs/tests: prove regular project startup does not create project-local Memory pack files for the default Shell Assistant memory roles.
-- Cleanup: remove current repo-local `.agenter/avatars/.../memory` residue only after the new law is encoded and evidence confirms global seed paths.
+- Input: prompt seed remains `avatarPrincipalId + AGENTER.mdx seedContent`.
+- Recording target: NoteSystem pages under active `AVATAR_HOME`.
+- Shell bootstrap: seed only `AGENTER.mdx`; do not seed default memory files.
+- Prompt wording: teach `skill info note`, JSON-first `note` CLI usage, notebook `shell-assistant-book`, mandatory `mime`, and `content`/`contentFile`.
+- Specs/tests: prove regular project startup does not create default memory files and app-runtime exposes no memory-pack API.
+- Cleanup: remove current repo-local `.agenter/avatars/.../memory` residue only after evidence capture and explicit approval.
 
 Why this is first-principles correct:
 

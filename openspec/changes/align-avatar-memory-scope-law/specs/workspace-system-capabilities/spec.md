@@ -2,7 +2,7 @@
 
 ### Requirement: WorkspaceSystem SHALL manage dynamic mounts and path grants independent of Avatar definitions
 
-The system SHALL model workspaces as independently mountable resources, while also attaching one fixed avatar root workspace for every runtime. Avatar runtimes SHALL receive project workspace access only through explicit workspace mounts and ordered grant rules, and the fixed avatar root workspace SHALL exist in addition to those dynamic mounts. A project workspace is a tool surface for cwd, mounts, grants, workbench browsing, explicit private overlays, and one-shot execution; it SHALL NOT become the default owner for Avatar identity, app-owned assistant prompt truth, or app-owned assistant memory-pack truth.
+The system SHALL model workspaces as independently mountable resources, while also attaching one fixed avatar root workspace for every runtime. Avatar runtimes SHALL receive project workspace access only through explicit workspace mounts and ordered grant rules, and the fixed avatar root workspace SHALL exist in addition to those dynamic mounts. A project workspace is a tool surface for cwd, mounts, grants, workbench browsing, explicit private overlays, and one-shot execution; it SHALL NOT become the default owner for Avatar identity, app-owned assistant prompt truth, or ShellAssistant recording truth.
 
 #### Scenario: Runtime always includes one fixed avatar root workspace
 
@@ -22,7 +22,7 @@ The system SHALL model workspaces as independently mountable resources, while al
 - **WHEN** one Avatar runtime mounts two different workspaces at the same time
 - **THEN** both mounts remain attached to the same runtime identity
 - **AND** each mount keeps its own ordered grant rule set and workspace metadata
-- **AND** app-owned assistant memory remains addressed by the same global Avatar principal root
+- **AND** app-owned assistant prompt truth remains addressed by the same global Avatar principal root
 
 #### Scenario: Ordered grant rules are evaluated last-match-wins
 

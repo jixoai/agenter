@@ -81,10 +81,11 @@
       <section>
         <h2>Outcome</h2>
         <p>
-          Shell default Memory pack now uses the global Avatar principal root. Project workspaces remain cwd, mount,
-          grant, workbench, exec, and explicit overlay surfaces. Assistant ensure, runtime clear, and session id
-          derivation no longer expose project workspace as identity authority. Old/reference package folders are
-          excluded from active workspace discovery.
+          Shell no longer owns a default Memory pack path. Shell default prompt truth uses the global Avatar
+          principal root, while durable raw recording belongs to NoteSystem through active AVATAR_HOME. Project
+          workspaces remain cwd, mount, grant, workbench, exec, and explicit overlay surfaces. Assistant ensure,
+          runtime clear, and session id derivation no longer expose project workspace as identity authority.
+          Old/reference package folders are excluded from active workspace discovery.
         </p>
       </section>
 
@@ -105,9 +106,9 @@
               <td>Global Avatar principal root</td>
             </tr>
             <tr>
-              <td>Default Memory pack</td>
+              <td>Default ShellAssistant recording</td>
               <td>Workspace private asset via <code>workspacePath + avatarNickname</code></td>
-              <td>Global Avatar principal memory via <code>avatarPrincipalId</code></td>
+              <td>NoteSystem via active <code>AVATAR_HOME</code>; no app-runtime memory-pack API</td>
             </tr>
             <tr>
               <td>Workspace-private memory</td>

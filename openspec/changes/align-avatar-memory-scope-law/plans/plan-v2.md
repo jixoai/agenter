@@ -60,8 +60,8 @@
 | Source | Fact | Why it matters |
 | ------ | ---- | -------------- |
 | `apps/shell/src/app-runtime/shell-assistant-seeds.ts` | Current Shell product prompt seed still contains the `Memory pack` section and five role paths as bare filenames. | The user-observed text is live in `app/shell`, not only old cli-shell residue. |
-| `apps/shell/src/app-runtime/bootstrap.ts` | Shell seeds `AGENTER.mdx` with `ensureAvatarPromptSeedIfMissing({ avatarPrincipalId })`, then seeds memory with `ensureMemoryPackIfMissing({ workspacePath, avatarNickname, roles })`. | Prompt and memory now use two different identity axes. Prompt is principal-addressed global; memory is workspace + nickname addressed. |
-| `packages/client-sdk/src/app-runtime.ts` | `ensureMemoryPackIfMissing` loops roles and calls `store.ensureWorkspacePrivateTextAsset({ workspacePath, avatarNickname, assetKind: "memory", relativePath })`. | The SDK contract hardcodes memory pack seeding as workspace-private text assets. |
+| `apps/shell/src/app-runtime/bootstrap.ts` | Shell seeds `AGENTER.mdx` by principal, then used a legacy memory-pack facade keyed by `workspacePath + avatarNickname`. | Prompt and memory now use two different identity axes. Prompt is principal-addressed global; memory is workspace + nickname addressed. |
+| `packages/client-sdk/src/app-runtime.ts` | The legacy memory-pack facade loops roles and calls `store.ensureWorkspacePrivateTextAsset({ workspacePath, avatarNickname, assetKind: "memory", relativePath })`. | The SDK contract hardcodes memory pack seeding as workspace-private text assets. |
 | `packages/app-server/src/workspace-workbench.ts` | `ensureWorkspacePrivateTextAsset` writes under `resolveWorkspaceAvatarAssetRoot(workspacePath, avatar, assetKind)`. | The server implementation confirms the memory pack target is the WorkspaceSystem private asset tree. |
 | `packages/app-server/src/workspace-system/paths.ts` | `resolveWorkspaceAvatarPrivateRoot(workspacePath, avatar)` returns global avatar root only when `workspacePath` is the global workspace; otherwise it resolves `<workspace>/.agenter/avatars/...`. | This directly explains why launching Shell from a project creates project-scope avatar-private memory files. |
 | `packages/app-server/src/app-kernel.ts` | `ensureAvatarPromptSeed` resolves prompt seed through the canonical avatar prompt seed path; it no longer accepts workspace path. | The previous prompt-root cleanup succeeded for `AGENTER.mdx`, but did not cover memory pack ownership. |
@@ -197,7 +197,7 @@ Facts that must not be confused:
 
 Recommended platform law:
 
-- `AppRuntimeClient.ensureMemoryPackIfMissing` should become a global Avatar memory initializer for app-owned memory roles, analogous to prompt seeding by `avatarPrincipalId`.
+- The legacy app-owned memory-pack facade should be removed; ShellAssistant recording should use NoteSystem instead of app-runtime role files.
 - WorkspaceSystem `ensureWorkspacePrivateTextAsset` remains valid for explicitly workspace-scoped private artifacts.
 - Project workspace remains a tool surface: cwd, mount, grants, workspace workbench, one-shot exec, and explicit private overlays.
 - Shell product supplies role definitions and prompt wording only; it must not know filesystem layout.
