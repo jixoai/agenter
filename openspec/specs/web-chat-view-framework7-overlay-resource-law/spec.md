@@ -65,6 +65,35 @@ Sent-message resource presentation SHALL be driven from the same serialized sour
 - **THEN** the raw source still contains both the inline token and its Markdown footnote definition
 - **AND** hiding footnote definition lines in preview mode remains a view projection rather than a storage mutation
 
+#### Scenario: Resource token widgets are shared across writable and readonly CodeMirror surfaces
+
+- **WHEN** an inline resource token resolves in the composer or in a sent message bubble
+- **THEN** both surfaces use one shared CodeMirror resource-token widget family
+- **AND** the widget family renders comment, file, and image references through one shared icon-with-number visual atom
+- **AND** the visual atom accepts ink/surface/border variables without requiring token, card, or bar-specific drawing forks
+- **AND** the visual atom draws its visible internals as two stacked SVG layers: base icon layer plus info layer
+- **AND** the base icon layer uses the official lucide resource glyphs rather than hand-drawn lookalike paths
+- **AND** the stacked real SVG layers, including the lucide-generated base SVG and the local info SVG, are owned by a shared named grid area instead of absolute-position overlay stitching or anonymous grid-line coordinates
+- **AND** the info SVG layer stacks above the base icon SVG layer by explicit z-index ordering
+- **AND** comment, file, and image base glyphs share one opacity rule unless a future spec names a separate visual state
+- **AND** visual differences are mode policy differences rather than separate parsing implementations
+- **AND** Framework7 resource preview activation receives the same `WebChatResourceReference` from either surface
+
+#### Scenario: Resource bar is a no-scroll icon strip by default
+
+- **GIVEN** a sent message bubble contains several resolved resources
+- **WHEN** the in-bubble resource bar renders those resources
+- **THEN** each child owns a stable icon tile size
+- **AND** the bar may wrap into additional rows when space is constrained
+- **AND** the bar does not show uncontrolled horizontal or vertical scrollbars in normal desktop or iPhone 14 message widths
+
+#### Scenario: Writable composer projection does not hide editing truth
+
+- **WHEN** the operator edits a draft containing resource tokens
+- **THEN** CodeMirror decorations may make the token look like a resource affordance
+- **AND** the actual Markdown token text remains the editable draft truth
+- **AND** the composer does not hide footnote definition source as if it were a readonly transcript bubble
+
 ### Requirement: Resource activation SHALL be parity across token and tile
 
 Resource detail behavior SHALL be keyed by the resolved resource itself, not by where the operator clicked it from.

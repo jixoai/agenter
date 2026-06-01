@@ -109,6 +109,8 @@
 - **THEN** the row label stays the reference label
 - **AND** the row detail prefers the image or file name over a generic resource kind description
 
+## ADDED Requirements
+
 ### Requirement: Web chat view SHALL expose CodeMirror mode ownership for composer and transcript
 
 The shared WebChat surface SHALL treat the composer and message bubble as two explicit CodeMirror modes over the same Markdown resource grammar. The composer mode SHALL be writable and preserve normal editing behavior. The bubble mode SHALL be readonly and may hide structural source details such as resource footnote definitions as presentation-only projection.
