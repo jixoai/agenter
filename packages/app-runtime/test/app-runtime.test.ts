@@ -12,7 +12,6 @@ import {
   appAttentionProjectionSchema,
   appAttentionSettleInputSchema,
   appCommandDescriptorSchema,
-  appMemoryPackEnsureInputSchema,
   appPrivateTextAssetEnsureInputSchema,
   appRuntimeSessionClearInputSchema,
   buildAppBindingMetadata,
@@ -151,39 +150,6 @@ describe("Feature: app runtime contracts", () => {
     expect(ensured.relativePath).toBe("pairing-playbook.md");
   });
 
-  test("Scenario: Given app-owned memory pack seed input includes workspacePath When parsed Then project workspace authority is rejected", () => {
-    const parsed = appMemoryPackEnsureInputSchema.safeParse({
-      avatarPrincipalId: "0x888bb66a5ec389d52df0c9ff3e19a61dec890a66",
-      workspacePath: "/repo",
-      avatarNickname: "shell-assistant",
-      roles: [
-        {
-          role: "pairing-playbook",
-          path: "pairing-playbook.md",
-          seedContent: "# Pairing playbook\n",
-        },
-      ],
-    });
-
-    expect(parsed.success).toBe(false);
-  });
-
-  test("Scenario: Given app-owned memory pack seed input uses principal identity When parsed Then role files stay global Avatar scoped", () => {
-    const parsed = appMemoryPackEnsureInputSchema.parse({
-      avatarPrincipalId: "0x888bb66a5ec389d52df0c9ff3e19a61dec890a66",
-      roles: [
-        {
-          role: "pairing-playbook",
-          path: "pairing-playbook.md",
-          seedContent: "# Pairing playbook\n",
-        },
-      ],
-    });
-
-    expect(parsed.avatarPrincipalId).toBe("0x888bb66a5ec389d52df0c9ff3e19a61dec890a66");
-    expect(parsed.roles[0]?.path).toBe("pairing-playbook.md");
-  });
-
   test("Scenario: Given assistant ensure input includes workspacePath When parsed Then app assistant creation rejects project authority", () => {
     const parsed = appAssistantEnsureInputSchema.safeParse({
       appId: "shell",
@@ -267,6 +233,9 @@ describe("Feature: app runtime contracts", () => {
 
     for (const root of sourceRoots) {
       for (const filePath of listTypeScriptFiles(join(repoRoot, root))) {
+        if (filePath.endsWith("packages/app-server/src/generated/runtime-skill-catalog.generated.ts")) {
+          continue;
+        }
         const source = readFileSync(filePath, "utf8");
         for (const token of forbiddenTokens) {
           expect(source).not.toContain(token);

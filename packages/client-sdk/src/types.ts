@@ -73,7 +73,6 @@ export type WorkspaceWorkbenchTreeEntry = WorkspaceWorkbenchTreeOutput["items"][
 export type WorkspaceWorkbenchPreviewOutput = RouterOutputs["workspace"]["workbenchPreview"];
 export type RuntimeWorkspaceExecOutput = RouterOutputs["workspace"]["exec"];
 export type WorkspacePrivateTextAssetEnsureOutput = RouterOutputs["workspace"]["ensurePrivateTextAsset"];
-export type AppAvatarMemoryPackEnsureOutput = RouterOutputs["appRuntime"]["ensureAvatarMemoryPack"];
 export type DraftResolutionOutput = RouterOutputs["draft"]["resolve"];
 export type AuthDraftSnapshotOutput = RouterOutputs["drafts"]["list"];
 export type AuthDraftCreateOutput = RouterOutputs["drafts"]["create"];

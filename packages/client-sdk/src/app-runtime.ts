@@ -7,14 +7,12 @@ import {
   type AppAttentionSettleInput,
   type AppAvatarPromptSeedInput,
   type AppBindingMetadata,
-  type AppMemoryPackEnsureInput,
   type AppResourceBindingInput,
   type AppRuntimeSessionClearInput,
 } from "@agenter/app-runtime";
 
 import type {
   AttentionQueryItem,
-  AppAvatarMemoryPackEnsureOutput,
   GlobalAvatarCatalogEntry,
   GlobalRoomActorId,
   GlobalRoomEntry,
@@ -88,7 +86,6 @@ export interface AppRuntimeStore {
     seeded: boolean;
     file: { path: string; content: string; mtimeMs: number };
   }>;
-  ensureAvatarMemoryPack(input: AppMemoryPackEnsureInput): Promise<AppAvatarMemoryPackEnsureOutput>;
   listGlobalTerminals(): Promise<GlobalTerminalEntry[]>;
   listGlobalTerminalHistory(): Promise<GlobalTerminalEntry[]>;
   listGlobalTerminalIndex(): Promise<GlobalTerminalEntry[]>;
@@ -495,12 +492,6 @@ export class AppRuntimeClient {
     input: AppAvatarPromptSeedInput,
   ): Promise<{ seeded: boolean; file: { path: string; content: string; mtimeMs: number } }> {
     return await this.store.ensureAvatarPromptSeed(input);
-  }
-
-  async ensureMemoryPackIfMissing(
-    input: AppMemoryPackEnsureInput,
-  ): Promise<AppAvatarMemoryPackEnsureOutput> {
-    return await this.store.ensureAvatarMemoryPack(input);
   }
 
   async ensureTerminalBinding(

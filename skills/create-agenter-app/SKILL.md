@@ -16,7 +16,9 @@ Use this skill when creating or validating an Agenter app package. Agenter is th
 - Discovery metadata such as `keywords: ["agenter-app"]` or catalog entries can identify candidates, but it is not compatibility proof.
 - Launch metadata is data: app id, command, package name, bin, optional main export, source policy, and capability hints.
 - App-owned reusable resources such as prompt MDX files live in the app package and should be reachable through package exports. Prefer `<Slot src="app:<app-id>/<file>" />` for app-facing prompt composition and `npm:<package-name>/<file>` when the package identity itself is the subject.
+- If an app provides a default assistant `AGENTER.mdx` seed, keep it as a composition wrapper: explicitly inherit platform builtin guidance with `<Slot src="global:builtin/$LANG/AGENTER.mdx" />`, then include app-owned guidance with `<Slot src="app:<app-id>/<file>" />`.
 - `npm:<package-name>/<relative-file>` resolves through `package.json` `exports` first and package-relative paths second. Export prompt/resource files deliberately instead of relying on hidden source paths.
+- Do not seed or overwrite `AGENTER_SYSTEM`, `SYSTEM_TEMPLATE`, or `RESPONSE_CONTRACT`; daemon startup owns builtin prompt materialization under `~/.agenter/builtin/<lang>/`.
 - Do not add host-owned version lock tables when creating a community app.
 
 ## Workflow

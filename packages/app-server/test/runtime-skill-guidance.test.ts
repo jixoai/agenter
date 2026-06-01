@@ -110,7 +110,8 @@ describe("Feature: runtime skill progressive disclosure guidance", () => {
 
     expect(enSystem).toContain("skills.list");
     expect(enSystem).toContain("skill info <skill>");
-    expect(enSystem).toContain("take one real command for that target first");
+    expect(enSystem).toContain("SkillSystem as the runtime documentation center");
+    expect(enSystem).toContain("Before the first substantive use of an internal runtime CLI family");
     expect(enSystem).toContain("real filesystem path");
     expect(enSystem).toContain("references/*.md");
     expect(enSystem).toContain("one file at a time");
@@ -120,14 +121,15 @@ describe("Feature: runtime skill progressive disclosure guidance", () => {
     expect(enSystem).toContain("JSON payload in `stdin`");
     expect(enSystem).toContain("Only switch that JSON payload into argv");
     expect(enSystem).toContain("marks compact as `Suggested` or `Available`");
-    expect(enSystem).toContain("do not open any `SKILL.md`");
+    expect(enSystem).toContain("a direct check may still come before broader skill browsing");
     expect(enSystem).not.toContain("message-system");
     expect(enSystem).not.toContain("terminal-system");
     expect(enSystem).not.toContain("terminal create /absolute/project/path");
 
     expect(zhSystem).toContain("skills.list");
     expect(zhSystem).toContain("skill info <skill>");
-    expect(zhSystem).toContain("先对那个目标执行一次真实命令");
+    expect(zhSystem).toContain("把 SkillSystem 当成运行时文档中心");
+    expect(zhSystem).toContain("第一次实质性使用某个内部 runtime CLI 命令族之前");
     expect(zhSystem).toContain("真实 `SKILL.md` 文件路径");
     expect(zhSystem).toContain("references/*.md");
     expect(zhSystem).toContain("一次只读一个需要的文件");
@@ -137,16 +139,17 @@ describe("Feature: runtime skill progressive disclosure guidance", () => {
     expect(zhSystem).toContain("最小 `command` 加 JSON `stdin`");
     expect(zhSystem).toContain("明显更省 token");
     expect(zhSystem).toContain("把 compact 标成 `Suggested` 或 `Available`");
-    expect(zhSystem).toContain("不要先打开任何 `SKILL.md`");
+    expect(zhSystem).toContain("仍然可以先做一次直接检查");
     expect(zhSystem).not.toContain("message-system");
     expect(zhSystem).not.toContain("terminal-system");
     expect(zhSystem).not.toContain("terminal create /绝对项目路径");
 
     expect(enResponse).toContain("<command> --help");
     expect(enResponse).toContain("skill info <skill>");
-    expect(enResponse).toContain("prefer one direct command for that target before browsing skills");
+    expect(enResponse).toContain("SkillSystem as the runtime documentation center");
+    expect(enResponse).toContain("Before the first substantive use of an internal runtime CLI family");
     expect(enResponse).toContain("Default user-visible durable replies");
-    expect(enResponse).toContain("do not open any `SKILL.md`");
+    expect(enResponse).toContain("a direct check may still come before broader skill browsing");
     expect(enResponse).toContain("use that literal `chatId` directly");
     expect(enResponse).toContain("read only the specific reference files you need");
     expect(enResponse).toContain("the environment's durable delivery action");
@@ -158,9 +161,10 @@ describe("Feature: runtime skill progressive disclosure guidance", () => {
 
     expect(zhResponse).toContain("<command> --help");
     expect(zhResponse).toContain("skill info <skill>");
-    expect(zhResponse).toContain("优先先对那个目标执行一次直接命令");
+    expect(zhResponse).toContain("把 SkillSystem 当成运行时文档中心");
+    expect(zhResponse).toContain("第一次实质性使用某个内部 runtime CLI 命令族之前");
     expect(zhResponse).toContain("跟随请求方所使用的语言");
-    expect(zhResponse).toContain("不要先打开任何 `SKILL.md`");
+    expect(zhResponse).toContain("仍然可以先做一次直接检查");
     expect(zhResponse).toContain("直接把这个字面量 `chatId` 用在 `message send`");
     expect(zhResponse).toContain("只读取你当前需要的那几个 reference 文件");
     expect(zhResponse).toContain("当前环境里的耐久交付动作");

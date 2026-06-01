@@ -242,7 +242,8 @@ describe("Feature: runtime built-in skills", () => {
     const runtimeContent = readRuntimeSkillContent(runtime!);
     expect(runtimeContent).toContain("workspace_list");
     expect(runtimeContent).toContain("skill info <skill>");
-    expect(runtimeContent).toContain("make one real command for that target before browsing deeper docs");
+    expect(runtimeContent).toContain("Before the first substantive use of an internal runtime CLI family");
+    expect(runtimeContent).toContain("exact non-CLI file, URL, room, or terminal target");
     expect(runtimeContent).toContain("~/tools");
     expect(runtimeContent).toContain("outbound network access");
     expect(runtimeContent).toContain("objective verification of current or external facts");

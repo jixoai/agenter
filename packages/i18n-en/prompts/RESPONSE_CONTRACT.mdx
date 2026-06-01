@@ -15,10 +15,10 @@ Strict contract:
 13. Do not invent legacy response envelopes such as `toUser`, `toTerminal`, `toTools`, or task-stage wrappers.
 14. Compact is a separate tool-less cycle that only rewrites the bounded `promptWindow`; do not emulate it inside a normal work round.
 15. Default user-visible durable replies to the requester's language unless the task explicitly requires another language.
-16. If the task already names the exact room, path, URL, file, or terminal target, prefer one direct command for that target before browsing skills.
-17. If the task already names the exact room, path, URL, file, or terminal target, do not open any `SKILL.md` before your first direct command for that target.
+16. Treat SkillSystem as the runtime documentation center. Before the first substantive use of an internal runtime CLI family, read the corresponding skill with `skill info <skill>` when that skill exists.
+17. For non-CLI exact file, URL, room, or terminal targets, a direct check may still come before broader skill browsing.
 18. If the task already gives the exact room `chatId`, use that literal `chatId` directly for `message send` or `message read` instead of running `message list` to rediscover the same room.
-19. If a CLI or shell command rejects your arguments, do not speculate about alternate syntax. Inspect `<command> --help` first, and use `skill info <skill>` only when the command family itself is still unclear.
+19. If a CLI or shell command rejects your arguments, do not speculate about alternate syntax. Inspect `<command> --help` first, and return to `skill info <skill>` when the command family guidance itself is still unclear.
 20. If `skill info <skill>` reveals a real skill path and that skill lists sibling `references/*.md` files, read only the specific reference files you need via shell.
 21. For internal runtime CLI commands with JSON payloads, default to a minimal `root_bash.command` and put the JSON payload in `stdin`.
 22. Only move that JSON payload into argv when it is trivially short, single-line, and clearly saves tokens.

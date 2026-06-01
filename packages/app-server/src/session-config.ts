@@ -15,6 +15,7 @@ import {
 import { resolveDefaultInteractiveShellCommand } from "@agenter/terminal-system";
 
 import { DEFAULT_LANGUAGE, resolveLanguage } from "./i18n";
+import type { PromptRootLayer } from "./prompt-store";
 
 export interface SessionTerminalConfig {
   terminalId: string;
@@ -38,8 +39,8 @@ export interface ResolvedSessionConfig {
     rootDir?: string;
     publicRootDir?: string;
     privateRootDir?: string;
-    globalPublicRootDir?: string;
-    globalPrivateRootDir?: string;
+    globalRootDir?: string;
+    promptLayers: PromptRootLayer[];
     agenterPath?: string;
   };
   ai: {
@@ -233,8 +234,17 @@ export const resolveSessionConfig = async (
     ? resolveGlobalAvatarCanonicalRoot(options.avatarPrincipalId, homeDir)
     : avatar.sources.at(-1)?.path;
   const promptRoot = globalPrivateRoot;
-  const publicRootDir = resolve(cwd, ".agenter");
-  const globalPublicRootDir = join(homeDir, ".agenter");
+  const globalRootDir = join(homeDir, ".agenter");
+  const publicRootDir = globalRootDir;
+  const lang = resolveLanguage(settings.lang ?? DEFAULT_LANGUAGE);
+  const promptLayers = promptRoot
+    ? [
+        {
+          publicRootDir: globalRootDir,
+          privateRootDir: promptRoot,
+        },
+      ]
+    : [];
   const ai = settings.ai ?? {};
   const providers = ai.providers ?? {};
   const defaultProviderId = ai.activeProvider ?? Object.keys(providers)[0] ?? "default";
@@ -255,14 +265,14 @@ export const resolveSessionConfig = async (
   return {
     avatar,
     sessionStoreTarget: settings.sessionStoreTarget ?? "global",
-    lang: resolveLanguage(settings.lang ?? DEFAULT_LANGUAGE),
+    lang,
     agentCwd,
     prompt: {
       rootDir: promptRoot,
       publicRootDir,
       privateRootDir: promptRoot,
-      globalPublicRootDir,
-      globalPrivateRootDir: globalPrivateRoot,
+      globalRootDir,
+      promptLayers,
       agenterPath: promptRoot ? join(promptRoot, "AGENTER.mdx") : avatarPromptPaths.AGENTER,
     },
     ai: {

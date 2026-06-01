@@ -7,8 +7,8 @@ import { bootstrapShellRoom } from "../src/app-runtime/bootstrap";
 import { SHELL_APP_ID } from "../src/app-runtime/app";
 import { createShellRuntimeApprovalStore } from "../src/app-runtime/approval-store";
 import { parseShellArgs } from "../src/app-runtime/argv";
-import { loadShellAssistantPromptSeed } from "../src/app-runtime/shell-assistant-prompt";
 import type { ShellAppRunDependencies } from "../src/app-runtime/runtime";
+import { loadShellAssistantPromptSeed } from "../src/app-runtime/shell-assistant-prompt";
 import type { ChildLayoutNode } from "../src/renderable-mux/layout";
 import { createPaneSourceId, type PaneSource, type TerminalFrameSnapshot } from "../src/renderable-mux/pane-source";
 import { isShellMetadataOnlyArgv, runShell } from "../src/run-shell";
@@ -180,12 +180,14 @@ describe("Feature: shell app runtime argv", () => {
 });
 
 describe("Feature: shell app runtime bootstrap", () => {
-  test("Scenario: Given shell-assistant prompt seed is built When read Then AGENTER stays a thin app Slot and the package prompt teaches NoteSystem", async () => {
+  test("Scenario: Given shell-assistant prompt seed is built When read Then AGENTER inherits builtin guidance and package prompt teaches NoteSystem", async () => {
     const seed = await loadShellAssistantPromptSeed();
     const prompt = await Bun.file(new URL("../src/app-runtime/ShellAssistant.mdx", import.meta.url)).text();
 
-    expect(seed.trim()).toBe('<Slot src="app:shell/ShellAssistant.mdx" />');
-    expect(prompt).toContain("You are <Slot name=\"AVATAR_NAME\" />");
+    expect(seed.trim()).toBe(
+      '<Slot src="global:builtin/$LANG/AGENTER.mdx" />\n\n<Slot src="app:shell/ShellAssistant.mdx" />',
+    );
+    expect(prompt).toContain('You are <Slot name="AVATAR_NAME" />');
     expect(prompt).toContain("## NoteSystem recording");
     expect(prompt).toContain("shell-assistant-book");
     expect(prompt).toContain("skill info note");
@@ -409,7 +411,7 @@ describe("Feature: shell app runtime bootstrap", () => {
     expect(store.createTerminalInputs[0]?.profile?.gitLog).toBe("normal");
   });
 
-  test("Scenario: Given shell starts from a project workspace When default assistant resources are ensured Then AGENTER seeds an app Slot without creating memory files", async () => {
+  test("Scenario: Given shell starts from a project workspace When default assistant resources are ensured Then AGENTER seeds explicit global builtin and app Slots without creating memory files", async () => {
     const store = new FakeShellStore();
 
     await bootstrapShellRoom({
@@ -421,11 +423,12 @@ describe("Feature: shell app runtime bootstrap", () => {
 
     expect([...store.promptFiles.keys()]).toEqual(["~:auth:shell-assistant:agenter"]);
     const prompt = [...store.promptFiles.values()][0]?.content ?? "";
-    expect(prompt.trim()).toBe('<Slot src="app:shell/ShellAssistant.mdx" />');
+    expect(prompt.trim()).toBe(
+      '<Slot src="global:builtin/$LANG/AGENTER.mdx" />\n\n<Slot src="app:shell/ShellAssistant.mdx" />',
+    );
     expect(prompt).not.toContain("## Memory pack");
     expect(prompt).not.toContain("user-model.md");
     expect(prompt).not.toContain("pairing-playbook.md");
-    expect([...store.memoryFiles.keys()]).toEqual([]);
     expect([...store.privateAssets.keys()]).toEqual([]);
   });
 

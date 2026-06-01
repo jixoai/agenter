@@ -1,9 +1,14 @@
-import { copyFile, mkdir, mkdtemp, readFile, rm } from "node:fs/promises";
 import { existsSync } from "node:fs";
+import { copyFile, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { buildPromptDocsFromDir, promptDocRecordSchema, type PromptDocRecord } from "@agenter/i18n-core";
+import {
+  buildPromptDocsFromDir,
+  PROMPT_DOC_KEYS,
+  promptDocRecordSchema,
+  type PromptDocRecord,
+} from "@agenter/i18n-core";
 import { PROMPTS as EN_PROMPTS } from "@agenter/i18n-en";
 
 type RuntimeMode = "dev" | "prod";
@@ -40,6 +45,8 @@ const LANG_PACKAGES: Record<string, LanguagePackageConfig> = {
     workspaceDirName: "i18n-zh-Hans",
   },
 };
+
+export const BUILTIN_PROMPT_LANGS = Object.keys(LANG_PACKAGES);
 
 const VERSION_PATTERN = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/;
 
@@ -178,6 +185,9 @@ const fallbackToBuiltinEnglish = (): PromptDocRecord => promptDocRecordSchema.pa
 
 export const resolveLanguage = (lang: string | undefined): string => parseLangAlias(lang);
 
+export const resolveBuiltinPromptRoot = (options: { homeDir?: string; lang?: string } = {}): string =>
+  join(options.homeDir ?? homedir(), ".agenter", "builtin", parseLangAlias(options.lang));
+
 export const loadPromptDocsByLang = async (options: LoadPromptDocsByLangOptions = {}): Promise<PromptDocRecord> => {
   const resolvedLang = parseLangAlias(options.lang);
   const config = LANG_PACKAGES[resolvedLang] ?? LANG_PACKAGES[DEFAULT_LANGUAGE];
@@ -200,4 +210,31 @@ export const loadPromptDocsByLang = async (options: LoadPromptDocsByLangOptions 
   } catch {
     return clonePromptDocs(fallbackToBuiltinEnglish());
   }
+};
+
+export const materializeBuiltinPromptDocs = async (
+  options: { homeDir?: string; langs?: readonly string[] } = {},
+): Promise<Array<{ lang: string; rootDir: string }>> => {
+  const homeDir = options.homeDir ?? homedir();
+  const langs = options.langs?.length ? [...options.langs] : BUILTIN_PROMPT_LANGS;
+  return await Promise.all(
+    langs.map(async (langInput) => {
+      const lang = parseLangAlias(langInput);
+      const rootDir = resolveBuiltinPromptRoot({ homeDir, lang });
+      const docs = await loadPromptDocsByLang({ homeDir, lang });
+      await mkdir(rootDir, { recursive: true });
+      await Promise.all(
+        PROMPT_DOC_KEYS.map(async (key) => {
+          await Promise.all([
+            rm(join(rootDir, `${key}.md`), { force: true }),
+            rm(join(rootDir, `${key}.mdx`), { force: true }),
+          ]);
+          const doc = docs[key];
+          const content = doc.content.endsWith("\n") ? doc.content : `${doc.content}\n`;
+          await writeFile(join(rootDir, `${key}.${doc.syntax}`), content, "utf8");
+        }),
+      );
+      return { lang, rootDir };
+    }),
+  );
 };

@@ -7,7 +7,6 @@ import {
   appAttentionQueryInputSchema,
   appAttentionSettleInputSchema,
   appAvatarPromptSeedInputSchema,
-  appMemoryPackEnsureInputSchema,
   appPrivateTextAssetEnsureInputSchema,
 } from "@agenter/app-runtime";
 import { AVATAR_CLASSIFY_VALUES } from "@agenter/auth-service";
@@ -1788,9 +1787,6 @@ export const appRouter = t.router({
     ensureAvatarPromptSeed: superadminProcedure
       .input(appAvatarPromptSeedInputSchema)
       .mutation(({ ctx, input }) => ctx.kernel.ensureAvatarPromptSeed(input)),
-    ensureAvatarMemoryPack: superadminProcedure
-      .input(appMemoryPackEnsureInputSchema)
-      .mutation(({ ctx, input }) => ctx.kernel.ensureAvatarMemoryPack(input)),
   }),
   draft: t.router({
     resolve: superadminProcedure

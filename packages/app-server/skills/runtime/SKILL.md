@@ -10,9 +10,9 @@ Use this skill when you need to understand the runtime surface before choosing a
 Quick start:
 
 1. Run `workspace_list`.
-2. If the task already names an exact room, path, URL, file, or terminal target, make one real command for that target before browsing deeper docs.
-3. Run `skill list` only when you truly need a more specific skill family.
-4. Run `skill info <skill>` only after the direct command path is still unclear.
+2. Before the first substantive use of an internal runtime CLI family, read its corresponding skill with `skill info <skill>` when that skill exists.
+3. If the task names an exact non-CLI file, URL, room, or terminal target, make a direct check for that target before browsing broader docs.
+4. Run `skill list` only when you truly need to discover a more specific skill family.
 5. Run `skill get-config <skill>` when you need to inspect which files define that skill's live watcher truth.
 6. If a shell command rejects your arguments, run `<command> --help`.
 

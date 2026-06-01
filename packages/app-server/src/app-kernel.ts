@@ -16,9 +16,7 @@ import { join, relative, resolve } from "node:path";
 import type {
   AppAttentionCommitInput,
   AppAttentionSettleInput,
-  AppAvatarMemoryPackFile,
   AppAvatarPromptSeedInput,
-  AppMemoryPackEnsureInput,
   AppPrivateTextAssetEnsureInput,
 } from "@agenter/app-runtime";
 import {
@@ -170,6 +168,7 @@ import { readGlobalSettingsFile, saveGlobalSettingsFile } from "./global-setting
 import type { RuntimeHeartbeatGroupRecord } from "./heartbeat-groups";
 import { pageHeartbeatGroupsFromDb } from "./heartbeat-groups-page";
 import { HEARTBEAT_INSPECTION_SCOPES, HEARTBEAT_MESSAGE_PART_SCOPE } from "./heartbeat-message-parts";
+import { materializeBuiltinPromptDocs } from "./i18n";
 import { readLocalEnvValue, resolveLocalEnvPath, writeLocalEnvValue } from "./local-env";
 import { repairRoomParticipantsIfNeeded } from "./message-room-participant-repair";
 import { resolveModelCapabilities } from "./model-capabilities";
@@ -943,21 +942,6 @@ export class AppKernel {
     return join(root, "AGENTER.mdx");
   }
 
-  private resolveAvatarMemoryPackRolePath(input: { avatarPrincipalId: string; rolePath: string }): string {
-    const principalId = normalizePrincipalId(input.avatarPrincipalId);
-    const root = join(resolveGlobalAvatarCanonicalRoot(principalId, this.getHomeDir()), "memory");
-    const normalized = input.rolePath.replace(/\\/gu, "/").trim();
-    if (normalized.length === 0 || normalized === "." || normalized.startsWith("/")) {
-      throw new Error(`avatar memory role path must be relative: ${input.rolePath}`);
-    }
-    const absolutePath = resolve(root, normalized);
-    const relativeToRoot = relative(root, absolutePath);
-    if (relativeToRoot === "" || relativeToRoot.startsWith("..") || resolve(absolutePath) === resolve(root, "..")) {
-      throw new Error(`avatar memory role path escapes root: ${input.rolePath}`);
-    }
-    return absolutePath;
-  }
-
   private rememberWorkspace(workspacePath: string): void {
     this.workspaces.add(workspacePath);
     if (this.started) {
@@ -1260,6 +1244,7 @@ export class AppKernel {
   }
 
   async start(): Promise<void> {
+    await materializeBuiltinPromptDocs({ homeDir: this.getHomeDir() });
     this.started = true;
     this.bindMessageControlPlaneEvents();
     this.bindTerminalControlPlaneEvents();
@@ -2621,44 +2606,6 @@ export class AppKernel {
         mtimeMs: fileStat.mtimeMs,
       },
     };
-  }
-
-  async ensureAvatarMemoryPack(input: AppMemoryPackEnsureInput): Promise<AppAvatarMemoryPackFile[]> {
-    const results: AppAvatarMemoryPackFile[] = [];
-    for (const role of input.roles) {
-      const rolePath = this.resolveAvatarMemoryPackRolePath({
-        avatarPrincipalId: input.avatarPrincipalId,
-        rolePath: role.path,
-      });
-      try {
-        const [content, fileStat] = await Promise.all([readFile(rolePath, "utf8"), stat(rolePath)]);
-        if (fileStat.isDirectory()) {
-          throw new Error(`avatar memory role path is a directory: ${role.path}`);
-        }
-        results.push({
-          path: rolePath,
-          content,
-          created: false,
-          mtimeMs: fileStat.mtimeMs,
-        });
-        continue;
-      } catch (error) {
-        if (!this.isMissingFileError(error)) {
-          throw error;
-        }
-      }
-
-      await mkdir(resolve(rolePath, ".."), { recursive: true });
-      await writeFile(rolePath, role.seedContent, "utf8");
-      const [content, fileStat] = await Promise.all([readFile(rolePath, "utf8"), stat(rolePath)]);
-      results.push({
-        path: rolePath,
-        content,
-        created: true,
-        mtimeMs: fileStat.mtimeMs,
-      });
-    }
-    return results;
   }
 
   async execRuntimeWorkspace(input: {

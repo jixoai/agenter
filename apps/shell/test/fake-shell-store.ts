@@ -163,7 +163,6 @@ export class FakeShellStore implements ShellStore {
   sentMessages: Array<{ chatId: string; text: string }> = [];
   privateAssets = new Map<string, WorkspacePrivateTextAssetEnsureOutput>();
   promptFiles = new Map<string, { path: string; content: string; mtimeMs: number }>();
-  memoryFiles = new Map<string, { path: string; content: string; created: boolean; mtimeMs: number }>();
   attentionQueryItems: AttentionQueryItem[] = [];
   attentionCommits: Array<{
     sessionId: string;
@@ -306,27 +305,6 @@ export class FakeShellStore implements ShellStore {
     };
     this.promptFiles.set(key, file);
     return { seeded: true, file };
-  }
-
-  async ensureAvatarMemoryPack(input: {
-    avatarPrincipalId: string;
-    roles: Array<{ role: string; path: string; seedContent: string }>;
-  }): Promise<Array<{ path: string; content: string; created: boolean; mtimeMs: number }>> {
-    return input.roles.map((role) => {
-      const key = `~:${input.avatarPrincipalId}:memory:${role.path}`;
-      const existing = this.memoryFiles.get(key);
-      if (existing) {
-        return existing;
-      }
-      const output = {
-        path: `/home/.agenter/avatars/by-principal/${input.avatarPrincipalId}/memory/${role.path}`,
-        content: role.seedContent,
-        created: true,
-        mtimeMs: Date.now(),
-      };
-      this.memoryFiles.set(key, output);
-      return output;
-    });
   }
 
   async ensureWorkspacePrivateTextAsset(input: {

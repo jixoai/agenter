@@ -28,12 +28,17 @@ export interface PromptStore {
   buildMd(document: PromptDocument, context?: PromptBuildContext): Promise<string>;
 }
 
+export interface PromptRootLayer {
+  publicRootDir?: string;
+  privateRootDir?: string;
+}
+
 interface PromptStorePaths {
   rootDir?: string;
   publicRootDir?: string;
   privateRootDir?: string;
-  globalPublicRootDir?: string;
-  globalPrivateRootDir?: string;
+  globalRootDir?: string;
+  promptLayers?: readonly PromptRootLayer[];
   agenterPath?: string;
   lang?: string;
   defaultDocs?: PromptDocRecord;
@@ -73,6 +78,10 @@ const toPathSource = (input: {
   pathOrUri: string;
   rootUri?: string;
   relativePath?: string;
+  rootKind?: "private" | "public" | "global";
+  privateRootUri?: string;
+  publicRootUri?: string;
+  globalRootUri?: string;
   superRootUri?: string;
   superUri?: string;
 }): PromptDocumentSource => {
@@ -83,6 +92,10 @@ const toPathSource = (input: {
     path: toReadableFilePath(uri) ?? (isUriLike(input.pathOrUri) ? undefined : input.pathOrUri),
     rootUri: input.rootUri,
     relativePath: input.relativePath,
+    rootKind: input.rootKind,
+    privateRootUri: input.privateRootUri,
+    publicRootUri: input.publicRootUri,
+    globalRootUri: input.globalRootUri,
     superRootUri: input.superRootUri,
     superUri: input.superUri,
   };
@@ -101,12 +114,7 @@ const safeRelativePath = (value: string): string => {
     return "";
   }
   const normalized = normalize(stripped);
-  if (
-    normalized === "." ||
-    normalized.startsWith(`..${sep}`) ||
-    normalized === ".." ||
-    isAbsolute(normalized)
-  ) {
+  if (normalized === "." || normalized.startsWith(`..${sep}`) || normalized === ".." || isAbsolute(normalized)) {
     return "";
   }
   return normalized.split(sep).join("/");
@@ -128,6 +136,9 @@ const sameFileRoot = (left: string | undefined, right: string | undefined): bool
   }
   return normalize(left) === normalize(right);
 };
+
+const resolveLangToken = (value: string, lang: string | undefined): string =>
+  value.replace(/\$LANG|\$\{LANG\}/gu, lang ?? "en");
 
 const isMissingResourceError = (error: unknown): boolean => {
   const message = error instanceof Error ? error.message : String(error);
@@ -265,38 +276,56 @@ export class FilePromptStore implements PromptStore {
     }
     const uri = toUri(pathOrUri);
     const filePath = toReadableFilePath(uri);
-    const privateRoot = this.paths.privateRootDir ?? this.paths.rootDir;
-    const publicRoot = this.paths.publicRootDir;
-    if (privateRoot && filePath) {
-      const rel = relativeFromFileRoot(filePath, privateRoot);
-      if (rel !== null) {
-        const superRoot =
-          this.paths.globalPrivateRootDir && !sameFileRoot(this.paths.globalPrivateRootDir, privateRoot)
-            ? this.paths.globalPrivateRootDir
-            : undefined;
-        return toPathSource({
-          pathOrUri: uri,
-          rootUri: rootToUri(privateRoot),
-          relativePath: rel,
-          superRootUri: superRoot ? rootToUri(superRoot) : undefined,
-          superUri: superRoot ? new URL(rel, rootToUri(superRoot)).toString() : undefined,
-        });
+    const layers = this.getPromptLayers();
+    if (filePath) {
+      for (let index = layers.length - 1; index >= 0; index -= 1) {
+        const layer = layers[index];
+        if (layer?.privateRootDir) {
+          const rel = relativeFromFileRoot(filePath, layer.privateRootDir);
+          if (rel !== null) {
+            const parent = this.findParentLayerRoot(layers, index, "private");
+            return toPathSource({
+              pathOrUri: uri,
+              rootUri: rootToUri(layer.privateRootDir),
+              relativePath: rel,
+              rootKind: "private",
+              privateRootUri: layer.privateRootDir ? rootToUri(layer.privateRootDir) : undefined,
+              publicRootUri: layer.publicRootDir ? rootToUri(layer.publicRootDir) : undefined,
+              globalRootUri: this.paths.globalRootDir ? rootToUri(this.paths.globalRootDir) : undefined,
+              superRootUri: parent ? rootToUri(parent) : undefined,
+              superUri: parent ? new URL(rel, rootToUri(parent)).toString() : undefined,
+            });
+          }
+        }
+        if (layer?.publicRootDir) {
+          const rel = relativeFromFileRoot(filePath, layer.publicRootDir);
+          if (rel !== null) {
+            const parent = this.findParentLayerRoot(layers, index, "public");
+            return toPathSource({
+              pathOrUri: uri,
+              rootUri: rootToUri(layer.publicRootDir),
+              relativePath: rel,
+              rootKind: "public",
+              privateRootUri: layer.privateRootDir ? rootToUri(layer.privateRootDir) : undefined,
+              publicRootUri: layer.publicRootDir ? rootToUri(layer.publicRootDir) : undefined,
+              globalRootUri: this.paths.globalRootDir ? rootToUri(this.paths.globalRootDir) : undefined,
+              superRootUri: parent ? rootToUri(parent) : undefined,
+              superUri: parent ? new URL(rel, rootToUri(parent)).toString() : undefined,
+            });
+          }
+        }
       }
-    }
-    if (publicRoot && filePath) {
-      const rel = relativeFromFileRoot(filePath, publicRoot);
-      if (rel !== null) {
-        const superRoot =
-          this.paths.globalPublicRootDir && !sameFileRoot(this.paths.globalPublicRootDir, publicRoot)
-            ? this.paths.globalPublicRootDir
-            : undefined;
-        return toPathSource({
-          pathOrUri: uri,
-          rootUri: rootToUri(publicRoot),
-          relativePath: rel,
-          superRootUri: superRoot ? rootToUri(superRoot) : undefined,
-          superUri: superRoot ? new URL(rel, rootToUri(superRoot)).toString() : undefined,
-        });
+      if (this.paths.globalRootDir) {
+        const rel = relativeFromFileRoot(filePath, this.paths.globalRootDir);
+        if (rel !== null) {
+          return toPathSource({
+            pathOrUri: uri,
+            rootUri: rootToUri(this.paths.globalRootDir),
+            relativePath: rel,
+            rootKind: "global",
+            globalRootUri: rootToUri(this.paths.globalRootDir),
+          });
+        }
       }
     }
     return toPathSource({
@@ -305,13 +334,43 @@ export class FilePromptStore implements PromptStore {
     });
   }
 
+  private getPromptLayers(): PromptRootLayer[] {
+    if (this.paths.promptLayers?.length) {
+      return this.paths.promptLayers.map((layer) => ({ ...layer }));
+    }
+    const privateRoot = this.paths.privateRootDir ?? this.paths.rootDir;
+    return this.paths.publicRootDir || privateRoot
+      ? [
+          {
+            publicRootDir: this.paths.publicRootDir,
+            privateRootDir: privateRoot,
+          },
+        ]
+      : [];
+  }
+
+  private findParentLayerRoot(
+    layers: readonly PromptRootLayer[],
+    currentIndex: number,
+    rootKind: "private" | "public",
+  ): string | undefined {
+    const currentRoot = layers[currentIndex]?.[rootKind === "private" ? "privateRootDir" : "publicRootDir"];
+    for (let index = currentIndex - 1; index >= 0; index -= 1) {
+      const candidate = layers[index]?.[rootKind === "private" ? "privateRootDir" : "publicRootDir"];
+      if (candidate && !sameFileRoot(candidate, currentRoot)) {
+        return candidate;
+      }
+    }
+    return undefined;
+  }
+
   private resolveSlotUri(src: string, source?: PromptDocumentSource): string {
     const url = new URL(src);
     const scheme = url.protocol.slice(0, -1).toLowerCase();
-    if (scheme !== "super" && scheme !== "private" && scheme !== "public") {
+    if (scheme !== "super" && scheme !== "private" && scheme !== "public" && scheme !== "global") {
       return src;
     }
-    const rawPath = safeRelativePath(`${url.hostname}${url.pathname}`);
+    const rawPath = safeRelativePath(resolveLangToken(`${url.hostname}${url.pathname}`, this.paths.lang));
     if (scheme === "super") {
       if (rawPath.length === 0) {
         return source?.superUri ?? "";
@@ -326,14 +385,21 @@ export class FilePromptStore implements PromptStore {
       const root = this.paths.publicRootDir;
       return root && rawPath.length > 0 ? new URL(rawPath, rootToUri(root)).toString() : "";
     }
+    if (scheme === "global") {
+      const root = this.paths.globalRootDir;
+      return root && rawPath.length > 0 ? new URL(rawPath, rootToUri(root)).toString() : "";
+    }
     return src;
   }
 
-  private async readSlot(input: {
-    src: string;
-    document: PromptDocument;
-    source?: PromptDocumentSource;
-  }, context: PromptBuildContext = {}): Promise<string> {
+  private async readSlot(
+    input: {
+      src: string;
+      document: PromptDocument;
+      source?: PromptDocumentSource;
+    },
+    context: PromptBuildContext = {},
+  ): Promise<string> {
     const uri = this.resolveSlotUri(input.src, input.source ?? input.document.source);
     if (uri.length === 0) {
       return "";

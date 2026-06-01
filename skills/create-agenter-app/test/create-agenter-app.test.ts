@@ -7,7 +7,10 @@ const skillRoot = join(import.meta.dir, "..");
 const scaffoldScript = join(skillRoot, "scripts", "scaffold.ts");
 const validateScript = join(skillRoot, "scripts", "validate.ts");
 
-const runBun = async (args: readonly string[], cwd: string): Promise<{ exitCode: number; stdout: string; stderr: string }> => {
+const runBun = async (
+  args: readonly string[],
+  cwd: string,
+): Promise<{ exitCode: number; stdout: string; stderr: string }> => {
   const proc = Bun.spawn({
     cmd: ["bun", ...args],
     cwd,
@@ -30,7 +33,9 @@ describe("Feature: create-agenter-app skill scripts", () => {
     expect(skill).toContain("Create or update Agenter app packages");
     expect(skill).toContain("peerDependencies.agenter");
     expect(skill).toContain("app:<app-id>/<file>");
+    expect(skill).toContain("global:builtin/$LANG/AGENTER.mdx");
     expect(skill).toContain("npm:<package-name>/<relative-file>");
+    expect(skill).toContain("daemon startup owns builtin prompt materialization");
   });
 
   test("Scenario: Given external mode When scaffolding an app Then peer compatibility and app descriptor metadata are generated", async () => {

@@ -6,6 +6,10 @@ export interface PromptDocumentSource {
   path?: string;
   rootUri?: string;
   relativePath?: string;
+  rootKind?: "private" | "public" | "global";
+  privateRootUri?: string;
+  publicRootUri?: string;
+  globalRootUri?: string;
   superRootUri?: string;
   superUri?: string;
 }

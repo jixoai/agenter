@@ -47,7 +47,13 @@ describe("Feature: session config provider resolution", () => {
     expect(config.avatar.sources[0]?.path).toBe(globalSessionRoot);
     expect(config.prompt.rootDir).toBe(globalSessionRoot);
     expect(config.prompt.agenterPath).toBe(join(globalSessionRoot, "AGENTER.mdx"));
-    expect(config.prompt.globalPrivateRootDir).toBe(globalSessionRoot);
+    expect(config.prompt.globalRootDir).toBe(join(homeDir, ".agenter"));
+    expect(config.prompt.promptLayers).toEqual([
+      {
+        publicRootDir: join(homeDir, ".agenter"),
+        privateRootDir: globalSessionRoot,
+      },
+    ]);
   });
 
   test("Scenario: Given user kimi provider and project default deepseek When resolving session config Then the runtime uses kimi", async () => {
