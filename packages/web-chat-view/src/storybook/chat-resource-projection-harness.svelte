@@ -2,6 +2,7 @@
   import ChatDraftEditor from "../composer/chat-draft-editor.svelte";
   import { resolveComposerCapabilities } from "../composer/composer-contract";
   import MessageMarkdownContent from "../components/message-markdown-content.svelte";
+  import ResourceIconWithNumber from "../components/resource-icon-with-number.svelte";
   import type { WebChatResourceReference } from "../types";
   import StoryRoot from "./framework7-story-root.svelte";
 
@@ -69,6 +70,37 @@
     "[^Comment 1]: [Line scoped note](msg://review-room/1#L42)",
     "[^File 1]: [!brief.pdf](https://assets.example/brief.pdf)",
   ].join("\n");
+
+  const iconPalette = [
+    {
+      id: "slate",
+      ink: "#0f172a",
+      surface: "#f8fafc",
+      border: "rgba(15, 23, 42, 0.18)",
+      badge: "#ffffff",
+    },
+    {
+      id: "teal",
+      ink: "#0f766e",
+      surface: "#ccfbf1",
+      border: "rgba(15, 118, 110, 0.24)",
+      badge: "#f0fdfa",
+    },
+    {
+      id: "rose",
+      ink: "#9f1239",
+      surface: "#ffe4e6",
+      border: "rgba(159, 18, 57, 0.22)",
+      badge: "#fff1f2",
+    },
+    {
+      id: "indigo",
+      ink: "#3730a3",
+      surface: "#e0e7ff",
+      border: "rgba(55, 48, 163, 0.22)",
+      badge: "#eef2ff",
+    },
+  ] as const;
 </script>
 
 <StoryRoot {width} {height} background="#f8f8fc">
@@ -122,13 +154,29 @@
         </div>
       </dl>
     </div>
+
+    <div class="projection-panel" data-testid="resource-icon-palette-panel">
+      <p class="panel-kicker">icon palette</p>
+      <div class="palette-grid" aria-label="Resource icon color variants">
+        {#each iconPalette as variant (variant.id)}
+          <div
+            class="palette-row"
+            style={`--resource-icon-ink: ${variant.ink}; --resource-icon-surface: ${variant.surface}; --resource-icon-border: ${variant.border}; --resource-icon-badge-surface: ${variant.badge}; --resource-icon-badge-border: ${variant.border}`}
+          >
+            <ResourceIconWithNumber kind="image" number="1" />
+            <ResourceIconWithNumber kind="comment" number="2" />
+            <ResourceIconWithNumber kind="file" number="3" extension="pdf" />
+          </div>
+        {/each}
+      </div>
+    </div>
   </section>
 </StoryRoot>
 
 <style>
   .projection-surface {
     display: grid;
-    grid-template-rows: auto auto;
+    grid-template-rows: auto auto auto;
     align-content: start;
     gap: 0.9rem;
     height: 100%;
@@ -178,6 +226,23 @@
     display: grid;
     grid-template-columns: 5.2rem minmax(0, 1fr);
     gap: 0.5rem;
+  }
+
+  .palette-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(7.5rem, max-content));
+    gap: 0.42rem;
+    align-items: center;
+  }
+
+  .palette-row {
+    display: flex;
+    align-items: center;
+    gap: 0.32rem;
+    width: max-content;
+    border-radius: 0.86rem;
+    background: color-mix(in srgb, var(--resource-icon-surface) 50%, white 50%);
+    padding: 0.3rem;
   }
 
   .projection-state dt {

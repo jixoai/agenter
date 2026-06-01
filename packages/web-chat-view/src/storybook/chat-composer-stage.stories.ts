@@ -91,6 +91,26 @@ export const CodeMirrorResourceProjection = {
     expect(resourceBar?.scrollWidth ?? 0).toBeLessThanOrEqual((resourceBar?.clientWidth ?? 0) + 1);
     expect(resourceBar?.scrollHeight ?? 0).toBeLessThanOrEqual((resourceBar?.clientHeight ?? 0) + 1);
 
+    const imageIcon = bubbleHost?.querySelector<HTMLElement>('[part="resource-icon-with-number"][data-kind="image"]');
+    const imageBase = imageIcon?.querySelector<HTMLElement>(".resource-icon-image-base") ?? null;
+    const imageNumber = imageIcon?.querySelector<HTMLElement>(".resource-icon-image-number") ?? null;
+    expect(imageBase).not.toBeNull();
+    expect(imageNumber).not.toBeNull();
+    expect(getComputedStyle(imageBase!).color).toBe(getComputedStyle(imageNumber!).color);
+
+    const fileIcon = bubbleHost?.querySelector<HTMLElement>('[part="resource-icon-with-number"][data-kind="file"]');
+    const fileNumber = fileIcon?.querySelector<HTMLElement>(".resource-icon-file-number") ?? null;
+    const fileExtensionBadge = fileIcon?.querySelector<HTMLElement>(".resource-icon-file-extension-badge") ?? null;
+    const fileExtension = fileIcon?.querySelector<HTMLElement>(".resource-icon-file-extension") ?? null;
+    expect(fileNumber).not.toBeNull();
+    expect(fileExtensionBadge).not.toBeNull();
+    expect(fileExtension).not.toBeNull();
+    expect(getComputedStyle(fileNumber!).fontSize).toBe("16px");
+    expect(getComputedStyle(fileExtension!).fontSize).toBe("16px");
+
+    const palettePanel = canvas.getByTestId("resource-icon-palette-panel");
+    expect(palettePanel.querySelectorAll("[part='resource-icon-with-number']")).toHaveLength(12);
+
     composerHost
       ?.querySelector<HTMLElement>("[part='message-resource-token']")
       ?.dispatchEvent(new MouseEvent("click", { bubbles: true }));

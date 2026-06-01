@@ -19,9 +19,9 @@
 - [x] 5.6 Re-run typecheck, targeted tests, OpenSpec validation/check, and desktop/iPhone 14 screenshot walk-through.
 - [x] 5.7 Update self-review with the rework evidence and final walkthrough entry.
 - [x] 6.1 Record the Round 3 icon generality feedback in OpenSpec plan/spec/tasks before changing product code.
-- [ ] 6.2 Make the image icon glyph and number share one ink color through the shared atom.
-- [ ] 6.3 Move file extension into a bottom-right badge while keeping No centered.
-- [ ] 6.4 Convert icon text sizing to `font-size: 1rem` plus transform scale.
-- [ ] 6.5 Add a multi-color/multi-background walkthrough matrix for comment/file/image icons.
-- [ ] 6.6 Refresh unit/Storybook DOM coverage, typecheck, OpenSpec validation/check, and desktop/iPhone 14 screenshots.
-- [ ] 6.7 Update self-review with Round 3 evidence and walkthrough entry.
+- [x] 6.2 Make the image icon glyph and number share one ink color through the shared atom.
+- [x] 6.3 Move file extension into a bottom-right badge while keeping No centered.
+- [x] 6.4 Convert icon text sizing to `font-size: 1rem` plus transform scale.
+- [x] 6.5 Add a multi-color/multi-background walkthrough matrix for comment/file/image icons.
+- [x] 6.6 Refresh unit/Storybook DOM coverage, typecheck, OpenSpec validation/check, and desktop/iPhone 14 screenshots.
+- [x] 6.7 Update self-review with Round 3 evidence and walkthrough entry.
