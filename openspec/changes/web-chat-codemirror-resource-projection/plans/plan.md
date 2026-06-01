@@ -2,8 +2,8 @@
 
 ## Current Round
 
-- Round: 2
-- Status: visual acceptance rework for resource icon projection
+- Round: 3
+- Status: visual generality rework for resource icon projection
 - Previous plan backup: none
 
 ## Workflow Command Surface
@@ -35,6 +35,11 @@
 >   把这个动态图标，作为基础组件，彻底重构到相关的地方
 > 2. message-markdown-resource-bar 这个元素的样式绝对有问题，等动态图标做好，这个bar的样式需要好好优化一下，它现在最大的问题是控制不好子元素的宽高以及自己的滚动条。本来不应该出现滚动条，结果横竖都出现了 [Image #1]
 
+> 我看到你封装的组件了，效果挺不错，但是需要几点改进，并且我需要你给我提供不同颜色的、不同背景底色的，让我看看你的通用性如何。
+> 1. image这个图标，本身图标的颜色好像是灰色，字体是黑色，这个应该是同一个颜色
+> 2. 改进一些File这个图标，把文件后缀做到右下角去作为角标，No居中
+> 3. 字体尺寸不要只用 font-size 控制，要用fontsize-1rem + scale，因为font-size会被了浏览器的最小字体大小限制
+
 ## Objective Record
 
 ### Requirement-Bearing Q&A
@@ -45,6 +50,7 @@
 | 2 | User | Explain the next work in plain language with a concrete picture. | Plan must preserve the "same Markdown base, two CodeMirror projection windows" mental model. |
 | 3 | User | Use OpenSpec, inspect screenshots, confirm expected behavior, then let the user walk through. | Completion requires OpenSpec artifacts, automated/targeted verification, browser screenshot evidence, and a final user walkthrough URL/path. |
 | 4 | User | Inline resource tokens should render as dynamic icon-with-No widgets, and the resource bar must stop producing uncontrolled scrollbars. | The shared projection atom must become visual-icon first; resource bar layout must be fixed-size and no-scrollbar by default. |
+| 5 | User | The icon atom is directionally correct, but image ink must be unified, file extension must move to a bottom-right badge, text sizing must use `1rem + scale`, and the demo must show color/background generality. | The atom needs CSS-variable-driven theming and browser-min-font-safe text scaling before final visual acceptance. |
 
 ### Evidence Read
 
@@ -63,6 +69,8 @@
 | `packages/web-chat-view/src/resource-card.svelte` | Resource cards currently hand-roll image/file/comment icon overlays. | These duplicated visuals should move behind one icon-with-number atom. |
 | `packages/web-chat-view/src/components/message-markdown-resource-token.svelte` | Inline tokens currently render raw bracket text. | Replace text-first projection with the same icon-with-number atom while preserving accessible label/title and source Markdown truth. |
 | `packages/web-chat-view/src/components/message-markdown-resource-bar.svelte` | The bar uses auto overflow and thin scrollbars. | Rework it as a fixed-height wrap-capable resource icon strip with no default scrollbar. |
+| `packages/web-chat-view/src/components/resource-icon-with-number.svelte` | Round 2 centralizes icon drawing but still uses kind-specific hardcoded colors and `font-size: calc(...)`. | Upgrade to CSS variables and `font-size: 1rem` plus transform scale for small glyphs. |
+| `packages/web-chat-view/src/storybook/chat-resource-projection-harness.svelte` | The walkthrough route shows core icon projection but not multiple ink/surface combinations. | Add a compact color/background matrix so the same atom is visibly generic. |
 
 ### Git Evidence
 
@@ -148,10 +156,10 @@ One Markdown message is like one sheet of paper under two lamps. The composer la
 - `ChatDraftEditor` accepts resource references in addition to completion capabilities.
 - `MessageMarkdownContent` keeps its readonly resource context.
 - A shared CodeMirror resource-token projection extension exposes reusable token widgets.
-- A shared icon-with-number Svelte component renders comment, file, and image variants from one normalizer:
+- A shared icon-with-number Svelte component renders comment, file, and image variants from one normalizer and CSS-variable theming:
   - comment: `MessageSquareDot` base icon, centered number.
-  - file: `File` base icon, scaled extension row plus centered number row.
-  - image: `Image` base icon, corner number badge.
+  - file: `File` base icon, centered number, bottom-right extension badge.
+  - image: `Image` base icon, corner number badge with the same ink color as the image glyph.
 - Readonly bubble mode may hide definition lines and render an aggregated bar.
 - Writable composer mode should not hide source blocks or definitions unexpectedly; it only decorates inline resource references.
 
@@ -161,6 +169,7 @@ One Markdown message is like one sheet of paper under two lamps. The composer la
 - Draft state: pending frontend resources and editor text.
 - Projection: CodeMirror decorations/widgets for inline tokens and resource bars.
 - Visual atom data: resource kind, display number, optional file extension. Display number supports `1..9`; values outside that range render as `*`.
+- Visual atom text sizing: numeric labels and extension labels use `font-size: 1rem` plus transform scaling, rather than shrinking the actual font-size below browser minimums.
 - Forbidden: `metadata.webChatCommentResources` or a hidden composer-only durable sidecar.
 
 ### Architecture Shape
@@ -190,6 +199,10 @@ One Markdown message is like one sheet of paper under two lamps. The composer la
 - [ ] 9. Refactor inline resource token, resource card, and resource bar to consume the atom instead of bracket text or duplicated icon overlays.
 - [ ] 10. Rework `message-markdown-resource-bar` sizing so normal message resource strips do not show uncontrolled horizontal or vertical scrollbars.
 - [ ] 11. Refresh BDD/DOM coverage and desktop/iPhone 14 screenshots for the accepted visual shape.
+- [ ] 12. Upgrade icon theming so image icon/number share one ink color and variants can be recolored through CSS variables.
+- [ ] 13. Rework file icon layout to put No in the center and the file extension in a bottom-right badge.
+- [ ] 14. Replace small text font-size shrinking with `font-size: 1rem` plus scale transforms.
+- [ ] 15. Add a multi-color/multi-background walkthrough matrix and refresh tests/screenshots.
 
 ## Open Questions
 

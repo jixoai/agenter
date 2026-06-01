@@ -21,6 +21,22 @@
 - **AND** a resource number outside `1` through `9` renders `*`
 - **AND** comment, file, and image variants are rendered by the same icon-with-number component family
 
+#### Scenario: Resource icon atom supports visual theming and browser-min-font-safe scaling
+
+- **GIVEN** the shared resource icon atom is rendered with different ink and surface CSS variables
+- **WHEN** image, comment, and file variants render in the walkthrough surface
+- **THEN** the icon glyph, number, and extension badge remain legible across those colors
+- **AND** the image glyph and image number use the same ink color
+- **AND** small numeric and extension text uses `font-size: 1rem` with transform scale instead of shrinking only through `font-size`
+
+#### Scenario: File resource icon uses extension as a badge
+
+- **GIVEN** a file resource has a resolved extension such as `PDF`
+- **WHEN** the file resource icon renders
+- **THEN** the file number is centered inside the file icon
+- **AND** the extension renders as a bottom-right corner badge
+- **AND** the extension text uses scaled `1rem` text rather than a browser-minimum font-size dependency
+
 #### Scenario: Readonly bubble keeps sent projection semantics
 
 - **GIVEN** a sent message contains inline resource tokens and matching Markdown footnote definitions
