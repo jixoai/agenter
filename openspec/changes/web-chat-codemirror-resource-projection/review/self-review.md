@@ -2,7 +2,7 @@
 
 ## 结论
 
-本轮实现与 `plans/plan.md` 的 Round 4 layered-SVG 一致性返工对齐，可以进入用户走查。数据库与发送边界没有重新引入 `webChatCommentResources` 或其它 WebChat 结构化资源 sidecar；本轮只升级前端投影层。composer 现在仍是 writable CodeMirror，能够把 `[^Comment 1]` 这类 Markdown footnote token 投影成 icon-with-number 资源节点；message bubble 仍是 readonly CodeMirror，继续隐藏 footnote definition，并从同一资源引用解析入口渲染 inline token 与 in-bubble resource bar。共享图标原子现在支持不同 ink/surface/border/badge 变量，image 图标和数字同色，file 图标保持 No 居中并把文件后缀放到右下角标。可见图标内部已统一为两层 SVG：底层 base icon layer，上层 info layer。
+本轮实现与 `plans/plan.md` 的 Round 13 safe-padding container 法则对齐，可以进入用户走查。数据库与发送边界没有重新引入 `webChatCommentResources` 或其它 WebChat 结构化资源 sidecar；本轮只升级前端投影层。composer 现在仍是 writable CodeMirror，能够把 `[^Comment 1]` 这类 Markdown footnote token 投影成 icon-with-number 资源节点；message bubble 仍是 readonly CodeMirror，继续隐藏 footnote definition，并从同一资源引用解析入口渲染 inline token 与 in-bubble resource bar。共享图标原子现在支持不同 ink/surface/border/badge 变量，image 图标和数字同色，file 图标保持 No 居中并把文件后缀放到右下角标。可见图标内部已统一为两层 SVG：底层 base icon layer，上层 info layer。Round 5 已把 base glyph 改为官方 lucide `MessageSquareDot` / `Image` / `File` 组件，image No 与圆标中心坐标一致，comment No 从上一版缩小，file info layer 采用用户给出的 scale/offset/badge 坐标并保留 `1rem + scale` 文本法则。Round 6 已把两层 SVG 从 `position:absolute` / `inset:0` 缝合改为同一个 `inline-grid` 网格单元内重叠，并把 comment/image/file base glyph 透明度统一到 `--resource-icon-base-opacity`。Round 7 已把匿名 `grid-area: 1 / 1` 改成 `grid-template-areas: "resource-icon-layer"` 与 `grid-area: resource-icon-layer`。Round 8 修正了 Svelte scoped CSS 没覆盖 lucide 组件内部 SVG 的问题：layer 布局规则现在通过组件根下的 `:global(.resource-icon-layer)` 作用到 lucide base SVG 和本地 info SVG，并用 Storybook DOM 断言两个真实 SVG 的 computed `grid-area` 都包含 `resource-icon-layer`。Round 9 已显式声明 base layer z-index 为 `0`、info layer z-index 为 `1`，并用 Storybook DOM 断言 info 层高于 base 层。Round 10 已写入用户手动微调的 comment/file info SVG 坐标和 file extension badge stroke。Round 11 已写入用户手动微调的 image badge 坐标/stroke，并移除 inline-only file extension badge translate，避免 mini file badge 被额外推到 icon 外。Round 12 已移除整个 file info SVG 的 transform，把原来的 `translateY(2px) scale(0.8)` 折算进内部 file number/badge/extension 坐标和文本 scale，确保 base SVG 与 info SVG 默认同尺寸叠放。Round 13 已在容器上加入 `padding = min(border-radius, width, height) / 4` 的安全内边距，防止圆角裁剪内部 SVG。
 
 ## 法则变动
 
@@ -11,6 +11,24 @@
 - `resource-icon-with-number.svelte` 升级为 CSS-variable-driven 视觉原子，支持 `--resource-icon-ink`、`--resource-icon-surface`、`--resource-icon-border`、`--resource-icon-badge-surface`、`--resource-icon-badge-border`。
 - 图标内小文本统一使用 `font-size: 1rem` 加 transform scale，避免依赖浏览器可能钳制的小字号。
 - `resource-icon-with-number.svelte` 的可见内部绘制从 lucide SVG + HTML span overlay 改为两张叠加 SVG：`data-resource-icon-layer="base"` 绘制资源 glyph，`data-resource-icon-layer="info"` 绘制编号、badge、extension。
+- `resource-icon-with-number.svelte` 的 base icon layer 进一步收口到官方 lucide `MessageSquareDot` / `Image` / `File` 组件，不再维护手写 lookalike path。
+- image badge 的圆心和数字坐标保持一致；comment 数字缩小；file info layer 使用用户给出的 `scale(0.8)`、下移和右下角 badge 坐标。
+- `resource-icon-with-number.svelte` 的图层重叠由 `display: inline-grid` / `grid-area: 1 / 1` 承担，删除 `.resource-icon-layer` 上的 `position:absolute` 与 `inset:0`。
+- comment/image/file base glyph opacity 统一为 `--resource-icon-base-opacity`，避免 comment 单独拥有不可解释的透明度。
+- `resource-icon-with-number.svelte` 的图层重叠进一步从匿名网格线改为 named area：外层声明 `grid-template-areas: "resource-icon-layer"`，base/info SVG 都声明 `grid-area: resource-icon-layer`。
+- `resource-icon-with-number.svelte` 的 layer 布局选择器改为 `.resource-icon-with-number :global(.resource-icon-layer)`，确保 lucide 组件生成的 base SVG 和本地 info SVG 都由同一个 named area 控制。
+- `CodeMirrorResourceProjection` Storybook DOM 断言现在读取 base/info 两个真实 SVG 的 computed `grid-area`，防止 scoped CSS 只命中其中一层。
+- `resource-icon-with-number.svelte` 新增 `--resource-icon-base-layer-z-index: 0` 与 `--resource-icon-info-layer-z-index: 1`，并把 z-index 应用到真实 base/info SVG layer。
+- `CodeMirrorResourceProjection` Storybook DOM 断言现在读取 base/info 两个真实 SVG 的 computed `z-index`，确保 info 层高于 icon 层。
+- `resource-icon-with-number.svelte` 写入用户微调坐标：comment number `x=10.2 y=11`；file number `y=11.8`；file badge rect `y=19`；file extension text `y=21.2`。
+- file extension badge stroke 改为 `currentColor`，`stroke-width` 改为 `0.5`。
+- `resource-icon-with-number.svelte` 写入用户微调 image 坐标：image badge circle `cx=18 cy=6 r=4.2`；image number `x=18 y=5.8`。
+- image number badge stroke 改为 `currentColor`，`stroke-width` 改为 `0.5`。
+- 删除 inline-only `.resource-icon-file-extension-badge` translate，使 mini 和 standard file badge 使用同一套 SVG 坐标，只保留字号 scale 的 size 差异。
+- 删除 `.resource-icon-file-info-layer` 的 whole-SVG transform；file internal 坐标折算为 number `y=13.84`、badge rect `x=12 y=19.6 width=8.8 height=3.84 rx=0.84`、extension text `x=16.4 y=21.36`。
+- file 文本 scale 折算为 number `0.656`、extension `0.24`，inline extension scale 为 `0.152`，不再通过整层 SVG scale 实现。
+- `resource-icon-with-number.svelte` 增加 `--resource-icon-width`、`--resource-icon-height`、`--resource-icon-border-radius`、`--resource-icon-effective-radius`、`--resource-icon-safe-padding`，并把 container padding 设为 `calc(min(radius,width,height) / 4)`。
+- tile 默认 radius 为 `11px`；inline radius 为 `0.33em`；Storybook DOM 会分别读取 tile/inline computed padding 并按 `min(border-radius,width,height)/4` 校验。
 - readonly bubble 的 token 解析从 bubble-only preview 实现迁移到共享原子；bubble 自己仍只负责 readonly mode policy：隐藏 definition、结构化 Markdown preview、resource bar。
 - writable composer 只启用 inline token decoration，不隐藏 footnote definition/source block，避免把编辑器变成预览器。
 - composer token activation 走 `WebChatResourceReference`，并接入 composer 侧 `ResourcePreviewLayer`；pending comment 仍保留空内容删除与保存语义。
@@ -44,11 +62,21 @@
 - `bun run openspec:vision -- validate web-chat-codemirror-resource-projection`：valid。
 - `bun run openspec:vision -- check web-chat-codemirror-resource-projection`：ok。
 - `git diff --check`：通过。
+- Round 5 targeted verification：`bun run typecheck` in `packages/web-chat-view` 通过；`bun run typecheck` in `packages/web-chat-view/example` 通过；`bun run test:unit -- test/resource-icon-number.test.ts test/message-markdown-resource-token-projection.test.ts test/message-markdown-content.test.ts test/comment-resource-reopen-contract.test.ts` 通过；`bun run test:dom -- test/storybook/chat-composer-stage.stories.test.ts test/storybook/resource-square-tile-blueprint.stories.test.ts` 通过；`bun run openspec:vision -- validate web-chat-codemirror-resource-projection` valid；`bun run openspec:vision -- check web-chat-codemirror-resource-projection` ok；`git diff --check` 通过。
+- Round 6 targeted verification：`bun run typecheck` in `packages/web-chat-view` 通过；`bun run typecheck` in `packages/web-chat-view/example` 通过；`bun run test:unit -- test/comment-resource-reopen-contract.test.ts test/resource-icon-number.test.ts` 通过；`bun run test:dom -- test/storybook/chat-composer-stage.stories.test.ts test/storybook/resource-square-tile-blueprint.stories.test.ts` 通过。
+- Round 7 targeted verification：`bun run typecheck` in `packages/web-chat-view` 通过；`bun run typecheck` in `packages/web-chat-view/example` 通过；`bun run test:unit -- test/comment-resource-reopen-contract.test.ts test/resource-icon-number.test.ts` 通过；`bun run test:dom -- test/storybook/chat-composer-stage.stories.test.ts test/storybook/resource-square-tile-blueprint.stories.test.ts` 通过。
+- Round 8 targeted verification：`bun run typecheck` in `packages/web-chat-view` 通过；`bun run typecheck` in `packages/web-chat-view/example` 通过；`bun run test:unit -- test/comment-resource-reopen-contract.test.ts test/resource-icon-number.test.ts` 通过；`bun run test:dom -- test/storybook/chat-composer-stage.stories.test.ts test/storybook/resource-square-tile-blueprint.stories.test.ts` 通过。
+- Round 9 targeted verification：`bun run typecheck` in `packages/web-chat-view` 通过；`bun run typecheck` in `packages/web-chat-view/example` 通过；`bun run test:unit -- test/comment-resource-reopen-contract.test.ts test/resource-icon-number.test.ts` 通过；`bun run test:dom -- test/storybook/chat-composer-stage.stories.test.ts test/storybook/resource-square-tile-blueprint.stories.test.ts` 通过。
+- Round 10 targeted verification：`bun run typecheck` in `packages/web-chat-view` 通过；`bun run typecheck` in `packages/web-chat-view/example` 通过；`bun run test:unit -- test/comment-resource-reopen-contract.test.ts test/resource-icon-number.test.ts` 通过；`bun run test:dom -- test/storybook/chat-composer-stage.stories.test.ts test/storybook/resource-square-tile-blueprint.stories.test.ts` 通过。
+- Round 11 targeted verification：`bun run typecheck` in `packages/web-chat-view` 通过；`bun run typecheck` in `packages/web-chat-view/example` 通过；`bun run test:unit -- test/comment-resource-reopen-contract.test.ts test/resource-icon-number.test.ts` 通过；`bun run test:dom -- test/storybook/chat-composer-stage.stories.test.ts test/storybook/resource-square-tile-blueprint.stories.test.ts` 通过。
+- Round 12 targeted verification：`bun run typecheck` in `packages/web-chat-view` 通过；`bun run typecheck` in `packages/web-chat-view/example` 通过；`bun run test:unit -- test/comment-resource-reopen-contract.test.ts test/resource-icon-number.test.ts` 通过；`bun run test:dom -- test/storybook/chat-composer-stage.stories.test.ts test/storybook/resource-square-tile-blueprint.stories.test.ts` 通过。
+- Round 13 targeted verification：`bun run typecheck` in `packages/web-chat-view` 通过；`bun run typecheck` in `packages/web-chat-view/example` 通过；`bun run test:unit -- test/comment-resource-reopen-contract.test.ts test/resource-icon-number.test.ts` 通过；`bun run test:dom -- test/storybook/chat-composer-stage.stories.test.ts test/storybook/resource-square-tile-blueprint.stories.test.ts` 通过。
 
 ## 偏移清单
 
 - Browser 插件路径：已按 Browser skill 尝试连接 in-app browser，但当前 `agent.browsers.list()` 为空，无法使用 Browser backend；截图走查改用 Playwright，并在证据中记录。
 - Svelte MCP：`list_sections` 与 `svelte_autofixer` 均返回 `Transport closed`，无法作为验证入口；本轮用 `svelte-check`、unit、Storybook DOM 和真实 route screenshots 兜底。
+- Round 5 截图：用户明确要求“你不用看截图，直接按我说的微调好，我来看”，所以本轮没有重新截图；保留同一个 dev server walkthrough route 给用户直接验收。
 - Storybook dev iframe：`test:dom` 的 Storybook browser path 通过；但直接打开 Storybook dev iframe 在 Bun workspace 下会被 Storybook 自身 runtime `.svelte` 文件处理卡住。本轮不扩大 Vite FS 权限，不把这个非目标问题混入实现；人工走查 URL 使用 example route。
 - 截图入口：before 是现有 example root，after 是专门的 `/resource-projection` route。它们不是同一路由逐像素对比，证据用途是展示“实现前 app baseline”和“实现后目标能力可视化”。
 - 视觉范围：after harness 是验证/走查 surface，不是最终产品页面；它只展示 composer writable 与 bubble readonly 的资源投影，不代表 Chat 主界面整体视觉定稿。

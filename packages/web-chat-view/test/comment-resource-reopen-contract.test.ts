@@ -140,8 +140,45 @@ describe("Feature: comment resource reopen contract", () => {
       expect(source).toContain("MessageSquareDot");
       expect(source).not.toContain("MessageSquareMore");
     }
+    expect(resourceIconWithNumberSource).toContain("MessageSquareDot");
     expect(resourceIconWithNumberSource).toContain("resource-icon-comment-base");
-    expect(resourceIconWithNumberSource).toContain('<circle cx="17.35" cy="7.75" r="1.55"');
+    expect(resourceIconWithNumberSource).toContain('--resource-icon-comment-number-scale: 0.66');
+    expect(resourceIconWithNumberSource).toContain("display: inline-grid");
+    expect(resourceIconWithNumberSource).toContain('grid-template-areas: "resource-icon-layer"');
+    expect(resourceIconWithNumberSource).toContain("--resource-icon-width: var(--resource-icon-size)");
+    expect(resourceIconWithNumberSource).toContain("--resource-icon-height: var(--resource-icon-size)");
+    expect(resourceIconWithNumberSource).toContain("--resource-icon-border-radius: 11px");
+    expect(resourceIconWithNumberSource).toContain("--resource-icon-safe-padding: calc(var(--resource-icon-effective-radius) / 4)");
+    expect(resourceIconWithNumberSource).toContain("padding: var(--resource-icon-safe-padding)");
+    expect(resourceIconWithNumberSource).toContain("--resource-icon-border-radius: 0.33em");
+    expect(resourceIconWithNumberSource).toContain(":global(.resource-icon-layer)");
+    expect(resourceIconWithNumberSource).toContain("grid-area: resource-icon-layer");
+    expect(resourceIconWithNumberSource).not.toContain("grid-area: 1 / 1");
+    expect(resourceIconWithNumberSource).toContain("--resource-icon-base-opacity");
+    expect(resourceIconWithNumberSource).toContain("--resource-icon-base-layer-z-index: 0");
+    expect(resourceIconWithNumberSource).toContain("--resource-icon-info-layer-z-index: 1");
+    expect(resourceIconWithNumberSource).toContain("z-index: var(--resource-icon-base-layer-z-index)");
+    expect(resourceIconWithNumberSource).toContain("z-index: var(--resource-icon-info-layer-z-index)");
+    expect(resourceIconWithNumberSource).toContain('class="resource-icon-info-text resource-icon-comment-number" x="10.2" y="11"');
+    expect(resourceIconWithNumberSource).toContain('class="resource-icon-info-text resource-icon-file-number" x="12" y="13.84"');
+    expect(resourceIconWithNumberSource).toContain(
+      'class="resource-icon-file-extension-badge-fill" x="12" y="19.6" width="8.8" height="3.84" rx="0.84"',
+    );
+    expect(resourceIconWithNumberSource).toContain('class="resource-icon-info-text resource-icon-file-extension"');
+    expect(resourceIconWithNumberSource).toContain('x="16.4"');
+    expect(resourceIconWithNumberSource).toContain('y="21.36"');
+    expect(resourceIconWithNumberSource).toContain('class="resource-icon-image-number-badge-fill" cx="18" cy="6" r="4.2"');
+    expect(resourceIconWithNumberSource).toContain('class="resource-icon-info-text resource-icon-image-number" x="18" y="5.8"');
+    expect(resourceIconWithNumberSource).toContain("--resource-icon-file-number-scale: 0.656");
+    expect(resourceIconWithNumberSource).toContain("--resource-icon-file-extension-scale: 0.24");
+    expect(resourceIconWithNumberSource).toContain("stroke: currentColor");
+    expect(resourceIconWithNumberSource).toContain("stroke-width: 0.5");
+    expect(resourceIconWithNumberSource).not.toContain("--resource-icon-file-info-scale");
+    expect(resourceIconWithNumberSource).not.toContain(".resource-icon-file-info-layer {\n    transform:");
+    expect(resourceIconWithNumberSource).not.toContain(".resource-icon-with-number[data-size=\"inline\"] .resource-icon-file-extension-badge");
+    expect(resourceIconWithNumberSource).not.toContain("position: absolute");
+    expect(resourceIconWithNumberSource).not.toContain("inset: 0");
+    expect(resourceIconWithNumberSource).not.toContain(".resource-icon-comment-base {\n    opacity:");
     expect(resourceIconWithNumberSource).not.toContain("MessageSquareMore");
     expect(resourceCardSource).toContain("ResourceIconWithNumber");
     expect(resourcePreviewLayerSource).toContain("ResourceIconWithNumber");

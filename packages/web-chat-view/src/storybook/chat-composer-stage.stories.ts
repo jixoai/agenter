@@ -91,26 +91,90 @@ export const CodeMirrorResourceProjection = {
     expect(resourceBar?.scrollWidth ?? 0).toBeLessThanOrEqual((resourceBar?.clientWidth ?? 0) + 1);
     expect(resourceBar?.scrollHeight ?? 0).toBeLessThanOrEqual((resourceBar?.clientHeight ?? 0) + 1);
 
+    const commentIcon = bubbleHost?.querySelector<HTMLElement>(
+      '[part="resource-icon-with-number"][data-kind="comment"]',
+    );
+    const commentNumber = commentIcon?.querySelector<SVGTextElement>(".resource-icon-comment-number") ?? null;
+    expect(commentNumber).not.toBeNull();
+    expect(commentNumber?.getAttribute("x")).toBe("10.2");
+    expect(commentNumber?.getAttribute("y")).toBe("11");
+
     const imageIcon = bubbleHost?.querySelector<HTMLElement>('[part="resource-icon-with-number"][data-kind="image"]');
+    const imageBaseLayer = imageIcon?.querySelector<SVGElement>("svg[data-resource-icon-layer='base']") ?? null;
+    const imageInfoLayer = imageIcon?.querySelector<SVGElement>("svg[data-resource-icon-layer='info']") ?? null;
     const imageBase = imageIcon?.querySelector<HTMLElement>(".resource-icon-image-base") ?? null;
+    const imageBadgeCircle = imageIcon?.querySelector<SVGCircleElement>(".resource-icon-image-number-badge-fill") ?? null;
     const imageNumber = imageIcon?.querySelector<HTMLElement>(".resource-icon-image-number") ?? null;
+    expect(imageBaseLayer).not.toBeNull();
+    expect(imageInfoLayer).not.toBeNull();
     expect(imageBase).not.toBeNull();
+    expect(imageBadgeCircle).not.toBeNull();
     expect(imageNumber).not.toBeNull();
     expect(imageIcon?.querySelectorAll("svg[data-resource-icon-layer]")).toHaveLength(2);
-    expect(imageIcon?.querySelector("svg[data-resource-icon-layer='base']")).not.toBeNull();
-    expect(imageIcon?.querySelector("svg[data-resource-icon-layer='info']")).not.toBeNull();
+    expect(getComputedStyle(imageBaseLayer!).gridArea).toContain("resource-icon-layer");
+    expect(getComputedStyle(imageInfoLayer!).gridArea).toContain("resource-icon-layer");
+    expect(Number(getComputedStyle(imageInfoLayer!).zIndex)).toBeGreaterThan(
+      Number(getComputedStyle(imageBaseLayer!).zIndex),
+    );
     expect(getComputedStyle(imageBase!).color).toBe(getComputedStyle(imageNumber!).color);
+    expect(imageBadgeCircle?.getAttribute("cx")).toBe("18");
+    expect(imageBadgeCircle?.getAttribute("cy")).toBe("6");
+    expect(imageBadgeCircle?.getAttribute("r")).toBe("4.2");
+    expect(imageNumber?.getAttribute("x")).toBe("18");
+    expect(imageNumber?.getAttribute("y")).toBe("5.8");
 
     const fileIcon = bubbleHost?.querySelector<HTMLElement>('[part="resource-icon-with-number"][data-kind="file"]');
+    const tileFileIcon = bubbleHost?.querySelector<HTMLElement>(
+      '[part="resource-icon-with-number"][data-kind="file"][data-size="tile"]',
+    );
+    const inlineFileIcon = bubbleHost?.querySelector<HTMLElement>(
+      '[part="resource-icon-with-number"][data-kind="file"][data-size="inline"]',
+    );
+    const fileInfoLayer = fileIcon?.querySelector<SVGElement>("svg[data-resource-icon-layer='info']") ?? null;
     const fileNumber = fileIcon?.querySelector<HTMLElement>(".resource-icon-file-number") ?? null;
+    const fileExtensionBadgeFill = fileIcon?.querySelector<SVGRectElement>(
+      ".resource-icon-file-extension-badge-fill",
+    ) ?? null;
     const fileExtensionBadge = fileIcon?.querySelector<HTMLElement>(".resource-icon-file-extension-badge") ?? null;
     const fileExtension = fileIcon?.querySelector<HTMLElement>(".resource-icon-file-extension") ?? null;
+    expect(fileInfoLayer).not.toBeNull();
+    expect(getComputedStyle(fileInfoLayer!).gridArea).toContain("resource-icon-layer");
     expect(fileNumber).not.toBeNull();
+    expect(fileExtensionBadgeFill).not.toBeNull();
     expect(fileExtensionBadge).not.toBeNull();
     expect(fileExtension).not.toBeNull();
     expect(fileIcon?.querySelectorAll("svg[data-resource-icon-layer]")).toHaveLength(2);
+    expect(fileExtensionBadgeFill?.getAttribute("x")).toBe("12");
+    expect(fileExtensionBadgeFill?.getAttribute("y")).toBe("19.6");
+    expect(fileExtensionBadgeFill?.getAttribute("width")).toBe("8.8");
+    expect(fileExtensionBadgeFill?.getAttribute("height")).toBe("3.84");
+    expect(fileExtensionBadgeFill?.getAttribute("rx")).toBe("0.84");
+    expect(fileNumber?.getAttribute("y")).toBe("13.84");
+    expect(fileExtension?.getAttribute("x")).toBe("16.4");
+    expect(fileExtension?.getAttribute("y")).toBe("21.36");
+    expect(getComputedStyle(fileExtensionBadge!).transform).toBe("none");
+    expect(getComputedStyle(fileInfoLayer!).transform).toBe("none");
     expect(getComputedStyle(fileNumber!).fontSize).toBe("16px");
     expect(getComputedStyle(fileExtension!).fontSize).toBe("16px");
+
+    const expectRadiusSafePadding = (icon: HTMLElement): void => {
+      const iconStyle = getComputedStyle(icon);
+      const expectedPadding =
+        Math.min(
+          Number.parseFloat(iconStyle.borderTopLeftRadius),
+          Number.parseFloat(iconStyle.width),
+          Number.parseFloat(iconStyle.height),
+        ) / 4;
+      expect(Number.parseFloat(iconStyle.paddingTop)).toBeCloseTo(expectedPadding, 1);
+      expect(Number.parseFloat(iconStyle.paddingRight)).toBeCloseTo(expectedPadding, 1);
+      expect(Number.parseFloat(iconStyle.paddingBottom)).toBeCloseTo(expectedPadding, 1);
+      expect(Number.parseFloat(iconStyle.paddingLeft)).toBeCloseTo(expectedPadding, 1);
+    };
+
+    expect(tileFileIcon).not.toBeNull();
+    expect(inlineFileIcon).not.toBeNull();
+    expectRadiusSafePadding(tileFileIcon!);
+    expectRadiusSafePadding(inlineFileIcon!);
 
     const palettePanel = canvas.getByTestId("resource-icon-palette-panel");
     expect(palettePanel.querySelectorAll("[part='resource-icon-with-number']")).toHaveLength(12);

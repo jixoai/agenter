@@ -31,3 +31,41 @@
 - [x] 7.4 Refresh Storybook DOM assertions so the icon atom exposes base/info SVG layer structure.
 - [x] 7.5 Re-run typecheck, targeted tests, OpenSpec validation/check, and desktop/iPhone 14 screenshots.
 - [x] 7.6 Update self-review with Round 4 evidence and walkthrough entry.
+- [x] 8.1 Record the Round 5 user-directed icon micro-alignment feedback in OpenSpec plan/spec/tasks before changing product code.
+- [x] 8.2 Use the official lucide `MessageSquareDot`, `Image`, and `File` SVG components as the icon atom base layer glyphs.
+- [x] 8.3 Center the image number inside its circular badge and shrink the comment number from the previous visual size.
+- [x] 8.4 Apply the user-provided file info-layer scale/offset/badge coordinates while keeping text sizing on the `1rem + scale` law.
+- [x] 8.5 Re-run targeted typecheck/tests/OpenSpec validation and leave the walkthrough route for user inspection without a new screenshot pass.
+- [x] 9.1 Record the Round 6 grid-layer and opacity unification feedback in OpenSpec plan/spec/tasks before changing product code.
+- [x] 9.2 Replace `position: absolute` / `inset: 0` SVG layer stitching with grid-owned overlap in `ResourceIconWithNumber`.
+- [x] 9.3 Unify comment/image/file base glyph opacity through one shared variable instead of per-kind opacity exceptions.
+- [x] 9.4 Re-run targeted typecheck/tests/OpenSpec validation for the layout-law change.
+- [x] 10.1 Record the Round 7 named-grid-area feedback in OpenSpec plan/spec/tasks before changing product code.
+- [x] 10.2 Replace anonymous `grid-area: 1 / 1` SVG overlap with a named area shared by the base and info SVG layers.
+- [x] 10.3 Re-run targeted typecheck/tests/OpenSpec validation for the named-area layout change.
+- [x] 11.1 Record the Round 8 finding that the lucide-generated base SVG must also receive the named grid-area rule.
+- [x] 11.2 Make the layer layout selector apply to both real SVG layers, not only the locally declared info SVG.
+- [x] 11.3 Add Storybook DOM coverage for the computed grid-area on base and info SVG layers.
+- [x] 11.4 Re-run targeted typecheck/tests/OpenSpec validation.
+- [x] 12.1 Record the Round 9 z-index ordering requirement in OpenSpec plan/spec/tasks before changing product code.
+- [x] 12.2 Add explicit z-index ordering so the info SVG layer stacks above the base icon SVG layer.
+- [x] 12.3 Add Storybook DOM coverage for computed z-index ordering.
+- [x] 12.4 Re-run targeted typecheck/tests/OpenSpec validation.
+- [x] 13.1 Record the Round 10 user-tuned comment/file coordinates and badge stroke values in OpenSpec plan/spec/tasks.
+- [x] 13.2 Apply the user-tuned comment number `x/y` and file number/badge/extension `y` coordinates.
+- [x] 13.3 Change the file extension badge stroke to currentColor with stroke-width `0.5`.
+- [x] 13.4 Re-run targeted typecheck/tests/OpenSpec validation.
+- [x] 14.1 Record the Round 11 user-tuned image badge coordinates and stroke values in OpenSpec plan/spec/tasks.
+- [x] 14.2 Apply the user-tuned image badge circle `cx/cy/r` and image number `x/y` coordinates.
+- [x] 14.3 Change the image number badge stroke to currentColor with stroke-width `0.5`.
+- [x] 14.4 Remove inline-only file extension badge translation so mini and standard file icons share the same badge coordinate law.
+- [x] 14.5 Re-run targeted typecheck/tests/OpenSpec validation.
+- [x] 15.1 Record the Round 12 requirement to remove whole-SVG file info-layer transform in OpenSpec plan/spec/tasks.
+- [x] 15.2 Fold file info-layer scale/offset into internal file number, badge, and extension coordinates and text scale variables.
+- [x] 15.3 Remove `resource-icon-file-info-layer` transform styling so icon SVG and info SVG remain same-size grid layers.
+- [x] 15.4 Re-run targeted typecheck/tests/OpenSpec validation.
+- [x] 16.1 Record the Round 13 safe-padding container requirement in OpenSpec plan/spec/tasks.
+- [x] 16.2 Add radius-derived safe padding to the icon container using `min(border-radius, width, height) / 4`.
+- [x] 16.3 Preserve same-size base/info SVG grid layers inside the padded content box.
+- [x] 16.4 Add DOM/source coverage for tile and inline safe padding.
+- [x] 16.5 Re-run targeted typecheck/tests/OpenSpec validation.
