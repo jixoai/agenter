@@ -54,9 +54,9 @@
 - [x] 5.1 Generate `review/self-review.md` and `review/self-review.html` comparing implementation against `plans/plan.md` and every spec delta.
 - [x] 5.2 Record whether the implementation fully aligns, partially aligns with residual risk, or needs another loop.
 - [x] 5.3 If review updates OpenSpec artifacts or reopens tasks, commit those artifact changes before the next apply loop.
-- [ ] 5.4 If review is entering a real loop, run `bun run openspec:vision -- review-state upgrade-note-system-structured-storage` to persist iteration/recurrence state.
-- [ ] 5.5 If review cannot exit normally, run `bun run openspec:vision -- handoff upgrade-note-system-structured-storage` and commit handoff evidence before returning to user discussion.
-- [ ] 5.6 If review exits normally, sync durable specs, then archive the change and commit the archive result.
+- [x] 5.4 If review is entering a real loop, run `bun run openspec:vision -- review-state upgrade-note-system-structured-storage` to persist iteration/recurrence state.
+- [x] 5.5 If review cannot exit normally, run `bun run openspec:vision -- handoff upgrade-note-system-structured-storage` and commit handoff evidence before returning to user discussion.
+- [x] 5.6 If review exits normally, sync durable specs, then archive the change and commit the archive result.
 - [x] 5.7 Run `bun run openspec:vision -- check upgrade-note-system-structured-storage` and decide whether to exit or return to `research-plan` with a backed-up plan revision.
 
 ## 6. Deferred App-Shell Follow-Up

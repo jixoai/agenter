@@ -3,9 +3,7 @@
 ## Purpose
 
 Define the durable client-side runtime normalization, long-history paging contract, and Welcome access-state derivation across workspaces, running avatars, and global resources.
-
 ## Requirements
-
 ### Requirement: Client runtime store SHALL normalize the terminal contract without losing set semantics
 
 The client runtime store SHALL normalize workspaces, running avatars, workspace avatar catalogs, global rooms, global terminals, and attachment bindings as first-class resource maps. It SHALL NOT collapse those resources back into session-owned `*BySession` stores as the primary identity axis, and it SHALL continue to preserve terminal focus-set semantics. For global terminals, the normalized projection SHALL preserve render-critical facts such as absolute cwd, renderer preference metadata, resolved renderer facts, durable theme metadata, durable snapshot hydration state, and live transport URL across refresh and incremental updates.
@@ -46,7 +44,7 @@ The client runtime store SHALL expose typed methods for the workspace CLI catalo
 
 ### Requirement: Client runtime store SHALL expose typed NoteSystem facades
 
-The client runtime store SHALL expose typed methods for NoteSystem catalog, page read, and search operations. Feature routes SHALL NOT instantiate their own transport clients or derive note state by reading local filesystem paths.
+The client runtime store SHALL expose typed methods for NoteSystem catalog, page read, search, tags, references, and read-only SQL query operations. Feature routes SHALL NOT instantiate their own transport clients or derive note state by reading local filesystem paths.
 
 #### Scenario: Notes route reads catalog through runtime store
 
@@ -64,7 +62,13 @@ The client runtime store SHALL expose typed methods for NoteSystem catalog, page
 
 - **WHEN** the operator submits a note search query
 - **THEN** the route calls one typed runtime-store search method
-- **AND** search results preserve notebook, section, page, score, snippet, and path metadata from the backend
+- **AND** search results preserve stable IDs, notebook, section, page, score, snippet, tags, references, MIME, and path/artifact metadata from the backend
+
+#### Scenario: Notes route queries tag and SQL projections through runtime store
+
+- **WHEN** the operator inspects note tags or submits a read-only note SQL query
+- **THEN** the route calls typed runtime-store methods
+- **AND** the response stays bounded to backend-provided NoteSystem projections
 
 ### Requirement: Client runtime store SHALL track reverse-time paging state per long-history resource
 
@@ -255,3 +259,25 @@ The client runtime store SHALL expose typed read-only methods for the browser sk
 - **WHEN** the Skills workbench reads one skill file preview through the runtime store
 - **THEN** the returned preview kind and payload match the browser skill surface contract exactly
 - **AND** the store does not reinterpret text vs media into multiple incompatible preview shells
+
+### Requirement: Client runtime store SHALL expose structured NoteSystem facades
+
+The client runtime store SHALL expose typed methods for NoteSystem catalog, page read, search, tag catalog/query, reference inspection, SQL query, and rename/write mutation results when those mutations are surfaced to clients. Feature routes SHALL NOT instantiate their own transport clients or derive note state by reading local filesystem paths.
+
+#### Scenario: Notes route reads structured catalog through runtime store
+
+- **WHEN** the Studio Notes route hydrates
+- **THEN** it obtains note capability and catalog data through one typed runtime-store method
+- **AND** the catalog preserves stable IDs, tags, MIME, reference counts, and artifact metadata from the backend
+
+#### Scenario: Notes route reads structured page through runtime store
+
+- **WHEN** the operator selects one note page
+- **THEN** the route reads that page through one typed runtime-store method
+- **AND** the store preserves not-found, MIME, tags, references, and stable IDs without inventing fake content
+
+#### Scenario: Notes route queries tags and SQL through runtime store
+
+- **WHEN** the operator or AI-facing surface requests tags or a read-only SQL query
+- **THEN** the store calls typed NoteSystem facades
+- **AND** it returns rows or tag summaries without exposing app-server filesystem internals
