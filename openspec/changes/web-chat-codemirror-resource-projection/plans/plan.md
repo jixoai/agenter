@@ -5,7 +5,8 @@
 - Round: 5
 - Round: 6
 - Round: 13
-- Status: add radius-derived safe padding for SVG icon containers
+- Round: 17
+- Status: scope composer resources to the current draft message and tighten upload/preview copy behavior
 - Previous plan backup: none
 
 ## Workflow Command Surface
@@ -151,6 +152,14 @@
 > 我自己测试过了，`padding = border-radius/4` 按照这个比例来就行。
 > 不过要注意，border-radius理论上是可以溢出的，所以要和图标的容器做`min(br,wh)`做计算
 
+> 我看到效果了，有一些需要调整：
+>
+> 1. 首先 `comment|image|file N` 这里的N只和当前消息有关系。不是全局的，不会跨消息的。所以用 `@` 来打开快捷输入的时候，是不会把其它消息的 引用给带过来的。
+>
+> 2. 图片上传完成后，应直接显示图片预览Modal（等于直接点击了资源栏的图标），文件上传也是
+> 3. 图片的顶部现在是 [Image #1] ，第一行这里不应该显示JPEG，因为第三行已经有mime信息了，第一行应该显示引用名，比如 `Image 1`。文件预览面板估计也是类似的问题
+> 4. [Image #2] 引用面板这里 `Image|File N` 后面应该带图片、文件的名字
+
 ## Objective Record
 
 ### Requirement-Bearing Q&A
@@ -173,6 +182,7 @@
 | 14 | User | Mini and standard file icons differ: the mini PDF badge appears shifted outside the icon while the standard PDF badge stays inside. | Round 11 should remove the inline-only file extension badge translation so both sizes use the same SVG coordinate law, with only text scale differing by size. |
 | 15 | User | The file info layer must not use whole-SVG transform; the temporary translate/scale must be folded into the internal SVG coordinates so icon SVG and info SVG are the same size by default. | Round 12 should remove `resource-icon-file-info-layer` transform and compute the final file number/badge/extension coordinates plus text scales directly. |
 | 16 | User | Icon drawing is basically correct; the container now needs safe padding because `border-radius + overflow-hidden` clips the inner SVG. Padding should be `min(border-radius, width, height) / 4`. | Round 13 should make the icon atom expose width/height/radius variables and derive container padding from the clamped radius. |
+| 17 | User | `comment\|image\|file N` numbering is scoped to the current message and must not cross messages; `@` quick input must not bring in references from other messages. Image/file upload completion should immediately open the same preview modal as clicking the resource rail icon. Image/file preview headers should show the reference name, such as `Image 1`, instead of the extension/MIME label. Reference completion rows should show the image/file name after `Image\|File N`. | Round 17 should separate transcript resource projection from composer completion state, keep numbering message-local, auto-open newly accepted uploads, and make preview/completion copy show the human file name in the right place. |
 
 ### Evidence Read
 
@@ -304,6 +314,7 @@ One Markdown message is like one sheet of paper under two lamps. The composer la
 - Resource icon internals should not mix HTML spans and SVG icon geometry for visible marks; the shared atom owns a layered SVG primitive so surfaces get consistent rendering by construction.
 - Feature code must not parse Markdown twice with incompatible regexes.
 - Composer must consume the same `WebChatResourceReference` shape used by readonly bubbles.
+- Composer completion must only consume current-draft resource references: host-provided composer-scoped references, newly pending uploads, and draft comment resources. Transcript resources reconstructed from sent messages stay in the transcript projection path and must not feed `@` / `^` completion.
 - Tests must cover behavior through public UI surfaces rather than private state fields.
 
 ### User Confirmation Gates
@@ -358,6 +369,12 @@ One Markdown message is like one sheet of paper under two lamps. The composer la
 - [ ] 42. Add a safe padding law to `ResourceIconWithNumber`: `padding = min(border-radius, width, height) / 4`.
 - [ ] 43. Replace raw radius/size literals with component variables that can drive this padding calculation.
 - [ ] 44. Re-run targeted checks for tile and inline icon padding.
+- [ ] 45. Record the Round 17 message-local resource scoping and upload-preview feedback in OpenSpec plan/spec/tasks before changing product code.
+- [ ] 46. Remove transcript-derived resources from composer completion inputs while preserving readonly transcript projection.
+- [ ] 47. Keep draft comment numbering scoped to current composer message resources.
+- [ ] 48. Auto-open the resource preview layer for newly accepted pending image/file uploads.
+- [ ] 49. Change image/file preview headers to use the reference label and make completion rows prefer file names in detail text.
+- [ ] 50. Refresh focused unit/source/DOM contracts, typecheck, OpenSpec validation/check, and review evidence.
 
 ## Open Questions
 
@@ -377,4 +394,4 @@ One Markdown message is like one sheet of paper under two lamps. The composer la
 
 - Default max review iterations: 2
 - Issue recurrence threshold: same visual or behavior mismatch recurring twice after fixes
-- Custom exit condition from intent: screenshots and tests prove the composer is writable CodeMirror with resource-token affordances, message bubbles remain readonly CodeMirror with resource projection, DB send path remains markdown-only, resource icons use the shared icon-with-number atom, resource bars do not show uncontrolled scrollbars, and the user receives a walkthrough entry for final acceptance.
+- Custom exit condition from intent: screenshots and tests prove the composer is writable CodeMirror with resource-token affordances, message bubbles remain readonly CodeMirror with resource projection, DB send path remains markdown-only, resource icons use the shared icon-with-number atom, resource bars do not show uncontrolled scrollbars, composer completion does not leak resources from other sent messages, uploads open the preview layer immediately, preview/completion copy uses reference labels and file names correctly, and the user receives a walkthrough entry for final acceptance.

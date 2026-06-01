@@ -13,6 +13,22 @@
 - **AND** the underlying draft text remains editable Markdown
 - **AND** submitting still serializes the final message as raw Markdown content without WebChat resource metadata
 
+#### Scenario: Composer resource completion is scoped to the current draft message
+
+- **GIVEN** the transcript already contains sent messages with Markdown resource footnotes such as `[^Image 1]` and `[^File 1]`
+- **AND** the current composer draft has its own pending resources
+- **WHEN** the operator opens `@` or `^` completion in the composer
+- **THEN** completion suggestions include only current composer resources and host-provided composer-scoped resources
+- **AND** resources reconstructed from other transcript messages are not offered
+- **AND** `Comment N`, `Image N`, and `File N` numbering is local to the current message rather than global across the room
+
+#### Scenario: Composer upload opens the resource preview immediately
+
+- **GIVEN** the composer accepts a newly uploaded image or file
+- **WHEN** the pending asset is admitted into the current draft resource list
+- **THEN** the same resource preview layer used by clicking the resource rail icon opens automatically for that newly accepted resource
+- **AND** duplicate or rejected files do not reopen a stale preview
+
 #### Scenario: Resource icon number is normalized for all token surfaces
 
 - **GIVEN** a resource label or token text resolves to resource number `1` through `9`
@@ -81,6 +97,17 @@
 - **AND** footnote definition lines collapse out of normal reading mode
 - **AND** the in-bubble resource bar is rendered from the same resolved resources
 - **AND** the in-bubble resource bar controls child tile dimensions without uncontrolled horizontal or vertical scrollbars
+
+#### Scenario: Resource preview and completion copy uses reference names and file names
+
+- **GIVEN** an image or file resource has a reference label such as `Image 1` or `File 1`
+- **AND** the resource also has an extension, MIME type, and file name
+- **WHEN** the preview layer renders its header
+- **THEN** the header eyebrow shows the reference label instead of the extension or MIME type
+- **AND** MIME and size details stay in the metadata line
+- **WHEN** the composer completion panel renders that resource
+- **THEN** the row label stays the reference label
+- **AND** the row detail prefers the image or file name over a generic resource kind description
 
 ### Requirement: Web chat view SHALL expose CodeMirror mode ownership for composer and transcript
 
