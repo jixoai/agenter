@@ -2,8 +2,8 @@
 
 ## Current Round
 
-- Round: 1
-- Status: research-plan locked for frontend projection implementation
+- Round: 2
+- Status: visual acceptance rework for resource icon projection
 - Previous plan backup: none
 
 ## Workflow Command Surface
@@ -25,6 +25,16 @@
 
 > 开始用openspec推进，并用走查检查截图，确定符合预期后，最后让我走查。
 
+> 我看到效果了，我提一些意见：
+> 1. 视觉上`[^Comment 1]`应该渲染成一个 commit-icon-with-No 的图标，文件也同理。
+>   我们应该统一封装一种 icon-with-No 的图标。
+>   评论的基础图标就是 `<MessageSquareDot />` ，No 几乎居中（我有手写过一些样式，你可以参考）
+>   图标的基础图标就是 `<File />`， No 居中，最好是两行文字，第一行是通过scale缩放的文件后缀；第二行是No
+>   图片的基础图标就是 `<Image />`，No 通过角标的方式展示
+>   完成这三个组件，行程三个动态图标，No只支持1~9，超出就显示成`*`字符就好
+>   把这个动态图标，作为基础组件，彻底重构到相关的地方
+> 2. message-markdown-resource-bar 这个元素的样式绝对有问题，等动态图标做好，这个bar的样式需要好好优化一下，它现在最大的问题是控制不好子元素的宽高以及自己的滚动条。本来不应该出现滚动条，结果横竖都出现了 [Image #1]
+
 ## Objective Record
 
 ### Requirement-Bearing Q&A
@@ -34,6 +44,7 @@
 | 1 | User | Frontend support must include a writable CodeMirror input and readonly CodeMirror message bubbles. | This change must verify and harden both editor modes, not only backend Markdown storage. |
 | 2 | User | Explain the next work in plain language with a concrete picture. | Plan must preserve the "same Markdown base, two CodeMirror projection windows" mental model. |
 | 3 | User | Use OpenSpec, inspect screenshots, confirm expected behavior, then let the user walk through. | Completion requires OpenSpec artifacts, automated/targeted verification, browser screenshot evidence, and a final user walkthrough URL/path. |
+| 4 | User | Inline resource tokens should render as dynamic icon-with-No widgets, and the resource bar must stop producing uncontrolled scrollbars. | The shared projection atom must become visual-icon first; resource bar layout must be fixed-size and no-scrollbar by default. |
 
 ### Evidence Read
 
@@ -49,6 +60,9 @@
 | `packages/web-chat-view/src/default-composer.svelte` | Pending image/file/comment resources live in the Messagebar resource rail and feed completion/resource references. | The writable editor can receive the same resource reference list without inventing another state source. |
 | `packages/web-chat-view/src/storybook/chat-composer-stage-harness.svelte` | Existing composer story is a static visual mock, not the live composer CodeMirror. | Screenshot walkthrough must target real components, not a static approximation. |
 | `packages/web-chat-view/vitest.config.ts` | Storybook tests run in real Chromium through Vitest browser. | CodeMirror writable behavior should be covered by Storybook DOM/browser tests, not jsdom-only tests. |
+| `packages/web-chat-view/src/resource-card.svelte` | Resource cards currently hand-roll image/file/comment icon overlays. | These duplicated visuals should move behind one icon-with-number atom. |
+| `packages/web-chat-view/src/components/message-markdown-resource-token.svelte` | Inline tokens currently render raw bracket text. | Replace text-first projection with the same icon-with-number atom while preserving accessible label/title and source Markdown truth. |
+| `packages/web-chat-view/src/components/message-markdown-resource-bar.svelte` | The bar uses auto overflow and thin scrollbars. | Rework it as a fixed-height wrap-capable resource icon strip with no default scrollbar. |
 
 ### Git Evidence
 
@@ -104,7 +118,7 @@ The previous change fixed the durable "bottom layer": DB content is Markdown. Th
 
 ### Final Visible Effect
 
-In the composer, a comment/image/file reference looks like a small resource affordance instead of dead bracket text, while the user can still type, move the cursor, and submit normally. In the transcript bubble, the same reference appears as a readonly resource token and resource bar; raw footnote definitions are hidden from normal reading. Screenshots show both states before final user walkthrough.
+In the composer, a comment/image/file reference looks like a compact icon with a visible resource number instead of dead bracket text, while the user can still type, move the cursor, and submit normally. In the transcript bubble, the same reference appears as a readonly icon token and resource bar; raw footnote definitions are hidden from normal reading. The resource bar lays out stable icon tiles without surprise horizontal or vertical scrollbars. Screenshots show both states before final user walkthrough.
 
 ## Platform Diagnosis
 
@@ -117,6 +131,7 @@ In the composer, a comment/image/file reference looks like a small resource affo
   - Mostly yes. It is a frontend projection atom under the existing Markdown storage law.
 - Does this require law upgrade:
   - Yes, a small frontend law upgrade: CodeMirror resource widgets must be shared projection atoms with mode-specific policies, not bubble-only implementation details.
+  - The visual icon shape is also a shared atom. Comment/file/image should not reimplement number overlays independently in token, card, and bar code.
 - Breaking update stance:
   - No DB break this round. Frontend class/DOM shape can change where tests and screenshots approve it.
 - User confirmations still required:
@@ -133,6 +148,10 @@ One Markdown message is like one sheet of paper under two lamps. The composer la
 - `ChatDraftEditor` accepts resource references in addition to completion capabilities.
 - `MessageMarkdownContent` keeps its readonly resource context.
 - A shared CodeMirror resource-token projection extension exposes reusable token widgets.
+- A shared icon-with-number Svelte component renders comment, file, and image variants from one normalizer:
+  - comment: `MessageSquareDot` base icon, centered number.
+  - file: `File` base icon, scaled extension row plus centered number row.
+  - image: `Image` base icon, corner number badge.
 - Readonly bubble mode may hide definition lines and render an aggregated bar.
 - Writable composer mode should not hide source blocks or definitions unexpectedly; it only decorates inline resource references.
 
@@ -141,11 +160,13 @@ One Markdown message is like one sheet of paper under two lamps. The composer la
 - Durable fact: raw Markdown content.
 - Draft state: pending frontend resources and editor text.
 - Projection: CodeMirror decorations/widgets for inline tokens and resource bars.
+- Visual atom data: resource kind, display number, optional file extension. Display number supports `1..9`; values outside that range render as `*`.
 - Forbidden: `metadata.webChatCommentResources` or a hidden composer-only durable sidecar.
 
 ### Architecture Shape
 
 - Shared CodeMirror projection atoms live under `src/components` or `src/composer` only if mode-specific.
+- Resource icon composition lives behind a dedicated component and is consumed by inline token, sent/pending resource card, and resource bar surfaces.
 - Feature code must not parse Markdown twice with incompatible regexes.
 - Composer must consume the same `WebChatResourceReference` shape used by readonly bubbles.
 - Tests must cover behavior through public UI surfaces rather than private state fields.
@@ -165,6 +186,10 @@ One Markdown message is like one sheet of paper under two lamps. The composer la
 - [ ] 5. Add BDD/Storybook DOM coverage for writable composer CodeMirror and readonly bubble CodeMirror parity.
 - [ ] 6. Run targeted tests/typecheck/OpenSpec validation.
 - [ ] 7. Start the WebChat example or Storybook route, capture desktop and iPhone 14 screenshots, inspect the result, then provide the walkthrough entry to the user.
+- [ ] 8. Rework shared resource visuals into one icon-with-number atom for comment/file/image, with `1..9` and `*` overflow display.
+- [ ] 9. Refactor inline resource token, resource card, and resource bar to consume the atom instead of bracket text or duplicated icon overlays.
+- [ ] 10. Rework `message-markdown-resource-bar` sizing so normal message resource strips do not show uncontrolled horizontal or vertical scrollbars.
+- [ ] 11. Refresh BDD/DOM coverage and desktop/iPhone 14 screenshots for the accepted visual shape.
 
 ## Open Questions
 
@@ -184,4 +209,4 @@ One Markdown message is like one sheet of paper under two lamps. The composer la
 
 - Default max review iterations: 2
 - Issue recurrence threshold: same visual or behavior mismatch recurring twice after fixes
-- Custom exit condition from intent: screenshots and tests prove the composer is writable CodeMirror with resource-token affordances, message bubbles remain readonly CodeMirror with resource projection, DB send path remains markdown-only, and the user receives a walkthrough entry for final acceptance.
+- Custom exit condition from intent: screenshots and tests prove the composer is writable CodeMirror with resource-token affordances, message bubbles remain readonly CodeMirror with resource projection, DB send path remains markdown-only, resource icons use the shared icon-with-number atom, resource bars do not show uncontrolled scrollbars, and the user receives a walkthrough entry for final acceptance.

@@ -8,8 +8,17 @@ Sent-message resource presentation SHALL be driven from the same serialized sour
 
 - **WHEN** an inline resource token resolves in the composer or in a sent message bubble
 - **THEN** both surfaces use one shared CodeMirror resource-token widget family
+- **AND** the widget family renders comment, file, and image references through one shared icon-with-number visual atom
 - **AND** visual differences are mode policy differences rather than separate parsing implementations
 - **AND** Framework7 resource preview activation receives the same `WebChatResourceReference` from either surface
+
+#### Scenario: Resource bar is a no-scroll icon strip by default
+
+- **GIVEN** a sent message bubble contains several resolved resources
+- **WHEN** the in-bubble resource bar renders those resources
+- **THEN** each child owns a stable icon tile size
+- **AND** the bar may wrap into additional rows when space is constrained
+- **AND** the bar does not show uncontrolled horizontal or vertical scrollbars in normal desktop or iPhone 14 message widths
 
 #### Scenario: Writable composer projection does not hide editing truth
 

@@ -9,17 +9,26 @@
 - **GIVEN** the writable composer contains an inline resource token such as `[^Comment 1]`
 - **AND** the pending resource list contains the matching comment resource
 - **WHEN** the composer CodeMirror renders the draft
-- **THEN** the token is decorated with the shared resource-token affordance
+- **THEN** the token is decorated with the shared icon-with-number resource affordance
 - **AND** the underlying draft text remains editable Markdown
 - **AND** submitting still serializes the final message as raw Markdown content without WebChat resource metadata
+
+#### Scenario: Resource icon number is normalized for all token surfaces
+
+- **GIVEN** a resource label or token text resolves to resource number `1` through `9`
+- **WHEN** the composer token, readonly bubble token, or resource card renders that resource
+- **THEN** the visible icon number is the resolved single digit
+- **AND** a resource number outside `1` through `9` renders `*`
+- **AND** comment, file, and image variants are rendered by the same icon-with-number component family
 
 #### Scenario: Readonly bubble keeps sent projection semantics
 
 - **GIVEN** a sent message contains inline resource tokens and matching Markdown footnote definitions
 - **WHEN** the readonly bubble CodeMirror renders the message
-- **THEN** inline tokens use the same resource-token affordance family
+- **THEN** inline tokens use the same icon-with-number resource affordance family
 - **AND** footnote definition lines collapse out of normal reading mode
 - **AND** the in-bubble resource bar is rendered from the same resolved resources
+- **AND** the in-bubble resource bar controls child tile dimensions without uncontrolled horizontal or vertical scrollbars
 
 ### Requirement: Web chat view SHALL expose CodeMirror mode ownership for composer and transcript
 
