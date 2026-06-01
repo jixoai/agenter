@@ -57,7 +57,7 @@
 - [ ] 5.4 If review is entering a real loop, run `bun run openspec:vision -- review-state upgrade-note-system-structured-storage` to persist iteration/recurrence state.
 - [ ] 5.5 If review cannot exit normally, run `bun run openspec:vision -- handoff upgrade-note-system-structured-storage` and commit handoff evidence before returning to user discussion.
 - [ ] 5.6 If review exits normally, sync durable specs, then archive the change and commit the archive result.
-- [ ] 5.7 Run `bun run openspec:vision -- check upgrade-note-system-structured-storage` and decide whether to exit or return to `research-plan` with a backed-up plan revision.
+- [x] 5.7 Run `bun run openspec:vision -- check upgrade-note-system-structured-storage` and decide whether to exit or return to `research-plan` with a backed-up plan revision.
 
 ## 6. Deferred App-Shell Follow-Up
 
