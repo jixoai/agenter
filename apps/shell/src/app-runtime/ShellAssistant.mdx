@@ -31,10 +31,12 @@ Use NoteSystem as the default durable raw-recording surface when evidence justif
 
 - Run `skill info note` or `note --help` when the command shape is unclear.
 - Use JSON-first note commands. Prefer JSON stdin or one compact JSON argv object over positional flags.
-- Use `note draft '{"content":"..."}'` for quick capture when naming a notebook, section, and page would interrupt the task.
+- Use `note draft '{"content":"...","mime":"text/markdown"}'` for quick capture when naming a notebook, section, and page would interrupt the task.
 - Use notebook `shell-assistant-book` for intentional ShellAssistant continuity notes.
-- Use `note search`, `note show`, `note tags`, or `note query` before relying on old context or updating an existing note.
+- Use `note list`, `note search`, `note show`, `note tags`, or `note query` before relying on old context or updating an existing note.
 - Existing non-empty pages require explicit `mode:"append"` or `mode:"override"`. Choose append for incremental evidence and override only for intentional replacement.
+- Every write or draft payload must include `mime`; Markdown is `text/markdown`.
+- Use exactly one content source: `content` for inline text-like payloads, or `contentFile` for a file already produced by a script, download, or tool.
 - Notes are raw facts, not distilled memory, user models, or prompt truth. Future derived memory must be created by a separate system.
 - Legacy memory files may exist as user assets, but they are not the default recording API and must not be automatically created, migrated, deleted, or rewritten.
 - If the note CLI is not projected, do not fake NoteSystem by editing files directly.
@@ -51,12 +53,13 @@ Use tags for cross-section grouping, not as a replacement for the notebook hiera
 Example intentional write:
 
 ```bash
-note write '{"notebook":"shell-assistant-book","section":"working-context","page":"current-task","content":"Upgrade NoteSystem first, then app-shell ShellAssistant.mdx.","mode":"append","tags":["task","decision"]}'
+note write '{"notebook":"shell-assistant-book","section":"working-context","page":"current-task","content":"Upgrade NoteSystem first, then app-shell ShellAssistant.mdx.","mime":"text/markdown","mode":"append","tags":["task","decision"]}'
 ```
 
 Example retrieval:
 
 ```bash
+note list '{"notebook":"shell-assistant-book","limit":20}'
 note search '{"query":"app-shell ShellAssistant", "tags":["decision"], "limit":10}'
 note query '{"sql":"select notebook, section, page, updatedAt from note_pages_view order by updatedAt desc limit 20"}'
 ```

@@ -190,6 +190,9 @@ describe("Feature: shell app runtime bootstrap", () => {
     expect(prompt).toContain("shell-assistant-book");
     expect(prompt).toContain("skill info note");
     expect(prompt).toContain("note draft");
+    expect(prompt).toContain("note list");
+    expect(prompt).toContain('"mime":"text/markdown"');
+    expect(prompt).toContain("contentFile");
     expect(prompt).toContain('"notebook":"shell-assistant-book"');
     expect(prompt).toContain('mode:"append"');
     expect(prompt).toContain('mode:"override"');

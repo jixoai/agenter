@@ -182,5 +182,19 @@ describe("Feature: prompt store URL Slot composition", () => {
     });
     expect(rendered).toContain("You are Bob.");
     expect(rendered).toContain("shell-assistant-book");
+
+    await writeFile(
+      join(packageRoot, "prompts", "ShellAssistant.mdx"),
+      "# Shell Assistant\n\nYou are <Slot name=\"AVATAR_NAME\" />.\n\nUse upgraded package prompt.",
+      "utf8",
+    );
+
+    const rerendered = await store.buildMd(store.getDoc("AGENTER"), {
+      slots: {
+        AVATAR_NAME: "Jane",
+      },
+    });
+    expect(rerendered).toContain("You are Jane.");
+    expect(rerendered).toContain("Use upgraded package prompt.");
   });
 });
