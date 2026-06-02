@@ -50,6 +50,19 @@ describe("Feature: release bundle contract", () => {
     expect(manifest).not.toContain('from: "packages/auth-service/native/resvg_bridge/target/release",');
   });
 
+  test("Scenario: Given reactive-fs depends on a native watcher When bundling agenter Then parcel watcher stays external and install-time metadata is explicit", () => {
+    const agenterSpec = createBundlePackageSpecs().find((spec) => spec.bundlePackageDir === "bundle/agenter");
+    const reactiveFsPkg = JSON.parse(readRepoFile("packages/reactive-fs/package.json")) as {
+      dependencies?: Record<string, string>;
+    };
+    const buildScript = readRepoFile("scripts/release/build-bundles.ts");
+
+    expect(reactiveFsPkg.dependencies?.["@parcel/watcher"]).toBe("^2.5.1");
+    expect(agenterSpec?.dependencies?.["@parcel/watcher"]).toBe("^2.5.1");
+    expect(agenterSpec?.external).toContain("@parcel/watcher");
+    expect(buildScript).toContain('...(input.external ?? []).flatMap((name) => ["--external", name])');
+  });
+
   test("Scenario: Given the npm CLI bundle starts daemon dependencies When inspecting the source bin Then reflect metadata is loaded before CLI imports", () => {
     const agenterBin = readRepoFile("packages/agenter/src/bin/agenter.ts");
     const cliBin = readRepoFile("packages/cli/src/bin/agenter.ts");

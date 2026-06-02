@@ -286,4 +286,281 @@ describe("Feature: prompt store URL Slot composition", () => {
     expect(rerendered).toContain("You are Jane.");
     expect(rerendered).toContain("Use upgraded package prompt.");
   });
+
+  test("Scenario: Given Slots use global app npm file and $LANG When AGENTER renders Then dependency nodes keep expanded URIs and resolved paths", async () => {
+    const baseDir = await mkdtemp(join(tmpdir(), "agenter-prompt-store-resolution-"));
+    const homeDir = join(baseDir, "home");
+    const projectRoot = join(baseDir, "project");
+    const packageRoot = join(projectRoot, "apps", "shell");
+    const builtinRoot = join(homeDir, ".agenter", "builtin", "en");
+    const privateRoot = join(
+      homeDir,
+      ".agenter",
+      "avatars",
+      "by-principal",
+      "0x888bb66a5ec389d52df0c9ff3e19a61dec890a66",
+    );
+    const avatarPromptPath = join(privateRoot, "AGENTER.mdx");
+    const appPromptPath = join(packageRoot, "prompts", "ShellAssistant.mdx");
+    const npmPromptPath = join(packageRoot, "extra.md");
+    const filePromptPath = join(baseDir, "workspace-extra.md");
+
+    await mkdir(join(packageRoot, "prompts"), { recursive: true });
+    await mkdir(builtinRoot, { recursive: true });
+    await mkdir(privateRoot, { recursive: true });
+    await writeFile(join(builtinRoot, "AGENTER.mdx"), "builtin-runtime-guidance", "utf8");
+    await writeFile(
+      join(packageRoot, "package.json"),
+      JSON.stringify(
+        {
+          name: "agenter-app-shell",
+          type: "module",
+          exports: {
+            "./ShellAssistant.mdx": "./prompts/ShellAssistant.mdx",
+          },
+          agenter: {
+            app: {
+              appId: "shell",
+              command: "shell",
+              bin: "agenter-shell",
+              descriptor: "./src/app.ts",
+            },
+          },
+        },
+        null,
+        2,
+      ),
+      "utf8",
+    );
+    await writeFile(appPromptPath, "app-runtime-guidance", "utf8");
+    await writeFile(npmPromptPath, "npm-runtime-guidance", "utf8");
+    await writeFile(filePromptPath, "file-runtime-guidance", "utf8");
+    await writeFile(
+      avatarPromptPath,
+      [
+        '<Slot src="global:builtin/$LANG/AGENTER.mdx" />',
+        '<Slot src="app:shell/ShellAssistant.mdx" />',
+        '<Slot src="npm:agenter-app-shell/extra.md" />',
+        `<Slot src="${pathToFileURL(filePromptPath).toString()}" />`,
+      ].join("\n"),
+      "utf8",
+    );
+
+    const store = new FilePromptStore({
+      lang: "en",
+      rootDir: privateRoot,
+      privateRootDir: privateRoot,
+      globalRootDir: join(homeDir, ".agenter"),
+      agenterPath: avatarPromptPath,
+      loader: new ResourceLoader({
+        context: {
+          projectRoot,
+          cwd: projectRoot,
+          homeDir,
+        },
+      }),
+    });
+    await store.reload();
+
+    const render = await store.buildRender(store.getDoc("AGENTER"));
+
+    expect(render.text).toContain("builtin-runtime-guidance");
+    expect(render.text).toContain("app-runtime-guidance");
+    expect(render.text).toContain("npm-runtime-guidance");
+    expect(render.text).toContain("file-runtime-guidance");
+    expect(render.dependencies).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          originalUri: "global:builtin/$LANG/AGENTER.mdx",
+          expandedUri: "global:builtin/en/AGENTER.mdx",
+          resolvedPath: join(builtinRoot, "AGENTER.mdx"),
+        }),
+        expect.objectContaining({
+          originalUri: "app:shell/ShellAssistant.mdx",
+          expandedUri: "app:shell/ShellAssistant.mdx",
+          resolvedPath: appPromptPath,
+        }),
+        expect.objectContaining({
+          originalUri: "npm:agenter-app-shell/extra.md",
+          expandedUri: "npm:agenter-app-shell/extra.md",
+          resolvedPath: npmPromptPath,
+        }),
+        expect.objectContaining({
+          originalUri: pathToFileURL(filePromptPath).toString(),
+          expandedUri: pathToFileURL(filePromptPath).toString(),
+          resolvedPath: filePromptPath,
+        }),
+      ]),
+    );
+  });
+
+  test("Scenario: Given runtime prompt render uses avatar builtin and app files When rendered Then dependency evidence and live prompt inspection remain file-backed", async () => {
+    const baseDir = await mkdtemp(join(tmpdir(), "agenter-prompt-store-runtime-"));
+    const homeDir = join(baseDir, "home");
+    const projectRoot = join(baseDir, "project");
+    const packageRoot = join(projectRoot, "apps", "shell");
+    const builtinRoot = join(homeDir, ".agenter", "builtin", "en");
+    const privateRoot = join(
+      homeDir,
+      ".agenter",
+      "avatars",
+      "by-principal",
+      "0x888bb66a5ec389d52df0c9ff3e19a61dec890a66",
+    );
+    const avatarPromptPath = join(privateRoot, "AGENTER.mdx");
+    const packagePromptPath = join(packageRoot, "prompts", "ShellAssistant.mdx");
+
+    await mkdir(builtinRoot, { recursive: true });
+    await mkdir(join(packageRoot, "prompts"), { recursive: true });
+    await mkdir(privateRoot, { recursive: true });
+    await writeFile(join(builtinRoot, "AGENTER_SYSTEM.mdx"), 'System runtime guidance for <Slot name="AVATAR_NAME" />.', "utf8");
+    await writeFile(join(builtinRoot, "AGENTER.mdx"), "Builtin avatar runtime law.", "utf8");
+    await writeFile(join(builtinRoot, "RESPONSE_CONTRACT.mdx"), "Respond with care.", "utf8");
+    await writeFile(
+      join(builtinRoot, "SYSTEM_TEMPLATE.mdx"),
+      '<Slot name="AGENTER_SYSTEM" />\n\n<Slot name="AGENTER" />\n\n<Slot name="RESPONSE_CONTRACT" />',
+      "utf8",
+    );
+    await writeFile(
+      join(packageRoot, "package.json"),
+      JSON.stringify(
+        {
+          name: "agenter-app-shell",
+          type: "module",
+          exports: {
+            "./ShellAssistant.mdx": "./prompts/ShellAssistant.mdx",
+          },
+          agenter: {
+            app: {
+              appId: "shell",
+              command: "shell",
+              bin: "agenter-shell",
+              descriptor: "./src/app.ts",
+            },
+          },
+        },
+        null,
+        2,
+      ),
+      "utf8",
+    );
+    await writeFile(packagePromptPath, "Package shell guidance.", "utf8");
+    await writeFile(
+      avatarPromptPath,
+      '<Slot src="global:builtin/$LANG/AGENTER.mdx" />\n\n<Slot src="app:shell/ShellAssistant.mdx" />',
+      "utf8",
+    );
+
+    const store = new FilePromptStore({
+      lang: "en",
+      rootDir: privateRoot,
+      privateRootDir: privateRoot,
+      globalRootDir: join(homeDir, ".agenter"),
+      agenterPath: avatarPromptPath,
+      avatarNickname: "shell-assistant",
+      loader: new ResourceLoader({
+        context: {
+          projectRoot,
+          cwd: projectRoot,
+          homeDir,
+        },
+      }),
+    });
+    await store.reload();
+
+    const render = await store.renderRuntimePrompt({ avatarName: "shell-assistant" });
+    const state = store.inspectRuntimePromptState();
+
+    expect(render.systemPrompt).toContain("System runtime guidance for shell-assistant.");
+    expect(render.systemPrompt).toContain("Builtin avatar runtime law.");
+    expect(render.systemPrompt).toContain("Package shell guidance.");
+    expect(render.canonicalPromptPath).toBe(avatarPromptPath);
+    expect(render.ownershipPolicy).toBe("user-owned-seed-if-missing");
+    expect(render.dependencies).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          ownerKind: "avatar",
+          resolvedPath: avatarPromptPath,
+        }),
+        expect.objectContaining({
+          ownerKind: "builtin",
+          resolvedPath: join(builtinRoot, "AGENTER.mdx"),
+        }),
+        expect.objectContaining({
+          ownerKind: "package",
+          originalUri: "app:shell/ShellAssistant.mdx",
+          resolvedPath: packagePromptPath,
+        }),
+      ]),
+    );
+    expect(state.current?.sourceIdentity).toBe(render.sourceIdentity);
+    expect(state.current?.renderHash).toBe(render.renderHash);
+    expect(state.current?.dependencies).toEqual(render.dependencies);
+    expect(state.watcherStatuses.length).toBeGreaterThan(0);
+  });
+
+  test("Scenario: Given builtin prompt files were never materialized When runtime prompt inspection runs Then diagnostics expose missing managed roots instead of silently trusting bundled defaults", async () => {
+    const baseDir = await mkdtemp(join(tmpdir(), "agenter-prompt-store-missing-builtin-"));
+    const homeDir = join(baseDir, "home");
+    const privateRoot = join(
+      homeDir,
+      ".agenter",
+      "avatars",
+      "by-principal",
+      "0x888bb66a5ec389d52df0c9ff3e19a61dec890a66",
+    );
+    const avatarPromptPath = join(privateRoot, "AGENTER.mdx");
+    const builtinRoot = join(homeDir, ".agenter", "builtin", "en");
+
+    await mkdir(privateRoot, { recursive: true });
+    await mkdir(builtinRoot, { recursive: true });
+    await writeFile(avatarPromptPath, '<Slot src="global:builtin/$LANG/AGENTER.mdx" />', "utf8");
+
+    const store = new FilePromptStore({
+      lang: "en",
+      rootDir: privateRoot,
+      privateRootDir: privateRoot,
+      globalRootDir: join(homeDir, ".agenter"),
+      agenterPath: avatarPromptPath,
+      avatarNickname: "default",
+    });
+    await store.reload();
+
+    const render = await store.renderRuntimePrompt({ avatarName: "default" });
+    const state = store.inspectRuntimePromptState();
+
+    expect(render.systemPrompt.length).toBeGreaterThan(0);
+    expect(state.diagnostics).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          kind: "missing_builtin_prompt",
+          resolvedPath: join(builtinRoot, "AGENTER.mdx"),
+        }),
+        expect.objectContaining({
+          kind: "missing_builtin_prompt",
+          resolvedPath: join(builtinRoot, "AGENTER_SYSTEM.mdx"),
+        }),
+        expect.objectContaining({
+          kind: "missing_builtin_prompt",
+          resolvedPath: join(builtinRoot, "RESPONSE_CONTRACT.mdx"),
+        }),
+        expect.objectContaining({
+          kind: "missing_builtin_prompt",
+          resolvedPath: join(builtinRoot, "SYSTEM_TEMPLATE.mdx"),
+        }),
+        expect.objectContaining({
+          kind: "render_fallback",
+          resolvedPath: join(builtinRoot, "AGENTER_SYSTEM.mdx"),
+        }),
+      ]),
+    );
+    expect(render.dependencies).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          resolvedPath: join(builtinRoot, "AGENTER.mdx"),
+          freshnessIdentity: "missing",
+        }),
+      ]),
+    );
+  });
 });

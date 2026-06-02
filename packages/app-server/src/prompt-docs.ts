@@ -3,6 +3,8 @@ export type PromptSyntax = "md" | "mdx";
 export interface PromptDocumentSource {
   uri: string;
   scheme: string;
+  expandedUri?: string;
+  resolvedUri?: string;
   path?: string;
   rootUri?: string;
   relativePath?: string;

@@ -185,7 +185,7 @@ import {
   type AssistantStreamUpdate,
   type TextOnlyModelMessage,
 } from "./model-client";
-import { FilePromptStore } from "./prompt-store";
+import { FilePromptStore, type RuntimePromptState } from "./prompt-store";
 import { buildProviderSnapshot, normalizeTokenUsage, readProviderSnapshotFromRequestBody } from "./provider-snapshot";
 import { createRuntimeShellCommands } from "./runtime-cli";
 import type {
@@ -1801,6 +1801,7 @@ export interface SessionRuntimeModelDebug {
     capabilities: ModelCapabilities;
   } | null;
   promptWindow: ReturnType<AgenterAI["inspectDebugState"]>["promptWindow"];
+  prompt: RuntimePromptState | null;
   stats: ReturnType<AgenterAI["inspectDebugState"]>["stats"] | null;
   latestModelCall: SessionModelCallRecord | null;
   recentModelCalls: SessionModelCallRecord[];
@@ -1856,6 +1857,7 @@ export class SessionRuntime {
   private readonly terminalSystemCleanup: Array<() => void> = [];
   private readonly killedTerminalWorkById = new Map<string, Promise<void>>();
   private agent: AgenterAI | null = null;
+  private promptStore: FilePromptStore | null = null;
   private runtimeLocalApi: RuntimeLocalApiHandle | null = null;
   private mcpSystem: McpSystem | null = null;
   private runtimeSkillSystem: RuntimeSkillSystem | null = null;
@@ -7323,6 +7325,7 @@ export class SessionRuntime {
 
     const promptStore = this.createPromptStore(this.config);
     await promptStore.reload();
+    this.promptStore = promptStore;
     this.runtimeSkillSystem = this.ensureRuntimeSkillSystem();
     await this.handleRuntimeSkillRefreshResult(this.runtimeSkillSystem.refresh({ publishReminders: false }), {
       notifyLoop: false,
@@ -7634,6 +7637,8 @@ export class SessionRuntime {
     await this.runtime?.stop("session.abort");
     this.runtime = null;
     this.agent = null;
+    this.promptStore?.dispose();
+    this.promptStore = null;
     this.loopPluginRuntime = null;
     this.runtimeKernelHost.dispose();
     await this.runtimeLocalApi?.stop().catch(() => {});
@@ -7869,6 +7874,7 @@ export class SessionRuntime {
           }
         : null,
       promptWindow: this.readDurablePromptWindow(),
+      prompt: this.promptStore?.inspectRuntimePromptState() ?? null,
       stats: modelState?.stats ?? null,
       latestModelCall: recentAiCalls.at(-1) ? projectAiCallToModelCall(recentAiCalls.at(-1)!) : null,
       recentModelCalls: recentAiCalls.map(projectAiCallToModelCall),
@@ -8295,12 +8301,20 @@ export class SessionRuntime {
       homeDir: this.getHomeDir(),
     });
     const promptStore = this.createPromptStore(nextConfig);
-    await promptStore.reload();
-    this.config = nextConfig;
-    this.settingsEditor = new SettingsEditor(nextConfig.agentCwd, nextConfig.prompt);
-    await this.reloadSettingsLayers(nextConfig);
-    this.agent?.setModelClient(this.createModelClient(nextConfig));
-    this.agent?.setPromptStore(promptStore);
+    try {
+      await promptStore.reload();
+      const previousPromptStore = this.promptStore;
+      this.config = nextConfig;
+      this.promptStore = promptStore;
+      this.settingsEditor = new SettingsEditor(nextConfig.agentCwd, nextConfig.prompt);
+      await this.reloadSettingsLayers(nextConfig);
+      this.agent?.setModelClient(this.createModelClient(nextConfig));
+      this.agent?.setPromptStore(promptStore);
+      previousPromptStore?.dispose();
+    } catch (error) {
+      promptStore.dispose();
+      throw error;
+    }
     const nextConfigPayload = this.buildPersistedModelConfigPayload(nextConfig);
     if (
       input.persistPendingConfigFact &&
@@ -11233,6 +11247,7 @@ export class SessionRuntime {
       globalRootDir: config.prompt.globalRootDir,
       promptLayers: config.prompt.promptLayers,
       agenterPath: config.prompt.agenterPath,
+      avatarNickname: config.avatar.nickname,
       loader: resourceLoader,
     });
   }

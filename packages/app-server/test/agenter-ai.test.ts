@@ -6,9 +6,12 @@ import type {
 } from "@agenter/attention-system";
 import { AttentionSystem } from "@agenter/attention-system";
 import type { MessageContactId } from "@agenter/message-system";
-import { DEFAULT_LOOP_COMPACT_POLICY } from "@agenter/settings";
+import { DEFAULT_LOOP_COMPACT_POLICY, ResourceLoader } from "@agenter/settings";
 import type { TerminalProcessProfile } from "@agenter/terminal-system";
 import { describe, expect, test } from "bun:test";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 import {
   AgenterAI,
@@ -169,6 +172,16 @@ const extractReplayRoles = (input: ModelRespondInput | readonly unknown[] | unde
 
 const countOccurrences = (value: string, needle: string): number =>
   value.length === 0 || needle.length === 0 ? 0 : value.split(needle).length - 1;
+
+const waitForCondition = async (check: () => boolean, timeoutMs = 2_000): Promise<void> => {
+  const startedAt = Date.now();
+  while (!check()) {
+    if (Date.now() - startedAt > timeoutMs) {
+      throw new Error(`condition not met within ${timeoutMs}ms`);
+    }
+    await new Promise<void>((resolve) => setTimeout(resolve, 25));
+  }
+};
 
 const isCompactDecision = (
   value: unknown,
@@ -1441,6 +1454,157 @@ describe("Feature: AgenterAI behavior", () => {
     expect(extractUserReplay(ai.inspectDebugState().promptWindow).join("\n")).not.toContain(
       "primaryContextId: ctx-runtime-refresh",
     );
+  });
+
+  test("Scenario: Given a runtime prompt render When a model call is recorded Then request meta captures the prompt render identity", async () => {
+    const modelCalls: AgentModelCallRecord[] = [];
+    const chat = createAttentionGateway();
+    const promptStore = new FilePromptStore({
+      defaultDocs: createPromptDocs(),
+      avatarNickname: "shell-assistant",
+    });
+    await promptStore.reload();
+
+    const ai = new AgenterAI({
+      modelClient: createModelClient(async () => ({
+        thinking: "",
+        text: "done",
+        finishReason: "stop",
+      })),
+      logger: createLogger(),
+      promptStore,
+      attentionGateway: chat.gateway,
+      avatarName: "shell-assistant",
+      onModelCall: (record) => {
+        modelCalls.push(record);
+      },
+    });
+
+    await ai.send([createUserMessage("hello prompt trace")]);
+
+    const running = modelCalls.find((record) => record.status === "running");
+    expect(running?.request.systemPrompt).toContain("You are shell-assistant.");
+    expect(running?.request.meta).toMatchObject({
+      promptSourceIdentity: expect.any(String),
+      promptRenderHash: expect.any(String),
+      promptRenderedAt: expect.any(Number),
+      promptCanonicalPath: null,
+      promptOwnershipPolicy: "user-owned-seed-if-missing",
+    });
+  });
+
+  test("Scenario: Given prompt dependencies change between rounds When the next model call runs Then AgenterAI records the new render identity without mutating the earlier request", async () => {
+    const root = mkdtempSync(join(tmpdir(), "agenter-ai-prompt-refresh-"));
+    const homeDir = join(root, "home");
+    const projectRoot = join(root, "project");
+    const packageRoot = join(projectRoot, "apps", "shell");
+    const builtinRoot = join(homeDir, ".agenter", "builtin", "en");
+    const privateRoot = join(
+      homeDir,
+      ".agenter",
+      "avatars",
+      "by-principal",
+      "0x888bb66a5ec389d52df0c9ff3e19a61dec890a66",
+    );
+    const packagePromptPath = join(packageRoot, "prompts", "ShellAssistant.mdx");
+    const modelCalls: AgentModelCallRecord[] = [];
+    const chat = createAttentionGateway();
+
+    mkdirSync(builtinRoot, { recursive: true });
+    mkdirSync(join(packageRoot, "prompts"), { recursive: true });
+    mkdirSync(privateRoot, { recursive: true });
+    writeFileSync(join(builtinRoot, "AGENTER_SYSTEM.mdx"), 'You are <Slot name="AVATAR_NAME" />.', "utf8");
+    writeFileSync(join(builtinRoot, "AGENTER.mdx"), "Builtin runtime guidance.", "utf8");
+    writeFileSync(join(builtinRoot, "RESPONSE_CONTRACT.mdx"), "Use tools when needed.", "utf8");
+    writeFileSync(
+      join(builtinRoot, "SYSTEM_TEMPLATE.mdx"),
+      '<Slot name="AGENTER_SYSTEM" />\n\n<Slot name="AGENTER" />\n\n<Slot name="RESPONSE_CONTRACT" />',
+      "utf8",
+    );
+    writeFileSync(
+      join(packageRoot, "package.json"),
+      JSON.stringify(
+        {
+          name: "agenter-app-shell",
+          type: "module",
+          exports: {
+            "./ShellAssistant.mdx": "./prompts/ShellAssistant.mdx",
+          },
+          agenter: {
+            app: {
+              appId: "shell",
+              command: "shell",
+              bin: "agenter-shell",
+              descriptor: "./src/app.ts",
+            },
+          },
+        },
+        null,
+        2,
+      ),
+      "utf8",
+    );
+    writeFileSync(packagePromptPath, "Package shell guidance v1.", "utf8");
+    writeFileSync(
+      join(privateRoot, "AGENTER.mdx"),
+      '<Slot src="global:builtin/$LANG/AGENTER.mdx" />\n\n<Slot src="app:shell/ShellAssistant.mdx" />',
+      "utf8",
+    );
+
+    const promptStore = new FilePromptStore({
+      lang: "en",
+      rootDir: privateRoot,
+      privateRootDir: privateRoot,
+      globalRootDir: join(homeDir, ".agenter"),
+      agenterPath: join(privateRoot, "AGENTER.mdx"),
+      avatarNickname: "shell-assistant",
+      loader: new ResourceLoader({
+        context: {
+          projectRoot,
+          cwd: projectRoot,
+          homeDir,
+        },
+      }),
+    });
+
+    try {
+      await promptStore.reload();
+
+      const ai = new AgenterAI({
+        modelClient: createModelClient(async () => ({
+          thinking: "",
+          text: "done",
+          finishReason: "stop",
+        })),
+        logger: createLogger(),
+        promptStore,
+        attentionGateway: chat.gateway,
+        avatarName: "shell-assistant",
+        onModelCall: (record) => {
+          modelCalls.push(record);
+        },
+      });
+
+      await ai.send([createUserMessage("first prompt turn", { id: "m-user-1" })]);
+      const firstRunning = modelCalls.filter((record) => record.status === "running").at(-1);
+      expect(firstRunning?.request.systemPrompt).toContain("Package shell guidance v1.");
+
+      writeFileSync(packagePromptPath, "Package shell guidance v2.", "utf8");
+      await waitForCondition(() => promptStore.inspectRuntimePromptState().dirty);
+
+      await ai.send([createUserMessage("second prompt turn", { id: "m-user-2" })]);
+      const runningCalls = modelCalls.filter((record) => record.status === "running");
+      const secondRunning = runningCalls.at(-1);
+
+      expect(firstRunning?.request.systemPrompt).toContain("Package shell guidance v1.");
+      expect(firstRunning?.request.systemPrompt).not.toContain("Package shell guidance v2.");
+      expect(secondRunning?.request.systemPrompt).toContain("Package shell guidance v2.");
+      expect(firstRunning?.request.meta?.promptSourceIdentity).not.toBe(secondRunning?.request.meta?.promptSourceIdentity);
+      expect(secondRunning?.request.meta?.promptRenderHash).not.toBe(firstRunning?.request.meta?.promptRenderHash);
+    } finally {
+      promptStore.dispose();
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 
   test("Scenario: Given runtime root tools When terminal CLI is needed Then AgenterAI exposes workspace_list plus root_bash/workspace_bash and terminal subcommands execute through root_bash", async () => {

@@ -78,10 +78,13 @@ export const createReleaseBundlePackageSpecs = (): ReleaseBundlePackageSpec[] =>
     bundledAssetsRoot: true,
     dependencies: {
       "@duckdb/node-api": "^1.5.1-r.1",
+      "@parcel/watcher": "^2.5.1",
       "@jixo/ghostty-native": "workspace:*",
       "@termless/core": "^0.6.0",
     },
-    external: ["@duckdb/node-api", "@jixo/ghostty-native"],
+    // The reactive-fs atom depends on a native watcher, so release bundles must
+    // keep parcel watcher install-time and runtime-external instead of inlining it.
+    external: ["@duckdb/node-api", "@jixo/ghostty-native", "@parcel/watcher"],
     assets: [
       {
         from: `packages/auth-service/native/resvg_bridge/target/release/libprofile_resvg_bridge.${releaseNativeLibrarySuffix}`,

@@ -2018,6 +2018,9 @@ export const appRouter = t.router({
   }),
   runtime: t.router({
     snapshot: superadminProcedure.query(({ ctx }) => ctx.kernel.getSnapshot()),
+    modelDebug: superadminProcedure
+      .input(sessionIdInput)
+      .query(async ({ ctx, input }) => await ctx.kernel.inspectModelDebug(input.sessionId)),
     attentionState: superadminProcedure
       .input(sessionIdInput)
       .query(async ({ ctx, input }) => await ctx.kernel.inspectAttentionState(input.sessionId)),

@@ -29,6 +29,7 @@
     "packages/principal-crypto",
     "packages/profile-cli",
     "packages/profile-service",
+    "packages/reactive-fs",
     "packages/search-syntax",
     "packages/session-system",
     "packages/settings",

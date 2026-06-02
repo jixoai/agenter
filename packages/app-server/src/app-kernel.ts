@@ -264,6 +264,11 @@ import {
 import { WorkspacesStore, type WorkspaceEntry } from "./workspaces-store";
 
 const now = (): number => Date.now();
+// File truth: the visible default avatar prompt is always the canonical
+// AGENTER.mdx file under ~/.agenter/avatars/by-principal/<principal>/.
+// Startup only rewrites that file to this builtin wrapper; it does not keep a
+// separate in-memory default prompt authority.
+const DEFAULT_AVATAR_PROMPT_WRAPPER = '<Slot src="global:builtin/$LANG/AGENTER.mdx" />\n';
 const clonePromptWindowMessages = (
   messages: unknown[] | null | undefined,
 ): ReturnType<SessionRuntime["inspectModelDebug"]>["promptWindow"] =>
@@ -942,6 +947,24 @@ export class AppKernel {
     return join(root, "AGENTER.mdx");
   }
 
+  private async overwriteDefaultAvatarPrompt(): Promise<void> {
+    const record = await this.ensureGlobalAvatarPrincipal({
+      nickname: defaultAvatarNickname(),
+      displayName: formatAvatarDisplayName(defaultAvatarNickname()),
+      classify: null,
+      createMissing: true,
+    });
+    if (!record) {
+      return;
+    }
+    const promptPath = join(resolveGlobalAvatarCanonicalRoot(record.principal.principalId, this.getHomeDir()), "AGENTER.mdx");
+    await mkdir(resolve(promptPath, ".."), { recursive: true });
+    // File truth: for the locked default avatar, the canonical AGENTER.mdx on
+    // disk is the durable authority. Daemon startup reasserts that file's
+    // wrapper instead of preserving ad-hoc edits or relying on bundled memory.
+    await writeFile(promptPath, DEFAULT_AVATAR_PROMPT_WRAPPER, "utf8");
+  }
+
   private rememberWorkspace(workspacePath: string): void {
     this.workspaces.add(workspacePath);
     if (this.started) {
@@ -1245,6 +1268,7 @@ export class AppKernel {
 
   async start(): Promise<void> {
     await materializeBuiltinPromptDocs({ homeDir: this.getHomeDir() });
+    await this.overwriteDefaultAvatarPrompt();
     this.started = true;
     this.bindMessageControlPlaneEvents();
     this.bindTerminalControlPlaneEvents();
@@ -2581,6 +2605,9 @@ export class AppKernel {
       if (fileStat.isDirectory()) {
         throw new Error(`avatar prompt path is a directory: ${promptPath}`);
       }
+      // File truth: non-default avatars become user-owned once their canonical
+      // AGENTER.mdx exists. Later startup or package upgrades must treat that
+      // file as the durable source of truth and must not overwrite it.
       return {
         seeded: false,
         file: {
@@ -6486,6 +6513,7 @@ export class AppKernel {
           capabilities: resolveModelCapabilities(resolved.ai),
         },
         promptWindow: [],
+        prompt: null,
         stats: null,
         latestModelCall: null,
         recentModelCalls: [],
@@ -6518,6 +6546,7 @@ export class AppKernel {
           capabilities: resolveModelCapabilities(resolved.ai),
         },
         promptWindow: clonePromptWindowMessages(db.getCurrentPromptWindow()?.messages),
+        prompt: null,
         stats: null,
         latestModelCall: recentModelCalls.at(-1) ?? null,
         recentModelCalls: recentModelCalls.slice(-8),

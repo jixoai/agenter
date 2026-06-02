@@ -1,0 +1,389 @@
+import { readFile, readdir, stat } from 'node:fs/promises'
+import { dirname, resolve } from 'node:path'
+import { ReactiveState, contextStorage } from './reactive-state.js'
+import { acquireWatcher, ensureWatcherRootForPath, isWatcherPoolInitialized } from './watcher-pool.js'
+
+/** 状态缓存：路径 -> ReactiveState */
+const stateCache = new Map<string, ReactiveState<unknown>>()
+
+/** 监听器释放函数缓存 */
+const releaseCache = new Map<string, () => void>()
+
+/** 缺失路径重校验定时器缓存 */
+const missingPathPollCache = new Map<string, ReturnType<typeof setInterval>>()
+
+/** Native watcher can miss a create event on some CI filesystems; missing paths get a low-frequency fallback. */
+const MISSING_PATH_POLL_MS = 1000
+
+async function readCurrentValue<T>(
+  state: ReactiveState<T>,
+  getValue: () => Promise<T>,
+  options: { initialized: boolean }
+): Promise<T> {
+  if (!options.initialized && !contextStorage.getStore()) {
+    state.set(await getValue())
+  }
+  return state.get()
+}
+
+function stopMissingPathPoll(key: string): void {
+  const timer = missingPathPollCache.get(key)
+  if (!timer) return
+  clearInterval(timer)
+  missingPathPollCache.delete(key)
+}
+
+function ensureMissingPathPoll(key: string, poll: () => void | Promise<void>): void {
+  if (!isWatcherPoolInitialized() || missingPathPollCache.has(key)) {
+    return
+  }
+
+  const timer = setInterval(() => {
+    void poll()
+  }, MISSING_PATH_POLL_MS)
+  timer.unref?.()
+  missingPathPollCache.set(key, timer)
+}
+
+/**
+ * 响应式读取文件内容
+ *
+ * 特性：
+ * - 自动注册文件监听
+ * - 文件变更时自动更新状态
+ * - 在 ReactiveContext 中调用时自动追踪依赖
+ * - 支持监听尚未创建的文件（通过 @parcel/watcher）
+ *
+ * @param filepath 文件路径
+ * @returns 文件内容，文件不存在时返回 null
+ */
+export async function reactiveReadFile(filepath: string): Promise<string | null> {
+  const normalizedPath = resolve(filepath)
+  const key = `file:${normalizedPath}`
+
+  const getValue = async (): Promise<string | null> => {
+    try {
+      return await readFile(normalizedPath, 'utf-8')
+    } catch {
+      return null
+    }
+  }
+
+  let state = stateCache.get(key) as ReactiveState<string | null> | undefined
+  let initialized = false
+
+  if (!state) {
+    initialized = true
+    // 创建新的响应式状态
+    const initialValue = await getValue()
+    state = new ReactiveState<string | null>(initialValue)
+    stateCache.set(key, state as ReactiveState<unknown>)
+
+    const refresh = async (): Promise<void> => {
+      const newValue = await getValue()
+      state!.set(newValue)
+      if (newValue === null) {
+        ensureMissingPathPoll(key, refresh)
+      } else {
+        stopMissingPathPoll(key)
+      }
+    }
+    if (initialValue === null) {
+      ensureMissingPathPoll(key, refresh)
+    }
+
+    // 监听文件所在目录（支持文件删除后重建）
+    const dirPath = dirname(normalizedPath)
+    await ensureWatcherRootForPath(dirPath)
+    const release = acquireWatcher(dirPath, refresh, {
+      onError: () => {
+        stopMissingPathPoll(key)
+        stateCache.delete(key)
+        releaseCache.delete(key)
+      },
+    })
+    releaseCache.set(key, release)
+  }
+
+  return await readCurrentValue(state, getValue, { initialized })
+}
+
+/**
+ * 主动更新响应式文件缓存（用于写入后立即推送订阅）
+ *
+ * 仅当该文件已有缓存状态时生效；不会创建新的监听器。
+ */
+export function updateReactiveFileCache(filepath: string, content: string | null): void {
+  const normalizedPath = resolve(filepath)
+  const key = `file:${normalizedPath}`
+  const state = stateCache.get(key) as ReactiveState<string | null> | undefined
+  state?.set(content)
+}
+
+/**
+ * 响应式读取目录内容
+ *
+ * 特性：
+ * - 自动注册目录监听
+ * - 目录变更时自动更新状态
+ * - 在 ReactiveContext 中调用时自动追踪依赖
+ * - 支持监听尚未创建的目录（通过 @parcel/watcher）
+ *
+ * @param dirpath 目录路径
+ * @param options 选项
+ * @returns 目录项名称数组
+ */
+export async function reactiveReadDir(
+  dirpath: string,
+  options: {
+    /** 是否只返回目录 */
+    directoriesOnly?: boolean
+    /** 是否只返回文件 */
+    filesOnly?: boolean
+    /** 是否包含隐藏文件（以 . 开头） */
+    includeHidden?: boolean
+    /** 排除的名称 */
+    exclude?: string[]
+  } = {}
+): Promise<string[]> {
+  const normalizedPath = resolve(dirpath)
+  const optionsKey = JSON.stringify(options)
+  const key = `dir:${normalizedPath}:${optionsKey}`
+
+  const getValue = async (): Promise<string[]> => {
+    try {
+      const entries = await readdir(normalizedPath, { withFileTypes: true })
+      return entries
+        .filter((entry) => {
+          // 隐藏文件过滤
+          if (!options.includeHidden && entry.name.startsWith('.')) {
+            return false
+          }
+          // 排除列表过滤
+          if (options.exclude?.includes(entry.name)) {
+            return false
+          }
+          // 类型过滤
+          if (options.directoriesOnly && !entry.isDirectory()) {
+            return false
+          }
+          if (options.filesOnly && !entry.isFile()) {
+            return false
+          }
+          return true
+        })
+        .map((entry) => entry.name)
+    } catch {
+      return []
+    }
+  }
+
+  let state = stateCache.get(key) as ReactiveState<string[]> | undefined
+  let initialized = false
+
+  if (!state) {
+    initialized = true
+    // 创建新的响应式状态
+    const initialValue = await getValue()
+    state = new ReactiveState<string[]>(initialValue, {
+      // 数组相等性比较
+      equals: (a, b) => a.length === b.length && a.every((v, i) => v === b[i]),
+    })
+    stateCache.set(key, state as ReactiveState<unknown>)
+
+    // 监听目录（包括目录的创建和删除）
+    // @parcel/watcher 会自动处理目录不存在的情况
+    await ensureWatcherRootForPath(normalizedPath)
+    const release = acquireWatcher(
+      normalizedPath,
+      async () => {
+        const newValue = await getValue()
+        state!.set(newValue)
+      },
+      {
+        recursive: true,
+        onError: () => {
+          stateCache.delete(key)
+          releaseCache.delete(key)
+        },
+      }
+    )
+    releaseCache.set(key, release)
+  }
+
+  return await readCurrentValue(state, getValue, { initialized })
+}
+
+/**
+ * 响应式检查路径是否存在
+ *
+ * @param path 路径
+ * @returns 是否存在
+ */
+export async function reactiveExists(path: string): Promise<boolean> {
+  const normalizedPath = resolve(path)
+  const key = `exists:${normalizedPath}`
+
+  const getValue = async (): Promise<boolean> => {
+    try {
+      await stat(normalizedPath)
+      return true
+    } catch {
+      return false
+    }
+  }
+
+  let state = stateCache.get(key) as ReactiveState<boolean> | undefined
+  let initialized = false
+
+  if (!state) {
+    initialized = true
+    const initialValue = await getValue()
+    state = new ReactiveState<boolean>(initialValue)
+    stateCache.set(key, state as ReactiveState<unknown>)
+
+    const refresh = async (): Promise<void> => {
+      const newValue = await getValue()
+      state!.set(newValue)
+      if (newValue) {
+        stopMissingPathPoll(key)
+      } else {
+        ensureMissingPathPoll(key, refresh)
+      }
+    }
+    if (!initialValue) {
+      ensureMissingPathPoll(key, refresh)
+    }
+
+    // 监听父目录
+    const dirPath = dirname(normalizedPath)
+    await ensureWatcherRootForPath(dirPath)
+    const release = acquireWatcher(dirPath, refresh, {
+      onError: () => {
+        stopMissingPathPoll(key)
+        stateCache.delete(key)
+        releaseCache.delete(key)
+      },
+    })
+    releaseCache.set(key, release)
+  }
+
+  return await readCurrentValue(state, getValue, { initialized })
+}
+
+/**
+ * 响应式获取文件/目录的 stat 信息
+ *
+ * @param path 路径
+ * @returns stat 信息，不存在时返回 null
+ */
+export async function reactiveStat(
+  path: string
+): Promise<{ isDirectory: boolean; isFile: boolean; mtime: number; birthtime: number } | null> {
+  const normalizedPath = resolve(path)
+  const key = `stat:${normalizedPath}`
+
+  type StatResult = {
+    isDirectory: boolean
+    isFile: boolean
+    mtime: number
+    birthtime: number
+  } | null
+
+  const getValue = async (): Promise<StatResult> => {
+    try {
+      const s = await stat(normalizedPath)
+      return {
+        isDirectory: s.isDirectory(),
+        isFile: s.isFile(),
+        mtime: s.mtime.getTime(),
+        birthtime: s.birthtime.getTime(),
+      }
+    } catch {
+      return null
+    }
+  }
+
+  let state = stateCache.get(key) as ReactiveState<StatResult> | undefined
+  let initialized = false
+
+  if (!state) {
+    initialized = true
+    const initialValue = await getValue()
+    state = new ReactiveState<StatResult>(initialValue, {
+      equals: (a, b) => {
+        if (a === null && b === null) return true
+        if (a === null || b === null) return false
+        return (
+          a.isDirectory === b.isDirectory &&
+          a.isFile === b.isFile &&
+          a.mtime === b.mtime &&
+          a.birthtime === b.birthtime
+        )
+      },
+    })
+    stateCache.set(key, state as ReactiveState<unknown>)
+
+    const refresh = async (): Promise<void> => {
+      const newValue = await getValue()
+      state!.set(newValue)
+      if (newValue === null) {
+        ensureMissingPathPoll(key, refresh)
+      } else {
+        stopMissingPathPoll(key)
+      }
+    }
+    if (initialValue === null) {
+      ensureMissingPathPoll(key, refresh)
+    }
+
+    const dirPath = dirname(normalizedPath)
+    await ensureWatcherRootForPath(dirPath)
+    const release = acquireWatcher(dirPath, refresh, {
+      onError: () => {
+        stopMissingPathPoll(key)
+        stateCache.delete(key)
+        releaseCache.delete(key)
+      },
+    })
+    releaseCache.set(key, release)
+  }
+
+  return await readCurrentValue(state, getValue, { initialized })
+}
+
+/**
+ * 清除指定路径的缓存（用于测试）
+ */
+export function clearCache(path?: string): void {
+  if (path) {
+    const normalizedPath = resolve(path)
+    // 清除所有以该路径开头的缓存
+    for (const [key, release] of releaseCache) {
+      if (key.includes(normalizedPath)) {
+        release()
+        stopMissingPathPoll(key)
+        releaseCache.delete(key)
+        stateCache.delete(key)
+      }
+    }
+  } else {
+    // 清除所有缓存
+    for (const release of releaseCache.values()) {
+      release()
+    }
+    releaseCache.clear()
+    for (const timer of missingPathPollCache.values()) {
+      clearInterval(timer)
+    }
+    missingPathPollCache.clear()
+    stateCache.clear()
+  }
+}
+
+/**
+ * 获取缓存大小（用于调试）
+ */
+export function getCacheSize(): number {
+  return stateCache.size
+}

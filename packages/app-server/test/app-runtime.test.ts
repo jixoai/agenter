@@ -8,6 +8,7 @@ import { resolveGlobalAvatarCanonicalRoot } from "@agenter/avatar";
 import { AppKernel, appRouter, createTrpcContext, resolveWorkspaceAvatarAssetRoot } from "../src";
 
 const tempDirs: string[] = [];
+const DEFAULT_AVATAR_PROMPT_WRAPPER = '<Slot src="global:builtin/$LANG/AGENTER.mdx" />\n';
 
 const makeTempDir = (): string => {
   const dir = mkdtempSync(join(tmpdir(), "agenter-app-runtime-"));
@@ -62,6 +63,50 @@ describe("Feature: app runtime platform contracts", () => {
     expect(readFileSync(zhSystemPath, "utf8")).toContain("# AGENTER_SYSTEM");
 
     await kernel.stop();
+  });
+
+  test("Scenario: Given the default Avatar prompt was user-edited When the daemon restarts Then startup restores the locked builtin wrapper and reports daemon-managed ownership", async () => {
+    const root = makeTempDir();
+    const homeDir = join(root, "home");
+    const workspace = join(root, "workspace");
+    mkdirSync(workspace, { recursive: true });
+    const createKernel = () =>
+      new AppKernel({
+        globalSessionRoot: join(root, "sessions"),
+        archiveSessionRoot: join(root, "archive", "sessions"),
+        workspacesPath: join(root, "workspaces.yaml"),
+        homeDir,
+      });
+
+    const firstKernel = createKernel();
+    await firstKernel.start();
+
+    const defaultAvatar = (await firstKernel.listGlobalAvatarCatalog()).find((entry) => entry.nickname === "default");
+    expect(defaultAvatar?.avatarPrincipalId).toBeTruthy();
+    const promptPath = join(resolveGlobalAvatarCanonicalRoot(defaultAvatar!.avatarPrincipalId!, homeDir), "AGENTER.mdx");
+    expect(readFileSync(promptPath, "utf8")).toBe(DEFAULT_AVATAR_PROMPT_WRAPPER);
+
+    writeFileSync(promptPath, "# Operator override\n", "utf8");
+    await firstKernel.stop();
+
+    const restartedKernel = createKernel();
+    await restartedKernel.start();
+    expect(readFileSync(promptPath, "utf8")).toBe(DEFAULT_AVATAR_PROMPT_WRAPPER);
+
+    const caller = await createRootSuperadminCaller(restartedKernel);
+    const session = await caller.session.create({
+      cwd: workspace,
+      avatar: "default",
+      autoStart: true,
+    });
+    const debug = await caller.runtime.modelDebug({
+      sessionId: session.session.id,
+    });
+
+    expect(debug.prompt?.ownershipPolicy).toBe("daemon-managed-locked-fallback");
+    expect(debug.prompt?.canonicalPromptPath).toBe(promptPath);
+
+    await restartedKernel.stop();
   });
 
   test("Scenario: Given app-owned assistant prompt seed When the app runtime route is used Then AGENTER.mdx is created under the avatar principal root and later edits remain truth", async () => {
@@ -279,6 +324,37 @@ describe("Feature: app runtime platform contracts", () => {
     expect(committed.snapshot.contexts.some((context) => context.contextId === "ctx-self-evolution")).toBe(true);
     expect(queried.items.some((item) => item.contextId === "ctx-self-evolution")).toBe(true);
     expect(settled.active.some((context) => context.contextId === "ctx-self-evolution")).toBe(false);
+
+    await kernel.stop();
+  });
+
+  test("Scenario: Given a running session When runtime modelDebug is queried Then live prompt ownership and canonical prompt path are exposed", async () => {
+    const root = makeTempDir();
+    const workspace = join(root, "workspace");
+    mkdirSync(workspace, { recursive: true });
+
+    const kernel = new AppKernel({
+      globalSessionRoot: join(root, "sessions"),
+      archiveSessionRoot: join(root, "archive", "sessions"),
+      workspacesPath: join(root, "workspaces.yaml"),
+      homeDir: join(root, "home"),
+    });
+    await kernel.start();
+    const caller = await createRootSuperadminCaller(kernel);
+
+    const session = await caller.session.create({
+      cwd: workspace,
+      avatar: "shell-assistant",
+      autoStart: true,
+    });
+    const debug = await caller.runtime.modelDebug({
+      sessionId: session.session.id,
+    });
+
+    expect(debug.prompt).not.toBeNull();
+    expect(debug.prompt?.ownershipPolicy).toBe("user-owned-seed-if-missing");
+    expect(debug.prompt?.canonicalPromptPath).toContain("AGENTER.mdx");
+    expect(debug.prompt?.current).toBeNull();
 
     await kernel.stop();
   });

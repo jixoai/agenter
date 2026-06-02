@@ -988,6 +988,7 @@ describe("Feature: app kernel event replay", () => {
     expect(debug.config?.model).toBeTruthy();
     expect(debug.config?.capabilities.streaming).toBeBoolean();
     expect(debug.promptWindow).toEqual([]);
+    expect(debug.prompt).toBeNull();
     expect(debug.latestModelCall).toBeNull();
     expect(debug.recentApiCalls).toEqual([]);
   });

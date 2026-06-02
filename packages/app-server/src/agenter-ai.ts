@@ -1176,30 +1176,14 @@ export class AgenterAI {
       : [];
     const promptStore = this.promptStore;
     const modelClient = this.modelClient;
-    const promptSnapshot = promptStore.getSnapshot();
-    const promptDocs = promptSnapshot.docs;
     const avatarName =
       typeof this.deps.avatarName === "string" && this.deps.avatarName.trim().length > 0
         ? this.deps.avatarName.trim()
         : DEFAULT_AVATAR_PROMPT_NAME;
-    const sharedPromptSlots = {
-      AVATAR_NAME: avatarName,
-    };
-    const agenterSystem = await promptStore.buildMd(promptDocs.AGENTER_SYSTEM, {
-      slots: sharedPromptSlots,
+    const runtimePrompt = await promptStore.renderRuntimePrompt({
+      avatarName,
     });
-    const agenter = await promptStore.buildMd(promptDocs.AGENTER, {
-      slots: sharedPromptSlots,
-    });
-    const contract = await promptStore.buildMd(promptDocs.RESPONSE_CONTRACT);
-    const systemPrompt = await promptStore.buildMd(promptDocs.SYSTEM_TEMPLATE, {
-      slots: {
-        AGENTER_SYSTEM: agenterSystem,
-        SYSTEMS_GUIDE: "",
-        AGENTER: agenter,
-        RESPONSE_CONTRACT: contract,
-      },
-    });
+    const systemPrompt = runtimePrompt.systemPrompt;
     const promptWindowSnapshot = [...this.promptWindow];
     const transientRequestMessages = await this.formatTransientAttentionProtocolMessages(roundMessages);
     const requestMessages = [...promptWindowSnapshot, ...transientRequestMessages];
@@ -1221,6 +1205,11 @@ export class AgenterAI {
         promptWindowSize: promptWindowSnapshot.length,
         transientAttentionInputCount: transientRequestMessages.length,
         attentionRound,
+        promptSourceIdentity: runtimePrompt.sourceIdentity,
+        promptRenderHash: runtimePrompt.renderHash,
+        promptRenderedAt: runtimePrompt.renderedAt,
+        promptCanonicalPath: runtimePrompt.canonicalPromptPath ?? null,
+        promptOwnershipPolicy: runtimePrompt.ownershipPolicy,
       },
     } satisfies AgentModelCallRecord["request"];
     const callRecordBase = {
