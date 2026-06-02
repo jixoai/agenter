@@ -53,7 +53,7 @@
   },
   "scripts": {
     "agenter": "bun run packages/cli/src/bin/agenter.ts",
-    "build:i18n": "bun run --filter '@agenter/i18n-*' build",
+    "build:i18n": "bun run --cwd packages/i18n-en build && bun run --cwd packages/i18n-zh-Hans build",
     "build:icon-masters": "bun run ./assets/scripts/build-icon-masters.ts",
     "build:icons": "bun run build:icon-masters && bun run ./assets/scripts/generate-app-icons.ts",
     "build:icon-studio-lucide": "bun run ./assets/scripts/build-icon-studio-lucide-catalog.ts",

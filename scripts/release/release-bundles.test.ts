@@ -115,7 +115,14 @@ describe("Feature: release bundle contract", () => {
 
   test("Scenario: Given release CI starts from a clean checkout When building bundles Then generated prompt and native assets are built before copy", () => {
     const buildScript = readRepoFile("scripts/release/build-bundles.ts");
+    const packageJson = JSON.parse(readRepoFile("package.json")) as {
+      scripts?: Record<string, string>;
+    };
 
+    expect(packageJson.scripts?.["build:i18n"]).toBe(
+      "bun run --cwd packages/i18n-en build && bun run --cwd packages/i18n-zh-Hans build",
+    );
+    expect(packageJson.scripts?.["build:i18n"]).not.toContain("--filter '@agenter/i18n-*'");
     expect(buildScript).toContain('await run(["bun", "run", "build:i18n"])');
     expect(buildScript).toContain("https://ziglang.org/download/");
     expect(buildScript).toContain("{ ZIG_BIN: zigBin }");
