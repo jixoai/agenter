@@ -55,7 +55,3 @@ jobs:
           publish: bun run release-packages
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Verify published npm bundles
-        if: steps.changesets.outputs.published == 'true'
-        run: bun run release:verify-published

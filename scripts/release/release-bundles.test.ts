@@ -192,8 +192,10 @@ describe("Feature: release bundle contract", () => {
     expect(workflow).toContain("changesets/action@v1");
     expect(workflow).toContain("publish: bun run release-packages");
     expect(workflow).not.toContain("NPM_TOKEN");
-    expect(workflow).toContain("steps.changesets.outputs.published == 'true'");
-    expect(workflow).toContain("bun run release:verify-published");
+    expect(workflow).not.toContain("steps.changesets.outputs.published");
+    expect(packageJson.scripts?.["release-packages"]).toBe(
+      "bun run release:build-bundles && bun run release:publish-bundles && bun run release:verify-published",
+    );
     expect(trustedPublishScript).toContain('repo: "jixoai/agenter"');
     expect(trustedPublishScript).toContain("releasePublishablePackageJsonPaths");
     expect(trustedPublishScript).toContain('mkdtemp(join(tmpdir(), "agenter-npm-"))');

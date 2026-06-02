@@ -69,7 +69,7 @@
     "release:publish-bundles": "bun run scripts/release/publish-bundles.ts",
     "release:publish-bundles:dry-run": "bun run scripts/release/publish-bundles.ts --dry-run",
     "release:verify-published": "bun run scripts/release/verify-published.ts",
-    "release-packages": "bun run release:build-bundles && bun run release:publish-bundles",
+    "release-packages": "bun run release:build-bundles && bun run release:publish-bundles && bun run release:verify-published",
     "trusted-publish:check": "bun run scripts/npm/configure-trusted-publish.ts --check",
     "trusted-publish:configure": "bun run scripts/npm/configure-trusted-publish.ts",
     "trusted-publish:dry-run": "bun run scripts/npm/configure-trusted-publish.ts --dry-run",
