@@ -7,6 +7,7 @@ import { bundlePublishOrder } from "./publish-bundles";
 import {
   createReleaseBundlePackageSpecs,
   releaseBundlePublishOrder,
+  releasePublishablePackageJsonPaths,
   releaseRepositoryUrl,
   releaseToolchain,
 } from "./release-manifest";
@@ -159,7 +160,11 @@ describe("Feature: release bundle contract", () => {
 
   test("Scenario: Given GitHub trusted publishing is configured When inspecting the publish path Then npm provenance is mandatory and stale versions are skipped", () => {
     const publishScript = readRepoFile("scripts/release/publish-bundles.ts");
+    const trustedPublishScript = readRepoFile("scripts/npm/configure-trusted-publish.ts");
     const workflow = readRepoFile(".github/workflows/release.yml");
+    const changesetReadme = readRepoFile(".changeset/README.md");
+    const gitignore = readRepoFile(".gitignore");
+    const spec = readRepoFile("SPEC.md");
     const packageJson = JSON.parse(readRepoFile("package.json")) as {
       packageManager?: string;
       scripts?: Record<string, string>;
@@ -179,11 +184,41 @@ describe("Feature: release bundle contract", () => {
     expect(workflow).toContain("bun run release:preflight --skip-install");
     expect(workflow).toContain("changesets/action@v1");
     expect(workflow).toContain("publish: bun run release-packages");
+    expect(workflow).not.toContain("NPM_TOKEN");
     expect(workflow).toContain("steps.changesets.outputs.published == 'true'");
     expect(workflow).toContain("bun run release:verify-published");
+    expect(trustedPublishScript).toContain('repo: "jixoai/agenter"');
+    expect(trustedPublishScript).toContain("releasePublishablePackageJsonPaths");
+    expect(trustedPublishScript).toContain('mkdtemp(join(tmpdir(), "agenter-npm-"))');
+    expect(trustedPublishScript).toContain("--file");
+    expect(trustedPublishScript).toContain("--allow-publish");
+    expect(trustedPublishScript).toContain("--allow-stage-publish");
+    expect(trustedPublishScript).not.toContain("jixoai/opentray");
+    expect(trustedPublishScript.indexOf("if (options.dryRun)")).toBeLessThan(
+      trustedPublishScript.indexOf("const auth = await createNpmAuth(options)"),
+    );
+    expect(releasePublishablePackageJsonPaths).toEqual([
+      "packages/agenter/package.json",
+      "apps/shell/package.json",
+      "apps/studio/package.json",
+      "packages/ghostty-native/package.json",
+    ]);
     expect(packageJson.packageManager).toBe(`bun@${releaseToolchain.bunVersion}`);
     expect(packageJson.scripts?.["release:preflight"]).toBe("bun run scripts/release/preflight.ts");
     expect(packageJson.scripts?.["release:verify-published"]).toBe("bun run scripts/release/verify-published.ts");
+    expect(packageJson.scripts?.["trusted-publish:check"]).toBe(
+      "bun run scripts/npm/configure-trusted-publish.ts --check",
+    );
+    expect(packageJson.scripts?.["trusted-publish:configure"]).toBe("bun run scripts/npm/configure-trusted-publish.ts");
+    expect(packageJson.scripts?.["trusted-publish:dry-run"]).toBe(
+      "bun run scripts/npm/configure-trusted-publish.ts --dry-run",
+    );
+    expect(changesetReadme).toContain("GitHub-owned");
+    expect(changesetReadme).toContain("Do not add a long-lived `NPM_TOKEN` secret to CI");
+    expect(gitignore).toContain(".env");
+    expect(gitignore).toContain(".npmrc");
+    expect(spec).toContain("npm release path 固定为 changesets + GitHub Actions trusted publishing");
+    expect(spec).toContain("releasePublishablePackageJsonPaths");
   });
 
   test("Scenario: Given release reliability scripts run When inspecting preflight and published verification Then they reuse release manifest without extension vocabulary checks", () => {

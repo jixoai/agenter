@@ -16,6 +16,11 @@ codedb.snapshot
 design/
 *-bak/
 
+# local secret-bearing config
+.env
+.env.local
+.npmrc
+
 # demo runtime artifacts
 demo/logs/
 demo/tmp/

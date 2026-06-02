@@ -158,3 +158,11 @@ Agenter 是一个 attention-first 的 Agent runtime platform。
 - `SPEC.md` 保持精简，不记录短期任务、阶段性收口状态、执行流水账。
 - 若 `openspec/changes/*` 与 durable spec 不一致，以“先补 durable spec，再 archive”为强制流程。
 - 新的 OpenSpec change 默认使用 project-local `vision-driven` schema：先以 `plans/plan.md` 作为 Intent Document SSOT 收敛用户意图与最终可见效果，再生成 specs、BDD tasks、实现与 `review/self-review.md`。`review/self-review.md` 是宏观复盘与判断记录；`review/self-review.html` 是单独的截图、交互、结构化证据展示报告。`plans/plan.md` 发生实质修订前必须备份为 `plans/plan-vN.md`；连续 2 轮 self-review 未解决的问题必须回到 research-plan/specs 阶段，而不是在实现层继续打补丁。既有 `schema: spec-driven` change 保持原 schema 解析。
+
+## 8. 发布法则
+
+- npm release path 固定为 changesets + GitHub Actions trusted publishing：`.github/workflows/release.yml` 在 `main` push 或手动触发时创建 version PR 或发布。
+- npm trusted publisher claim 必须保持：publisher `GitHub Actions`，repository `jixoai/agenter`，workflow filename `release.yml`，environment `npm-release`，并允许 `npm publish` 与 `npm stage publish`。
+- release workflow 必须授予 `id-token: write`，并通过 `environment: npm-release` 匹配 npm OIDC claim；正常 CI 发布不得依赖长期 `NPM_TOKEN` secret。
+- `scripts/npm/configure-trusted-publish.ts` 是 npm trusted publisher 的批量配置/检查工具；它只用于 operator 本地对 npm 包配置 trust，不把 token 带入 CI。
+- Agenter 可发布 npm 包集合的单一真源是 `scripts/release/release-manifest.ts` 的 `releasePublishablePackageJsonPaths`；trusted publish 配置、bundle build、publish 与发布校验都必须复用这份 manifest，不能另用 workspace glob 推导。
