@@ -270,6 +270,7 @@
       }
       byId.set(message.messageId, {
         messageId: message.messageId,
+        senderContactId: message.senderContactId,
         from: message.from,
         kind: message.kind,
         content: message.content,

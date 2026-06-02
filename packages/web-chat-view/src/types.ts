@@ -1,5 +1,6 @@
 import type {
   MessageAttachmentKind,
+  MessageContactId,
   MessageControlPlaneEntry,
   MessageRecord,
   MessageTransportServerMessage,
@@ -10,6 +11,7 @@ import type { ScrollController } from "@agenter/svelte-components";
 export type WebChatChannel = MessageControlPlaneEntry;
 export interface WebChatMessageReference {
   messageId?: number;
+  senderContactId?: MessageContactId;
   from: string;
   kind: MessageRecord["kind"];
   content: string;

@@ -128,6 +128,9 @@ const resolveParticipantMatchByLabel = (
     return undefined;
   }
   return channel.participants.find((participant) => {
+    if (normalizeActorLabel(participant.id) === normalizedLabel) {
+      return true;
+    }
     const participantLabel = normalizeActorLabel(participant.label);
     if (participantLabel.length > 0 && participantLabel === normalizedLabel) {
       return true;
@@ -166,7 +169,7 @@ export const resolveUserSender = (
 
 export const resolveMessageActorId = (
   channel: WebChatChannel | null,
-  message: WebChatMessage,
+  message: Pick<WebChatMessage, "from" | "senderContactId">,
   viewerActorId?: string | null,
 ): MessageContactId | null => {
   if (message.senderContactId) {

@@ -22,4 +22,16 @@ describe("Feature: shared message row read-trigger placement", () => {
     expect(messageRowSource).not.toMatch(/\.message-card-with-actions\s*\{[^}]*padding-inline-end/su);
     expect(messageRowSource).not.toMatch(/@container[^{]*\{[^@]*\.message-card-with-actions\s*\{[^}]*padding-inline-end/su);
   });
+
+  test("Scenario: Given a short CJK message When reading the shared CSS Then the bubble keeps a small horizontal floor without disabling long-message wrapping", () => {
+    expect(messageRowSource).toMatch(
+      /:global\(\.message \.message-bubble\)\s*\{[^}]*min-inline-size:\s*3\.4em/su,
+    );
+    expect(messageRowSource).toMatch(/\.message-card\s*\{[^}]*inline-size:\s*fit-content[^}]*min-inline-size:\s*3\.4em/su);
+    expect(messageRowSource).toMatch(/\.content\s*\{[^}]*inline-size:\s*fit-content[^}]*min-inline-size:\s*3\.4em/su);
+    expect(messageRowSource).toMatch(
+      /\.content\s+:global\(\.message-markdown-content\),\s*\.content\s+:global\(\.message-markdown-fallback\)\s*\{[^}]*inline-size:\s*fit-content[^}]*min-inline-size:\s*3\.4em/su,
+    );
+    expect(messageRowSource).not.toMatch(/\.message-card\s*\{[^}]*inline-size:\s*max-content/su);
+  });
 });

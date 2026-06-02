@@ -137,6 +137,31 @@
     const preview = clipReferencePreview(content);
     return preview.length > 0 ? preview : "[empty message]";
   });
+  const referencedActorLabel = $derived.by(() => {
+    if (!referencedMessage) {
+      return null;
+    }
+    const actorId = resolveMessageActorId(channel, referencedMessage, viewerActorId);
+    const participantLabel = actorId
+      ? channel.participants.find((participant) => participant.id === actorId)?.label?.trim()
+      : undefined;
+    const fallbackLabel = participantLabel || referencedMessage.from || "Participant";
+    const role =
+      referencedMessage.from === channel.owner || referencedMessage.from === `avatar:${channel.owner}`
+        ? "assistant"
+        : actorId && actorId === viewerActorId
+          ? "viewer"
+          : "participant";
+    return (
+      resolveActorPresentation?.({
+        channel,
+        viewerActorId,
+        role,
+        actorId,
+        fallbackLabel,
+      })?.label ?? fallbackLabel
+    );
+  });
 
   const buildInteractiveText = (
     fields: Record<string, string>,
@@ -335,7 +360,7 @@
           >
             {#if referencedMessage && referencedPreviewText}
               <div class="reference-preview" data-testid="message-ref-preview" part="message-reference">
-                <span class="reference-label">{referencedMessage.from}</span>
+                <span class="reference-label">{referencedActorLabel ?? referencedMessage.from}</span>
                 <p>{referencedPreviewText}</p>
               </div>
             {/if}
@@ -515,6 +540,7 @@
   :global(.message .message-bubble) {
     position: relative;
     min-width: 0;
+    min-inline-size: 3.4em;
     max-width: 100%;
     border-radius: var(--f7-message-bubble-border-radius, 16px);
     padding: var(--f7-message-bubble-padding-vertical, 7px) var(--f7-message-bubble-padding-horizontal, 13px);
@@ -550,6 +576,7 @@
     gap: 0.1rem;
     position: relative;
     inline-size: fit-content;
+    min-inline-size: 3.4em;
     max-inline-size: 100%;
     justify-items: start;
   }
@@ -672,6 +699,7 @@
   .content {
     display: block;
     inline-size: fit-content;
+    min-inline-size: 3.4em;
     max-inline-size: 100%;
   }
 
@@ -679,10 +707,12 @@
   .content :global(.message-markdown-fallback) {
     display: inline-block;
     inline-size: fit-content;
+    min-inline-size: 3.4em;
     max-inline-size: 100%;
     color: inherit;
     text-align: left;
     line-height: inherit;
+    overflow-wrap: anywhere;
   }
 
   .row.viewer-owned .content :global(.message-markdown-content),

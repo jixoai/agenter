@@ -1829,6 +1829,80 @@ describe("Feature: web-chat-view package", () => {
     expect(document.body.querySelector("img[alt='Kai']")).toBeTruthy();
   });
 
+  test("Scenario: Given a reply references a message whose from field is an actor address When the transcript renders Then the reference preview shows the actor display name", async () => {
+    const kaiActorId = "0x877ca703ff6fe030d7aea8692781a2300f80ca02";
+
+    mountHost({
+      viewerActorId: "auth:viewer",
+      channel: createRoomChannel({
+        chatId: "chat-reference-display-name",
+        title: "Reference display name",
+        owner: "Iris",
+        participants: [
+          { id: kaiActorId, label: "Kai" },
+          { id: "auth:iris", label: "Iris" },
+        ],
+        accessRole: "admin",
+        accessToken: "msgtok_admin",
+      }),
+      initialSnapshotResolved: true,
+      initialMessages: [
+        {
+          rowId: 1,
+          viewKey: "msg-kai-source",
+          messageId: 1,
+          chatId: "chat-reference-display-name",
+          senderContactId: kaiActorId,
+          from: kaiActorId,
+          kind: "text",
+          content: "你好",
+          createdAt: 100,
+          updatedAt: 100,
+          visibleAt: 100,
+          metadata: {},
+          attachments: [],
+        },
+        {
+          rowId: 2,
+          viewKey: "msg-iris-reply",
+          messageId: 2,
+          chatId: "chat-reference-display-name",
+          senderContactId: "auth:iris",
+          from: "Iris",
+          ref: 1,
+          kind: "text",
+          content: "你好！有什么可以帮你的吗？",
+          createdAt: 200,
+          updatedAt: 200,
+          visibleAt: 200,
+          metadata: {},
+          attachments: [],
+        },
+      ],
+      resolveActorPresentation: ({ actorId, fallbackLabel }: WebChatActorResolveInput) =>
+        actorId === kaiActorId
+          ? {
+              actorId,
+              label: "Kai",
+              subtitle: kaiActorId,
+              iconUrl: null,
+              kind: "auth",
+            }
+          : {
+              actorId,
+              label: fallbackLabel,
+            },
+    });
+
+    await settleLitUpdates();
+
+    const referencePreview = document.body.querySelector("[data-testid='message-ref-preview']");
+    const referenceText = readRenderedText(referencePreview);
+    expect(referenceText).toContain("Kai");
+    expect(referenceText).toContain("你好");
+    expect(referenceText).not.toContain(kaiActorId);
+  });
+
   test("Scenario: Given bootstrap transcript rows mirror the transport snapshot with legacy ids When the websocket snapshot arrives Then the view collapses semantic duplicates into one transcript", async () => {
     mountHost({
       socketFactory,
