@@ -31,7 +31,7 @@
         "@agenter/terminal-transport-protocol": "workspace:*",
         "@agenter/termless-backend-utils": "workspace:*",
         "@agenter/termless-core": "workspace:*",
-        "@opentui/core": "latest",
+        "@opentui/core": "0.3.0",
         "yargs": "^17.7.2",
       },
       "devDependencies": {
@@ -517,7 +517,7 @@
         "@agenter/principal-crypto": "workspace:*",
         "@agenter/terminal-transport-protocol": "workspace:*",
         "@agenter/termless-core": "workspace:*",
-        "@opentui/core": "latest",
+        "@opentui/core": "0.3.0",
         "yargs": "^17.7.2",
       },
       "devDependencies": {
@@ -598,7 +598,7 @@
       "version": "0.0.1",
       "dependencies": {
         "@agenter/client-sdk": "workspace:*",
-        "@opentui/core": "latest",
+        "@opentui/core": "0.3.0",
       },
       "devDependencies": {
         "@types/bun": "latest",

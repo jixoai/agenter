@@ -14,7 +14,7 @@ describe("Feature: tui package boundary", () => {
 
     expect(pkg.dependencies).toEqual({
       "@agenter/client-sdk": "workspace:*",
-      "@opentui/core": "latest",
+      "@opentui/core": "0.3.0",
     });
     expect(pkg.dependencies).not.toHaveProperty("@opentui/react");
     expect(pkg.dependencies).not.toHaveProperty("react");

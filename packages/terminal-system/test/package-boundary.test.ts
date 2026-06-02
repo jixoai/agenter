@@ -16,7 +16,7 @@ describe("Feature: terminal-system package boundary", () => {
       "@agenter/termless-core": "workspace:*",
       "@agenter/terminal-transport-protocol": "workspace:*",
       "@agenter/principal-crypto": "workspace:*",
-      "@opentui/core": "latest",
+      "@opentui/core": "0.3.0",
       yargs: "^17.7.2",
     });
     expect(xtermBridgeSource).toContain('from "@agenter/termless-core"');
