@@ -106,7 +106,7 @@ describe("Feature: release bundle contract", () => {
     };
     const buildScript = readRepoFile("scripts/release/build-bundles.ts");
 
-    expect(shellPkg.peerDependencies?.agenter).toBe(">=0.0.7 <0.1.0");
+    expect(shellPkg.peerDependencies?.agenter).toBe(">=0.0.8 <0.1.0");
     expect(studioPkg.peerDependencies?.agenter).toBe(">=0.0.7 <0.1.0");
     expect(shellPkg.devDependencies?.agenter).toBe("workspace:*");
     expect(studioPkg.devDependencies?.agenter).toBe("workspace:*");

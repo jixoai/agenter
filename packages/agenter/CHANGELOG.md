@@ -1,5 +1,11 @@
 # agenter
 
+## 0.0.8
+
+### Patch Changes
+
+- Release the ShellAssistant prompt composition updates and the GitHub trusted publishing release path.
+
 ## 0.0.7
 
 ### Patch Changes

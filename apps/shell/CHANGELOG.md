@@ -1,5 +1,13 @@
 # agenter-app-shell
 
+## 0.0.4
+
+### Patch Changes
+
+- Release the ShellAssistant prompt composition updates and the GitHub trusted publishing release path.
+- Updated dependencies
+  - agenter@0.0.8
+
 ## 0.0.3
 
 ### Patch Changes
