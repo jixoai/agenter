@@ -4,14 +4,16 @@ import { join } from "node:path";
 
 const packageRoot = join(import.meta.dir, "..");
 
-describe("Feature: tui package boundary", () => {
-  test("Scenario: Given the agenter tui package When inspecting the renderer boundary Then it uses OpenTUI core without the React reconciler", () => {
+describe("Feature: tui-bak package boundary", () => {
+  test("Scenario: Given the archived agenter tui-bak package When inspecting the renderer boundary Then it still records the old OpenTUI renderer contract", () => {
     const pkg = JSON.parse(readFileSync(join(packageRoot, "package.json"), "utf8")) as {
+      name?: string;
       dependencies?: Record<string, string>;
       devDependencies?: Record<string, string>;
     };
     const runner = readFileSync(join(packageRoot, "src", "run-tui.ts"), "utf8");
 
+    expect(pkg.name).toBe("@agenter/tui-bak");
     expect(pkg.dependencies).toEqual({
       "@agenter/client-sdk": "workspace:*",
       "@opentui/core": "0.3.0",

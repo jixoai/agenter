@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { readFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, readdirSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
 import { createBundlePackageSpecs } from "./build-bundles";
@@ -13,10 +14,28 @@ import {
 } from "./release-manifest";
 
 const repoRoot = resolve(import.meta.dir, "../..");
+const bunBin = Bun.which("bun") ?? process.execPath;
 
 const readRepoFile = (relativePath: string): string => readFileSync(join(repoRoot, relativePath), "utf8");
 
 describe("Feature: release bundle contract", () => {
+  test("Scenario: Given the retired tui backup remains in the repo When inspecting workspace and publish graphs Then tui-bak stays outside live package atoms", () => {
+    const rootPackageJson = JSON.parse(readRepoFile("package.json")) as {
+      workspaces?: string[];
+    };
+    const backupPkg = JSON.parse(readRepoFile("packages/tui-bak/package.json")) as {
+      name?: string;
+    };
+    const pnpmWorkspace = readRepoFile("pnpm-workspace.yaml");
+
+    expect(rootPackageJson.workspaces).not.toContain("packages/tui");
+    expect(rootPackageJson.workspaces).not.toContain("packages/tui-bak");
+    expect(pnpmWorkspace).not.toContain("packages/tui\n");
+    expect(pnpmWorkspace).not.toContain("packages/tui-bak");
+    expect(releasePublishablePackageJsonPaths).not.toContain("packages/tui-bak/package.json");
+    expect(backupPkg.name).toBe("@agenter/tui-bak");
+  });
+
   test("Scenario: Given release bundles are generated When inspecting the bundle specs Then only the public package atoms are publishable", () => {
     const specs = createBundlePackageSpecs();
 
@@ -61,6 +80,44 @@ describe("Feature: release bundle contract", () => {
     expect(agenterSpec?.dependencies?.["@parcel/watcher"]).toBe("^2.5.1");
     expect(agenterSpec?.external).toContain("@parcel/watcher");
     expect(buildScript).toContain('...(input.external ?? []).flatMap((name) => ["--external", name])');
+  });
+
+  test("Scenario: Given the core TUI is retired When probing the agenter bundle Then OpenTUI syntax assets no longer ship in the core package", () => {
+    const outputDir = mkdtempSync(join(tmpdir(), "agenter-bundle-probe-"));
+    try {
+      const probe = Bun.spawnSync({
+        cmd: [
+          bunBin,
+          "build",
+          join(repoRoot, "packages/agenter/src/bin/agenter.ts"),
+          "--bundle",
+          "--target=bun",
+          "--outdir",
+          outputDir,
+          "--external",
+          "@duckdb/node-api",
+          "--external",
+          "@jixo/ghostty-native",
+          "--external",
+          "@parcel/watcher",
+        ],
+        cwd: repoRoot,
+        stdout: "pipe",
+        stderr: "pipe",
+      });
+      const output = `${new TextDecoder().decode(probe.stdout)}${new TextDecoder().decode(probe.stderr)}`;
+      const files = readdirSync(outputDir).sort();
+
+      expect(probe.exitCode).toBe(0);
+      expect(files).toContain("agenter.js");
+      expect(files.some((file) => file.endsWith(".node"))).toBe(true);
+      expect(files.filter((file) => file.endsWith(".scm"))).toEqual([]);
+      expect(files.filter((file) => file.endsWith(".wasm"))).toEqual([]);
+      expect(output).not.toContain(".scm");
+      expect(output).not.toContain(".wasm");
+    } finally {
+      rmSync(outputDir, { recursive: true, force: true });
+    }
   });
 
   test("Scenario: Given the npm CLI bundle starts daemon dependencies When inspecting the source bin Then reflect metadata is loaded before CLI imports", () => {

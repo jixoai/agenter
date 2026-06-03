@@ -937,48 +937,6 @@ export const runCli = async (argvInput = process.argv): Promise<void> => {
         },
       )
       .command(
-        "tui",
-        "run tui client (auto-start daemon when absent)",
-        (builder) => withAuthServiceBridgeOptions(builder),
-        async (args) => {
-          const common: CommonArgs = {
-            host: String(args.host),
-            port: Number(args.port),
-          };
-
-          let localDaemon: TrpcServerHandle | null = null;
-          const expectedLauncherIdentity = resolveCurrentLauncherIdentity();
-          const reusableAuthority = await discoverCompatibleDaemonAuthority(expectedLauncherIdentity);
-          if (reusableAuthority) {
-            common.host = reusableAuthority.host;
-            common.port = reusableAuthority.port;
-          } else {
-            const daemonAuthority = await assertCompatibleDaemonHealth(common, expectedLauncherIdentity);
-            if (!daemonAuthority) {
-              localDaemon = await startDaemon({
-                ...common,
-                authServiceEndpoint:
-                  typeof args.authServiceEndpoint === "string" ? args.authServiceEndpoint : undefined,
-                authServiceDataDir: typeof args.authServiceDataDir === "string" ? args.authServiceDataDir : undefined,
-                authServiceHost: typeof args.authServiceHost === "string" ? args.authServiceHost : undefined,
-                authServicePort: typeof args.authServicePort === "number" ? args.authServicePort : undefined,
-              });
-              common.host = localDaemon.host;
-              common.port = localDaemon.port;
-            } else {
-              common.host = daemonAuthority.host;
-              common.port = daemonAuthority.port;
-            }
-          }
-
-          const { runTuiClient } = await import("@agenter/tui");
-          await runTuiClient(common);
-          if (localDaemon) {
-            await localDaemon.stop();
-          }
-        },
-      )
-      .command(
         "doctor",
         "check daemon connectivity",
         (builder) => builder,

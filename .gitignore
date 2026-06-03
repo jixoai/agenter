@@ -15,6 +15,10 @@ logs/
 codedb.snapshot
 design/
 *-bak/
+!packages/tui-bak/
+!packages/tui-bak/**
+packages/tui-bak/node_modules/
+packages/tui-bak/tmp/
 
 # local secret-bearing config
 .env

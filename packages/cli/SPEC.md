@@ -6,7 +6,7 @@
 
 `@agenter/cli` 是 `agenter` binary 的 app-agnostic launcher 与本机 bootstrap 入口：
 
-- 负责 `daemon`、`auth-service`、`tui` 等 core bootstrap 入口的启动编排
+- 负责 `daemon`、`auth-service` 等 core bootstrap 入口的启动编排
 - 负责 first-party app command descriptor registry 与 launcher env contract
 - 负责在需要时确保本机 daemon / auth-service authority 并把上下文传给子进程
 - 负责通过 descriptor 启动 `shell`、`studio` 等生态 app 命令，但不拥有这些 app 的 UI 生命周期
@@ -17,6 +17,7 @@
 - launcher 只拥有 descriptor lookup、package resolution、stdio/exit propagation、daemon/auth context 注入；不得解析 app grammar，也不得 import app implementation。
 - `studio` 是 descriptor-driven app command，解析到 `agenter-app-studio` / `agenter-studio` / `runStudio`；Studio-specific flags、static serving 与 dev serving 都属于 `agenter-app-studio`。
 - `web` 不再是 core built-in、app alias 或兼容 shim；`agenter web` 必须走 unsupported-command 路径。
+- `tui` 已从 live product surface 退役；`agenter tui` 必须走 unsupported-command 路径，而不是任何隐藏 built-in、descriptor 或 backup package fallback。
 - CLI package 不拥有 active Studio static asset root、Vite dev-server startup 或 asset-copy pipeline。
 - app package resolution 固定遵守 `workspace > installed package > configured remote runner`。
 - launcher 创建的 app 进程必须以前台交互模式运行，继承当前 shell-terminal 的 stdio，并传播原始退出码。

@@ -555,6 +555,17 @@ describe("Feature: cli daemon and Studio commands", () => {
     expect(stderr).toContain("unsupported app command: web");
   }, 30_000);
 
+  test("Scenario: Given retired tui command When invoking the old entry Then the CLI rejects it as an unsupported app", async () => {
+    const home = createIsolatedHome();
+    const tui = spawnCli(["tui", "--help"], { HOME: home });
+
+    const code = await tui.exited;
+    const stderr = await readText(tui.stderr);
+
+    expect(code).toBe(1);
+    expect(stderr).toContain("unsupported app command: tui");
+  }, 30_000);
+
   test("Scenario: Given Studio app command When reading root html Then the app-owned dev server serves the canonical Svelte shell", async () => {
     const host = "127.0.0.1";
     const webPort = await findFreePort();

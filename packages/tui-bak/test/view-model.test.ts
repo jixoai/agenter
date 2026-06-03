@@ -4,7 +4,7 @@ import type { RuntimeClientState } from "@agenter/client-sdk";
 
 import { buildViewModel } from "../src/types";
 
-describe("Feature: tui view-model mapping", () => {
+describe("Feature: tui-bak view-model mapping", () => {
   test("Scenario: Given active session runtime When building view Then expose phase text and only user-or-assistant messages", () => {
     const state: RuntimeClientState = {
       connected: true,

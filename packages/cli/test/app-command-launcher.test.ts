@@ -332,11 +332,40 @@ describe("Feature: app command launcher", () => {
   test("Scenario: Given unsupported input When classifying the command token Then built-ins remain separate and arbitrary package execution is rejected", () => {
     expect(readCommandToken(["unknown-app"])).toBe("unknown-app");
     expect(isBuiltInCommand("doctor")).toBe(true);
+    expect(isBuiltInCommand("tui")).toBe(false);
     expect(isBuiltInCommand("web")).toBe(false);
     expect(isBuiltInCommand("unknown-app")).toBe(false);
     expect(isLauncherMetadataOnlyCommand("--help")).toBe(true);
     expect(isLauncherMetadataOnlyCommand("--version")).toBe(true);
     expect(resolveAppCommandInvocation(["unknown-app"])).toBeNull();
+  });
+
+  test("Scenario: Given retired tui input When launcher resolution runs Then it is rejected before any daemon bootstrap side effect", async () => {
+    const previousExitCode = process.exitCode;
+    process.exitCode = 0;
+    try {
+      const dependencies: AppCommandLaunchDependencies = {
+        async resolveDaemonAuthority() {
+          throw new Error("retired tui must not resolve daemon authority");
+        },
+        async discoverReusableDaemonAuthority() {
+          throw new Error("retired tui must not discover daemon authority");
+        },
+        async ensureManagedDaemonAuthority() {
+          throw new Error("retired tui must not start a managed daemon");
+        },
+        spawnApp() {
+          throw new Error("retired tui must not spawn an app");
+        },
+      };
+
+      const handled = await launchAppCommandForTest(["tui", "--help"], dependencies);
+
+      expect(handled).toBe(true);
+      expect(process.exitCode).toBe(1);
+    } finally {
+      process.exitCode = previousExitCode;
+    }
   });
 
   test("Scenario: Given the top-level CLI help is rendered When app descriptors are applied Then shell and studio appear as orthogonal app commands", async () => {

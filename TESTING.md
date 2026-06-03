@@ -14,11 +14,8 @@
   - e2e：daemon HTTP/WS/instance lifecycle 与 web root。
   - integration：loop bus phase、protocol parse、registry durability。
 - `@agenter/cli`
-  - e2e：`agenter daemon` + `agenter doctor`，`agenter studio`。
+  - e2e：`agenter daemon` + `agenter doctor`，`agenter studio`，以及退役入口 `agenter tui` / `agenter web` 的 unsupported-command 回归。
   - 不保留仅“导出存在”的 smoke。
-- `@agenter/tui`
-  - unit/integration：ws 消息解析契约（snapshot/updated/deleted/chat）。
-  - 不做脆弱的渲染细节断言。
 - `agenter-app-studio`
   - DOM contract：Storybook v10 + Vitest 真实组件交互（输入、弹层、列表、消息渲染）。
   - contract：html shell 包含 viewport/ws/bootstrap 关键标记。

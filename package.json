@@ -41,7 +41,6 @@
     "packages/termless-backend-utils",
     "packages/termless-core",
     "packages/tmux-client",
-    "packages/tui",
     "packages/web-chat-view",
     "packages/web-chat-view/example",
     "packages/web-components"
