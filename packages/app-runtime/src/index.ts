@@ -59,4 +59,10 @@ export {
   type AppResourceKind,
   type AppResourceOwnerSystem,
 } from "./resource-binding";
+export {
+  BUNDLED_ASSETS_ROOT_ENV,
+  resolveBundledAssetsRoot,
+  resolveBundledAssetPath,
+  type BundledAssetsResolutionOptions,
+} from "./bundled-assets";
 export { appRuntimeSessionClearInputSchema, type AppRuntimeSessionClearInput } from "./runtime-session";

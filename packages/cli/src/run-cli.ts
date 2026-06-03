@@ -1,7 +1,8 @@
-import { type AuthServiceBridgeOptions } from "@agenter/app-server";
+import type { AuthServiceBridgeOptions } from "@agenter/app-server";
+import { resolveBundledAssetPath } from "@agenter/app-runtime";
 import type { AuthServiceHandle } from "@agenter/auth-service";
 import { spawn as spawnChildProcess } from "node:child_process";
-import { closeSync, existsSync, mkdirSync, openSync, readFileSync } from "node:fs";
+import { closeSync, mkdirSync, openSync, readFileSync } from "node:fs";
 import { request as httpRequest } from "node:http";
 import { request as httpsRequest } from "node:https";
 import { createRequire } from "node:module";
@@ -20,6 +21,11 @@ import {
   type DaemonLauncherIdentity,
   type DaemonRuntimeDescriptor,
 } from "./daemon-runtime-descriptor";
+import {
+  resolveCurrentLauncherEntrypoint,
+  resolveCurrentLauncherSourceKind,
+  resolveCurrentSelfExec,
+} from "./self-exec";
 import {
   applyAppCommandsToYargs,
   buildAppLaunchEnv,
@@ -57,7 +63,6 @@ interface StandaloneAuthServiceCliArgs extends CommonArgs {
 type DaemonCommandAction = "start" | "stop" | "restart";
 
 const INTERNAL_DAEMON_FOREGROUND_ENV = "AGENTER_INTERNAL_DAEMON_FOREGROUND";
-const BUNDLED_ASSETS_ROOT_ENV = "AGENTER_BUNDLED_ASSETS_ROOT";
 const HEALTH_REQUEST_TIMEOUT_MS = 5_000;
 const MANAGED_DAEMON_START_TIMEOUT_MS = 60_000;
 const MANAGED_DAEMON_START_HEALTH_REQUEST_TIMEOUT_MS = 1_000;
@@ -107,33 +112,23 @@ const resolveLauncherOwnedAuthServiceDataDir = (): string =>
 const resolveDaemonHealthLabel = (args: CommonArgs): string => `http://${args.host}:${args.port}/health`;
 const resolveCliEntryPath = (): string => resolve(import.meta.dir, "bin", "agenter.ts");
 const resolveCurrentLauncherIdentity = (): DaemonLauncherIdentity => {
-  const entrypoint = process.argv[1] && existsSync(process.argv[1]) ? resolve(process.argv[1]) : resolveCliEntryPath();
+  const entrypoint = resolveCurrentLauncherEntrypoint({
+    argv: process.argv,
+    execPath: process.execPath,
+    importMetaUrl: import.meta.url,
+    cliEntryPath: resolveCliEntryPath(),
+  });
   const packageName = cliPackageJson.name ?? "@agenter/cli";
   const packageVersion = cliPackageJson.version ?? "unknown";
-  const sourceKind = entrypoint.includes("/node_modules/") ? "package" : "workspace";
+  const sourceKind = resolveCurrentLauncherSourceKind(entrypoint, {
+    importMetaUrl: import.meta.url,
+  });
   return {
     packageName,
     packageVersion,
     sourceKind,
     entrypoint: sourceKind === "package" ? `${packageName}@${packageVersion}` : entrypoint,
   };
-};
-const resolveCurrentCliEntrypointArgv = (): string[] => {
-  const entrypoint = process.argv[1];
-  if (entrypoint && existsSync(entrypoint)) {
-    return [entrypoint];
-  }
-  return ["run", resolveCliEntryPath()];
-};
-const resolveBunExecutable = (): string => Bun.which("bun") ?? process.execPath;
-const resolveBundledAssetsRoot = (): string | null => process.env[BUNDLED_ASSETS_ROOT_ENV]?.trim() || null;
-const resolveBundledAssetPath = (...segments: string[]): string | undefined => {
-  const root = resolveBundledAssetsRoot();
-  if (!root) {
-    return undefined;
-  }
-  const path = join(root, ...segments);
-  return existsSync(path) ? path : undefined;
 };
 
 const fetchDaemonHealthProbe = async (
@@ -323,15 +318,7 @@ const resolveDaemonCommandAction = (value: unknown): DaemonCommandAction =>
 const isForegroundDaemonServeRequested = (): boolean => process.env[INTERNAL_DAEMON_FOREGROUND_ENV] === "1";
 
 const buildDaemonServeArgv = (args: CommonArgs & AuthServiceBridgeCliArgs): string[] => {
-  const argv = [
-    ...resolveCurrentCliEntrypointArgv(),
-    "daemon",
-    "start",
-    "--host",
-    args.host,
-    "--port",
-    String(args.port),
-  ];
+  const argv = ["daemon", "start", "--host", args.host, "--port", String(args.port)];
   if (args.authServiceEndpoint) {
     argv.push("--auth-service-endpoint", args.authServiceEndpoint);
   }
@@ -367,7 +354,14 @@ const spawnManagedDaemonProcess = (args: CommonArgs & AuthServiceBridgeCliArgs):
   const logFd = openSync(logPath, "a");
   const child = (() => {
     try {
-      return spawnChildProcess(resolveBunExecutable(), buildDaemonServeArgv(args), {
+      const selfExec = resolveCurrentSelfExec({
+        argv: process.argv,
+        bunExecutable: Bun.which("bun") ?? process.execPath,
+        cliEntryPath: resolveCliEntryPath(),
+        execPath: process.execPath,
+        importMetaUrl: import.meta.url,
+      });
+      return spawnChildProcess(selfExec.command, [...selfExec.argvPrefix, ...buildDaemonServeArgv(args)], {
         cwd: process.cwd(),
         detached: true,
         stdio: ["ignore", logFd, logFd],
@@ -648,7 +642,7 @@ const startStandaloneAuthService = async (args: StandaloneAuthServiceCliArgs): P
     host: args.host,
     port: args.port,
     dataDir: args.dataDir,
-    webauthnUiDir: resolveBundledAssetPath("auth-service", "webauthn-ui"),
+    webauthnUiDir: resolveBundledAssetPath(["auth-service", "webauthn-ui"]),
   });
 };
 

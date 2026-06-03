@@ -249,12 +249,14 @@ describe("Feature: release bundle contract", () => {
 
   test("Scenario: Given npm daemon start forks a background child When inspecting the CLI source Then it reuses the current executable entrypoint", () => {
     const cliSource = readRepoFile("packages/cli/src/run-cli.ts");
+    const selfExecSource = readRepoFile("packages/cli/src/self-exec.ts");
 
-    expect(cliSource).toContain("const resolveCurrentCliEntrypointArgv = (): string[] => {");
-    expect(cliSource).toContain("const entrypoint = process.argv[1];");
-    expect(cliSource).toContain('return ["run", resolveCliEntryPath()];');
-    expect(cliSource).toMatch(/const argv = \[\s*\.\.\.resolveCurrentCliEntrypointArgv\(\),\s*"daemon",\s*"start",/u);
-    expect(cliSource).not.toContain('const argv = ["run", resolveCliEntryPath(), "daemon", "start"');
+    expect(cliSource).toContain('import {');
+    expect(cliSource).toContain('resolveCurrentSelfExec,');
+    expect(cliSource).toContain("const selfExec = resolveCurrentSelfExec({");
+    expect(cliSource).toContain("spawnChildProcess(selfExec.command, [...selfExec.argvPrefix, ...buildDaemonServeArgv(args)]");
+    expect(selfExecSource).toContain('const BUN_COMPILED_FS_MARKER = "/$bunfs/";');
+    expect(selfExecSource).toContain('return ["run", resolve(options.cliEntryPath)];');
   });
 
   test("Scenario: Given npm daemon start runs after a cold install When inspecting the CLI source Then startup health probes stay short and the cold-start window is explicit", () => {

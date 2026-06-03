@@ -1,8 +1,8 @@
-import { existsSync } from "node:fs";
 import { copyFile, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 
+import { resolveBundledAssetPath } from "@agenter/app-runtime";
 import {
   buildPromptDocsFromDir,
   PROMPT_DOC_KEYS,
@@ -30,7 +30,6 @@ interface LoadPromptDocsByLangOptions {
 }
 
 const APP_SERVER_PACKAGE_JSON_PATH = decodeURIComponent(new URL("../package.json", import.meta.url).pathname);
-const BUNDLED_ASSETS_ROOT_ENV = "AGENTER_BUNDLED_ASSETS_ROOT";
 export const DEFAULT_LANGUAGE = "en";
 
 const LANG_PACKAGES: Record<string, LanguagePackageConfig> = {
@@ -104,15 +103,12 @@ const loadAppServerPackageMeta = async (): Promise<AppServerPackageMeta> => {
 };
 
 const readWorkspacePrompts = async (config: LanguagePackageConfig): Promise<PromptDocRecord> => {
-  const bundledRoot = process.env[BUNDLED_ASSETS_ROOT_ENV]?.trim();
-  if (bundledRoot) {
-    const promptsDir = join(bundledRoot, config.workspaceDirName, "prompts");
-    if (existsSync(promptsDir)) {
-      return buildPromptDocsFromDir(promptsDir);
-    }
+  const promptsDir = resolveBundledAssetPath([config.workspaceDirName, "prompts"]);
+  if (promptsDir) {
+    return buildPromptDocsFromDir(promptsDir);
   }
-  const promptsDir = decodeURIComponent(new URL(`../../${config.workspaceDirName}/prompts`, import.meta.url).pathname);
-  return buildPromptDocsFromDir(promptsDir);
+  const workspacePromptsDir = decodeURIComponent(new URL(`../../${config.workspaceDirName}/prompts`, import.meta.url).pathname);
+  return buildPromptDocsFromDir(workspacePromptsDir);
 };
 
 const readCachedPrompts = async (cacheDir: string): Promise<PromptDocRecord | null> => {

@@ -1,3 +1,4 @@
+import { resolveBundledAssetPath } from "@agenter/app-runtime";
 import {
   type AuthChallengeDescriptor,
   type AuthDescriptor,
@@ -19,8 +20,6 @@ import {
   type ProfileProjection,
   type AuthServiceHandle,
 } from "@agenter/auth-service";
-import { existsSync } from "node:fs";
-import { join } from "node:path";
 
 export interface AuthServiceBridgeOptions {
   endpoint?: string;
@@ -64,16 +63,6 @@ export type RootAuthPrivateKeyRevealResult = RootAuthPrivateKeyReveal;
 
 const toOwnedArrayBuffer = (bytes: Uint8Array): ArrayBuffer => new Uint8Array(bytes).buffer;
 const jsonHeaders = { "content-type": "application/json" };
-const BUNDLED_ASSETS_ROOT_ENV = "AGENTER_BUNDLED_ASSETS_ROOT";
-const resolveBundledAssetsRoot = (): string | null => process.env[BUNDLED_ASSETS_ROOT_ENV]?.trim() || null;
-const resolveBundledAssetPath = (...segments: string[]): string | undefined => {
-  const root = resolveBundledAssetsRoot();
-  if (!root) {
-    return undefined;
-  }
-  const path = join(root, ...segments);
-  return existsSync(path) ? path : undefined;
-};
 const withBearerToken = (token: string | null | undefined, headers: HeadersInit = {}): HeadersInit =>
   token ? { ...headers, authorization: `Bearer ${token}` } : headers;
 const withTrailingSlashTrimmed = (value: string): string => value.replace(/\/$/, "");
@@ -98,7 +87,7 @@ export class AuthServiceBridge {
       host: this.options.host,
       port: this.options.port ?? 0,
       rootAuthPrivateKey: this.options.rootAuthPrivateKey,
-      webauthnUiDir: resolveBundledAssetPath("auth-service", "webauthn-ui"),
+      webauthnUiDir: resolveBundledAssetPath(["auth-service", "webauthn-ui"]),
     });
   }
 

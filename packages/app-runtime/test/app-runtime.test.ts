@@ -1,5 +1,6 @@
-import { describe, expect, test } from "bun:test";
-import { readFileSync, readdirSync } from "node:fs";
+import { afterEach, describe, expect, test } from "bun:test";
+import { mkdtempSync, mkdirSync, readFileSync, readdirSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import {
@@ -7,6 +8,7 @@ import {
   APP_HOSTING_ENABLED_SCORES,
   APP_HOSTING_SCORE_KEY,
   APP_HOSTING_USER_DISABLED_REASON,
+  BUNDLED_ASSETS_ROOT_ENV,
   appAssistantEnsureInputSchema,
   appAttentionCommitInputSchema,
   appAttentionProjectionSchema,
@@ -17,9 +19,12 @@ import {
   buildAppBindingMetadata,
   createLocalFirstAppSourcePolicy,
   matchesAppBindingMetadata,
+  resolveBundledAssetPath,
+  resolveBundledAssetsRoot,
 } from "../src";
 
 const repoRoot = join(import.meta.dir, "..", "..", "..");
+const tempDirs: string[] = [];
 
 const listTypeScriptFiles = (root: string): string[] =>
   readdirSync(root, { withFileTypes: true }).flatMap((entry) => {
@@ -31,6 +36,18 @@ const listTypeScriptFiles = (root: string): string[] =>
   });
 
 const readRepoFile = (relativePath: string): string => readFileSync(join(repoRoot, relativePath), "utf8");
+
+const createTempDir = (): string => {
+  const dir = mkdtempSync(join(tmpdir(), "agenter-app-runtime-"));
+  tempDirs.push(dir);
+  return dir;
+};
+
+afterEach(() => {
+  while (tempDirs.length > 0) {
+    rmSync(tempDirs.pop() ?? "", { recursive: true, force: true });
+  }
+});
 
 describe("Feature: app runtime contracts", () => {
   test("Scenario: Given the launcher needs a first-party app descriptor When parsing descriptor data Then local-first resolution and runtime planes stay explicit data", () => {
@@ -242,5 +259,45 @@ describe("Feature: app runtime contracts", () => {
         }
       }
     }
+  });
+
+  test("Scenario: Given a wrapper exports AGENTER_BUNDLED_ASSETS_ROOT When resolving assets Then env override stays the first published truth", () => {
+    const root = createTempDir();
+    const assetsRoot = join(root, "wrapper-assets");
+    mkdirSync(join(assetsRoot, "auth-service"), { recursive: true });
+    writeFileSync(join(assetsRoot, "auth-service", "webauthn-ui"), "ui");
+
+    expect(resolveBundledAssetsRoot({ env: { [BUNDLED_ASSETS_ROOT_ENV]: assetsRoot } })).toBe(assetsRoot);
+    expect(resolveBundledAssetPath(["auth-service", "webauthn-ui"], { env: { [BUNDLED_ASSETS_ROOT_ENV]: assetsRoot } }))
+      .toBe(join(assetsRoot, "auth-service", "webauthn-ui"));
+  });
+
+  test("Scenario: Given a native archive places assets next to the executable When runtime resolves them Then executable-adjacent assets become the fallback truth", () => {
+    const root = createTempDir();
+    const binaryPath = join(root, "agenter");
+    const assetsRoot = join(root, "assets");
+    mkdirSync(join(assetsRoot, "i18n-en", "prompts"), { recursive: true });
+    writeFileSync(binaryPath, "");
+    writeFileSync(join(assetsRoot, "i18n-en", "prompts", "AGENTER.mdx"), "prompt");
+
+    expect(resolveBundledAssetsRoot({ execPath: binaryPath, env: {} })).toBe(realpathSync(assetsRoot));
+    expect(resolveBundledAssetPath(["i18n-en", "prompts", "AGENTER.mdx"], { execPath: binaryPath, env: {} })).toBe(
+      join(realpathSync(assetsRoot), "i18n-en", "prompts", "AGENTER.mdx"),
+    );
+  });
+
+  test("Scenario: Given a platform package keeps the binary under bin and assets under package root When runtime resolves them Then parent-sibling assets are supported", () => {
+    const root = createTempDir();
+    const binaryPath = join(root, "bin", "agenter");
+    const assetsRoot = join(root, "assets");
+    mkdirSync(join(root, "bin"), { recursive: true });
+    mkdirSync(join(assetsRoot, "auth-service"), { recursive: true });
+    writeFileSync(binaryPath, "");
+    writeFileSync(join(assetsRoot, "auth-service", "webauthn-ui"), "ui");
+
+    expect(resolveBundledAssetsRoot({ execPath: binaryPath, env: {} })).toBe(realpathSync(assetsRoot));
+    expect(resolveBundledAssetPath(["auth-service", "webauthn-ui"], { execPath: binaryPath, env: {} })).toBe(
+      join(realpathSync(assetsRoot), "auth-service", "webauthn-ui"),
+    );
   });
 });
