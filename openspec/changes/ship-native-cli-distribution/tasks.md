@@ -28,7 +28,7 @@
 - [ ] 3.7 Replace the current JS-bundle-first release bundle path for `agenter` with release-archive-first packaging, while preserving the existing package/release manifest truth model.
 - [ ] 3.8 Update release tooling so npm projection packages are built from the canonical release archives instead of independently-built local binaries.
 - [ ] 3.9 Update GitHub Actions release automation to use Marketplace actions for Bun setup, GitHub release archive publishing, and downstream formula projection where appropriate.
-- [ ] 3.10 Add tap/bootstrap automation that can create or update `jixoai/homebrew-agenter` via `gh`, while keeping formula generation truth in the main repo.
+- [x] 3.10 Add tap/bootstrap automation that can create or update `jixoai/homebrew-agenter` via `gh`, while keeping formula generation truth in the main repo.
 - [ ] 3.11 Generate and project the Homebrew formula from main-repo truth so `brew tap jixoai/agenter` and `brew install agenter` resolve to canonical release archives and checksums.
 - [ ] 3.12 Create the root `README.md` and document npm/Homebrew install surfaces, supported targets, and the release/archive truth model.
 - [ ] 3.13 Add concise intent comments at the critical effect points for platform resolution, archive truth projection, and Homebrew formula generation.
