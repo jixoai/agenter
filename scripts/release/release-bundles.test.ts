@@ -3,7 +3,11 @@ import { mkdtempSync, readFileSync, readdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
-import { createBundlePackageSpecs, createHostOnlySmokeBundlePackageSpecs, parseBuildBundlesArgs } from "./build-bundles";
+import {
+  createBundlePackageSpecs,
+  createHostOnlySmokeBundlePackageSpecs,
+  parseBuildBundlesArgs,
+} from "./build-bundles";
 import { bundlePublishOrder } from "./publish-bundles";
 import {
   createReleaseBundlePackageSpecs,
@@ -146,9 +150,9 @@ describe("Feature: release bundle contract", () => {
     };
     const manifest = readRepoFile("scripts/release/release-manifest.ts");
 
-    expect(agenterPkg.dependencies).not.toHaveProperty("@duckdb/node-api");
-    expect(appServerPkg.dependencies).not.toHaveProperty("@duckdb/node-api");
-    expect(agenterSpec?.dependencies).not.toHaveProperty("@duckdb/node-api");
+    expect(agenterPkg.dependencies ?? {}).not.toHaveProperty("@duckdb/node-api");
+    expect(appServerPkg.dependencies ?? {}).not.toHaveProperty("@duckdb/node-api");
+    expect(agenterSpec?.dependencies ?? {}).not.toHaveProperty("@duckdb/node-api");
     expect(agenterSpec?.external).not.toContain("@duckdb/node-api");
     expect(manifest).not.toContain('"@duckdb/node-api"');
   });
@@ -231,11 +235,15 @@ describe("Feature: release bundle contract", () => {
     }
   });
 
-  test("Scenario: Given the npm CLI bundle starts daemon dependencies When inspecting the source bin Then reflect metadata is loaded before CLI imports", () => {
+  test("Scenario: Given the public agenter package is wrapper-first When inspecting wrapper and launcher sources Then reflect metadata stays with the internal launcher path", () => {
     const agenterBin = readRepoFile("packages/agenter/src/bin/agenter.ts");
+    const wrapperSource = readRepoFile("packages/agenter/cli-wrapper.cjs");
+    const installSource = readRepoFile("packages/agenter/install.cjs");
     const cliBin = readRepoFile("packages/cli/src/bin/agenter.ts");
     const sourcePkg = JSON.parse(readRepoFile("packages/agenter/package.json")) as {
+      bin?: Record<string, string>;
       dependencies?: Record<string, string>;
+      optionalDependencies?: Record<string, string>;
     };
     const cliPkg = JSON.parse(readRepoFile("packages/cli/package.json")) as {
       dependencies?: Record<string, string>;
@@ -243,7 +251,11 @@ describe("Feature: release bundle contract", () => {
 
     expect(agenterBin).toMatch(/import "reflect-metadata";\s*import \{ runCli \} from "@agenter\/cli";/u);
     expect(cliBin).toMatch(/import "reflect-metadata";\s*import \{ runCli \} from "\.\.\/run-cli";/u);
-    expect(sourcePkg.dependencies?.["reflect-metadata"]).toBe("^0.2.2");
+    expect(sourcePkg.bin?.agenter).toBe("./bin/agenter.exe");
+    expect(sourcePkg.dependencies).toBeUndefined();
+    expect(sourcePkg.optionalDependencies?.["@agenter/cli-darwin-arm64"]).toBe("workspace:*");
+    expect(wrapperSource).toContain("resolvePackageBinaryPath");
+    expect(installSource).toContain("placeBinary");
     expect(cliPkg.dependencies?.["reflect-metadata"]).toBe("^0.2.2");
   });
 
@@ -251,10 +263,12 @@ describe("Feature: release bundle contract", () => {
     const cliSource = readRepoFile("packages/cli/src/run-cli.ts");
     const selfExecSource = readRepoFile("packages/cli/src/self-exec.ts");
 
-    expect(cliSource).toContain('import {');
-    expect(cliSource).toContain('resolveCurrentSelfExec,');
+    expect(cliSource).toContain("import {");
+    expect(cliSource).toContain("resolveCurrentSelfExec,");
     expect(cliSource).toContain("const selfExec = resolveCurrentSelfExec({");
-    expect(cliSource).toContain("spawnChildProcess(selfExec.command, [...selfExec.argvPrefix, ...buildDaemonServeArgv(args)]");
+    expect(cliSource).toContain(
+      "spawnChildProcess(selfExec.command, [...selfExec.argvPrefix, ...buildDaemonServeArgv(args)]",
+    );
     expect(selfExecSource).toContain('const BUN_COMPILED_FS_MARKER = "/$bunfs/";');
     expect(selfExecSource).toContain('return ["run", resolve(options.cliEntryPath)];');
   });
@@ -387,7 +401,7 @@ describe("Feature: release bundle contract", () => {
     expect(workflow).toContain(`bun-version: "${releaseToolchain.bunVersion}"`);
     expect(workflow).not.toContain("bun-version: latest");
     expect(workflow).toContain('registry-url: "https://registry.npmjs.org"');
-    expect(workflow).toContain('pattern: ghostty-native-*');
+    expect(workflow).toContain("pattern: ghostty-native-*");
     expect(workflow).toContain("Stage ghostty-native artifacts into npm packages");
     expect(workflow).toContain('npm install -g "npm@^11.10.0"');
     expect(workflow).toContain("npm --version");

@@ -8,13 +8,13 @@
 
 ## 2. BDD Contract
 
-- [ ] 2.1 Scenario: Given a supported host installs `agenter` from npm When the install completes Then the public command resolves to the host-native compiled executable instead of a Bun-required JS bundle.
-- [ ] 2.2 Scenario: Given install scripts are disabled or platform package placement fails When the operator invokes the documented fallback path Then the wrapper still resolves the same host-native platform package explicitly.
+- [x] 2.1 Scenario: Given a supported host installs `agenter` from npm When the install completes Then the public command resolves to the host-native compiled executable instead of a Bun-required JS bundle.
+- [x] 2.2 Scenario: Given install scripts are disabled or platform package placement fails When the operator invokes the documented fallback path Then the wrapper still resolves the same host-native platform package explicitly.
 - [ ] 2.3 Scenario: Given a release is cut for a supported target When binary truth is inspected Then GitHub release archives are the canonical source and npm/Homebrew projections resolve to those same archives.
 - [ ] 2.4 Scenario: Given a projection publish step runs before the canonical archive exists When release automation checks the target Then the publish step fails before it exposes a broken npm or Homebrew install surface.
 - [ ] 2.5 Scenario: Given the Homebrew tap is updated for a release When an operator runs `brew tap jixoai/agenter` and `brew install agenter` Then the formula downloads the canonical host archive, verifies checksum, and installs the native executable directly.
 - [ ] 2.6 Scenario: Given the supported target matrix changes When release metadata, npm platform packages, and Homebrew generation inputs are inspected Then all projections expose the same matrix without silent drift.
-- [ ] 2.7 Scenario: Given a maintainer inspects one published `@agenter/cli-*` platform package When packaged files are listed Then the package contains only one target’s compiled executable plus minimal metadata.
+- [x] 2.7 Scenario: Given a maintainer inspects one published `@agenter/cli-*` platform package When packaged files are listed Then the package contains only one target’s compiled executable plus minimal metadata.
 - [ ] 2.8 Confirm each task checkbox will be updated only by the agent that completed and verified that task in the current working context.
 
 ## 3. Implementation
@@ -23,7 +23,7 @@
 - [x] 3.2 Add durable spec updates for `SPEC.md`, `packages/agenter/SPEC.md`, and `packages/cli/SPEC.md` so the published CLI law shifts from ts-first source bin to wrapper-plus-platform-binary distribution backed by GitHub release archives.
 - [ ] 3.3 Introduce a single source of truth for the Agenter native CLI platform matrix, archive filenames, archive checksums, and npm/Homebrew projection mapping.
 - [x] 3.4 Add public platform package workspaces for every supported Agenter native target, keeping them thin binary atoms with explicit `os` / `cpu` / `libc` metadata.
-- [ ] 3.5 Convert the public `agenter` package into a wrapper shell that uses `optionalDependencies`, `postinstall`, and a documented Node fallback path to reach the host-native compiled executable.
+- [x] 3.5 Convert the public `agenter` package into a wrapper shell that uses `optionalDependencies`, `postinstall`, and a documented Node fallback path to reach the host-native compiled executable.
 - [ ] 3.6 Compile the Agenter CLI to standalone executables with Bun for every supported target and stage them into the canonical GitHub release archive layout.
 - [ ] 3.7 Replace the current JS-bundle-first release bundle path for `agenter` with release-archive-first packaging, while preserving the existing package/release manifest truth model.
 - [ ] 3.8 Update release tooling so npm projection packages are built from the canonical release archives instead of independently-built local binaries.
@@ -32,12 +32,12 @@
 - [ ] 3.11 Generate and project the Homebrew formula from main-repo truth so `brew tap jixoai/agenter` and `brew install agenter` resolve to canonical release archives and checksums.
 - [ ] 3.12 Create the root `README.md` and document npm/Homebrew install surfaces, supported targets, and the release/archive truth model.
 - [ ] 3.13 Add concise intent comments at the critical effect points for platform resolution, archive truth projection, and Homebrew formula generation.
-- [ ] 3.14 Implement any required cleanup or migration of old `agenter` bundle metadata, wrapper scripts, or package fields so the public install surface no longer pretends JS bundles are native binaries.
-- [ ] 3.15 Update only current-context completed task checkboxes and commit them with the matching implementation / BDD evidence.
+- [x] 3.14 Implement any required cleanup or migration of old `agenter` bundle metadata, wrapper scripts, or package fields so the public install surface no longer pretends JS bundles are native binaries.
+- [x] 3.15 Update only current-context completed task checkboxes and commit them with the matching implementation / BDD evidence.
 
 ## 4. Verification
 
-- [ ] 4.1 Run targeted tests for platform-matrix resolution, wrapper fallback behavior, and thin platform-package packaging.
+- [x] 4.1 Run targeted tests for platform-matrix resolution, wrapper fallback behavior, and thin platform-package packaging.
 - [ ] 4.2 Run targeted release-tooling tests proving GitHub release archives are emitted as canonical binary truth and downstream npm projection consumes them.
 - [ ] 4.3 Run targeted Homebrew-generation tests proving formula metadata maps to canonical archive URLs and checksums.
 - [ ] 4.4 Run packaging checks (`npm pack --dry-run` or equivalent) for the public `agenter` wrapper and every public `@agenter/cli-*` platform package.
