@@ -10,11 +10,13 @@
 - 负责 first-party app command descriptor registry 与 launcher env contract
 - 负责在需要时确保本机 daemon / auth-service authority 并把上下文传给子进程
 - 负责通过 descriptor 启动 `shell`、`studio` 等生态 app 命令，但不拥有这些 app 的 UI 生命周期
+- 作为 compiled native CLI 与 public wrapper 的共同 source authority，被发布态投影复用而不是被复制实现
 
 ## 2. App Command Launcher Law
 
 - app command 只能通过受控 descriptor 解析到 first-party package；不得把用户输入当成任意 npm package 名执行。
 - launcher 只拥有 descriptor lookup、package resolution、stdio/exit propagation、daemon/auth context 注入；不得解析 app grammar，也不得 import app implementation。
+- published platform binaries、public wrapper bins、workspace source bins 都只是 `@agenter/cli` 的不同 projection；它们不得各自长出第二套 launcher、daemon bootstrap 或 app command law。
 - `studio` 是 descriptor-driven app command，解析到 `agenter-app-studio` / `agenter-studio` / `runStudio`；Studio-specific flags、static serving 与 dev serving 都属于 `agenter-app-studio`。
 - `web` 不再是 core built-in、app alias 或兼容 shim；`agenter web` 必须走 unsupported-command 路径。
 - `tui` 已从 live product surface 退役；`agenter tui` 必须走 unsupported-command 路径，而不是任何隐藏 built-in、descriptor 或 backup package fallback。

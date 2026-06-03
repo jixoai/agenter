@@ -1,10 +1,10 @@
 ## 1. Alignment / Investigation
 
-- [ ] 1.1 Confirm the latest `plans/plan.md` records repo truth for the current `agenter` wrapper/package law, the existing release workflow, the accepted tap projection model, and GitHub release archives as binary truth.
-- [ ] 1.2 Confirm the spec split remains deliberate: `agenter-native-platform-distribution`, `release-binary-archive-truth`, and `homebrew-cli-projection` each own a distinct durable capability instead of overloading existing ghostty or core-bundle specs.
-- [ ] 1.3 Lock the phase-1 native CLI target matrix to `darwin-{arm64,x64}`, `windows-{arm64,x64}`, `linux-{arm64,x64}-gnu`, and `linux-{arm64,x64}-musl`, and record the archive/package naming law before implementation lands.
-- [ ] 1.4 Confirm the main repo currently has no root `README.md`, so the documentation deliverable is to create the root README and make it the durable install entrypoint.
-- [ ] 1.5 Confirm no task checkbox will be updated unless the agent completed and verified that task in the current working context.
+- [x] 1.1 Confirm the latest `plans/plan.md` records repo truth for the current `agenter` wrapper/package law, the existing release workflow, the accepted tap projection model, and GitHub release archives as binary truth.
+- [x] 1.2 Confirm the spec split remains deliberate: `agenter-native-platform-distribution`, `release-binary-archive-truth`, and `homebrew-cli-projection` each own a distinct durable capability instead of overloading existing ghostty or core-bundle specs.
+- [x] 1.3 Lock the phase-1 native CLI target matrix to `darwin-{arm64,x64}`, `windows-{arm64,x64}`, `linux-{arm64,x64}-gnu`, and `linux-{arm64,x64}-musl`, and record the archive/package naming law before implementation lands.
+- [x] 1.4 Confirm the main repo currently has no root `README.md`, so the documentation deliverable is to create the root README and make it the durable install entrypoint.
+- [x] 1.5 Confirm no task checkbox will be updated unless the agent completed and verified that task in the current working context.
 
 ## 2. BDD Contract
 
@@ -19,8 +19,8 @@
 
 ## 3. Implementation
 
-- [ ] 3.1 Run `bun run openspec:vision -- commit-check ship-native-cli-distribution --phase apply` before app-code work starts and commit the ready OpenSpec artifacts.
-- [ ] 3.2 Add durable spec updates for `SPEC.md`, `packages/agenter/SPEC.md`, and `packages/cli/SPEC.md` so the published CLI law shifts from ts-first source bin to wrapper-plus-platform-binary distribution backed by GitHub release archives.
+- [x] 3.1 Run `bun run openspec:vision -- commit-check ship-native-cli-distribution --phase apply` before app-code work starts and commit the ready OpenSpec artifacts.
+- [x] 3.2 Add durable spec updates for `SPEC.md`, `packages/agenter/SPEC.md`, and `packages/cli/SPEC.md` so the published CLI law shifts from ts-first source bin to wrapper-plus-platform-binary distribution backed by GitHub release archives.
 - [ ] 3.3 Introduce a single source of truth for the Agenter native CLI platform matrix, archive filenames, archive checksums, and npm/Homebrew projection mapping.
 - [ ] 3.4 Add public platform package workspaces for every supported Agenter native target, keeping them thin binary atoms with explicit `os` / `cpu` / `libc` metadata.
 - [ ] 3.5 Convert the public `agenter` package into a wrapper shell that uses `optionalDependencies`, `postinstall`, and a documented Node fallback path to reach the host-native compiled executable.

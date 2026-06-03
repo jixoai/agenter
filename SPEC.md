@@ -169,5 +169,7 @@ Agenter 是一个 attention-first 的 Agent runtime platform。
 - `scripts/npm/configure-trusted-publish.ts` 是 npm trusted publisher 的批量配置/检查工具；它只用于 operator 本地对 npm 包配置 trust，不把 token 带入 CI。
 - `@jixo/ghostty-native` 的发布真源是 umbrella 包 + 显式平台包矩阵：`@jixo/ghostty-native-{darwin-(arm64|x64)|linux-(arm64|x64)-gnu|win32-(arm64|x64)-msvc}`。matrix truth 由 `scripts/binaries/artifacts.ts` 拥有；release workflow 必须先在对应 runner 上产出 `.node`，再 stage 回平台包目录后才允许 pack/publish。
 - ghostty 平台包目录是 publish-time binary staging surface，不是源码真源；仓库保持 binary-free，CI/本地 release 只在 pack/publish 前把 `termless-ghostty-native.node` 注入这些 package dirs。
+- Agenter CLI 的公开发布法则是 `agenter` wrapper shell + 显式平台包矩阵 `@agenter/cli-{darwin-(arm64|x64)|linux-(arm64|x64)-(gnu|musl)|win32-(arm64|x64)}`；launcher/runtime source authority 始终保留在 private `@agenter/cli`，公开平台包只是二进制分发原子。
+- Agenter native CLI 的 target / package / archive naming truth 由 `scripts/binaries/agenter-cli-artifacts.ts` 拥有；GitHub release binary archives 是 canonical binary truth，npm wrapper 与 Homebrew formula 都只能投影这份 truth，不能各自再维护第二套平台矩阵。
 - 新 npm 包的初次 publish / trust 收口工具是 `scripts/npm/bootstrap-package.ts`；它允许 operator 在 package 还不存在时先做一次初次 publish，再配置 trusted publishing，随后常规发布重新回到 GitHub OIDC 路径。
 - Agenter 可发布 npm 包集合的单一真源是 `scripts/release/release-manifest.ts` 的 `releasePublishablePackageJsonPaths`；trusted publish 配置、bundle build、publish 与发布校验都必须复用这份 manifest，不能另用 workspace glob 推导。
