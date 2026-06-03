@@ -6,7 +6,7 @@ Define the opt-in real-provider validation flow that proves single-avatar room d
 ## Requirements
 
 ### Requirement: Backend real-provider validation SHALL prove single-avatar room delivery
-The backend SHALL provide an opt-in real-provider scenario that exercises one user and one Avatar through the primary room, terminal-backed tiny-app creation, reachable local HTTP delivery, and one round of user feedback on the delivered app. The scenario SHALL run with a dedicated builder Avatar persona rather than the shared default Avatar prompt state.
+The backend SHALL provide an opt-in real-provider scenario that exercises one user and one Avatar through an explicitly provisioned validation room, terminal-backed tiny-app creation, reachable local HTTP delivery, and one round of user feedback on the delivered app. The scenario SHALL run with a dedicated builder Avatar persona rather than the shared default Avatar prompt state.
 
 #### Scenario: Room-terminal delivery uses a dedicated builder persona
 - **GIVEN** a real provider is configured and the real validation suite is enabled
@@ -16,13 +16,13 @@ The backend SHALL provide an opt-in real-provider scenario that exercises one us
 
 #### Scenario: Initial delivery reaches a real local HTTP URL
 - **GIVEN** a real provider is configured and the real validation suite is enabled
-- **WHEN** the user asks the Avatar to build a tiny app and deliver it through the primary room
-- **THEN** the Avatar acknowledges the work in the primary room, uses terminal tools to create and launch the app, and sends a delivery message containing `APP-URL: http://127.0.0.1:<port>/`
+- **WHEN** the user asks the Avatar to build a tiny app and deliver it through the validation room
+- **THEN** the Avatar acknowledges the work in that validation room, uses terminal tools to create and launch the app, and sends a delivery message containing `APP-URL: http://127.0.0.1:<port>/`
 - **AND** a real HTTP fetch to that URL succeeds and returns deterministic v1 content markers
 
 #### Scenario: User feedback updates the delivered app
 - **GIVEN** the initial delivered URL is already reachable with deterministic v1 content markers
-- **WHEN** the scenario simulates the user opening that URL and sending one small feedback request in the same primary room
+- **WHEN** the scenario simulates the user opening that URL and sending one small feedback request in the same validation room
 - **THEN** the Avatar applies the requested change through terminal-backed work and sends a room-visible update acknowledgement
 - **AND** a real HTTP fetch to the delivered URL returns deterministic v2 content markers that prove the feedback was applied
 

@@ -19,6 +19,7 @@
 - session id derivation and lookup APIs must be Avatar-scoped in both behavior and naming; workspace path may be stored as bootstrap metadata, but it must not be required to derive a runtime id.
 - `session.workspacePath` 只表达创建时的 bootstrap workspace，不代表 runtime 当前完整 mount 列表。
 - `session.create` / `session.start` 的 cold boot 不会自动挂 workspace、room、terminal；这些 authority 必须来自显式 durable facts。
+- session durability、session JSON、runtime bootstrap 与 stopped-session recovery 不得持久化 `primaryRoomId` 或其它 session-owned default-room 字段；room/terminal/task understanding 必须从 `attentionContext -> source` 与外部系统 durable facts 重建。
 - 每个 runtime 固定拥有一个 principal-address root workspace：`~/.agenter/avatars/by-principal/<principalId>`。它是 avatar 的 canonical private home，不替代 dynamic workspace mounts。
 - Avatar prompt source resolution 必须优先使用 session/runtime 的 `avatarPrincipalId` canonical root；nickname alias 只用于发现和兼容迁移，不能在已知 principal 的运行时覆盖 prompt 真源。
 - app-owned assistant prompt root 与 recording surface 必须解耦：`AGENTER.mdx` 仍来自 `~/.agenter/avatars/by-principal/<principalId>/AGENTER.mdx`，shell-assistant raw recording 默认通过 NoteSystem 写入 active `AVATAR_HOME` note facts。legacy `memory/*` files 只是显式用户资产或兼容输入，不得因为 `session.workspacePath` 或启动 cwd 是普通 project workspace 而被默认创建或当成记录 API。
@@ -88,6 +89,7 @@
 - ModelClient 的 provider loop strategy 只允许同步消费已经 staged 的 committed attention projection，并把它追加到下一次 continuation request；它不得直接 drain MessageRoom/Terminal/Task，也不得执行 attention commit 或 read ack。
 - message attention body 必须直接携带消息级客观事实与必要附件 facts，不得再默认内联 room social envelope；participants / presence / visibleRooms 这类 room projection 必须通过显式 room snapshot、`message read`、`message query` 等既有 query surface 获取；terminal / task 也必须各自通过自己的 presentation builder 提供足够的 AI-visible detail。
 - app-server 不得从 raw room transcript rows 重新推导 message unread truth 或 runtime readiness；它只能消费 `message-system` 提供的 active unread / active-visible projection，并在需要历史分页时另行保持 recalled transcript rows 的历史身份。
+- 可见 room send 的 durable law 是：要么显式提供 room target，要么当前 attention/source 已经是 message-origin 并能客观标识回写 room；app-server 不得因为 session 存在就猜测默认 room，也不得通过 top-level `chat.*` surface 冒充 room transcript truth 或 runtime cycle truth。
 - runtime-facing reachable participant directory 必须优先投影 durable contacts，只在没有 contact truth 时才回退到 visible-room label projection；room label 不得再冒充 durable people truth。
 - focused terminal source observations 默认只保留为 queryable attention history；terminal idle/focus/unfocus 这类 lifecycle coordination 默认属于 scheduler signal / wake-rank truth，不得再作为 source-authored unresolved debt 直接进入 AI-visible task 语义。
 - real-provider backend 验收至少要能证明：同一 session 在 room-visible 交付之后，经过 `session.stop -> kernel cold restart -> session.start` 仍能靠磁盘事实继续工作，而不是依赖残留内存对象。

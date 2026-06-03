@@ -9,7 +9,7 @@ The backend SHALL provide an opt-in real-provider scenario where one Avatar firs
 
 #### Scenario: Restarted Avatar resumes room-backed app work
 - **GIVEN** a real provider is configured and the real validation suite is enabled
-- **AND** one Avatar has already delivered a reachable tiny app through its primary room
+- **AND** one Avatar has already delivered a reachable tiny app through an explicit validation room
 - **WHEN** the runtime is stopped, the kernel restarts, the same session is started again, and the user sends one follow-up request in the same room
 - **THEN** the restarted Avatar resumes the task, recovers any missing terminal context through tools if necessary, and sends a resumed delivery message
 - **AND** a real HTTP fetch to the resumed delivery URL returns deterministic post-feedback content markers

@@ -88,7 +88,7 @@ The client runtime store SHALL maintain explicit reverse-time page state for eac
 
 #### Scenario: Persisted history replaces equivalent runtime chat rows
 
-- **WHEN** `runtime.snapshot` already contains in-memory chat rows and `chat.list` later hydrates the same messages with persisted ids
+- **WHEN** `runtime.snapshot` already contains in-memory chat rows and `runtime.messagesPage` later hydrates the same messages with persisted ids
 - **THEN** the client runtime store collapses those semantic duplicates into one row per message
 - **THEN** the persisted record wins over the in-memory runtime copy
 

@@ -197,7 +197,7 @@ Runtime inspection consumers SHALL read Heartbeat as grouped pages instead of di
 
 - **WHEN** the browser opens the Heartbeat route for a session with large persisted history
 - **THEN** the route fetches grouped Heartbeat data plus the minimal model-call context needed by the Heartbeat status surface
-- **AND** it does not piggyback `chat.list`, scheduler logs, observability traces, request-aux timelines, or API-call timelines onto the same cold start
+- **AND** it does not piggyback `runtime.messagesPage`, scheduler logs, observability traces, request-aux timelines, or API-call timelines onto the same cold start
 
 ### Requirement: Grouped Heartbeat projection SHALL compare auxiliary facts by payload truth
 
