@@ -47,10 +47,12 @@ describe("Feature: agenter native CLI artifact topology", () => {
     expect(linuxMusl.archiveStem).toBe("agenter-linux-x64-musl");
     expect(linuxMusl.checksumFileName).toBe("agenter-linux-x64-musl.sha256");
     expect(linuxMusl.packageBinaryPath).toBe("bin/agenter");
+    expect(linuxMusl.artifactPath).toBe("packages/agenter-cli-linux-x64-musl/bin/agenter");
 
     expect(windows.targetId).toBe("win32-arm64");
     expect(windows.archiveStem).toBe("agenter-win32-arm64");
     expect(windows.packageBinaryPath).toBe("bin/agenter.exe");
+    expect(windows.artifactPath).toBe("packages/agenter-cli-win32-arm64/bin/agenter.exe");
     expect(windows.homebrewTargetId).toBe("win32-arm64");
   });
 

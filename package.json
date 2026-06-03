@@ -81,6 +81,7 @@
     "openspec:vision": "bun run scripts/openspec/vision-driven.ts",
     "release:build-bundles": "bun run scripts/release/build-bundles.ts",
     "release:build-bundles:host-smoke": "bun run scripts/release/build-bundles.ts --host-only-smoke",
+    "release:build-native-cli:host-smoke": "bun run scripts/binaries/build-agenter-cli.ts --stage-package",
     "release:preflight": "bun run scripts/release/preflight.ts",
     "release:publish-bundles": "bun run scripts/release/publish-bundles.ts",
     "release:publish-bundles:dry-run": "bun run scripts/release/publish-bundles.ts --dry-run",

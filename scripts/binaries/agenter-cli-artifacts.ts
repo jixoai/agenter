@@ -21,6 +21,7 @@ export interface AgenterCliTarget {
   packageDir: string;
   binaryName: string;
   packageBinaryPath: string;
+  artifactPath: string;
   archiveStem: string;
   checksumFileName: string;
   homebrewTargetId: string;
@@ -72,6 +73,8 @@ export const createAgenterCliTarget = (
 ): AgenterCliTarget => {
   const targetId = toTargetId(packageOs, arch, libc);
   const binaryName = packageOs === "win32" ? "agenter.exe" : "agenter";
+  const packageDir = `packages/agenter-cli-${targetId}`;
+  const packageBinaryPath = `bin/${binaryName}`;
   return {
     packageOs,
     arch,
@@ -79,9 +82,10 @@ export const createAgenterCliTarget = (
     bunTarget: toBunTarget(packageOs, arch, libc),
     targetId,
     packageName: `@agenter/cli-${targetId}`,
-    packageDir: `packages/agenter-cli-${targetId}`,
+    packageDir,
     binaryName,
-    packageBinaryPath: `bin/${binaryName}`,
+    packageBinaryPath,
+    artifactPath: `${packageDir}/${packageBinaryPath}`,
     archiveStem: `agenter-${targetId}`,
     checksumFileName: `agenter-${targetId}.sha256`,
     homebrewTargetId: targetId,
@@ -95,6 +99,9 @@ export const agenterCliTargets: readonly AgenterCliTarget[] = targetTuples.map((
 export const agenterCliPlatformPackageJsonPaths: readonly string[] = agenterCliTargets.map(
   (target) => `${target.packageDir}/package.json`,
 );
+
+export const createAgenterCliNativeArtifactPath = (rootDir: string, target: AgenterCliTarget): string =>
+  `${rootDir}/agenter-cli-${target.targetId}/${target.binaryName}`;
 
 export const normalizeAgenterCliArch = (arch: string): AgenterCliPackageArch => {
   switch (arch) {
@@ -144,4 +151,35 @@ export const resolveAgenterCliPackageTarget = (
     throw new Error(`unsupported agenter CLI target: packageOs=${packageOs} arch=${arch} libc=${libc ?? "none"}`);
   }
   return target;
+};
+
+export const resolveAgenterCliTargetById = (targetId: string): AgenterCliTarget => {
+  const target = agenterCliTargets.find((candidate) => candidate.targetId === targetId);
+  if (!target) {
+    throw new Error(`unsupported agenter CLI target id: ${targetId}`);
+  }
+  return target;
+};
+
+const detectCurrentLinuxLibc = (): AgenterCliPackageLibc => {
+  const envValue = process.env.AGENTER_CLI_LIBC?.trim();
+  if (envValue) {
+    return normalizeAgenterCliPackageLibc(envValue);
+  }
+  const report = typeof process.report?.getReport === "function" ? process.report.getReport() : null;
+  const header = report && typeof report === "object" && "header" in report ? report.header : null;
+  const glibcVersionRuntime =
+    header && typeof header === "object" && "glibcVersionRuntime" in header ? header.glibcVersionRuntime : undefined;
+  return typeof glibcVersionRuntime === "string" && glibcVersionRuntime.length > 0 ? "gnu" : "musl";
+};
+
+export const resolveCurrentAgenterCliTarget = (
+  platform = process.platform,
+  arch = process.arch,
+  linuxLibc?: AgenterCliPackageLibc,
+): AgenterCliTarget => {
+  const packageOs = normalizeAgenterCliPackageOs(platform);
+  const packageArch = normalizeAgenterCliArch(arch);
+  const libc = packageOs === "linux" ? (linuxLibc ?? detectCurrentLinuxLibc()) : undefined;
+  return resolveAgenterCliPackageTarget(packageOs, packageArch, libc);
 };

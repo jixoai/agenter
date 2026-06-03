@@ -4,6 +4,7 @@ node_modules/
 tmp/
 dist/
 bundle/
+native-artifacts/
 bundle-host-smoke/
 build/
 coverage/
