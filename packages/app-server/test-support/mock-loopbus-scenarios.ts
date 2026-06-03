@@ -8,12 +8,7 @@ import { MOCK_FINAL_ANSWER, MOCK_GAUBEE_REPLY, MOCK_RELAY_PROMPT } from "./mock-
 
 const DEFAULT_TIMEOUT_MS = 60_000;
 const chatScenarioAttentionScope = excludeActiveContextPrefixes("ctx-task-source-");
-const getPrimaryRoomId = (harness: MockKernelHarness): string => {
-  if (!harness.session.primaryRoomId) {
-    throw new Error(`missing primaryRoomId for session ${harness.session.id}`);
-  }
-  return harness.session.primaryRoomId;
-};
+const getRoomId = (harness: MockKernelHarness): string => harness.room.chatId;
 const getMessageControlPlane = (harness: MockKernelHarness): MessageControlPlane =>
   Reflect.get(harness.kernel, "messageControlPlane") as MessageControlPlane;
 
@@ -166,9 +161,13 @@ export const runTwoRoomRelayScenario = async (
   harness: MockKernelHarness,
   relayChannel?: MessageControlPlaneEntry,
 ): Promise<TwoRoomRelayScenarioResult> => {
-  const primaryRoomId = getPrimaryRoomId(harness);
+  const roomId = getRoomId(harness);
   const resolvedRelayChannel = relayChannel ?? (await createGaubeeRoom(harness));
-  const sent = await harness.kernel.sendChat(harness.session.id, "gaubee在吗？问他中午吃什么？");
+  const sent = await harness.kernel.pushUserRoomMessage({
+    sessionId: harness.session.id,
+    chatId: roomId,
+    text: "gaubee在吗？问他中午吃什么？",
+  });
   if (!sent.ok) {
     throw new Error(`failed to send relay prompt: ${sent.reason ?? "unknown"}`);
   }
@@ -195,7 +194,7 @@ export const runTwoRoomRelayScenario = async (
 
   const finalReply = await waitForAssistantMessage(harness, {
     label: "final reply on main room",
-    predicate: (message) => message.chatId === primaryRoomId && message.content.trim() === MOCK_FINAL_ANSWER,
+    predicate: (message) => message.chatId === roomId && message.content.trim() === MOCK_FINAL_ANSWER,
   });
 
   const settledAttention = await waitForAttentionSettled(harness);
@@ -226,12 +225,16 @@ export const runCompactFollowUpScenario = async (
     afterReplyTimestamp: number;
   },
 ): Promise<CompactFollowUpScenarioResult> => {
-  const primaryRoomId = getPrimaryRoomId(harness);
+  const roomId = getRoomId(harness);
   const cyclesBefore = harness.kernel.listChatCycles(harness.session.id, 40);
   const lastCycleId = cyclesBefore.at(-1)?.cycleId ?? 0;
   const relayPromptCountBefore = countRelayPrompts(harness, input.relayChannel.chatId);
 
-  const compactSent = await harness.kernel.sendChat(harness.session.id, "/compact");
+  const compactSent = await harness.kernel.pushUserRoomMessage({
+    sessionId: harness.session.id,
+    chatId: roomId,
+    text: "/compact",
+  });
   if (!compactSent.ok) {
     throw new Error(`failed to request compact: ${compactSent.reason ?? "unknown"}`);
   }
@@ -239,7 +242,11 @@ export const runCompactFollowUpScenario = async (
   const compactCycle = await waitForCompactCycle(harness, { afterCycleId: lastCycleId });
   await waitForPromptWindowCompactApplied(harness);
 
-  const followUpSent = await harness.kernel.sendChat(harness.session.id, "中午吃什么");
+  const followUpSent = await harness.kernel.pushUserRoomMessage({
+    sessionId: harness.session.id,
+    chatId: roomId,
+    text: "中午吃什么",
+  });
   if (!followUpSent.ok) {
     throw new Error(`failed to send follow-up question: ${followUpSent.reason ?? "unknown"}`);
   }
@@ -247,7 +254,7 @@ export const runCompactFollowUpScenario = async (
   const followUpReply = await waitForAssistantMessage(harness, {
     label: "post-compact follow-up answer",
     predicate: (message) =>
-      message.chatId === primaryRoomId &&
+      message.chatId === roomId &&
       message.content.trim() === MOCK_FINAL_ANSWER &&
       message.timestamp > input.afterReplyTimestamp,
   });
@@ -278,7 +285,7 @@ export const runSettledFollowUpScenario = async (
     afterReplyTimestamp: number;
   },
 ): Promise<SettledFollowUpScenarioResult> => {
-  const primaryRoomId = getPrimaryRoomId(harness);
+  const roomId = getRoomId(harness);
   const relayPromptCountBefore = countRelayPrompts(harness, input.relayChannel.chatId);
 
   await waitForMockValue(
@@ -292,7 +299,11 @@ export const runSettledFollowUpScenario = async (
     },
   );
 
-  const followUpSent = await harness.kernel.sendChat(harness.session.id, "中午吃什么");
+  const followUpSent = await harness.kernel.pushUserRoomMessage({
+    sessionId: harness.session.id,
+    chatId: roomId,
+    text: "中午吃什么",
+  });
   if (!followUpSent.ok) {
     throw new Error(`failed to send settled follow-up: ${followUpSent.reason ?? "unknown"}`);
   }
@@ -300,7 +311,7 @@ export const runSettledFollowUpScenario = async (
   const followUpReply = await waitForAssistantMessage(harness, {
     label: "settled follow-up answer",
     predicate: (message) =>
-      message.chatId === primaryRoomId &&
+      message.chatId === roomId &&
       message.content.trim() === MOCK_FINAL_ANSWER &&
       message.timestamp > input.afterReplyTimestamp,
   });

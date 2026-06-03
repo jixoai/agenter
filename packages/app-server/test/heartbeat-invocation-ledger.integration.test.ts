@@ -24,7 +24,11 @@ describe("Feature: invocation-first heartbeat ledger cold restore", () => {
 
       try {
         const relayChannel = await createGaubeeRoom(harness);
-        const sent = await harness.kernel.sendChat(harness.session.id, "gaubee在吗？问他中午吃什么？");
+        const sent = await harness.kernel.pushUserRoomMessage({
+          sessionId: harness.session.id,
+          chatId: harness.room.chatId,
+          text: "gaubee在吗？问他中午吃什么？",
+        });
         if (!sent.ok) {
           throw new Error(`failed to send relay prompt: ${sent.reason ?? "unknown"}`);
         }
@@ -80,7 +84,7 @@ describe("Feature: invocation-first heartbeat ledger cold restore", () => {
         await waitForAssistantMessage(harness, {
           label: "final reply on main room",
           predicate: (message) =>
-            message.chatId === harness.session.primaryRoomId && message.content.trim() === MOCK_FINAL_ANSWER,
+            message.chatId === harness.room.chatId && message.content.trim() === MOCK_FINAL_ANSWER,
         });
         await waitForAttentionSettled(harness);
 

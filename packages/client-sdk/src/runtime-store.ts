@@ -208,7 +208,6 @@ const LOOPBUS_LRU_LIMIT = 100;
 const HEARTBEAT_GROUP_PAGE_LIMIT = 5;
 const HEARTBEAT_GROUP_LRU_LIMIT = HEARTBEAT_GROUP_PAGE_LIMIT * 3;
 const MODEL_CALL_DELTA_LRU_LIMIT = 400;
-const DEFAULT_MESSAGE_CHAT_ID = "room-main";
 const DEFAULT_GLOBAL_TERMINAL_ACTIVITY_LIMIT = 20;
 const TERMINAL_ACTIVITY_PREVIEW_MAX_CHARS = 4_000;
 const DEFAULT_MODEL_CAPABILITIES = {
@@ -1272,7 +1271,7 @@ export class RuntimeStore {
   private toRuntimeChatMessage(item: ChatListItem): RuntimeChatMessage {
     return {
       id: item.messageId,
-      chatId: item.chatId ?? DEFAULT_MESSAGE_CHAT_ID,
+      chatId: item.chatId,
       role: item.role,
       content: item.content,
       timestamp: item.timestamp,
@@ -4480,30 +4479,34 @@ export class RuntimeStore {
     };
   }
 
-  async sendChat(
+  private async resolveFocusedMessageChannel(sessionId: string): Promise<MessageChannelEntry> {
+    const channels = await this.ensureMessageChannels(sessionId);
+    const focused = channels.filter((channel) => channel.focused && channel.accessToken);
+    if (focused.length !== 1) {
+      throw new Error("room must be specified");
+    }
+    return focused[0];
+  }
+
+  // File-truth law: session-local user input may reuse explicit message focus,
+  // but it may not invent a room from session identity alone.
+  async sendFocusedMessageChannel(
     sessionId: string,
     text: string,
     assetIds: string[] = [],
     attachments: UploadedSessionAsset[] = [],
-  ): Promise<void> {
-    const clientMessageId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-    const optimisticId = `pending:${clientMessageId}`;
-    this.state.chatCyclesBySession[sessionId] = this.mergeChatCycles(this.state.chatCyclesBySession[sessionId] ?? [], [
-      this.createOptimisticCycle({ text, clientMessageId, attachments }),
-    ]);
-    this.emit();
-    try {
-      const result = await this.client.trpc.chat.send.mutate({ sessionId, text, assetIds, clientMessageId });
-      if (!result.ok) {
-        throw new Error(result.reason ?? "chat send failed");
-      }
-    } catch (error) {
-      this.state.chatCyclesBySession[sessionId] = (this.state.chatCyclesBySession[sessionId] ?? []).filter(
-        (cycle) => cycle.id !== optimisticId,
-      );
-      this.emit();
-      throw error;
-    }
+  ): Promise<MessageSendSuccessOutput> {
+    const channel = await this.resolveFocusedMessageChannel(sessionId);
+    return await this.sendMessageChannel(
+      {
+        sessionId,
+        chatId: channel.chatId,
+        accessToken: channel.accessToken!,
+        text,
+        assetIds,
+      },
+      attachments,
+    );
   }
 
   async ensureMessageChannels(sessionId: string): Promise<MessageChannelEntry[]> {
@@ -4585,19 +4588,33 @@ export class RuntimeStore {
     attachments: UploadedSessionAsset[] = [],
   ): Promise<MessageSendSuccessOutput> {
     const clientMessageId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-    const result = await this.client.trpc.message.send.mutate({
-      sessionId: input.sessionId,
-      chatId: input.chatId,
-      accessToken: input.accessToken,
-      text: input.text,
-      assetIds: input.assetIds,
-      clientMessageId,
-    });
-    if (!result.ok) {
-      throw new Error(result.reason ?? "message send failed");
+    const previousCycles = this.state.chatCyclesBySession[input.sessionId] ?? [];
+    this.state.chatCyclesBySession[input.sessionId] = this.mergeChatCycles(previousCycles, [
+      this.createOptimisticCycle({
+        text: input.text,
+        clientMessageId,
+        attachments,
+      }),
+    ]);
+    this.emit();
+    try {
+      const result = await this.client.trpc.message.send.mutate({
+        sessionId: input.sessionId,
+        chatId: input.chatId,
+        accessToken: input.accessToken,
+        text: input.text,
+        assetIds: input.assetIds,
+        clientMessageId,
+      });
+      if (!result.ok) {
+        throw new Error(result.reason ?? "message send failed");
+      }
+      return result;
+    } catch (error) {
+      this.state.chatCyclesBySession[input.sessionId] = previousCycles;
+      this.emit();
+      throw error;
     }
-    void attachments;
-    return result;
   }
 
   async editMessageChannel(input: {
@@ -6272,7 +6289,7 @@ export class RuntimeStore {
     });
   }
 
-  async setChatVisibility(input: { sessionId: string; chatId?: string; visible: boolean; focused: boolean }) {
+  async setChatVisibility(input: { sessionId: string; chatId: string; visible: boolean; focused: boolean }) {
     const snapshot = await this.client.trpc.notification.setChatVisibility.mutate(input);
     this.applyNotificationSnapshot(snapshot);
     this.emit();
@@ -6349,7 +6366,7 @@ export class RuntimeStore {
   }
 
   async loadChatMessages(sessionId: string, limit = 120): Promise<void> {
-    const output = await this.client.trpc.chat.list.query({ sessionId, limit });
+    const output = await this.client.trpc.runtime.messagesPage.query({ sessionId, limit });
     const mapped = output.items.map((item) => this.toRuntimeChatMessage(item));
     this.state.chatsBySession[sessionId] = this.mergeChatMessages(this.state.chatsBySession[sessionId] ?? [], mapped);
     this.updateBeforeCursor(this.chatBeforeCursorBySession, sessionId, output.nextBefore);
@@ -6357,7 +6374,7 @@ export class RuntimeStore {
   }
 
   async loadChatCycles(sessionId: string, limit = 120): Promise<void> {
-    const output = await this.client.trpc.chat.cycles.query({ sessionId, limit });
+    const output = await this.client.trpc.runtime.cyclesPage.query({ sessionId, limit });
     const mapped = output.items.map((item) => this.toRuntimeChatCycle(item));
     this.state.chatCyclesBySession[sessionId] = this.mergeChatCycles(
       this.state.chatCyclesBySession[sessionId] ?? [],
@@ -6378,8 +6395,8 @@ export class RuntimeStore {
 
     const task = (async () => {
       const [chatOutput, cyclesOutput] = await Promise.all([
-        this.client.trpc.chat.list.query({ sessionId, limit: input?.messageLimit ?? 200 }),
-        this.client.trpc.chat.cycles.query({ sessionId, limit: input?.cycleLimit ?? 120 }),
+        this.client.trpc.runtime.messagesPage.query({ sessionId, limit: input?.messageLimit ?? 200 }),
+        this.client.trpc.runtime.cyclesPage.query({ sessionId, limit: input?.cycleLimit ?? 120 }),
       ]);
 
       const mappedMessages = chatOutput.items.map((item) => this.toRuntimeChatMessage(item));
@@ -6455,7 +6472,7 @@ export class RuntimeStore {
     if (before === null) {
       return { items: 0, hasMore: false };
     }
-    const output = await this.client.trpc.chat.list.query({ sessionId, before: before ?? undefined, limit });
+    const output = await this.client.trpc.runtime.messagesPage.query({ sessionId, before: before ?? undefined, limit });
     if (output.items.length === 0) {
       this.updateBeforeCursor(this.chatBeforeCursorBySession, sessionId, null);
       return { items: 0, hasMore: false };
@@ -6479,7 +6496,7 @@ export class RuntimeStore {
     if (before === null) {
       return { items: 0, hasMore: false };
     }
-    const output = await this.client.trpc.chat.cycles.query({ sessionId, before: before ?? undefined, limit });
+    const output = await this.client.trpc.runtime.cyclesPage.query({ sessionId, before: before ?? undefined, limit });
     if (output.items.length === 0) {
       this.updateBeforeCursor(this.chatCyclesBeforeCursorBySession, sessionId, null);
       return { items: 0, hasMore: false };

@@ -5,7 +5,7 @@ import { join, resolve } from "node:path";
 
 import type { MessageControlPlane, MessageRecord } from "@agenter/message-system";
 
-import { AppKernel, type AppKernelOptions, type SessionMeta } from "../src";
+import { AppKernel, type AppKernelOptions, type PublicRoomEntry, type SessionMeta } from "../src";
 import {
   canProxyRealModelConfig,
   resolveRealModelConfig,
@@ -143,7 +143,7 @@ export interface RealKernelHarnessDiagnostics {
   };
   session: {
     id: string;
-    primaryRoomId: string | null;
+    roomId: string;
   };
   roomTruth: Array<{
     rowId: number;
@@ -257,6 +257,7 @@ export interface RealKernelHarness {
   config: RealModelConfig;
   proxy: CachedModelProxyHandle | null;
   session: SessionMeta;
+  room: PublicRoomEntry;
   collectDiagnostics: (input?: {
     label?: string;
     messageLimit?: number;
@@ -358,20 +359,24 @@ export const createRealKernelHarness = async (
       name: input.sessionName ?? "real-loopbus",
       autoStart: false,
     });
-    await kernel.attachSessionPrimaryRoom(session.id, { focus: true });
     kernel.grantRuntimeWorkspace({
       runtimeId: session.id,
       workspacePath,
       grants: [...FULL_WORKSPACE_GRANT],
     });
     const startedSession = await kernel.startSession(session.id);
-    if (!startedSession.primaryRoomId) {
-      throw new Error(`real harness missing primary room after explicit attach: ${startedSession.id}`);
-    }
-    if (
-      !kernel.listMessageChannels(startedSession.id).some((channel) => channel.chatId === startedSession.primaryRoomId)
-    ) {
-      throw new Error(`real harness failed to restore attached primary room: ${startedSession.id}`);
+    const room = await kernel.createMessageChannel({
+      sessionId: startedSession.id,
+      kind: "room",
+      title: "kzf",
+      participants: [
+        { id: `session:${startedSession.avatar}`, label: startedSession.avatar },
+        { id: "auth:kzf", label: "kzf" },
+      ],
+      focus: true,
+    });
+    if (!kernel.listMessageChannels(startedSession.id).some((channel) => channel.chatId === room.chatId)) {
+      throw new Error(`real harness failed to persist explicit room: ${startedSession.id}`);
     }
     if (
       !kernel
@@ -456,6 +461,7 @@ export const createRealKernelHarness = async (
       config,
       proxy,
       session: startedSession,
+      room,
       collectDiagnostics: async (diagnosticInput = {}) => {
         const debug = await harness.kernel.inspectModelDebug(harness.session.id);
         const channels = harness.kernel.listMessageChannels(harness.session.id);
@@ -475,7 +481,7 @@ export const createRealKernelHarness = async (
           },
           session: {
             id: harness.session.id,
-            primaryRoomId: harness.session.primaryRoomId ?? null,
+            roomId: harness.room.chatId,
           },
           roomTruth,
           recentModelCalls: debug.recentModelCalls.map((call) => ({
@@ -503,8 +509,15 @@ export const createRealKernelHarness = async (
         if (!restored) {
           throw new Error(`real harness failed to reload session after kernel restart: ${harness.session.id}`);
         }
+        const restoredRoom = nextKernel
+          .listMessageChannels(harness.session.id, { includeArchived: true })
+          .find((channel) => channel.chatId === harness.room.chatId);
+        if (!restoredRoom) {
+          throw new Error(`real harness failed to reload room after kernel restart: ${harness.room.chatId}`);
+        }
         harness.kernel = nextKernel;
         harness.session = restored;
+        harness.room = restoredRoom;
       },
       stop: async () => {
         cleanup.startedAt ??= Date.now();

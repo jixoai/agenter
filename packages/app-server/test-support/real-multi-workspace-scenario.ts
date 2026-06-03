@@ -16,12 +16,7 @@ const SOURCE_MARKER = "SOURCE-MARKER: ALPHA";
 const TARGET_CONTENT = "TARGET-RESULT: ALPHA";
 const SUCCESS_REPLY = "MULTI-WORKSPACE-OK";
 
-const getPrimaryRoomId = (harness: RealKernelHarness): string => {
-  if (!harness.session.primaryRoomId) {
-    throw new Error(`missing primaryRoomId for session ${harness.session.id}`);
-  }
-  return harness.session.primaryRoomId;
-};
+const getRoomId = (harness: RealKernelHarness): string => harness.room.chatId;
 
 const getMessageControlPlane = (harness: RealKernelHarness): MessageControlPlane =>
   Reflect.get(harness.kernel, "messageControlPlane") as MessageControlPlane;
@@ -188,7 +183,7 @@ export interface RealMultiWorkspaceScenarioResult {
 export const runRealMultiWorkspaceScenario = async (
   harness: RealKernelHarness,
 ): Promise<RealMultiWorkspaceScenarioResult> => {
-  const primaryRoomId = getPrimaryRoomId(harness);
+  const roomId = getRoomId(harness);
   const sourceWorkspacePath = harness.workspacePath;
   const targetWorkspacePath = join(harness.rootDir, "target-workspace");
   await mkdir(targetWorkspacePath, { recursive: true });
@@ -210,26 +205,30 @@ export const runRealMultiWorkspaceScenario = async (
 
   const startAt = Date.now();
   const prompt = [
-    `目标房间 chatId: ${primaryRoomId}`,
+    `目标房间 chatId: ${roomId}`,
     "这是一个 multi-workspace 验证任务。",
     "必须先通过 root_bash 执行 `skill info agenter-runtime`。",
     "然后必须调用 workspace_list 看清当前挂载的两个 project workspace。",
     `源 workspace 里有 ${SOURCE_FILE_NAME}，其中包含唯一事实：${SOURCE_MARKER}`,
     `你必须只用 workspace_bash 在另一个 workspace 里写入 ${TARGET_FILE_NAME}，内容必须精确等于：${TARGET_CONTENT}`,
     "不要用 root_bash 直接读写任何 mounted workspace 文件。",
-    `完成后只向 ${primaryRoomId} 发送一条用户可见消息，内容必须精确等于：${SUCCESS_REPLY}`,
+    `完成后只向 ${roomId} 发送一条用户可见消息，内容必须精确等于：${SUCCESS_REPLY}`,
     "完成后把相关 attention score 收敛到 0。",
   ].join("\n");
 
   try {
-    const sent = await harness.kernel.sendChat(harness.session.id, prompt);
+    const sent = await harness.kernel.pushUserRoomMessage({
+      sessionId: harness.session.id,
+      chatId: roomId,
+      text: prompt,
+    });
     if (!sent.ok) {
       throw new Error(`failed to send multi-workspace prompt: ${sent.reason ?? "unknown"}`);
     }
 
     const reply = await waitForAssistantMessage(harness, {
       label: "multi-workspace reply",
-      predicate: (message) => message.chatId === primaryRoomId && message.content.trim() === SUCCESS_REPLY,
+      predicate: (message) => message.chatId === roomId && message.content.trim() === SUCCESS_REPLY,
     });
     const targetContent = await waitForRealValue(
       async () => {

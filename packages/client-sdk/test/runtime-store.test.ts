@@ -802,18 +802,12 @@ const createMockClient = (input: {
       }
     | { ok: false; reason: "readonly"; message: string }
   >;
-  chatSendMutate?: (input: {
-    sessionId: string;
-    text: string;
-    assetIds: string[];
-    clientMessageId: string;
-  }) => Promise<{ ok: boolean; reason?: string }>;
-  chatListQuery?: (input: {
+  runtimeMessagesPageQuery?: (input: {
     sessionId: string;
     before?: { beforeTimeMs: number; beforeId: number };
     limit?: number;
   }) => Promise<ReversePageResult<unknown>>;
-  chatCyclesQuery?: (input: {
+  runtimeCyclesPageQuery?: (input: {
     sessionId: string;
     before?: { beforeTimeMs: number; beforeId: number };
     limit?: number;
@@ -1360,6 +1354,26 @@ const createMockClient = (input: {
               ? await input.observabilityTracesQuery(payload)
               : { items: [], nextBefore: null, hasMoreBefore: false },
         },
+        messagesPage: {
+          query: async (payload: {
+            sessionId: string;
+            before?: { beforeTimeMs: number; beforeId: number };
+            limit?: number;
+          }) =>
+            input.runtimeMessagesPageQuery
+              ? await input.runtimeMessagesPageQuery(payload)
+              : { items: [], nextBefore: null, hasMoreBefore: false },
+        },
+        cyclesPage: {
+          query: async (payload: {
+            sessionId: string;
+            before?: { beforeTimeMs: number; beforeId: number };
+            limit?: number;
+          }) =>
+            input.runtimeCyclesPageQuery
+              ? await input.runtimeCyclesPageQuery(payload)
+              : { items: [], nextBefore: null, hasMoreBefore: false },
+        },
         modelCallsPage: {
           query: async (payload: {
             sessionId: string;
@@ -1449,32 +1463,6 @@ const createMockClient = (input: {
         archive: { mutate: async () => ({ session: createSnapshot(0).sessions[0] }) },
         restore: { mutate: async () => ({ session: createSnapshot(0).sessions[0] }) },
         delete: { mutate: async () => ({}) },
-      },
-      chat: {
-        send: {
-          mutate: async (payload: { sessionId: string; text: string; assetIds: string[]; clientMessageId: string }) =>
-            input.chatSendMutate ? await input.chatSendMutate(payload) : { ok: true },
-        },
-        list: {
-          query: async (payload: {
-            sessionId: string;
-            before?: { beforeTimeMs: number; beforeId: number };
-            limit?: number;
-          }) =>
-            input.chatListQuery
-              ? await input.chatListQuery(payload)
-              : { items: [], nextBefore: null, hasMoreBefore: false },
-        },
-        cycles: {
-          query: async (payload: {
-            sessionId: string;
-            before?: { beforeTimeMs: number; beforeId: number };
-            limit?: number;
-          }) =>
-            input.chatCyclesQuery
-              ? await input.chatCyclesQuery(payload)
-              : { items: [], nextBefore: null, hasMoreBefore: false },
-        },
       },
       message: {
         listChannels: {
@@ -4848,11 +4836,11 @@ describe("Feature: runtime store synchronization", () => {
     const modelCallLimits: number[] = [];
     const client = createMockClient({
       snapshotQuery: async () => createSnapshot(756),
-      chatListQuery: async () => {
+      runtimeMessagesPageQuery: async () => {
         chatListCalls += 1;
         return { items: [], nextBefore: null, hasMoreBefore: false };
       },
-      chatCyclesQuery: async () => {
+      runtimeCyclesPageQuery: async () => {
         chatCyclesCalls += 1;
         return { items: [], nextBefore: null, hasMoreBefore: false };
       },
@@ -5884,7 +5872,7 @@ describe("Feature: runtime store synchronization", () => {
     let onData: ((event: unknown) => void) | undefined;
     const client = createMockClient({
       snapshotQuery: async () => createSnapshot(900),
-      chatListQuery: async () => ({
+      runtimeMessagesPageQuery: async () => ({
         items: [
           {
             id: 10,
@@ -5914,7 +5902,7 @@ describe("Feature: runtime store synchronization", () => {
           },
         ],
       }),
-      chatCyclesQuery: async () => ({
+      runtimeCyclesPageQuery: async () => ({
         items: [],
       }),
       onSubscribe: (handlers) => {
@@ -5980,7 +5968,7 @@ describe("Feature: runtime store synchronization", () => {
     const store = new RuntimeStore(
       createMockClient({
         snapshotQuery: async () => snapshot,
-        chatListQuery: async () => ({
+        runtimeMessagesPageQuery: async () => ({
           items: [
             {
               id: 100,
@@ -6014,7 +6002,7 @@ describe("Feature: runtime store synchronization", () => {
           nextBefore: null,
           hasMoreBefore: false,
         }),
-        chatCyclesQuery: async () => ({
+        runtimeCyclesPageQuery: async () => ({
           items: [],
           nextBefore: null,
           hasMoreBefore: false,
@@ -6077,10 +6065,26 @@ describe("Feature: runtime store synchronization", () => {
     store.disconnect();
   });
 
-  test("Scenario: Given optimistic chat send When a cycle update arrives Then the pending cycle is replaced by the persisted cycle", async () => {
+  test("Scenario: Given an explicit focused room send When a cycle update arrives Then the pending cycle is replaced by the persisted cycle", async () => {
     let onData: ((event: unknown) => void) | undefined;
+    const channel = {
+      chatId: "room-main",
+      kind: "room" as const,
+      title: "Main room",
+      owner: "jane",
+      participants: [
+        { id: "session:jane", label: "jane" },
+        { id: "auth:kzf", label: "kzf" },
+      ],
+      createdAt: 1,
+      updatedAt: 1,
+      focused: true,
+      accessRole: "admin" as const,
+      accessToken: "msgtok_admin",
+      transportUrl: "ws://127.0.0.1:7777/room/room-main?token=msgtok_admin",
+    };
     const client = createMockClient({
-      snapshotQuery: async () => createSnapshot(600),
+      snapshotQuery: async () => createSnapshot(600, { messageChannels: [channel] }),
       onSubscribe: (handlers) => {
         onData = handlers.onData;
       },
@@ -6088,7 +6092,7 @@ describe("Feature: runtime store synchronization", () => {
     const store = new RuntimeStore(client);
     await store.connect();
 
-    await store.sendChat("i-1", "hello cycle");
+    await store.sendFocusedMessageChannel("i-1", "hello cycle");
     const pending = store.getState().chatCyclesBySession["i-1"] ?? [];
     expect(pending).toHaveLength(1);
     expect(pending[0]?.status).toBe("pending");
@@ -6146,9 +6150,37 @@ describe("Feature: runtime store synchronization", () => {
     store.disconnect();
   });
 
-  test("Scenario: Given uploaded session assets When sending chat Then resolved asset urls and optimistic attachment parts stay aligned", async () => {
+  test("Scenario: Given no explicit room target When focused-room send is attempted Then the store fails with a direct missing-room error", async () => {
+    const store = new RuntimeStore(
+      createMockClient({
+        snapshotQuery: async () => createSnapshot(699),
+      }),
+    );
+    await store.connect();
+    await expect(store.sendFocusedMessageChannel("i-1", "hello")).rejects.toThrow("room must be specified");
+    expect(store.getState().chatCyclesBySession["i-1"] ?? []).toEqual([]);
+    store.disconnect();
+  });
+
+  test("Scenario: Given uploaded session assets When sending through the explicit focused room Then resolved asset urls and optimistic attachment parts stay aligned", async () => {
     const originalFetch = globalThis.fetch;
     const sentPayloads: Array<{ sessionId: string; text: string; assetIds: string[]; clientMessageId: string }> = [];
+    const channel = {
+      chatId: "room-main",
+      kind: "room" as const,
+      title: "Main room",
+      owner: "jane",
+      participants: [
+        { id: "session:jane", label: "jane" },
+        { id: "auth:kzf", label: "kzf" },
+      ],
+      createdAt: 1,
+      updatedAt: 1,
+      focused: true,
+      accessRole: "admin" as const,
+      accessToken: "msgtok_admin",
+      transportUrl: "ws://127.0.0.1:7777/room/room-main?token=msgtok_admin",
+    };
     globalThis.fetch = (async (input, init) => {
       expect(input).toBe("http://127.0.0.1:3000/api/sessions/i-1/assets");
       expect(init?.headers).toEqual({
@@ -6176,8 +6208,8 @@ describe("Feature: runtime store synchronization", () => {
     }) as typeof fetch;
 
     const client = createMockClient({
-      snapshotQuery: async () => createSnapshot(700),
-      chatSendMutate: async (payload) => {
+      snapshotQuery: async () => createSnapshot(700, { messageChannels: [channel] }),
+      messageSendMutate: async (payload) => {
         sentPayloads.push(payload);
         return { ok: true };
       },
@@ -6202,15 +6234,11 @@ describe("Feature: runtime store synchronization", () => {
         },
       ]);
 
-      await store.sendChat(
-        "i-1",
-        "review attachment",
-        uploaded.map((item) => item.assetId),
-        uploaded,
-      );
+      await store.sendFocusedMessageChannel("i-1", "review attachment", uploaded.map((item) => item.assetId), uploaded);
 
       expect(sentPayloads).toHaveLength(1);
       expect(sentPayloads[0]?.sessionId).toBe("i-1");
+      expect(sentPayloads[0]?.chatId).toBe("room-main");
       expect(sentPayloads[0]?.text).toBe("review attachment");
       expect(sentPayloads[0]?.assetIds).toEqual(["asset-1"]);
 
@@ -7322,7 +7350,7 @@ describe("Feature: runtime store synchronization", () => {
         };
       },
       attentionStateQuery: async () => persistedAttention,
-      chatListQuery: async () => ({
+      runtimeMessagesPageQuery: async () => ({
         items: [
           {
             id: 21,
@@ -7341,7 +7369,7 @@ describe("Feature: runtime store synchronization", () => {
         nextBefore: null,
         hasMoreBefore: false,
       }),
-      chatCyclesQuery: async () => ({
+      runtimeCyclesPageQuery: async () => ({
         items: [],
         nextBefore: null,
         hasMoreBefore: false,
@@ -7399,7 +7427,7 @@ describe("Feature: runtime store synchronization", () => {
     const store = new RuntimeStore(
       createMockClient({
         snapshotQuery: async () => createSnapshot(950),
-        chatListQuery: async (input) => {
+        runtimeMessagesPageQuery: async (input) => {
           chatRequests.push({ before: input.before });
           if (!input.before) {
             return {
@@ -7478,6 +7506,39 @@ describe("Feature: runtime store synchronization", () => {
     expect(chatRequests).toEqual([{ before: undefined }, { before: { beforeTimeMs: 2_000, beforeId: 11 } }]);
     expect(store.getState().chatsBySession["i-1"]?.map((item) => item.id)).toEqual(["9", "10", "11", "12"]);
     expect(output).toEqual({ items: 2, hasMore: false });
+    store.disconnect();
+  });
+
+  test("Scenario: Given a projection message without room identity When chat history loads Then the store keeps chatId undefined instead of synthesizing room-main", async () => {
+    const store = new RuntimeStore(
+      createMockClient({
+        snapshotQuery: async () => createSnapshot(981),
+        messagesPageQuery: async () => ({
+          items: [
+            {
+              id: 12,
+              sessionId: "i-1",
+              messageId: "12",
+              role: "assistant",
+              channel: "tool",
+              content: "projection-only output",
+              timestamp: 3_000,
+              cycleId: 12,
+              format: "markdown",
+              tool: null,
+              attachments: [],
+            },
+          ],
+          nextBefore: null,
+          hasMoreBefore: false,
+        }),
+      }),
+    );
+
+    await store.connect();
+    await store.loadChatMessages("i-1", 1);
+
+    expect(store.getState().chatsBySession["i-1"]?.[0]?.chatId).toBeUndefined();
     store.disconnect();
   });
 

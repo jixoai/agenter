@@ -38,6 +38,7 @@ class AgenterCoreTuiApp {
   #connected = false;
   #activeSessionId: string | null = null;
   #pendingActiveSessionId: string | null = null;
+  #submitError: string | null = null;
   #releaseStore: (() => void) | null = null;
   #disposed = false;
 
@@ -198,6 +199,7 @@ class AgenterCoreTuiApp {
       this.#connected && view.connected ? "connected" : "connecting",
       `sessions=${view.sessions.length}`,
       view.phaseText,
+      this.#submitError ?? "room=explicit",
     ].join(" | ");
     this.#sessionList.content =
       view.sessions.length === 0
@@ -240,7 +242,13 @@ class AgenterCoreTuiApp {
       return;
     }
     this.#input.clear();
-    void this.#store.sendChat(this.#activeSessionId, value);
+    this.#submitError = null;
+    void this.#store
+      .sendFocusedMessageChannel(this.#activeSessionId, value)
+      .catch((error: unknown) => {
+        this.#submitError = error instanceof Error ? error.message : String(error);
+        this.#render();
+      });
     this.#render();
   }
 

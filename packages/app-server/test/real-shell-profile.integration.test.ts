@@ -23,14 +23,11 @@ describe("Feature: real AI shell profile separation", () => {
       }
 
       try {
-        const primaryRoomId = harness.session.primaryRoomId;
-        if (!primaryRoomId) {
-          throw new Error("expected session primaryRoomId");
-        }
+        const roomId = harness.room.chatId;
 
         const result = await runRealShellProfileScenario(harness);
 
-        expect(result.finalReply.chatId).toBe(primaryRoomId);
+        expect(result.finalReply.chatId).toBe(roomId);
         expect(result.finalReply.content).toBe("PROFILE-CHECK-DONE");
         expect(result.rootShellValues.HOME).toBe(result.rootWorkspacePath);
         expect(result.rootShellValues.ROOT).toBe(result.rootWorkspacePath);

@@ -469,7 +469,6 @@ describe("Feature: cli-shell real daemon integration", () => {
     if (!avatarPrincipalId) {
       throw new Error("expected shell-assistant session principal id");
     }
-    await fixture.handle.kernel.attachSessionPrimaryRoom(attached.session.id, { focus: true });
     await fixture.store.connect();
     await fixture.store.hydrateSessionArtifacts(attached.session.id, {
       includeChatHistory: false,

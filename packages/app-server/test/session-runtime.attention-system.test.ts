@@ -589,7 +589,7 @@ const seedTerminalGrant = (input: {
   return accessToken;
 };
 
-const attachPrimaryRoom = (runtime: SessionRuntime): void => {
+const attachOriginRoom = (runtime: SessionRuntime): void => {
   const messageSystem = Reflect.get(runtime, "messageSystem") as MessageControlPlane;
   const messageContactId = Reflect.get(runtime, "messageContactId") as MessageContactId;
   if (
@@ -610,6 +610,13 @@ const attachPrimaryRoom = (runtime: SessionRuntime): void => {
     bootstrapContactId: messageContactId,
   });
   messageSystem.focusForContact(messageContactId, "add", [PRIMARY_ROOM_ID]);
+};
+
+const pushUserOriginRoomMessage = (runtime: SessionRuntime, text: string): void => {
+  runtime.pushUserRoomMessage({
+    chatId: PRIMARY_ROOM_ID,
+    text,
+  });
 };
 
 const getRuntimeSessionId = (runtime: SessionRuntime): string =>
@@ -658,7 +665,6 @@ const createRuntime = (input: { withWorkspaceAuthority?: boolean } = {}): Sessio
     sessionRoot: join(root, "session"),
     sessionName: "test",
     storeTarget: "workspace",
-    primaryRoomId: PRIMARY_ROOM_ID,
     allocateRoomId: createRuntimeRoomAllocator(),
     terminalSystem: createTerminalSystem(root),
     avatarPrincipalId: TEST_AVATAR_PRINCIPAL_ID,
@@ -673,7 +679,7 @@ const createRuntime = (input: { withWorkspaceAuthority?: boolean } = {}): Sessio
       ? createAvatarRootWorkspaceAuthorities({ root, sessionId })
       : undefined,
   });
-  attachPrimaryRoom(runtime);
+  attachOriginRoom(runtime);
   return runtime;
 };
 
@@ -689,7 +695,6 @@ const createSharedRoomRuntime = (input: {
     sessionRoot: join(input.root, input.sessionId),
     sessionName: input.sessionName,
     storeTarget: "workspace",
-    primaryRoomId: PRIMARY_ROOM_ID,
     allocateRoomId: createRuntimeRoomAllocator(),
     terminalSystem: createTerminalSystem(join(input.root, input.sessionId)),
     messageSystem: input.messageSystem,
@@ -732,7 +737,7 @@ describe("Feature: session runtime attention-system loop inputs", () => {
     const internal = runtime as unknown as RuntimeInternal;
     internal.loopPluginRuntime = await internal.createLoopPluginRuntime();
 
-    runtime.pushUserChat("Please continue the task");
+    pushUserOriginRoomMessage(runtime, "Please continue the task");
 
     const firstRound = await internal.collectLoopInputs();
     expect(firstRound?.some((item) => item.source === "chat" && item.text === "Please continue the task")).toBe(false);
@@ -766,7 +771,7 @@ describe("Feature: session runtime attention-system loop inputs", () => {
     const internal = runtime as unknown as RuntimeInternal;
     internal.loopPluginRuntime = await internal.createLoopPluginRuntime();
 
-    runtime.pushUserChat("再补充一个条件");
+    pushUserOriginRoomMessage(runtime, "再补充一个条件");
 
     const interleaved = await internal.commitInterleavedAttentionItems();
     expect(interleaved?.some((item) => item.source === "chat")).toBe(false);
@@ -2444,7 +2449,7 @@ describe("Feature: session runtime attention-system loop inputs", () => {
     });
     await internal.handleCommittedAttentionCommit("ctx-terminal-iflow", terminalCommit, { notifyLoop: false });
 
-    runtime.pushUserChat("Please continue the task");
+    pushUserOriginRoomMessage(runtime, "Please continue the task");
 
     const firstRound = await internal.collectLoopInputs();
     const contextInput = getBootstrapInput(firstRound);
@@ -2603,7 +2608,6 @@ describe("Feature: session runtime attention-system loop inputs", () => {
       sessionRoot: join(root, "session"),
       sessionName: "test",
       storeTarget: "workspace",
-      primaryRoomId: PRIMARY_ROOM_ID,
       allocateRoomId: createRuntimeRoomAllocator(),
       terminalSystem: recoveredTerminalSystem,
       terminalActorId,
@@ -2616,7 +2620,7 @@ describe("Feature: session runtime attention-system loop inputs", () => {
         cwd: input.cwd ?? root,
       }),
     });
-    attachPrimaryRoom(runtime);
+    attachOriginRoom(runtime);
     const internal = runtime as unknown as RuntimeInternal;
     const events: RuntimeEvent[] = [];
     const unsubscribe = runtime.onEvent((event) => {
@@ -2710,7 +2714,6 @@ describe("Feature: session runtime attention-system loop inputs", () => {
       sessionRoot: join(root, "session"),
       sessionName: "test",
       storeTarget: "workspace",
-      primaryRoomId: PRIMARY_ROOM_ID,
       allocateRoomId: createRuntimeRoomAllocator(),
       terminalSystem,
       terminalActorId,
@@ -2723,7 +2726,7 @@ describe("Feature: session runtime attention-system loop inputs", () => {
         cwd: input.cwd ?? root,
       }),
     });
-    attachPrimaryRoom(runtime);
+    attachOriginRoom(runtime);
     const internal = runtime as unknown as RuntimeInternal;
 
     await runtime.start();
@@ -2768,7 +2771,6 @@ describe("Feature: session runtime attention-system loop inputs", () => {
       sessionRoot: join(root, "session"),
       sessionName: "test",
       storeTarget: "workspace",
-      primaryRoomId: PRIMARY_ROOM_ID,
       allocateRoomId: createRuntimeRoomAllocator(),
       terminalSystem,
       terminalActorId,
@@ -2781,7 +2783,7 @@ describe("Feature: session runtime attention-system loop inputs", () => {
         cwd: input.cwd ?? root,
       }),
     });
-    attachPrimaryRoom(runtime);
+    attachOriginRoom(runtime);
     const internal = runtime as unknown as RuntimeInternal;
     const events: RuntimeEvent[] = [];
     const unsubscribe = runtime.onEvent((event) => {
@@ -3481,7 +3483,7 @@ describe("Feature: session runtime attention-system loop inputs", () => {
     const firstBatch = await internal.collectLoopInputs();
 
     await internal.persistCycle({ wakeSource: "user", inputs: firstBatch ?? [] });
-    runtime.pushUserChat("/compact");
+    pushUserOriginRoomMessage(runtime, "/compact");
     const compactInputs = await internal.collectLoopInputs();
     await internal.persistCycle({ wakeSource: "user", inputs: compactInputs ?? [] });
     await internal.handleModelCall({
@@ -3680,7 +3682,7 @@ describe("Feature: session runtime attention-system loop inputs", () => {
     });
     await internal.handleCommittedAttentionCommit("ctx-terminal-iflow", terminalCommit, { notifyLoop: false });
 
-    runtime.pushUserChat("Reply with exactly FOCUS-CHAT-FIRST");
+    pushUserOriginRoomMessage(runtime, "Reply with exactly FOCUS-CHAT-FIRST");
 
     const firstRound = await internal.collectLoopInputs();
     expect(getAttentionProtocolKinds(firstRound)).toEqual(["context", "context"]);
@@ -3739,7 +3741,7 @@ describe("Feature: session runtime attention-system loop inputs", () => {
     });
     await internal.handleCommittedAttentionCommit(terminalContextId, terminalCommit, { notifyLoop: false });
 
-    runtime.pushUserChat("Reply with exactly ROOM-FIRST");
+    pushUserOriginRoomMessage(runtime, "Reply with exactly ROOM-FIRST");
 
     await writeFile(
       join(skillDir, "SKILL.md"),
@@ -3879,11 +3881,11 @@ describe("Feature: session runtime attention-system loop inputs", () => {
     ).toBe("chat-chat-2");
   });
 
-  test("Scenario: Given compact command When pushUserChat('/compact') Then runtime emits a compact attention input without creating room attention debt", async () => {
+  test("Scenario: Given compact command When pushUserRoomMessage('/compact') targets the focused room Then runtime emits a compact attention input without creating room attention debt", async () => {
     const runtime = createRuntime();
     const internal = runtime as unknown as RuntimeInternal;
 
-    runtime.pushUserChat("/compact");
+    pushUserOriginRoomMessage(runtime, "/compact");
 
     expect((internal as RuntimeInternal & { hasPendingCompactCycle: () => boolean }).hasPendingCompactCycle()).toBe(
       true,
@@ -3911,7 +3913,6 @@ describe("Feature: session runtime attention-system loop inputs", () => {
       sessionRoot,
       sessionName: "attention-cycle",
       storeTarget: "workspace",
-      primaryRoomId: PRIMARY_ROOM_ID,
       allocateRoomId: createRuntimeRoomAllocator(),
       terminalSystem: createTerminalSystem(root),
       resolveRuntimeTerminalCwd: async (input) => ({
@@ -3919,11 +3920,11 @@ describe("Feature: session runtime attention-system loop inputs", () => {
         cwd: input.cwd ?? root,
       }),
     });
-    attachPrimaryRoom(runtime);
+    attachOriginRoom(runtime);
     const internal = runtime as unknown as RuntimeInternal;
     internal.loopPluginRuntime = await internal.createLoopPluginRuntime();
 
-    runtime.pushUserChat("Please continue the task");
+    pushUserOriginRoomMessage(runtime, "Please continue the task");
     const firstRound = await internal.collectLoopInputs();
     if (!firstRound) {
       throw new Error("expected first attention batch");
@@ -3933,7 +3934,7 @@ describe("Feature: session runtime attention-system loop inputs", () => {
     await runtime.pause();
     const firstPersisted = await internal.persistCycle({ wakeSource: "user", inputs: firstRound });
 
-    runtime.pushUserChat("/compact");
+    pushUserOriginRoomMessage(runtime, "/compact");
     const compactRound = await internal.collectLoopInputs();
     if (!compactRound) {
       throw new Error("expected compact batch");
@@ -3980,7 +3981,7 @@ describe("Feature: session runtime attention-system loop inputs", () => {
     const internal = runtime as unknown as RuntimeInternal;
     internal.loopPluginRuntime = await internal.createLoopPluginRuntime();
 
-    runtime.pushUserChat("What time is it?");
+    pushUserOriginRoomMessage(runtime, "What time is it?");
 
     expect(getActiveItems(internal)).toHaveLength(0);
 
@@ -4006,7 +4007,7 @@ describe("Feature: session runtime attention-system loop inputs", () => {
       },
     });
 
-    runtime.pushUserChat("Can you summarize what changed?");
+    pushUserOriginRoomMessage(runtime, "Can you summarize what changed?");
     await internal.collectLoopInputs();
 
     const activeMessageItem = getActiveItems(internal).find((item) => item.meta.source === "message");
@@ -4021,7 +4022,7 @@ describe("Feature: session runtime attention-system loop inputs", () => {
     const internal = runtime as unknown as RuntimeInternal;
     internal.loopPluginRuntime = await internal.createLoopPluginRuntime();
 
-    runtime.pushUserChat("Please continue the task");
+    pushUserOriginRoomMessage(runtime, "Please continue the task");
     await internal.collectLoopInputs();
 
     const commit = getActiveCommits(internal)[0];
@@ -4126,7 +4127,7 @@ describe("Feature: session runtime attention-system loop inputs", () => {
     internal.loopPluginRuntime = await internal.createLoopPluginRuntime();
     internal.attentionDebtBackoffMs = 5;
 
-    runtime.pushUserChat("keep working until this is solved");
+    pushUserOriginRoomMessage(runtime, "keep working until this is solved");
     const firstBatch = await internal.collectLoopInputs();
     expect(firstBatch?.some((item) => item.source === "attention")).toBe(true);
 
@@ -4142,7 +4143,7 @@ describe("Feature: session runtime attention-system loop inputs", () => {
     const internal = runtime as unknown as RuntimeInternal;
     internal.loopPluginRuntime = await internal.createLoopPluginRuntime();
 
-    runtime.pushUserChat("keep trying");
+    pushUserOriginRoomMessage(runtime, "keep trying");
     const firstBatch = await internal.collectLoopInputs();
     const attentionInput = getBootstrapInput(firstBatch);
     expect(attentionInput?.meta?.attentionContextId).toBe(PRIMARY_CONTEXT_ID);
@@ -4249,7 +4250,6 @@ describe("Feature: session runtime attention-system loop inputs", () => {
       sessionRoot: join(root, "session"),
       sessionName: "policy-test",
       storeTarget: "workspace",
-      primaryRoomId: PRIMARY_ROOM_ID,
       allocateRoomId: createRuntimeRoomAllocator(),
       terminalSystem: createTerminalSystem(root),
       avatarPrincipalId: TEST_AVATAR_PRINCIPAL_ID,
@@ -4261,12 +4261,12 @@ describe("Feature: session runtime attention-system loop inputs", () => {
         cwd: input.cwd ?? root,
       }),
     });
-    attachPrimaryRoom(runtime);
+    attachOriginRoom(runtime);
 
     const internal = runtime as unknown as RuntimeInternal;
     internal.loopPluginRuntime = await internal.createLoopPluginRuntime();
 
-    runtime.pushUserChat("keep retrying");
+    pushUserOriginRoomMessage(runtime, "keep retrying");
     const firstBatch = await internal.collectLoopInputs();
     const attentionInput = getBootstrapInput(firstBatch);
     expect(attentionInput?.meta?.attentionContextId).toBe(PRIMARY_CONTEXT_ID);
@@ -4345,7 +4345,7 @@ describe("Feature: session runtime attention-system loop inputs", () => {
     internal.loopPluginRuntime = await internal.createLoopPluginRuntime();
     internal.attentionDebtBackoffMs = 5;
 
-    runtime.pushUserChat("resolve this and stay quiet after");
+    pushUserOriginRoomMessage(runtime, "resolve this and stay quiet after");
     await internal.collectLoopInputs();
 
     const [match] = getActiveMatches(internal);
@@ -4405,7 +4405,6 @@ describe("Feature: session runtime attention-system loop inputs", () => {
       sessionRoot,
       sessionName: "migrate",
       storeTarget: "workspace",
-      primaryRoomId: PRIMARY_ROOM_ID,
       terminalSystem: createTerminalSystem(root),
     });
 
@@ -4428,7 +4427,7 @@ describe("Feature: session runtime attention-system loop inputs", () => {
     const internal = runtime as unknown as RuntimeInternal;
 
     internal.loopPluginRuntime = await internal.createLoopPluginRuntime();
-    runtime.pushUserChat("plugin-backed message");
+    pushUserOriginRoomMessage(runtime, "plugin-backed message");
     await internal.collectUnreadRoomIngress();
     await internal.collectUnreadRoomIngress();
     const changed = await internal.flushPluginAttentionDrafts();
@@ -6038,7 +6037,6 @@ describe("Feature: session runtime attention-system loop inputs", () => {
         sessionRoot: join(root, sessionId),
         sessionName: "follow-up-restart",
         storeTarget: "workspace",
-        primaryRoomId: PRIMARY_ROOM_ID,
         allocateRoomId: createRuntimeRoomAllocator(),
         terminalSystem: createTerminalSystem(root),
         messageSystem,
@@ -6052,7 +6050,7 @@ describe("Feature: session runtime attention-system loop inputs", () => {
           cwd: input.cwd ?? root,
         }),
       });
-      attachPrimaryRoom(runtime);
+      attachOriginRoom(runtime);
       return runtime;
     };
 
@@ -6160,7 +6158,6 @@ describe("Feature: session runtime attention-system loop inputs", () => {
       sessionRoot,
       sessionName: "prompt-window-restart",
       storeTarget: "workspace" as const,
-      primaryRoomId: PRIMARY_ROOM_ID,
       allocateRoomId: createRuntimeRoomAllocator(),
       terminalSystem: createTerminalSystem(root),
     };
@@ -6200,7 +6197,7 @@ describe("Feature: session runtime attention-system loop inputs", () => {
     await restarted.stop();
   });
 
-  test("Scenario: Given a cycle originates from the primary room When message send targets a relay room first Then only the explicit relay-room message is created", async () => {
+  test("Scenario: Given a cycle originates from the origin room When message send targets a relay room first Then only the explicit relay-room message is created", async () => {
     const runtime = createRuntime();
     const internal = runtime as unknown as RuntimeMessageEgressInternal;
     const relayChannel = await runtime.createMessageChannel({
@@ -6243,7 +6240,7 @@ describe("Feature: session runtime attention-system loop inputs", () => {
     await runtime.stop();
   });
 
-  test("Scenario: Given a cycle originates from the primary room When root workspace bash starts tool work before any visible room reply Then the origin room stays unchanged", async () => {
+  test("Scenario: Given a cycle originates from the origin room When root workspace bash starts tool work before any visible room reply Then the origin room stays unchanged", async () => {
     const runtime = createRuntime();
     const internal = runtime as unknown as RuntimeInternal;
 
@@ -6395,7 +6392,6 @@ describe("Feature: session runtime attention-system loop inputs", () => {
         sessionRoot,
         sessionName: "skill-restart",
         storeTarget: "workspace",
-        primaryRoomId: PRIMARY_ROOM_ID,
         allocateRoomId: createRuntimeRoomAllocator(),
         terminalSystem: createTerminalSystem(root),
         avatarPrincipalId: TEST_AVATAR_PRINCIPAL_ID,
@@ -6411,7 +6407,7 @@ describe("Feature: session runtime attention-system loop inputs", () => {
           sessionId: "s-skill-restart",
         }),
       });
-      attachPrimaryRoom(runtime);
+      attachOriginRoom(runtime);
       return runtime;
     };
 

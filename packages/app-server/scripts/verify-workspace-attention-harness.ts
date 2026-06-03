@@ -18,6 +18,20 @@ function assertCondition(value: unknown, message: string): asserts value {
 
 const keepTemp = process.argv.includes("--keep-temp");
 
+const createRootSuperadminCaller = async (kernel: AppKernel) => {
+  const anonymousCaller = appRouter.createCaller(await createTrpcContext(kernel));
+  const autoLogin = await anonymousCaller.auth.autoLogin();
+  if (!autoLogin.ok) {
+    throw new Error(`expected daemon auto login to succeed, got ${autoLogin.reason}: ${autoLogin.message}`);
+  }
+  return appRouter.createCaller(
+    await createTrpcContext({
+      kernel,
+      authorizationHeader: `Bearer ${autoLogin.session.token}`,
+    }),
+  );
+};
+
 const main = async (): Promise<void> => {
   const root = mkdtempSync(join(tmpdir(), "agenter-workspace-attention-harness-"));
   const workspaceA = join(root, "workspace-a");
@@ -37,7 +51,7 @@ const main = async (): Promise<void> => {
     const unsubscribe = kernel.onEvent((event) => {
       observedEvents.push(event);
     });
-    const caller = appRouter.createCaller(await createTrpcContext(kernel));
+    const caller = await createRootSuperadminCaller(kernel);
 
     const first = await caller.session.create({
       cwd: workspaceA,
@@ -54,25 +68,35 @@ const main = async (): Promise<void> => {
     assertCondition(first.session.id === second.session.id, "expected one canonical avatar runtime across workspaces");
 
     const runtimeId = first.session.id;
-    await kernel.attachSessionPrimaryRoom(runtimeId, { focus: true });
-    kernel.grantRuntimeWorkspace({
+    await caller.workspace.grantRuntime({
       runtimeId,
       workspacePath: workspaceA,
       grants: [{ pattern: "/sandbox", mode: "rw" }],
     });
-    kernel.grantRuntimeWorkspace({
+    await caller.workspace.grantRuntime({
       runtimeId,
       workspacePath: workspaceB,
       grants: [{ pattern: "/", mode: "rw" }],
     });
     await kernel.startSession(runtimeId);
+    const room = await kernel.createMessageChannel({
+      sessionId: runtimeId,
+      kind: "room",
+      title: "workspace-attention-room",
+      participants: [
+        { id: `session:${first.session.avatar}`, label: first.session.avatar },
+        { id: "auth:kzf", label: "kzf" },
+      ],
+      focus: true,
+    });
     assertCondition(
       kernel.listTerminals(runtimeId).length === 0,
       "expected no implicit terminals after explicit runtime boot",
     );
 
     const mounts = await caller.workspace.runtimeMounts({ runtimeId });
-    assertCondition(mounts.items.length === 2, "expected runtime to keep both workspace mounts");
+    const workspaceMounts = mounts.items.filter((item) => item.kind === "workspace");
+    assertCondition(workspaceMounts.length === 2, "expected runtime to keep both workspace mounts");
 
     const assetRoots = await caller.workspace.assetRoots({
       workspacePath: workspaceA,
@@ -115,17 +139,17 @@ const main = async (): Promise<void> => {
     );
 
     const sessionMeta = kernel.getSession(first.session.id);
-    assertCondition(sessionMeta?.primaryRoomId, "expected persisted session metadata with primary room id");
+    assertCondition(sessionMeta, "expected persisted session metadata");
     await caller.notification.setChatVisibility({
       sessionId: first.session.id,
-      chatId: sessionMeta.primaryRoomId,
+      chatId: room.chatId,
       visible: true,
       focused: false,
     });
 
     const attentionStore = new AttentionStore(join(sessionMeta.sessionRoot, "attention-system"));
     const attentionSystem = AttentionSystem.fromSnapshot(await attentionStore.load());
-    const contextId = `ctx-${sessionMeta.primaryRoomId}`;
+    const contextId = `ctx-${room.chatId}`;
     if (!attentionSystem.getContext(contextId)) {
       attentionSystem.createContext({
         contextId,
@@ -140,7 +164,7 @@ const main = async (): Promise<void> => {
       meta: {
         author: "assistant",
         source: "message",
-        src: formatMessageAttentionSrc({ chatId: sessionMeta.primaryRoomId, messageId: 1 }),
+        src: formatMessageAttentionSrc({ chatId: room.chatId, messageId: 1 }),
       },
       scores: { persisted_ping: 100 },
       summary: "Persisted background ping",
@@ -154,18 +178,26 @@ const main = async (): Promise<void> => {
 
     const unreadSnapshot = await caller.notification.snapshot();
     const unreadBeforeConsume = unreadSnapshot.unreadBySession[first.session.id] ?? 0;
+    const roomBucketKey = `msg:${room.chatId}`;
     assertCondition(unreadBeforeConsume > 0, "expected persisted background push to project unread notifications");
     assertCondition(
-      (unreadSnapshot.unreadByBucket[first.session.id]?.[`msg:${sessionMeta.primaryRoomId}`] ?? 0) > 0,
+      (unreadSnapshot.unreadByBucket[first.session.id]?.[roomBucketKey] ?? 0) > 0,
       "expected unread to stay scoped to the persisted chat context",
     );
 
     const consumedSnapshot = await caller.notification.consume({
       sessionId: first.session.id,
-      upToSrc: formatMessageAttentionSrc({ chatId: sessionMeta.primaryRoomId, messageId: 1 }),
+      upToSrc: formatMessageAttentionSrc({ chatId: room.chatId, messageId: 1 }),
     });
     const unreadAfterConsume = consumedSnapshot.unreadBySession[first.session.id] ?? 0;
-    assertCondition(unreadAfterConsume === 0, "expected consume to clear background push notifications");
+    assertCondition(
+      (consumedSnapshot.unreadByBucket[first.session.id]?.[roomBucketKey] ?? 0) === 0,
+      "expected consume to clear the room-scoped background push notification",
+    );
+    assertCondition(
+      unreadAfterConsume < unreadBeforeConsume,
+      "expected consume to reduce unread notifications after the room-scoped push is cleared",
+    );
 
     unsubscribe();
 
@@ -179,8 +211,8 @@ const main = async (): Promise<void> => {
         {
           root,
           runtimeId,
-          primaryRoomId: sessionMeta.primaryRoomId,
-          workspacePaths: mounts.items.map((item) => item.workspacePath),
+          roomId: room.chatId,
+          workspacePaths: workspaceMounts.map((item) => item.workspacePath),
           sandboxGrant: grants.items[0],
           assetRoots,
           execSuccess,

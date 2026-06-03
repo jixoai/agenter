@@ -70,7 +70,6 @@ export interface SessionMeta {
   workspacePath: string;
   avatar: string;
   avatarPrincipalId?: string;
-  primaryRoomId?: string;
   createdAt: string;
   updatedAt: string;
   status: SessionStatus;
@@ -132,7 +131,6 @@ export class SessionCatalog {
     workspacePath?: string;
     avatar: string;
     avatarPrincipalId?: string;
-    primaryRoomId?: string;
     storeTarget: "global" | "workspace";
   }): SessionMeta {
     const workspacePath = toWorkspacePath(input.workspacePath ?? input.cwd);
@@ -150,7 +148,6 @@ export class SessionCatalog {
       workspacePath,
       avatar: input.avatar,
       avatarPrincipalId: input.avatarPrincipalId,
-      primaryRoomId: input.primaryRoomId,
       createdAt,
       updatedAt: createdAt,
       status: "stopped",
@@ -178,7 +175,6 @@ export class SessionCatalog {
       status?: SessionStatus;
       lastError?: string;
       avatarPrincipalId?: string;
-      primaryRoomId?: string;
     },
   ): SessionMeta {
     const current = this.byId.get(sessionId);
@@ -191,7 +187,6 @@ export class SessionCatalog {
       status: patch.status ?? current.status,
       lastError: patch.lastError,
       avatarPrincipalId: patch.avatarPrincipalId ?? current.avatarPrincipalId,
-      primaryRoomId: patch.primaryRoomId ?? current.primaryRoomId,
       updatedAt: isoNow(),
     };
     this.persistMeta(next);
@@ -376,7 +371,6 @@ export class SessionCatalog {
       workspacePath,
       avatar: session.avatar ?? "default",
       avatarPrincipalId: typeof session.avatarPrincipalId === "string" ? session.avatarPrincipalId : undefined,
-      primaryRoomId: typeof session.primaryRoomId === "string" ? session.primaryRoomId : undefined,
       createdAt,
       updatedAt: session.updatedAt ?? createdAt,
       status: normalizePersistedStatus(session.status as SessionStatus | undefined),
@@ -417,17 +411,14 @@ export class SessionCatalog {
 
   private persistMeta(meta: SessionMeta): void {
     const filePath = join(meta.sessionRoot, "session.json");
-    const existing = readSessionDocument(filePath);
     writeSessionDocument(filePath, {
       session: {
-        ...existing?.session,
         id: meta.id,
         name: meta.name,
         cwd: meta.cwd,
         workspacePath: meta.workspacePath,
         avatar: meta.avatar,
         avatarPrincipalId: meta.avatarPrincipalId,
-        primaryRoomId: meta.primaryRoomId,
         storeTarget: meta.storeTarget,
         status: meta.status,
         createdAt: meta.createdAt,

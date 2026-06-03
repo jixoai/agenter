@@ -30,10 +30,7 @@ describe("Feature: real AI room terminal delivery", () => {
       let cleanupStatus: "not_started" | "completed" | "failed" = "not_started";
 
       try {
-        const primaryRoomId = harness.session.primaryRoomId;
-        if (!primaryRoomId) {
-          throw new Error("expected session primaryRoomId");
-        }
+        const roomId = harness.room.chatId;
         const semanticJudge = await loadRequiredRealSemanticJudge({
           projectRoot: REAL_MODEL_PROJECT_ROOT,
         });
@@ -41,16 +38,16 @@ describe("Feature: real AI room terminal delivery", () => {
         const deliverySpan = await judgeUrlSpan(semanticJudge, result.deliveryMessage.content);
         const updateSpan = await judgeUrlSpan(semanticJudge, result.updateMessage.content);
 
-        expect(result.acknowledgement.chatId).toBe(primaryRoomId);
+        expect(result.acknowledgement.chatId).toBe(roomId);
         expect(await judgeAcknowledgesWorkAndPromisesFollowUp(semanticJudge, result.acknowledgement.content)).toBe(true);
-        expect(result.deliveryMessage.chatId).toBe(primaryRoomId);
+        expect(result.deliveryMessage.chatId).toBe(roomId);
         expect(await judgeReportsReadyUrlDelivery(semanticJudge, result.deliveryMessage.content)).toBe(true);
         expect(deliverySpan).not.toEqual({ start: 0, end: 0 });
         expect(result.deliveryMessage.content.slice(deliverySpan.start, deliverySpan.end)).toBe(result.deliveryUrl);
         expect(result.initialBody).toContain("REAL-ROOM-APP-V1");
         expect(result.initialBody).toContain("BUTTON-LABEL-V1");
         expect(result.initialBody).toContain("STATUS-V1");
-        expect(result.updateMessage.chatId).toBe(primaryRoomId);
+        expect(result.updateMessage.chatId).toBe(roomId);
         expect(await judgeReportsReadyUrlDelivery(semanticJudge, result.updateMessage.content)).toBe(true);
         expect(updateSpan).not.toEqual({ start: 0, end: 0 });
         expect(result.updateMessage.content.slice(updateSpan.start, updateSpan.end)).toBe(result.deliveryUrl);

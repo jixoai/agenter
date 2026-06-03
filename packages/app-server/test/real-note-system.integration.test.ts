@@ -88,24 +88,22 @@ describe("Feature: real AI NoteSystem validation", () => {
       }
 
       try {
-        const primaryRoomId = harness.session.primaryRoomId;
-        if (!primaryRoomId) {
-          throw new Error("expected session primaryRoomId");
-        }
+        const roomId = harness.room.chatId;
 
         const startAt = Date.now();
-        const sent = await harness.kernel.sendChat(
-          harness.session.id,
-          [
+        const sent = await harness.kernel.pushUserRoomMessage({
+          sessionId: harness.session.id,
+          chatId: roomId,
+          text: [
             "请完成一次 NoteSystem 真实 AI 验证。",
             "必须先通过 root_bash 执行 `skill info note`。",
             `然后必须通过 root_bash 执行 note CLI 写入包含精确片段 ${NOTE_SYSTEM_REAL_AI_OBSERVATION} 的 raw note，写入 JSON 必须包含 "mime":"text/markdown" 和 content/contentFile 之一。`,
             "可以使用 `note draft` 或 `note write`，但不能直接 mkdir/cat/tee/printf 到 notes 文件。",
             `写入后必须通过 root_bash 执行 \`note search '{"query":"${NOTE_SYSTEM_REAL_AI_OBSERVATION}"}'\` 或等价 \`note show\` JSON 命令验证能读回该片段。`,
-            `验证成功后，只向 ${primaryRoomId} 发送最终结果：${NOTE_SYSTEM_REAL_AI_REPLY}`,
+            `验证成功后，只向 ${roomId} 发送最终结果：${NOTE_SYSTEM_REAL_AI_REPLY}`,
             "完成后把 attention 收敛到 0。",
           ].join("\n"),
-        );
+        });
         if (!sent.ok) {
           throw new Error(`failed to send real NoteSystem prompt: ${sent.reason ?? "unknown"}`);
         }
@@ -118,7 +116,7 @@ describe("Feature: real AI NoteSystem validation", () => {
               diagnostics.roomTruth
                 .filter(
                   (message) =>
-                    message.chatId === primaryRoomId &&
+                    message.chatId === roomId &&
                     message.role === "assistant" &&
                     message.timestamp >= startAt &&
                     message.content.includes(NOTE_SYSTEM_REAL_AI_REPLY),
@@ -145,7 +143,7 @@ describe("Feature: real AI NoteSystem validation", () => {
         const commandText = commands.join("\n");
         const outputText = runs.map((run) => `${run.stdout}\n${run.stdin}`).join("\n");
 
-        expect(settled.reply.chatId).toBe(primaryRoomId);
+        expect(settled.reply.chatId).toBe(roomId);
         expect(settled.reply.content.trim()).toBe(NOTE_SYSTEM_REAL_AI_REPLY);
         expect(settled.attention.active).toHaveLength(0);
         expect(commands.some((command) => command.includes("skill info note"))).toBe(true);

@@ -397,7 +397,6 @@ describe("Feature: cli-shell startup sequencing", () => {
             listSessions: async () => [
               {
                 ...createSession(),
-                primaryRoomId: "room-shell-1",
               },
             ],
             listGlobalTerminals: async () => [

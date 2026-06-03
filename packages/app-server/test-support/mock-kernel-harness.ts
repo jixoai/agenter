@@ -2,7 +2,7 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { AppKernel, type AppKernelOptions, type SessionMeta } from "../src";
+import { AppKernel, type AppKernelOptions, type PublicRoomEntry, type SessionMeta } from "../src";
 import { startMockModelServer, type MockModelServerHandle } from "./mock-model-server";
 
 const DEFAULT_POLL_MS = 50;
@@ -39,6 +39,7 @@ export interface MockKernelHarness {
   kernel: AppKernel;
   mockServer: MockModelServerHandle;
   session: SessionMeta;
+  room: PublicRoomEntry;
   stop: () => Promise<void>;
 }
 
@@ -104,20 +105,24 @@ export const createMockKernelHarness = async (
       name: input.sessionName ?? "mock-loopbus",
       autoStart: false,
     });
-    await kernel.attachSessionPrimaryRoom(session.id, { focus: true });
     kernel.grantRuntimeWorkspace({
       runtimeId: session.id,
       workspacePath,
       grants: [...FULL_WORKSPACE_GRANT],
     });
     const startedSession = await kernel.startSession(session.id);
-    if (!startedSession.primaryRoomId) {
-      throw new Error(`mock harness missing primary room after explicit attach: ${startedSession.id}`);
-    }
-    if (
-      !kernel.listMessageChannels(startedSession.id).some((channel) => channel.chatId === startedSession.primaryRoomId)
-    ) {
-      throw new Error(`mock harness failed to restore attached primary room: ${startedSession.id}`);
+    const room = await kernel.createMessageChannel({
+      sessionId: startedSession.id,
+      kind: "room",
+      title: "kzf",
+      participants: [
+        { id: `session:${startedSession.avatar}`, label: startedSession.avatar },
+        { id: "auth:kzf", label: "kzf" },
+      ],
+      focus: true,
+    });
+    if (!kernel.listMessageChannels(startedSession.id).some((channel) => channel.chatId === room.chatId)) {
+      throw new Error(`mock harness failed to persist explicit room: ${startedSession.id}`);
     }
     return {
       rootDir,
@@ -125,6 +130,7 @@ export const createMockKernelHarness = async (
       kernel,
       mockServer,
       session: startedSession,
+      room,
       stop: async () => {
         await kernel.abortSession(startedSession.id).catch(() => {});
         await kernel.stop().catch(() => {});

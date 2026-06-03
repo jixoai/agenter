@@ -82,10 +82,10 @@ describe("Feature: real AI message query", () => {
       }
 
       try {
-        const primaryRoomId = harness.session.primaryRoomId;
+        const roomId = harness.room.chatId;
         const actorId = harness.session.avatarPrincipalId as MessageContactId | undefined;
-        if (!primaryRoomId || !actorId) {
-          throw new Error("expected primary room and avatar principal id");
+        if (!actorId) {
+          throw new Error("expected avatar principal id");
         }
 
         const allowedRoom = await harness.kernel.createGlobalRoom({
@@ -114,20 +114,21 @@ describe("Feature: real AI message query", () => {
         ).toBe(true);
 
         const startAt = Date.now();
-        const sent = await harness.kernel.sendChat(
-          harness.session.id,
-          [
+        const sent = await harness.kernel.pushUserRoomMessage({
+          sessionId: harness.session.id,
+          chatId: roomId,
+          text: [
             "请完成一次真实的授权跨房间消息搜索验证。",
             "必须先通过 root_bash 执行一次 `message query --help`。",
             "然后必须再次通过 root_bash 执行一次真正成功的 `message query`。",
             "不要使用 `--compact`。",
             `真正执行查询时，请使用 command=message query，并把标准 object JSON 放在 stdin：{"chatId":"*","mode":"query","query":"${REAL_QUERY_KEYWORD}","limit":5}`,
-            `如果查到有权限房间中的命中结果，就只向 ${primaryRoomId} 发送最终结果。`,
+            `如果查到有权限房间中的命中结果，就只向 ${roomId} 发送最终结果。`,
             `最终结果必须包含精确片段：${REAL_QUERY_ALLOWED_REPLY}`,
             "最终结果不要提到 Forbidden room，也不要提到 budget incident beta。",
             "完成后把 attention 收敛到 0。",
           ].join("\n"),
-        );
+        });
         if (!sent.ok) {
           throw new Error(`failed to send real message query prompt: ${sent.reason ?? "unknown"}`);
         }
@@ -140,7 +141,7 @@ describe("Feature: real AI message query", () => {
               diagnostics.roomTruth
                 .filter(
                   (message) =>
-                    message.chatId === primaryRoomId &&
+                    message.chatId === roomId &&
                     message.role === "assistant" &&
                     message.timestamp >= startAt &&
                     message.content.includes(REAL_QUERY_ALLOWED_REPLY),
@@ -167,7 +168,7 @@ describe("Feature: real AI message query", () => {
         const messageQueryRequests = extractMessageQueryRequests(rootWorkspaceBashRuns);
         const messageQueryOutput = messageQueryRuns.map((run) => run.stdout).join("\n");
 
-        expect(settled.reply.chatId).toBe(primaryRoomId);
+        expect(settled.reply.chatId).toBe(roomId);
         expect(settled.reply.content).toContain(REAL_QUERY_ALLOWED_REPLY);
         expect(settled.reply.content).not.toContain("Forbidden room");
         expect(settled.reply.content).not.toContain("budget incident beta");

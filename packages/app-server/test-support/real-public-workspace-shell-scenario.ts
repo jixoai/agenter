@@ -1,7 +1,7 @@
 import type { ChatMessage, SessionRuntimeAttentionState } from "../src";
 import type { RealKernelHarness } from "./real-kernel-harness";
 import {
-  getPrimaryRoomId,
+  getRoomId,
   listRoomTruthMessages,
   readModelOutcomeCode,
   waitForAssistantMessage,
@@ -129,12 +129,12 @@ const projectToolTraceEntries = (calls: readonly ModelCallRecord[]): ProjectedTo
     });
   });
 
-const buildScenarioPrompt = (input: { primaryRoomId: string; envDumpCommand: string }): string =>
+const buildScenarioPrompt = (input: { roomId: string; envDumpCommand: string }): string =>
   [
     "请执行一次最小 public-workspace shell 审计，只验证事实，不要猜测。",
-    `当前房间 chatId: ${input.primaryRoomId}`,
+    `当前房间 chatId: ${input.roomId}`,
     "除了最终 required token 以外，不允许发送任何 assistant room 消息。",
-    `最终只在 ${input.primaryRoomId} 发送一条用户可见消息，内容必须精确等于：${PUBLIC_DONE_TOKEN}。`,
+    `最终只在 ${input.roomId} 发送一条用户可见消息，内容必须精确等于：${PUBLIC_DONE_TOKEN}。`,
     "你现在的直接工具是 workspace_list、root_bash、workspace_bash。",
     "必须先调用 workspace_list，看清当前 mounted public-workspace。",
     "然后必须只对那个 mounted public-workspace 调用 workspace_bash。",
@@ -178,7 +178,7 @@ const buildScenarioError = async (
 export const runRealPublicWorkspaceShellScenario = async (
   harness: RealKernelHarness,
 ): Promise<RealPublicWorkspaceShellScenarioResult> => {
-  const primaryRoomId = getPrimaryRoomId(harness);
+  const roomId = getRoomId(harness);
   const envDumpCommand = buildEnvDumpCommand();
   const workspaceMount = harness.kernel
     .listRuntimeWorkspaceMounts(harness.session.id)
@@ -190,20 +190,21 @@ export const runRealPublicWorkspaceShellScenario = async (
   let projectedTrace: ProjectedToolTraceEntry[] = [];
 
   try {
-    const sent = await harness.kernel.sendChat(
-      harness.session.id,
-      buildScenarioPrompt({
-        primaryRoomId,
+    const sent = await harness.kernel.pushUserRoomMessage({
+      sessionId: harness.session.id,
+      chatId: roomId,
+      text: buildScenarioPrompt({
+        roomId,
         envDumpCommand,
       }),
-    );
+    });
     if (!sent.ok) {
       throw new Error(`failed to send public-workspace prompt: ${sent.reason ?? "unknown"}`);
     }
 
     const finalReply = await waitForAssistantMessage(harness, {
       label: "public-workspace final reply",
-      predicate: (message) => message.chatId === primaryRoomId && message.content.trim() === PUBLIC_DONE_TOKEN,
+      predicate: (message) => message.chatId === roomId && message.content.trim() === PUBLIC_DONE_TOKEN,
       timeoutMs: DEFAULT_TIMEOUT_MS,
     });
     assertNoInterimAssistantMessages(harness, {

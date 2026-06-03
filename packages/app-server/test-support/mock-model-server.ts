@@ -570,7 +570,7 @@ const findGaubeeChatId = (results: readonly ToolResult[]): string | null => {
   return null;
 };
 
-const findPrimaryRoomChatId = (results: readonly ToolResult[], frames: readonly AttentionFrame[]): string | null => {
+const findOriginRoomChatId = (results: readonly ToolResult[], frames: readonly AttentionFrame[]): string | null => {
   const channelList = findLatestOperationResult(results, "message.list");
   if (channelList && channelList.data && typeof channelList.data === "object") {
     const channels = (channelList.data as { channels?: unknown }).channels;
@@ -587,7 +587,7 @@ const findPrimaryRoomChatId = (results: readonly ToolResult[], frames: readonly 
         if (!chatId) {
           continue;
         }
-        if (record.metadata?.primaryRoom === true || PRINCIPAL_ROOM_ID_PATTERN.test(chatId)) {
+        if (record.metadata?.originRoom === true || PRINCIPAL_ROOM_ID_PATTERN.test(chatId)) {
           return chatId;
         }
       }
@@ -789,7 +789,7 @@ const decideSummary = (request: ChatCompletionRequest, state: MockModelServerSta
     state.relay?.phase === "reported" || history.includes(MOCK_GAUBEE_REPLY) || history.includes("蛋炒饭");
   const frames = pickCurrentFrames(extractAttentionFrames(request.messages));
   const toolResults = extractToolResults(request.messages);
-  const primaryRoomChatId = state.relay?.originChatId ?? findPrimaryRoomChatId(toolResults, frames);
+  const originRoomChatId = state.relay?.originChatId ?? findOriginRoomChatId(toolResults, frames);
   return createResponse(request, {
     content: JSON.stringify({
       overview: hasLunchConclusion ? "gaubee lunch relay compacted" : "lunch relay still unresolved",
@@ -797,14 +797,14 @@ const decideSummary = (request: ChatCompletionRequest, state: MockModelServerSta
       keyFiles: [],
       keyFacts: hasLunchConclusion ? [MOCK_GAUBEE_REPLY, MOCK_FINAL_ANSWER] : [],
       readyReplies:
-        hasLunchConclusion && primaryRoomChatId
+        hasLunchConclusion && originRoomChatId
           ? [
               {
-                channelId: primaryRoomChatId,
+                channelId: originRoomChatId,
                 topic: "gaubee lunch answer",
                 triggerPhrases: ["gaubee在吗？问他中午吃什么？", "中午吃什么"],
                 reply: MOCK_FINAL_ANSWER,
-                reuseWhen: "Send directly when the primary room asks the same lunch question again after compact.",
+                reuseWhen: "Send directly when the origin room asks the same lunch question again after compact.",
               },
             ]
           : [],
@@ -884,7 +884,7 @@ const decideChat = (request: ChatCompletionRequest, state: MockModelServerState)
         toolCalls: [buildRootBashToolCall("message list")],
       });
     }
-    const primaryRoomChatId = findPrimaryRoomChatId(toolResults, allFrames);
+    const originRoomChatId = findOriginRoomChatId(toolResults, allFrames);
     if (!latestMessageQuery) {
       return createResponse(request, {
         toolCalls: [
@@ -894,13 +894,13 @@ const decideChat = (request: ChatCompletionRequest, state: MockModelServerState)
         ],
       });
     }
-    if (hasOperationResult(toolResults, "message.send") || !primaryRoomChatId) {
+    if (hasOperationResult(toolResults, "message.send") || !originRoomChatId) {
       return createResponse(request, { content: "" });
     }
     const reply = buildMessageQueryReply(latestMessageQuery);
     return createResponse(request, {
       toolCalls: [
-        buildRootBashToolCall(`message send ${escapeShellJson({ chatId: primaryRoomChatId, content: reply })}`),
+        buildRootBashToolCall(`message send ${escapeShellJson({ chatId: originRoomChatId, content: reply })}`),
         ...buildAttentionCommitShellCalls(commitFrames, {
           summary: "reported authorized message query result",
           value: reply,
@@ -911,7 +911,7 @@ const decideChat = (request: ChatCompletionRequest, state: MockModelServerState)
       ],
     });
   }
-  const primaryRoomChatId = state.relay?.originChatId ?? findPrimaryRoomChatId(toolResults, allFrames);
+  const originRoomChatId = state.relay?.originChatId ?? findOriginRoomChatId(toolResults, allFrames);
 
   const hasReportedHistory =
     assistantHistoryHasCommitSummary(assistantHistory, MOCK_REPORTED_SUMMARY) ||
@@ -924,13 +924,13 @@ const decideChat = (request: ChatCompletionRequest, state: MockModelServerState)
   const initialQuestion = taskSemanticText.includes("gaubee在吗") || taskSemanticText.includes(MOCK_WAITING_SUMMARY);
   const canReuseReportedAnswer = state.relay?.phase === "reported" && taskSemanticText.includes("中午吃什么");
   if (canReuseReportedAnswer) {
-    if (hasOperationResult(toolResults, "message.send") || !primaryRoomChatId) {
+    if (hasOperationResult(toolResults, "message.send") || !originRoomChatId) {
       return createResponse(request, { content: "" });
     }
     return createResponse(request, {
       toolCalls: [
         buildRootBashToolCall(
-          `message send ${escapeShellJson({ chatId: primaryRoomChatId, content: MOCK_FINAL_ANSWER })}`,
+          `message send ${escapeShellJson({ chatId: originRoomChatId, content: MOCK_FINAL_ANSWER })}`,
         ),
         ...buildAttentionCommitShellCalls(commitFrames, {
           summary: MOCK_FOLLOW_UP_SUMMARY,
@@ -951,13 +951,13 @@ const decideChat = (request: ChatCompletionRequest, state: MockModelServerState)
     if (
       typeof observedTargetRowId === "number" &&
       observedTargetRowId > state.relay.expectedTargetRowIdAfterRelay &&
-      primaryRoomChatId
+      originRoomChatId
     ) {
       state.relay.phase = "reporting";
       return createResponse(request, {
         toolCalls: [
           buildRootBashToolCall(
-            `message send ${escapeShellJson({ chatId: primaryRoomChatId, content: MOCK_FINAL_ANSWER })}`,
+            `message send ${escapeShellJson({ chatId: originRoomChatId, content: MOCK_FINAL_ANSWER })}`,
           ),
           ...buildAttentionCommitShellCalls(commitFrames, {
             summary: MOCK_REPORTED_SUMMARY,
@@ -991,11 +991,11 @@ const decideChat = (request: ChatCompletionRequest, state: MockModelServerState)
   }
 
   if (followUpQuestion) {
-    if (state.relay?.phase === "reported" && primaryRoomChatId && !hasOperationResult(toolResults, "message.send")) {
+    if (state.relay?.phase === "reported" && originRoomChatId && !hasOperationResult(toolResults, "message.send")) {
       return createResponse(request, {
         toolCalls: [
           buildRootBashToolCall(
-            `message send ${escapeShellJson({ chatId: primaryRoomChatId, content: MOCK_FINAL_ANSWER })}`,
+            `message send ${escapeShellJson({ chatId: originRoomChatId, content: MOCK_FINAL_ANSWER })}`,
           ),
           ...buildAttentionCommitShellCalls(commitFrames, {
             summary: MOCK_FOLLOW_UP_SUMMARY,
@@ -1007,13 +1007,13 @@ const decideChat = (request: ChatCompletionRequest, state: MockModelServerState)
         ],
       });
     }
-    if (hasOperationResult(toolResults, "message.send") || !primaryRoomChatId) {
+    if (hasOperationResult(toolResults, "message.send") || !originRoomChatId) {
       return createResponse(request, { content: "" });
     }
     return createResponse(request, {
       toolCalls: [
         buildRootBashToolCall(
-          `message send ${escapeShellJson({ chatId: primaryRoomChatId, content: MOCK_FINAL_ANSWER })}`,
+          `message send ${escapeShellJson({ chatId: originRoomChatId, content: MOCK_FINAL_ANSWER })}`,
         ),
         ...buildAttentionCommitShellCalls(commitFrames, {
           summary: MOCK_FOLLOW_UP_SUMMARY,
@@ -1027,13 +1027,13 @@ const decideChat = (request: ChatCompletionRequest, state: MockModelServerState)
   }
 
   if (includesGaubeeReply) {
-    if (hasOperationResult(toolResults, "message.send") || !primaryRoomChatId) {
+    if (hasOperationResult(toolResults, "message.send") || !originRoomChatId) {
       return createResponse(request, { content: "" });
     }
-    state.relay = primaryRoomChatId
+    state.relay = originRoomChatId
       ? {
-          originChatId: primaryRoomChatId,
-          targetChatId: state.relay?.targetChatId ?? findGaubeeChatId(toolResults) ?? primaryRoomChatId,
+          originChatId: originRoomChatId,
+          targetChatId: state.relay?.targetChatId ?? findGaubeeChatId(toolResults) ?? originRoomChatId,
           expectedTargetRowIdAfterRelay: state.relay?.expectedTargetRowIdAfterRelay ?? 0,
           phase: "reporting",
         }
@@ -1041,7 +1041,7 @@ const decideChat = (request: ChatCompletionRequest, state: MockModelServerState)
     return createResponse(request, {
       toolCalls: [
         buildRootBashToolCall(
-          `message send ${escapeShellJson({ chatId: primaryRoomChatId, content: MOCK_FINAL_ANSWER })}`,
+          `message send ${escapeShellJson({ chatId: originRoomChatId, content: MOCK_FINAL_ANSWER })}`,
         ),
         ...buildAttentionCommitShellCalls(commitFrames, {
           summary: MOCK_REPORTED_SUMMARY,
@@ -1088,12 +1088,12 @@ const decideChat = (request: ChatCompletionRequest, state: MockModelServerState)
     const gaubeeChatId = findGaubeeChatId(toolResults);
     if (gaubeeChatId) {
       const originFrame =
-        commitFrames.find((frame) => frame.contextId === `ctx-${primaryRoomChatId}`) ?? commitFrames[0];
+        commitFrames.find((frame) => frame.contextId === `ctx-${originRoomChatId}`) ?? commitFrames[0];
       const originCommit = originFrame?.commits.at(-1);
       const knownTargetRowId = snapshotRows.get(gaubeeChatId) ?? 0;
-      state.relay = primaryRoomChatId
+      state.relay = originRoomChatId
         ? {
-            originChatId: primaryRoomChatId,
+            originChatId: originRoomChatId,
             targetChatId: gaubeeChatId,
             expectedTargetRowIdAfterRelay: knownTargetRowId + 1,
             originContextId: originFrame?.contextId ?? latestAttentionMetadata.contextId,

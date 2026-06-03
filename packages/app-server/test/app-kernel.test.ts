@@ -24,6 +24,7 @@ import { join, resolve } from "node:path";
 import { MessageDb } from "../../message-system/src/message-db";
 import { AppKernel, type AnyRuntimeEvent } from "../src";
 import { formatRoomAttentionSrc } from "../src/attention-src";
+import { repairRoomParticipantsIfNeeded } from "../src/message-room-participant-repair";
 
 const tempDirs: string[] = [];
 
@@ -37,6 +38,14 @@ const createKernel = (): AppKernel => {
     workspacesPath: join(dir, "workspaces.yaml"),
   });
 };
+
+const createSessionRoom = async (kernel: AppKernel, sessionId: string, focus = true) =>
+  await kernel.createMessageChannel({
+    sessionId,
+    kind: "room",
+    title: "Test room",
+    focus,
+  });
 
 const waitForRoomTransportMessage = async (socket: WebSocket): Promise<MessageTransportServerMessage> =>
   await new Promise((resolve, reject) => {
@@ -446,7 +455,7 @@ describe("Feature: app kernel event replay", () => {
     await kernel.stop();
   });
 
-  test("Scenario: Given a running session without an attached primary room When sendChat is called Then the kernel rejects the chat instead of synthesizing a hidden room", async () => {
+  test("Scenario: Given a running session without any attached room When the kernel inspects session message channels Then no hidden room is synthesized and explicit room input still works", async () => {
     const root = mkdtempSync(join(tmpdir(), "agenter-kernel-"));
     tempDirs.push(root);
     const workspace = join(root, "workspace");
@@ -462,15 +471,17 @@ describe("Feature: app kernel event replay", () => {
 
     const session = await kernel.createSession({ cwd: workspace, name: "chat-needs-room", autoStart: true });
 
-    await expect(kernel.sendChat(session.id, "hello")).resolves.toEqual({
-      ok: false,
-      reason: expect.stringContaining("default room is not attached"),
-    });
     expect(kernel.listMessageChannels(session.id)).toEqual([]);
 
-    const room = await kernel.attachSessionPrimaryRoom(session.id, { focus: true });
+    const room = await createSessionRoom(kernel, session.id, true);
     expect(room.chatId).toBeTruthy();
-    await expect(kernel.sendChat(session.id, "hello")).resolves.toEqual({ ok: true });
+    await expect(
+      kernel.pushUserRoomMessage({
+        sessionId: session.id,
+        chatId: room.chatId,
+        text: "hello",
+      }),
+    ).resolves.toEqual({ ok: true });
 
     await kernel.stop();
   });
@@ -495,7 +506,13 @@ describe("Feature: app kernel event replay", () => {
       name: "recoverer",
       autoStart: true,
     });
-    const room = await kernel.attachSessionPrimaryRoom(session.id, { focus: true });
+    const readSessionDoc = () =>
+      JSON.parse(readFileSync(join(session.sessionRoot, "session.json"), "utf8")) as {
+        session: Record<string, unknown>;
+      };
+    expect("primaryRoomId" in readSessionDoc().session).toBeFalse();
+    expect("primaryRoomId" in (session as Record<string, unknown>)).toBeFalse();
+    const room = await createSessionRoom(kernel, session.id, true);
     kernel.grantRuntimeWorkspace({
       runtimeId: session.id,
       workspacePath: workspace,
@@ -521,6 +538,7 @@ describe("Feature: app kernel event replay", () => {
 
     await kernel.stopSession(session.id);
 
+    expect("primaryRoomId" in readSessionDoc().session).toBeFalse();
     expect(kernel.listMessageChannels(session.id).some((entry) => entry.chatId === room.chatId)).toBeTrue();
     expect(
       kernel
@@ -542,6 +560,8 @@ describe("Feature: app kernel event replay", () => {
     const resumed = await kernel.startSession(session.id);
     const runtime = kernel.getSnapshot().runtimes[session.id];
 
+    expect("primaryRoomId" in readSessionDoc().session).toBeFalse();
+    expect("primaryRoomId" in (resumed as Record<string, unknown>)).toBeFalse();
     expect(resumed.status).toBe("running");
     expect(runtime?.messageChannels?.some((entry) => entry.chatId === room.chatId)).toBeTrue();
     expect(runtime?.terminals.some((entry) => entry.terminalId === "recovery-main")).toBeTrue();
@@ -1050,18 +1070,19 @@ describe("Feature: app kernel event replay", () => {
       name: "stopped-persisted-notification",
       autoStart: true,
     });
+    const room = await createSessionRoom(kernel, session.id, true);
     await kernel.stopSession(session.id);
 
     expect(kernel.getSnapshot().runtimes[session.id]).toBeUndefined();
 
     const sessionMeta = kernel.getSession(session.id);
-    if (!sessionMeta?.primaryRoomId) {
-      throw new Error("expected persisted session metadata with primary room id");
+    if (!sessionMeta) {
+      throw new Error("expected persisted session metadata");
     }
 
     await kernel.setChatVisibility({
       sessionId: session.id,
-      chatId: sessionMeta.primaryRoomId,
+      chatId: room.chatId,
       visible: true,
       focused: false,
     });
@@ -1069,7 +1090,7 @@ describe("Feature: app kernel event replay", () => {
 
     const attentionStore = new AttentionStore(join(sessionMeta.sessionRoot, "attention-system"));
     const attentionSystem = AttentionSystem.fromSnapshot(await attentionStore.load());
-    const contextId = `ctx-${sessionMeta.primaryRoomId}`;
+    const contextId = `ctx-${room.chatId}`;
     if (!attentionSystem.getContext(contextId)) {
       attentionSystem.createContext({
         contextId,
@@ -1084,7 +1105,7 @@ describe("Feature: app kernel event replay", () => {
       meta: {
         author: "assistant",
         source: "message",
-        src: formatRoomAttentionSrc({ roomId: sessionMeta.primaryRoomId, entryId: 1 }),
+        src: formatRoomAttentionSrc({ roomId: room.chatId, entryId: 1 }),
       },
       scores: { persisted_ping: 100 },
       summary: "Persisted background ping",
@@ -1097,17 +1118,17 @@ describe("Feature: app kernel event replay", () => {
 
     const unreadSnapshot = await kernel.getNotificationSnapshot();
     expect(unreadSnapshot.unreadBySession[session.id]).toBe(1);
-    expect(unreadSnapshot.unreadByBucket[session.id]?.[`room:${sessionMeta.primaryRoomId}`]).toBe(1);
+    expect(unreadSnapshot.unreadByBucket[session.id]?.[`room:${room.chatId}`]).toBe(1);
     expect(unreadSnapshot.items[0]?.src).toBe(
-      formatRoomAttentionSrc({ roomId: sessionMeta.primaryRoomId, entryId: 1 }),
+      formatRoomAttentionSrc({ roomId: room.chatId, entryId: 1 }),
     );
 
     const consumedSnapshot = await kernel.consumeNotifications({
       sessionId: session.id,
-      upToSrc: formatRoomAttentionSrc({ roomId: sessionMeta.primaryRoomId, entryId: 1 }),
+      upToSrc: formatRoomAttentionSrc({ roomId: room.chatId, entryId: 1 }),
     });
     expect(consumedSnapshot.unreadBySession[session.id] ?? 0).toBe(0);
-    expect(consumedSnapshot.unreadByBucket[session.id]?.[`room:${sessionMeta.primaryRoomId}`]).toBeUndefined();
+    expect(consumedSnapshot.unreadByBucket[session.id]?.[`room:${room.chatId}`]).toBeUndefined();
   });
 
   test("Scenario: Given legacy or broken session preview store When listing workspace sessions Then page still renders without crashing", async () => {
@@ -1283,8 +1304,14 @@ describe("Feature: app kernel event replay", () => {
     });
 
     expect(session.status).toBe("running");
-    await kernel.attachSessionPrimaryRoom(session.id, { focus: true });
-    await expect(kernel.sendChat(session.id, "hello")).resolves.toEqual({ ok: true });
+    const room = await createSessionRoom(kernel, session.id, true);
+    await expect(
+      kernel.pushUserRoomMessage({
+        sessionId: session.id,
+        chatId: room.chatId,
+        text: "hello",
+      }),
+    ).resolves.toEqual({ ok: true });
     await kernel.stop();
   });
 
@@ -1376,8 +1403,13 @@ describe("Feature: app kernel event replay", () => {
     expect(media?.mimeType).toBe("image/png");
     expect(media?.name).toBe("diagram.png");
 
-    await kernel.attachSessionPrimaryRoom(session.id, { focus: true });
-    const sendResult = await kernel.sendChat(session.id, "Please inspect the image.", [attachment.assetId]);
+    const room = await createSessionRoom(kernel, session.id, true);
+    const sendResult = await kernel.pushUserRoomMessage({
+      sessionId: session.id,
+      chatId: room.chatId,
+      text: "Please inspect the image.",
+      assetIds: [attachment.assetId],
+    });
     expect(sendResult).toEqual({ ok: true });
 
     const messages = kernel.listChatMessages(session.id, 0, 20);
@@ -1503,7 +1535,7 @@ describe("Feature: app kernel event replay", () => {
     await kernel.start();
 
     const session = await kernel.createSession({ cwd: process.cwd(), name: "room-survival", autoStart: true });
-    const room = await kernel.attachSessionPrimaryRoom(session.id, { focus: false });
+    const room = await createSessionRoom(kernel, session.id, false);
 
     const sent = await kernel.sendMessageChannelError({
       sessionId: session.id,
@@ -1665,6 +1697,16 @@ describe("Feature: app kernel event replay", () => {
     });
     expect(archived.archivedBy).toBe("ops-admin");
     expect(kernel.listGlobalRooms().some((item) => item.chatId === room.chatId)).toBeFalse();
+    expect(
+      kernel.sendGlobalRoomMessage({
+        chatId: room.chatId,
+        accessToken: room.accessToken,
+        text: "after archive",
+      }),
+    ).toEqual({
+      ok: false,
+      reason: `unknown message room: ${room.chatId}`,
+    });
 
     const disposable = await kernel.createGlobalRoom({
       title: "Disposable room",
@@ -1677,6 +1719,25 @@ describe("Feature: app kernel event replay", () => {
     expect(
       kernel.listGlobalRooms({ includeArchived: true }).some((item) => item.chatId === disposable.chatId),
     ).toBeFalse();
+    expect(
+      kernel.sendGlobalRoomMessage({
+        chatId: disposable.chatId,
+        accessToken: disposable.accessToken,
+        text: "after delete",
+      }),
+    ).toEqual({
+      ok: false,
+      reason: `unknown message room: ${disposable.chatId}`,
+    });
+    expect(
+      kernel.sendGlobalRoomMessage({
+        chatId: "room-does-not-exist",
+        text: "unknown room",
+      }),
+    ).toEqual({
+      ok: false,
+      reason: "unknown message room: room-does-not-exist",
+    });
 
     await kernel.stop();
   });
@@ -1896,7 +1957,7 @@ describe("Feature: app kernel event replay", () => {
     await kernel.stop();
   });
 
-  test("Scenario: Given a legacy primary room participant list When the kernel reattaches to that room Then the stored room truth is repaired", async () => {
+  test("Scenario: Given a legacy room participant list When the room projection is repaired explicitly Then the stored room truth is normalized", async () => {
     const root = mkdtempSync(join(tmpdir(), "agenter-kernel-"));
     tempDirs.push(root);
     const kernel = new AppKernel({
@@ -1906,10 +1967,10 @@ describe("Feature: app kernel event replay", () => {
     });
     await kernel.start();
 
-    const session = await kernel.createSession({ cwd: process.cwd(), name: "repair-room", autoStart: false });
-    const room = await kernel.attachSessionPrimaryRoom(session.id, { focus: false });
+    const session = await kernel.createSession({ cwd: process.cwd(), name: "repair-room", autoStart: true });
+    const room = await createSessionRoom(kernel, session.id, false);
     if (!room) {
-      throw new Error("expected primary room");
+      throw new Error("expected room");
     }
 
     const db = new MessageDb(resolveMessageControlDbPath(join(root, ".message")));
@@ -1930,7 +1991,15 @@ describe("Feature: app kernel event replay", () => {
       db.close();
     }
 
-    const repaired = await kernel.attachSessionPrimaryRoom(session.id, { focus: false });
+    const messageSystem = new MessageControlPlane({
+      dbPath: resolveMessageControlDbPath(join(root, ".message")),
+    });
+    const currentRoom = messageSystem.getChannel(room.chatId, { includeArchived: true });
+    if (!currentRoom) {
+      throw new Error("expected persisted room");
+    }
+    const repaired = repairRoomParticipantsIfNeeded(messageSystem, currentRoom);
+    messageSystem.close();
     expect(repaired?.participants).toEqual([{ id: "session:observer", label: "Observer" }]);
 
     const repairedDb = new MessageDb(resolveMessageControlDbPath(join(root, ".message")));

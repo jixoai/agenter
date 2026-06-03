@@ -37,7 +37,7 @@ export interface RootWorkspaceBashRunEvidence {
 }
 
 export interface RealMessageFollowUpScenarioResult {
-  primaryRoomId: string;
+  roomId: string;
   prompt: string;
   firstReply: string;
   secondReply: string;
@@ -46,19 +46,14 @@ export interface RealMessageFollowUpScenarioResult {
   firstMessage: RoomMessageEvidence;
   secondMessage: RoomMessageEvidence;
   assistantMessages: RoomMessageEvidence[];
-  primaryRoomMessages: RoomMessageEvidence[];
+  roomMessages: RoomMessageEvidence[];
   settledAttention: SessionRuntimeAttentionState;
   recentModelCalls: RealKernelHarnessDiagnostics["recentModelCalls"];
   rootWorkspaceBashRuns: RootWorkspaceBashRunEvidence[];
   rootWorkspaceMessageSendRequests: unknown[];
 }
 
-const getPrimaryRoomId = (harness: RealKernelHarness): string => {
-  if (!harness.session.primaryRoomId) {
-    throw new Error(`missing primaryRoomId for session ${harness.session.id}`);
-  }
-  return harness.session.primaryRoomId;
-};
+const getRoomId = (harness: RealKernelHarness): string => harness.room.chatId;
 
 const getMessageControlPlane = (harness: RealKernelHarness): MessageControlPlane =>
   Reflect.get(harness.kernel, "messageControlPlane") as MessageControlPlane;
@@ -87,7 +82,7 @@ const compareRoomMessages = (left: RoomMessageEvidence, right: RoomMessageEviden
   return left.messageId - right.messageId;
 };
 
-const listPrimaryRoomMessages = (
+const listRoomMessages = (
   harness: RealKernelHarness,
   input: {
     chatId: string;
@@ -107,7 +102,7 @@ const listAssistantMessages = (
     createdAfterOrAt?: number;
   },
 ): RoomMessageEvidence[] =>
-  listPrimaryRoomMessages(harness, input).filter((message) => message.from === harness.session.avatar);
+  listRoomMessages(harness, input).filter((message) => message.from === harness.session.avatar);
 
 const waitForAssistantMessage = async (
   harness: RealKernelHarness,
@@ -229,38 +224,42 @@ export const runRealMessageFollowUpScenario = async (
   harness: RealKernelHarness,
   timeoutMs = DEFAULT_TIMEOUT_MS,
 ): Promise<RealMessageFollowUpScenarioResult> => {
-  const primaryRoomId = getPrimaryRoomId(harness);
+  const roomId = getRoomId(harness);
   const prompt = [
     "你正在参与一个真实 follow-up reminder 走查。",
-    `你只能在房间 ${primaryRoomId} 与用户沟通。`,
+    `你只能在房间 ${roomId} 与用户沟通。`,
     "不要发送任何额外的房间可见消息。",
     "不要先列房间，也不要先打开 skill 文件。",
     "第 1 步：必须通过 root_bash 发送第一条房间消息。",
     "使用 root_bash 的 `command=message send`，并把标准 object JSON 放在 stdin。",
-    `第一条消息的 payload 必须精确等于：{"chatId":"${primaryRoomId}","content":"${FIRST_REPLY}","followUpAfterMs":${FOLLOW_UP_AFTER_MS}}`,
+    `第一条消息的 payload 必须精确等于：{"chatId":"${roomId}","content":"${FIRST_REPLY}","followUpAfterMs":${FOLLOW_UP_AFTER_MS}}`,
     "第 2 步：发送完第一条消息后，不要立刻发送第二条消息，也不要自动结束任务。",
     "等待 follow-up reminder 让你重新决策。",
     "第 3 步：当 reminder 到来后，再次通过 root_bash 的 `message send` 向同一房间发送第二条精确消息。",
-    `第二条消息的 payload 必须精确等于：{"chatId":"${primaryRoomId}","content":"${SECOND_REPLY}"}`,
+    `第二条消息的 payload 必须精确等于：{"chatId":"${roomId}","content":"${SECOND_REPLY}"}`,
     "第 4 步：第二条消息发出后，把 attention 收敛到 0。",
     "最终房间里只允许出现你发出的这两条可见消息，内容必须一字不差。",
   ].join("\n");
 
   const startAt = Date.now();
-  const sent = await harness.kernel.sendChat(harness.session.id, prompt);
+  const sent = await harness.kernel.pushUserRoomMessage({
+    sessionId: harness.session.id,
+    chatId: roomId,
+    text: prompt,
+  });
   if (!sent.ok) {
     throw new Error(`failed to send follow-up scenario prompt: ${sent.reason ?? "unknown"}`);
   }
 
   const firstMessage = await waitForAssistantMessage(harness, {
-    chatId: primaryRoomId,
+    chatId: roomId,
     createdAfterOrAt: startAt,
     exactContent: FIRST_REPLY,
     label: "first follow-up reminder message",
     timeoutMs,
   });
   const secondMessage = await waitForAssistantMessage(harness, {
-    chatId: primaryRoomId,
+    chatId: roomId,
     createdAfterOrAt: firstMessage.createdAt,
     exactContent: SECOND_REPLY,
     label: "second follow-up reminder message",
@@ -269,18 +268,18 @@ export const runRealMessageFollowUpScenario = async (
   const settledAttention = await waitForAttentionSettled(harness, timeoutMs);
   const diagnostics = await waitForCompletedDiagnostics(harness, startAt, timeoutMs);
   const relevantCalls = diagnostics.recentModelCalls.filter((call) => call.createdAt >= startAt);
-  const primaryRoomMessages = listPrimaryRoomMessages(harness, {
-    chatId: primaryRoomId,
+  const roomMessages = listRoomMessages(harness, {
+    chatId: roomId,
     createdAfterOrAt: startAt,
   });
-  const assistantMessages = primaryRoomMessages.filter(
+  const assistantMessages = roomMessages.filter(
     (message) => message.from === harness.session.avatar && typeof message.recalledAt !== "number",
   );
   const rootWorkspaceBashRuns = extractRootWorkspaceBashRuns(relevantCalls);
   const rootWorkspaceMessageSendRequests = extractMessageSendRequests(rootWorkspaceBashRuns);
 
   return {
-    primaryRoomId,
+    roomId,
     prompt,
     firstReply: FIRST_REPLY,
     secondReply: SECOND_REPLY,
@@ -289,7 +288,7 @@ export const runRealMessageFollowUpScenario = async (
     firstMessage,
     secondMessage,
     assistantMessages,
-    primaryRoomMessages,
+    roomMessages,
     settledAttention,
     recentModelCalls: relevantCalls,
     rootWorkspaceBashRuns,
@@ -305,10 +304,10 @@ export const writeRealMessageFollowUpFailureEvidence = async (
   harness: RealKernelHarness,
   error: unknown,
 ): Promise<string> => {
-  const primaryRoomId = harness.session.primaryRoomId;
-  const primaryRoomMessages = primaryRoomId
-    ? listPrimaryRoomMessages(harness, {
-        chatId: primaryRoomId,
+  const roomId = harness.room.chatId;
+  const roomMessages = roomId
+    ? listRoomMessages(harness, {
+        chatId: roomId,
       })
     : [];
   const diagnostics = await harness.collectDiagnostics({
@@ -316,7 +315,7 @@ export const writeRealMessageFollowUpFailureEvidence = async (
     messageLimit: MESSAGE_LIMIT,
   });
   return await createEvidenceFile("real-message-follow-up-failure", {
-    primaryRoomId,
+    roomId,
     error:
       error instanceof Error
         ? {
@@ -327,7 +326,7 @@ export const writeRealMessageFollowUpFailureEvidence = async (
         : {
             message: String(error),
           },
-    primaryRoomMessages,
+    roomMessages,
     recentModelCalls: diagnostics.recentModelCalls,
     rootWorkspaceBashRuns: extractRootWorkspaceBashRuns(diagnostics.recentModelCalls),
   });

@@ -30,9 +30,9 @@ describe("Feature: real AI message follow-up reminder", () => {
         const result = await runRealMessageFollowUpScenario(harness);
         await writeRealMessageFollowUpEvidence(result);
 
-        expect(result.firstMessage.chatId).toBe(result.primaryRoomId);
+        expect(result.firstMessage.chatId).toBe(result.roomId);
         expect(result.firstMessage.content.trim()).toBe(result.firstReply);
-        expect(result.secondMessage.chatId).toBe(result.primaryRoomId);
+        expect(result.secondMessage.chatId).toBe(result.roomId);
         expect(result.secondMessage.content.trim()).toBe(result.secondReply);
         expect(result.secondMessage.createdAt - result.firstMessage.createdAt).toBeGreaterThanOrEqual(
           result.minReminderDelayMs,
@@ -48,14 +48,14 @@ describe("Feature: real AI message follow-up reminder", () => {
         expect(result.rootWorkspaceBashRuns.some((run) => run.command === "message send")).toBeTrue();
         expect(result.rootWorkspaceMessageSendRequests).toContainEqual(
           expect.objectContaining({
-            chatId: result.primaryRoomId,
+            chatId: result.roomId,
             content: result.firstReply,
             followUpAfterMs: result.followUpAfterMs,
           }),
         );
         expect(result.rootWorkspaceMessageSendRequests).toContainEqual(
           expect.objectContaining({
-            chatId: result.primaryRoomId,
+            chatId: result.roomId,
             content: result.secondReply,
           }),
         );

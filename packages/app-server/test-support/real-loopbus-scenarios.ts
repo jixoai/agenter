@@ -11,12 +11,7 @@ import { readModelOutcomeCode } from "./real-room-terminal-delivery-scenario";
 
 const DEFAULT_TIMEOUT_MS = 120_000;
 const chatScenarioAttentionScope = excludeActiveContextPrefixes("ctx-task-source-");
-const getPrimaryRoomId = (harness: RealKernelHarness): string => {
-  if (!harness.session.primaryRoomId) {
-    throw new Error(`missing primaryRoomId for session ${harness.session.id}`);
-  }
-  return harness.session.primaryRoomId;
-};
+const getRoomId = (harness: RealKernelHarness): string => harness.room.chatId;
 const getMessageControlPlane = (harness: RealKernelHarness): MessageControlPlane =>
   Reflect.get(harness.kernel, "messageControlPlane") as MessageControlPlane;
 
@@ -313,20 +308,24 @@ export interface RealSimpleReplyScenarioResult {
 export const runRealSimpleReplyScenario = async (
   harness: RealKernelHarness,
 ): Promise<RealSimpleReplyScenarioResult> => {
-  const primaryRoomId = getPrimaryRoomId(harness);
+  const roomId = getRoomId(harness);
   const prompt = [
     "请完成一个最小的 attention-first 闭环。",
-    `只向 ${primaryRoomId} 发送一条用户可见消息，内容必须精确等于：REAL-AI-OK。`,
+    `只向 ${roomId} 发送一条用户可见消息，内容必须精确等于：REAL-AI-OK。`,
     "完成后把相关 attention score 收敛到 0。",
   ].join("\n");
-  const sent = await harness.kernel.sendChat(harness.session.id, prompt);
+  const sent = await harness.kernel.pushUserRoomMessage({
+    sessionId: harness.session.id,
+    chatId: roomId,
+    text: prompt,
+  });
   if (!sent.ok) {
     throw new Error(`failed to send simple real-ai prompt: ${sent.reason ?? "unknown"}`);
   }
 
   const reply = await waitForAssistantMessage(harness, {
-    label: "simple reply on primary room",
-    predicate: (message) => message.chatId === primaryRoomId && message.content.trim() === "REAL-AI-OK",
+    label: "simple reply on origin room",
+    predicate: (message) => message.chatId === roomId && message.content.trim() === "REAL-AI-OK",
   });
   const settledAttention = await waitForAttentionSettled(harness);
   const recentModelCalls = await waitForLatestModelCallCompletion(harness);
@@ -352,27 +351,31 @@ export interface RealCliCompactScenarioResult {
 
 export const runRealCliCompactScenario = async (harness: RealKernelHarness): Promise<RealCliCompactScenarioResult> => {
   const timeoutMs = 180_000;
-  const primaryRoomId = getPrimaryRoomId(harness);
+  const roomId = getRoomId(harness);
   const startAt = Date.now();
 
   try {
     const prompt = [
       "请完成一个最小的 CLI compact 验证。",
-      `目标房间 chatId: ${primaryRoomId}`,
+      `目标房间 chatId: ${roomId}`,
       "必须先通过 root_bash 执行一次 `message send --help`。",
       "然后必须通过 root_bash 使用 `message send --compact` 向目标房间发送一条用户可见消息。",
       "最终发送的消息内容必须精确等于：COMPACT-OK",
       "不要使用普通 object JSON message send，也不要发送额外的最终结果文本。",
       "完成后把相关 attention score 收敛到 0。",
     ].join("\n");
-    const sent = await harness.kernel.sendChat(harness.session.id, prompt);
+    const sent = await harness.kernel.pushUserRoomMessage({
+      sessionId: harness.session.id,
+      chatId: roomId,
+      text: prompt,
+    });
     if (!sent.ok) {
       throw new Error(`failed to send compact prompt: ${sent.reason ?? "unknown"}`);
     }
 
     const reply = await waitForAssistantMessage(harness, {
-      label: "compact cli reply on primary room",
-      predicate: (message) => message.chatId === primaryRoomId && message.content.trim() === "COMPACT-OK",
+      label: "compact cli reply on origin room",
+      predicate: (message) => message.chatId === roomId && message.content.trim() === "COMPACT-OK",
       timeoutMs,
     });
     const settledAttention = await waitForAttentionSettled(harness, timeoutMs);
@@ -399,7 +402,7 @@ export const runRealCliCompactScenario = async (harness: RealKernelHarness): Pro
       label: "real-cli-compact-scenario",
       error,
       extra: {
-        primaryRoomId,
+        roomId,
       },
     });
   }
@@ -436,7 +439,7 @@ export const runRealTerminalSkillLearningScenario = async (
   harness: RealKernelHarness,
 ): Promise<RealTerminalSkillLearningScenarioResult> => {
   const timeoutMs = 300_000;
-  const primaryRoomId = getPrimaryRoomId(harness);
+  const roomId = getRoomId(harness);
   const proofFileName = "terminal-skill-proof.txt";
   const expectedToken = "TERMINAL-SKILL-OK";
   const startAt = Date.now();
@@ -444,7 +447,7 @@ export const runRealTerminalSkillLearningScenario = async (
   try {
     const prompt = [
       "这是一个 terminal skill 学习验收。",
-      `目标房间 chatId: ${primaryRoomId}`,
+      `目标房间 chatId: ${roomId}`,
       "不要发送中间确认，也不要发送额外总结。",
       "必须先通过 root_bash 执行 `skill info agenter-terminal`。",
       "如果还需要补充细节，可以继续从这个 skill 的真实路径读取 terminal lifecycle reference，或者查看 terminal 命令的 --help。",
@@ -454,18 +457,22 @@ export const runRealTerminalSkillLearningScenario = async (
       "3. 显式执行一次 `terminal stop`，再显式执行一次 `terminal bootstrap`。",
       `4. 只通过 terminal CLI 在当前 granted workspace 写入文件 ${proofFileName}，文件内容必须精确等于 ${expectedToken}。`,
       `5. 通过 root_bash 执行 \`cat ${proofFileName}\` 验证文件内容。`,
-      `6. 只向 ${primaryRoomId} 发送一条最终用户可见消息，内容必须精确等于：${expectedToken}`,
+      `6. 只向 ${roomId} 发送一条最终用户可见消息，内容必须精确等于：${expectedToken}`,
       "7. 完成后把 attention 收敛到 0。",
       "禁止使用 root_bash 或 workspace_bash 直接写 proof 文件。",
     ].join("\n");
-    const sent = await harness.kernel.sendChat(harness.session.id, prompt);
+    const sent = await harness.kernel.pushUserRoomMessage({
+      sessionId: harness.session.id,
+      chatId: roomId,
+      text: prompt,
+    });
     if (!sent.ok) {
       throw new Error(`failed to send terminal skill prompt: ${sent.reason ?? "unknown"}`);
     }
 
     const reply = await waitForAssistantMessage(harness, {
-      label: "terminal skill final reply on primary room",
-      predicate: (message) => message.chatId === primaryRoomId && message.content.trim() === expectedToken,
+      label: "terminal skill final reply on origin room",
+      predicate: (message) => message.chatId === roomId && message.content.trim() === expectedToken,
       timeoutMs,
     });
 
@@ -510,7 +517,7 @@ export const runRealTerminalSkillLearningScenario = async (
       label: "real-terminal-skill-learning-scenario",
       error,
       extra: {
-        primaryRoomId,
+        roomId,
         proofFileName,
         expectedToken,
       },
@@ -522,29 +529,33 @@ export const runRealTerminalAwaitScenario = async (
   harness: RealKernelHarness,
 ): Promise<RealTerminalAwaitScenarioResult> => {
   const timeoutMs = 300_000;
-  const primaryRoomId = getPrimaryRoomId(harness);
+  const roomId = getRoomId(harness);
   const expectedToken = "AWAIT-READY";
   const startAt = Date.now();
 
   try {
     const prompt = [
       "这是一个 terminal skill 真实行为验收。",
-      `目标房间 chatId: ${primaryRoomId}`,
+      `目标房间 chatId: ${roomId}`,
       "不要发送中间确认，也不要发送额外总结。",
       "必须先通过 root_bash 执行 `skill info agenter-terminal`。",
       "然后使用 terminalId `await-terminal` 创建或恢复一个 terminal。",
       "通过 terminal CLI 在这个 terminal 内启动一个会先停顿片刻、随后输出 AWAIT-READY 的命令。",
-      `等你从 terminal 证据里确认已经看到 ${expectedToken} 之后，向 ${primaryRoomId} 发送一条最终用户可见消息，内容必须精确等于：${expectedToken}`,
+      `等你从 terminal 证据里确认已经看到 ${expectedToken} 之后，向 ${roomId} 发送一条最终用户可见消息，内容必须精确等于：${expectedToken}`,
       "完成后把 attention 收敛到 0。",
     ].join("\n");
-    const sent = await harness.kernel.sendChat(harness.session.id, prompt);
+    const sent = await harness.kernel.pushUserRoomMessage({
+      sessionId: harness.session.id,
+      chatId: roomId,
+      text: prompt,
+    });
     if (!sent.ok) {
       throw new Error(`failed to send terminal await prompt: ${sent.reason ?? "unknown"}`);
     }
 
     const reply = await waitForAssistantMessage(harness, {
-      label: "terminal await final reply on primary room",
-      predicate: (message) => message.chatId === primaryRoomId && message.content.trim() === expectedToken,
+      label: "terminal await final reply on origin room",
+      predicate: (message) => message.chatId === roomId && message.content.trim() === expectedToken,
       timeoutMs,
     });
 
@@ -572,7 +583,7 @@ export const runRealTerminalAwaitScenario = async (
       label: "real-terminal-await-scenario",
       error,
       extra: {
-        primaryRoomId,
+        roomId,
         expectedToken,
       },
     });
@@ -596,9 +607,9 @@ export interface RealLunchRelayScenarioResult {
 }
 
 export const runRealLunchRelayScenario = async (harness: RealKernelHarness): Promise<RealLunchRelayScenarioResult> => {
-  const primaryRoomId = getPrimaryRoomId(harness);
+  const roomId = getRoomId(harness);
   const roomMessagesBefore = listRoomTruthMessages(harness);
-  const originAssistantCountBefore = countAssistantMessages(roomMessagesBefore, primaryRoomId);
+  const originAssistantCountBefore = countAssistantMessages(roomMessagesBefore, roomId);
   const relayChannel = await harness.kernel.createMessageChannel({
     sessionId: harness.session.id,
     kind: "room",
@@ -611,15 +622,19 @@ export const runRealLunchRelayScenario = async (harness: RealKernelHarness): Pro
   });
   const relayAssistantCountBefore = countAssistantMessages(roomMessagesBefore, relayChannel.chatId);
 
-  const sent = await harness.kernel.sendChat(harness.session.id, "gaubee在吗？问他中午吃什么？");
+  const sent = await harness.kernel.pushUserRoomMessage({
+    sessionId: harness.session.id,
+    chatId: roomId,
+    text: "gaubee在吗？问他中午吃什么？",
+  });
   if (!sent.ok) {
     throw new Error(`failed to send lunch relay prompt: ${sent.reason ?? "unknown"}`);
   }
 
   const originAcknowledgement = await waitForNextAssistantMessageInChat(harness, {
-    chatId: primaryRoomId,
+    chatId: roomId,
     afterCount: originAssistantCountBefore,
-    label: "origin acknowledgement on primary room",
+    label: "origin acknowledgement on origin room",
   });
 
   const relayPromptMessage = await waitForNextAssistantMessageInChat(harness, {
@@ -665,9 +680,9 @@ export const runRealLunchRelayScenario = async (harness: RealKernelHarness): Pro
   );
 
   const finalReply = await waitForAssistantMessage(harness, {
-    label: "final reply on primary room",
+    label: "final reply on origin room",
     predicate: (message) =>
-      message.chatId === primaryRoomId &&
+      message.chatId === roomId &&
       message.timestamp > relayParticipantReply.timestamp &&
       message.content.includes("蛋炒饭"),
   });
@@ -707,12 +722,16 @@ export const runRealCompactFollowUpScenario = async (
     afterReplyTimestamp: number;
   },
 ): Promise<RealCompactFollowUpScenarioResult> => {
-  const primaryRoomId = getPrimaryRoomId(harness);
+  const roomId = getRoomId(harness);
   const cyclesBefore = harness.kernel.listChatCycles(harness.session.id, 40);
   const lastCycleId = cyclesBefore.at(-1)?.cycleId ?? 0;
   const relayMessageCountBefore = countAssistantMessages(listRoomTruthMessages(harness), input.relayChannel.chatId);
 
-  const compactSent = await harness.kernel.sendChat(harness.session.id, "/compact");
+  const compactSent = await harness.kernel.pushUserRoomMessage({
+    sessionId: harness.session.id,
+    chatId: roomId,
+    text: "/compact",
+  });
   if (!compactSent.ok) {
     throw new Error(`failed to request compact: ${compactSent.reason ?? "unknown"}`);
   }
@@ -720,7 +739,11 @@ export const runRealCompactFollowUpScenario = async (
   const compactCycle = await waitForCompactCycle(harness, { afterCycleId: lastCycleId });
   await waitForPromptWindowCompactApplied(harness);
 
-  const followUpSent = await harness.kernel.sendChat(harness.session.id, "中午吃什么");
+  const followUpSent = await harness.kernel.pushUserRoomMessage({
+    sessionId: harness.session.id,
+    chatId: roomId,
+    text: "中午吃什么",
+  });
   if (!followUpSent.ok) {
     throw new Error(`failed to send follow-up question: ${followUpSent.reason ?? "unknown"}`);
   }
@@ -728,7 +751,7 @@ export const runRealCompactFollowUpScenario = async (
   const followUpReply = await waitForAssistantMessage(harness, {
     label: "post-compact follow-up answer",
     predicate: (message) =>
-      message.chatId === primaryRoomId &&
+      message.chatId === roomId &&
       message.timestamp > input.afterReplyTimestamp &&
       message.content.includes("蛋炒饭"),
     timeoutMs: 180_000,
@@ -767,8 +790,8 @@ export const runRealExternalFactThroughShellScenario = async (
   harness: RealKernelHarness,
 ): Promise<RealExternalFactShellScenarioResult> => {
   const timeoutMs = 420_000;
-  const primaryRoomId = getPrimaryRoomId(harness);
-  const originAssistantCountBefore = countAssistantMessages(listRoomTruthMessages(harness), primaryRoomId);
+  const roomId = getRoomId(harness);
+  const originAssistantCountBefore = countAssistantMessages(listRoomTruthMessages(harness), roomId);
   const packageName = "ccski";
   const expectedVersion = await fetchNpmLatestVersion(packageName);
 
@@ -776,27 +799,31 @@ export const runRealExternalFactThroughShellScenario = async (
     const startAt = Date.now();
     const prompt = [
       `用户问：请联网确认 npm 上 ${packageName} 的 latest 版本号是多少。`,
-      `先在 ${primaryRoomId} 发一条简短确认消息，表示你会查证后再回复。`,
+      `先在 ${roomId} 发一条简短确认消息，表示你会查证后再回复。`,
       "必须通过可观察的 shell 或其它客观工具查证，禁止凭记忆猜测。",
-      `最终在 ${primaryRoomId} 再发送一条简短中文结果消息，明确写出 ${packageName} 的 latest 版本号。`,
+      `最终在 ${roomId} 再发送一条简短中文结果消息，明确写出 ${packageName} 的 latest 版本号。`,
       "完成后把 attention 收敛到 0。",
     ].join("\n");
-    const sent = await harness.kernel.sendChat(harness.session.id, prompt);
+    const sent = await harness.kernel.pushUserRoomMessage({
+      sessionId: harness.session.id,
+      chatId: roomId,
+      text: prompt,
+    });
     if (!sent.ok) {
       throw new Error(`failed to send external fact prompt: ${sent.reason ?? "unknown"}`);
     }
 
     const acknowledgement = await waitForNextAssistantMessageInChat(harness, {
-      chatId: primaryRoomId,
+      chatId: roomId,
       afterCount: originAssistantCountBefore,
-      label: "external fact acknowledgement on primary room",
+      label: "external fact acknowledgement on origin room",
       timeoutMs,
     });
 
     const reply = await waitForAssistantMessage(harness, {
-      label: "external fact result on primary room",
+      label: "external fact result on origin room",
       predicate: (message) =>
-        message.chatId === primaryRoomId &&
+        message.chatId === roomId &&
         message.timestamp > acknowledgement.timestamp &&
         message.content.includes(expectedVersion),
       timeoutMs,
@@ -852,41 +879,49 @@ export interface RealInterleavedCanInputScenarioResult {
 export const runRealInterleavedCanInputScenario = async (
   harness: RealKernelHarness,
 ): Promise<RealInterleavedCanInputScenarioResult> => {
-  const primaryRoomId = getPrimaryRoomId(harness);
-  const originAssistantCountBefore = countAssistantMessages(listRoomTruthMessages(harness), primaryRoomId);
+  const roomId = getRoomId(harness);
+  const originAssistantCountBefore = countAssistantMessages(listRoomTruthMessages(harness), roomId);
   const startAt = Date.now();
   const initialPrompt = [
     "我们正在验证你是否能在工具阶段接收新的输入。",
-    `1. 先立刻在 ${primaryRoomId} 回复一条简短确认消息，表示你会继续执行并稍后回报。`,
+    `1. 先立刻在 ${roomId} 回复一条简短确认消息，表示你会继续执行并稍后回报。`,
     "2. 然后必须使用 root_bash 执行这个命令：bash -lc 'sleep 5; echo TOOL-PHASE-DONE'。",
     "3. 在终端命令运行期间，我可能会再发一条以“补充要求:”开头的新消息。你必须在最终结果里处理这条补充要求。",
-    `4. 最终只在 ${primaryRoomId} 回复一条中文结果消息，并且必须包含 TOOL-PHASE-DONE 与补充要求里的关键短语。`,
+    `4. 最终只在 ${roomId} 回复一条中文结果消息，并且必须包含 TOOL-PHASE-DONE 与补充要求里的关键短语。`,
     "5. 禁止跳过 shell 执行，禁止凭空回答，完成后收敛 attention。",
   ].join("\n");
 
-  const sent = await harness.kernel.sendChat(harness.session.id, initialPrompt);
+  const sent = await harness.kernel.pushUserRoomMessage({
+    sessionId: harness.session.id,
+    chatId: roomId,
+    text: initialPrompt,
+  });
   if (!sent.ok) {
     throw new Error(`failed to send interleaved prompt: ${sent.reason ?? "unknown"}`);
   }
 
   const acknowledgement = await waitForNextAssistantMessageInChat(harness, {
-    chatId: primaryRoomId,
+    chatId: roomId,
     afterCount: originAssistantCountBefore,
-    label: "interleaved acknowledgement on primary room",
+    label: "interleaved acknowledgement on origin room",
     timeoutMs: 180_000,
   });
 
   const followUpPrompt = "补充要求: 最终消息必须包含 SECOND-CLAUSE";
-  const followUpSent = await harness.kernel.sendChat(harness.session.id, followUpPrompt);
+  const followUpSent = await harness.kernel.pushUserRoomMessage({
+    sessionId: harness.session.id,
+    chatId: roomId,
+    text: followUpPrompt,
+  });
   if (!followUpSent.ok) {
     throw new Error(`failed to send interleaved follow-up: ${followUpSent.reason ?? "unknown"}`);
   }
   const followUpSentAt = Date.now();
 
   const finalReply = await waitForAssistantMessage(harness, {
-    label: "interleaved final reply on primary room",
+    label: "interleaved final reply on origin room",
     predicate: (message) =>
-      message.chatId === primaryRoomId &&
+      message.chatId === roomId &&
       message.timestamp > acknowledgement.timestamp &&
       message.content.includes("TOOL-PHASE-DONE") &&
       message.content.includes("SECOND-CLAUSE"),
@@ -926,7 +961,7 @@ export interface RealJudgeRelayScenarioResult {
 }
 
 export const runRealJudgeRelayScenario = async (harness: RealKernelHarness): Promise<RealJudgeRelayScenarioResult> => {
-  const primaryRoomId = getPrimaryRoomId(harness);
+  const roomId = getRoomId(harness);
   const relayChannel = await harness.kernel.createMessageChannel({
     sessionId: harness.session.id,
     kind: "room",
@@ -942,9 +977,13 @@ export const runRealJudgeRelayScenario = async (harness: RealKernelHarness): Pro
   const prompt = [
     "和 kzf 玩个剪刀石头布，你做裁判，我出布。",
     "请先联系 kzf 获取他的出招，不要代替 kzf 出招，也不要把我的整句话原样转发。",
-    `等 kzf 回复后，只把比赛结果发回 ${primaryRoomId}，并收敛 attention。`,
+    `等 kzf 回复后，只把比赛结果发回 ${roomId}，并收敛 attention。`,
   ].join("\n");
-  const sent = await harness.kernel.sendChat(harness.session.id, prompt);
+  const sent = await harness.kernel.pushUserRoomMessage({
+    sessionId: harness.session.id,
+    chatId: roomId,
+    text: prompt,
+  });
   if (!sent.ok) {
     throw new Error(`failed to send judge relay prompt: ${sent.reason ?? "unknown"}`);
   }

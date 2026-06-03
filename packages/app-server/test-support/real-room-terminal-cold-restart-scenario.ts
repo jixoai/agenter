@@ -10,7 +10,7 @@ import {
   createScenarioBudget,
   extractLocalDeliveryUrl,
   extractToolTraceTools,
-  getPrimaryRoomId,
+  getRoomId,
   listRoomTruthMessages,
   projectModelCallDiagnostics,
   readModelOutcomeCode,
@@ -66,8 +66,8 @@ export interface RealRoomTerminalColdRestartDiagnostics {
   phase: string;
   sessionIdBeforeRestart: string;
   sessionIdAfterRestart: string | null;
-  primaryRoomIdBeforeRestart: string;
-  primaryRoomIdAfterRestart: string | null;
+  roomIdBeforeRestart: string;
+  roomIdAfterRestart: string | null;
   lastDeliveryUrl: string | null;
   lastFetchObservation: {
     status?: number;
@@ -101,8 +101,8 @@ export interface RealRoomTerminalColdRestartScenarioResult {
   feedbackPrompt: string;
   sessionIdBeforeRestart: string;
   sessionIdAfterRestart: string;
-  primaryRoomIdBeforeRestart: string;
-  primaryRoomIdAfterRestart: string;
+  roomIdBeforeRestart: string;
+  roomIdAfterRestart: string;
   settledAttention: SessionRuntimeAttentionState;
   recentModelCallsAfterRestart: Array<{
     id: number;
@@ -119,8 +119,8 @@ const collectColdRestartDiagnostics = async (
     phase: string;
     sessionIdBeforeRestart: string;
     sessionIdAfterRestart: string | null;
-    primaryRoomIdBeforeRestart: string;
-    primaryRoomIdAfterRestart: string | null;
+    roomIdBeforeRestart: string;
+    roomIdAfterRestart: string | null;
     lastDeliveryUrl: string | null;
     lastFetchObservation: RealRoomTerminalColdRestartDiagnostics["lastFetchObservation"];
     preRestartMessages: ChatMessage[];
@@ -136,8 +136,8 @@ const collectColdRestartDiagnostics = async (
     phase: state.phase,
     sessionIdBeforeRestart: state.sessionIdBeforeRestart,
     sessionIdAfterRestart: state.sessionIdAfterRestart,
-    primaryRoomIdBeforeRestart: state.primaryRoomIdBeforeRestart,
-    primaryRoomIdAfterRestart: state.primaryRoomIdAfterRestart,
+    roomIdBeforeRestart: state.roomIdBeforeRestart,
+    roomIdAfterRestart: state.roomIdAfterRestart,
     lastDeliveryUrl: state.lastDeliveryUrl,
     lastFetchObservation: state.lastFetchObservation,
     preRestart: {
@@ -162,14 +162,14 @@ export const runRealRoomTerminalColdRestartScenario = async (
   harness: RealKernelHarness,
 ): Promise<RealRoomTerminalColdRestartScenarioResult> => {
   const sessionIdBeforeRestart = harness.session.id;
-  const primaryRoomIdBeforeRestart = getPrimaryRoomId(harness);
+  const roomIdBeforeRestart = getRoomId(harness);
   const budget = createScenarioBudget("real room-terminal cold-restart scenario", REAL_ROOM_COLD_RESTART_SCENARIO_TIMEOUT_MS);
   const debugState = {
     phase: "prepare initial prompt",
     sessionIdBeforeRestart,
     sessionIdAfterRestart: null as string | null,
-    primaryRoomIdBeforeRestart,
-    primaryRoomIdAfterRestart: null as string | null,
+    roomIdBeforeRestart,
+    roomIdAfterRestart: null as string | null,
     lastDeliveryUrl: null as string | null,
     lastFetchObservation: null as RealRoomTerminalColdRestartDiagnostics["lastFetchObservation"],
     preRestartMessages: [] as ChatMessage[],
@@ -198,7 +198,11 @@ export const runRealRoomTerminalColdRestartScenario = async (
       "除最初的简短确认和最终那条带链接的交付消息外，不要发送额外聊天文本。",
       "先完成这一轮交付，再做任何收尾动作。",
     ].join("\n");
-    const initialSent = await harness.kernel.sendChat(harness.session.id, initialPrompt);
+    const initialSent = await harness.kernel.pushUserRoomMessage({
+      sessionId: harness.session.id,
+      chatId: roomIdBeforeRestart,
+      text: initialPrompt,
+    });
     if (!initialSent.ok) {
       throw new Error(`failed to send cold-restart initial prompt: ${initialSent.reason ?? "unknown"}`);
     }
@@ -207,7 +211,7 @@ export const runRealRoomTerminalColdRestartScenario = async (
     const acknowledgement = await waitForAssistantMessage(harness, {
       label: "cold-restart initial acknowledgement",
       predicate: (message) =>
-        message.chatId === primaryRoomIdBeforeRestart &&
+        message.chatId === roomIdBeforeRestart &&
         message.timestamp >= initialStartAt &&
         message.content.trim().length > 0 &&
         extractLocalDeliveryUrl(message.content) === null,
@@ -218,7 +222,7 @@ export const runRealRoomTerminalColdRestartScenario = async (
     const deliveryMessage = await waitForAssistantMessage(harness, {
       label: "cold-restart initial delivery url",
       predicate: (message) =>
-        message.chatId === primaryRoomIdBeforeRestart &&
+        message.chatId === roomIdBeforeRestart &&
         message.timestamp > acknowledgement.timestamp &&
         extractLocalDeliveryUrl(message.content) === initialDeliveryUrl,
       timeoutMs: budget.step("cold-restart initial delivery url", REAL_ROOM_COLD_RESTART_DELIVERY_TIMEOUT_MS),
@@ -259,20 +263,17 @@ export const runRealRoomTerminalColdRestartScenario = async (
     }
     harness.session = await harness.kernel.startSession(restoredMeta.id);
     debugState.sessionIdAfterRestart = harness.session.id;
-    debugState.primaryRoomIdAfterRestart = harness.session.primaryRoomId ?? null;
+    debugState.roomIdAfterRestart = harness.room.chatId;
 
-    const primaryRoomIdAfterRestart = harness.session.primaryRoomId;
-    if (!primaryRoomIdAfterRestart) {
-      throw new Error(`missing primary room after cold restart: ${harness.session.id}`);
-    }
+    const roomIdAfterRestart = harness.room.chatId;
     if (harness.session.id !== sessionIdBeforeRestart) {
       throw new Error(`session identity changed across restart: ${sessionIdBeforeRestart} -> ${harness.session.id}`);
     }
-    if (primaryRoomIdAfterRestart !== primaryRoomIdBeforeRestart) {
-      throw new Error(`primary room changed across restart: ${primaryRoomIdBeforeRestart} -> ${primaryRoomIdAfterRestart}`);
+    if (roomIdAfterRestart !== roomIdBeforeRestart) {
+      throw new Error(`origin room changed across restart: ${roomIdBeforeRestart} -> ${roomIdAfterRestart}`);
     }
-    if (!projectChannels(harness).some((channel) => channel.chatId === primaryRoomIdAfterRestart)) {
-      throw new Error(`primary room grant missing after restart: ${primaryRoomIdAfterRestart}`);
+    if (!projectChannels(harness).some((channel) => channel.chatId === roomIdAfterRestart)) {
+      throw new Error(`origin room grant missing after restart: ${roomIdAfterRestart}`);
     }
     if (!projectWorkspaceMounts(harness).some((mount) => mount.workspacePath === resolve(harness.workspacePath))) {
       throw new Error(`workspace grant missing after restart: ${resolve(harness.workspacePath)}`);
@@ -289,7 +290,11 @@ export const runRealRoomTerminalColdRestartScenario = async (
       "注意：之前那条带链接的交付消息只完成了重启前的上一轮义务；这条反馈重新打开了新的房间义务，只有把同一个链接重新交付给我后才算完成。",
       "直接把页面改好并回链接，再做任何收尾动作。",
     ].join("\n");
-    const feedbackSent = await harness.kernel.sendChat(harness.session.id, feedbackPrompt);
+    const feedbackSent = await harness.kernel.pushUserRoomMessage({
+      sessionId: harness.session.id,
+      chatId: roomIdAfterRestart,
+      text: feedbackPrompt,
+    });
     if (!feedbackSent.ok) {
       throw new Error(`failed to send cold-restart feedback: ${feedbackSent.reason ?? "unknown"}`);
     }
@@ -299,7 +304,7 @@ export const runRealRoomTerminalColdRestartScenario = async (
     const resumedMessage = await waitForAssistantMessage(harness, {
       label: "cold-restart resumed delivery",
       predicate: (message) =>
-        message.chatId === primaryRoomIdAfterRestart &&
+        message.chatId === roomIdAfterRestart &&
         message.timestamp >= feedbackSentAt &&
         extractLocalDeliveryUrl(message.content) === initialDeliveryUrl,
       timeoutMs: budget.step("cold-restart resumed delivery", REAL_ROOM_COLD_RESTART_DELIVERY_TIMEOUT_MS),
@@ -336,8 +341,8 @@ export const runRealRoomTerminalColdRestartScenario = async (
       feedbackPrompt,
       sessionIdBeforeRestart,
       sessionIdAfterRestart: harness.session.id,
-      primaryRoomIdBeforeRestart,
-      primaryRoomIdAfterRestart,
+      roomIdBeforeRestart,
+      roomIdAfterRestart,
       settledAttention,
       recentModelCallsAfterRestart: modelCallsAfterRestart.map((call) => ({
         id: call.id,

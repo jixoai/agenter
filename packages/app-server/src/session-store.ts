@@ -11,7 +11,6 @@ export interface SessionStoreOptions {
     cwd: string;
     avatar: string;
     avatarPrincipalId?: string;
-    primaryRoomId?: string;
     storeTarget: "global" | "workspace";
   };
 }
@@ -33,34 +32,34 @@ export class SessionStore {
           session: existingSession,
         }
       : {
-      session: {
-        id: options.session.id,
-        name: options.session.name,
-        cwd: options.session.cwd,
-        avatar: options.session.avatar,
-        avatarPrincipalId: options.session.avatarPrincipalId,
-        primaryRoomId: options.session.primaryRoomId,
-        storeTarget: options.session.storeTarget,
-        status: "stopped",
-        createdAt: now,
-        updatedAt: now,
-        storageState: "active",
-      },
-    };
+          session: {
+            id: options.session.id,
+            name: options.session.name,
+            cwd: options.session.cwd,
+            avatar: options.session.avatar,
+            avatarPrincipalId: options.session.avatarPrincipalId,
+            storeTarget: options.session.storeTarget,
+            status: "stopped",
+            createdAt: now,
+            updatedAt: now,
+            storageState: "active",
+          },
+        };
 
     this.doc.session = {
-      ...this.doc.session,
       id: options.session.id,
       name: options.session.name,
       cwd: options.session.cwd,
       avatar: options.session.avatar,
       avatarPrincipalId: options.session.avatarPrincipalId,
-      primaryRoomId: options.session.primaryRoomId,
       storeTarget: options.session.storeTarget,
       status: "starting",
+      createdAt: this.doc.session.createdAt,
       updatedAt: now,
       storageState: this.doc.session.storageState ?? "active",
       lastError: undefined,
+      archivedAt: this.doc.session.archivedAt,
+      archivedFrom: this.doc.session.archivedFrom,
     };
     this.flush();
   }

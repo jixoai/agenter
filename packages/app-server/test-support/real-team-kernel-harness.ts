@@ -63,6 +63,8 @@ export interface RealTeamKernelHarness {
   proxy: CachedModelProxyHandle | null;
   backendSession: SessionMeta;
   frontendSession: SessionMeta;
+  backendRoom: MessageControlPlaneEntry;
+  frontendRoom: MessageControlPlaneEntry;
   backendAvatarPromptPath: string | null;
   frontendAvatarPromptPath: string | null;
   backendActorId: MessageContactId;
@@ -170,25 +172,33 @@ export const createRealTeamKernelHarness = async (
 
   try {
     await kernel.start();
-    const createParticipantSession = async (participant: RealTeamParticipant): Promise<SessionMeta> => {
+    const createParticipantSession = async (
+      participant: RealTeamParticipant,
+    ): Promise<{ session: SessionMeta; room: MessageControlPlaneEntry }> => {
       const session = await kernel.createSession({
         cwd: workspacePath,
         avatar: participant === "backend" ? backendAvatar : frontendAvatar,
         name: participant === "backend" ? "real-team-backend" : "real-team-frontend",
         autoStart: false,
       });
-      await kernel.attachSessionPrimaryRoom(session.id, { focus: true });
       kernel.grantRuntimeWorkspace({
         runtimeId: session.id,
         workspacePath,
         grants: [...FULL_WORKSPACE_GRANT],
       });
       const started = await kernel.startSession(session.id);
-      if (!started.primaryRoomId) {
-        throw new Error(`real team ${participant} missing primary room after explicit attach`);
-      }
-      if (!kernel.listMessageChannels(started.id).some((channel) => channel.chatId === started.primaryRoomId)) {
-        throw new Error(`real team ${participant} primary room was not restored at boot`);
+      const room = await kernel.createMessageChannel({
+        sessionId: started.id,
+        kind: "room",
+        title: participant === "backend" ? "backend-private" : "frontend-private",
+        participants: [
+          { id: `session:${started.avatar}`, label: started.avatar },
+          { id: input.userActorId ?? "auth:kzf", label: input.userActorId ?? "auth:kzf" },
+        ],
+        focus: true,
+      });
+      if (!kernel.listMessageChannels(started.id).some((channel) => channel.chatId === room.chatId)) {
+        throw new Error(`real team ${participant} room was not restored at boot`);
       }
       if (
         !kernel.listRuntimeWorkspaceMounts(started.id).some((mount) => mount.workspacePath === resolve(workspacePath))
@@ -198,10 +208,14 @@ export const createRealTeamKernelHarness = async (
       if (kernel.listTerminals(started.id).length > 0) {
         throw new Error(`real team ${participant} booted with unexpected terminals`);
       }
-      return started;
+      return { session: started, room };
     };
-    const backendSession = await createParticipantSession("backend");
-    const frontendSession = await createParticipantSession("frontend");
+    const backend = await createParticipantSession("backend");
+    const frontend = await createParticipantSession("frontend");
+    const backendSession = backend.session;
+    const frontendSession = frontend.session;
+    const backendRoom = backend.room;
+    const frontendRoom = frontend.room;
     const backendActorId = backendSession.avatarPrincipalId as MessageContactId | undefined;
     const frontendActorId = frontendSession.avatarPrincipalId as MessageContactId | undefined;
     if (!backendActorId) {
@@ -249,6 +263,8 @@ export const createRealTeamKernelHarness = async (
       proxy,
       backendSession,
       frontendSession,
+      backendRoom,
+      frontendRoom,
       backendAvatarPromptPath,
       frontendAvatarPromptPath,
       backendActorId,
@@ -292,7 +308,12 @@ export const createRealTeamKernelHarness = async (
         await updateProjectRoomFocus(room, participants, "add"),
       blurProjectRoom: async (room, participants = ["backend", "frontend"]) =>
         await updateProjectRoomFocus(room, participants, "remove"),
-      sendPrivatePrimer: async (participant, text) => await kernel.sendChat(getSession(participant).id, text),
+      sendPrivatePrimer: async (participant, text) =>
+        await kernel.pushUserRoomMessage({
+          sessionId: getSession(participant).id,
+          chatId: participant === "backend" ? backendRoom.chatId : frontendRoom.chatId,
+          text,
+        }),
       listProjectRoomMessages: (room, limit = 80) =>
         kernel
           .snapshotGlobalRoom({

@@ -138,7 +138,6 @@ const createRuntime = (): SessionRuntime => {
     sessionRoot: join(root, "session"),
     sessionName: "cycle-stream",
     storeTarget: "workspace",
-    primaryRoomId: PRIMARY_ROOM_ID,
     terminalSystem: new TerminalControlPlane({
       dbPath: join(root, "terminal.db"),
       outputRoot: join(root, "terminals"),

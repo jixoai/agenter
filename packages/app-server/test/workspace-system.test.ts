@@ -728,7 +728,12 @@ describe("Feature: workspace system kernel integration", () => {
       avatar: "architect",
       autoStart: true,
     });
-    const primaryRoom = await kernel.attachSessionPrimaryRoom(session.id, { focus: true });
+    const roomChannel = await kernel.createMessageChannel({
+      sessionId: session.id,
+      kind: "room",
+      title: "workspace-test-room",
+      focus: true,
+    });
     kernel.grantRuntimeWorkspace({
       runtimeId: session.id,
       workspacePath: workspace,
@@ -778,7 +783,7 @@ describe("Feature: workspace system kernel integration", () => {
     const sent = await execRootWorkspaceBash(kernel, session.id, {
       command: "message send",
       stdin: JSON.stringify({
-        chatId: primaryRoom.chatId,
+        chatId: roomChannel.chatId,
         content: "通过 stdin 发送房间消息",
       }),
     });
@@ -800,7 +805,7 @@ describe("Feature: workspace system kernel integration", () => {
         seatStates?: unknown;
       }>;
     };
-    const listedRoom = listedPayload.channels?.find((channel) => channel.chatId === primaryRoom.chatId);
+    const listedRoom = listedPayload.channels?.find((channel) => channel.chatId === roomChannel.chatId);
     expect(listedRoom).toBeTruthy();
     expect(listedRoom?.presence?.totalSeatCount).toBeGreaterThan(0);
     expect(listedRoom?.owner).toBeUndefined();
@@ -810,7 +815,7 @@ describe("Feature: workspace system kernel integration", () => {
     const read = await execRootWorkspaceBash(kernel, session.id, {
       command: "message read",
       stdin: JSON.stringify({
-        chatId: primaryRoom.chatId,
+        chatId: roomChannel.chatId,
         limit: 10,
       }),
     });
@@ -832,7 +837,7 @@ describe("Feature: workspace system kernel integration", () => {
         }>;
       };
     };
-    expect(readPayload.snapshot?.channel?.chatId).toBe(primaryRoom.chatId);
+    expect(readPayload.snapshot?.channel?.chatId).toBe(roomChannel.chatId);
     expect(readPayload.snapshot?.channel?.presence?.totalSeatCount).toBeGreaterThan(0);
     expect(readPayload.snapshot?.channel?.owner).toBeUndefined();
     expect(readPayload.snapshot?.channel?.metadata).toBeUndefined();
@@ -846,7 +851,7 @@ describe("Feature: workspace system kernel integration", () => {
     const sentUtf8Argv = await execRootWorkspaceBash(kernel, session.id, {
       command: [
         "cat << 'PAYLOAD' > msg_payload.json",
-        `{"chatId":"${primaryRoom.chatId}","content":"你好！有什么可以帮你的吗？😊"}`,
+        `{"chatId":"${roomChannel.chatId}","content":"你好！有什么可以帮你的吗？😊"}`,
         "PAYLOAD",
         'message send "$(cat msg_payload.json)"',
       ].join("\n"),
@@ -856,7 +861,7 @@ describe("Feature: workspace system kernel integration", () => {
     const readUtf8 = await execRootWorkspaceBash(kernel, session.id, {
       command: "message read",
       stdin: JSON.stringify({
-        chatId: primaryRoom.chatId,
+        chatId: roomChannel.chatId,
         limit: 20,
       }),
     });
@@ -900,7 +905,7 @@ describe("Feature: workspace system kernel integration", () => {
 
     const roomMessages = kernel
       .listMessageChannels(session.id)
-      .flatMap((channel) => (channel.chatId === primaryRoom.chatId ? [channel.chatId] : []))
+      .flatMap((channel) => (channel.chatId === roomChannel.chatId ? [channel.chatId] : []))
       .flatMap(
         (chatId) =>
           (

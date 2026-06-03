@@ -16,12 +16,7 @@ export const REAL_ROOM_URL_PATTERN = /https?:\/\/127\.0\.0\.1:\d+\/?/u;
 const chatScenarioAttentionScope = excludeActiveContextPrefixes("ctx-task-source-");
 type ModelCallRecord = Awaited<ReturnType<RealKernelHarness["kernel"]["inspectModelDebug"]>>["recentModelCalls"][number];
 
-export const getPrimaryRoomId = (harness: RealKernelHarness): string => {
-  if (!harness.session.primaryRoomId) {
-    throw new Error(`missing primaryRoomId for session ${harness.session.id}`);
-  }
-  return harness.session.primaryRoomId;
-};
+export const getRoomId = (harness: RealKernelHarness): string => harness.room.chatId;
 
 const getMessageControlPlane = (harness: RealKernelHarness): MessageControlPlane =>
   Reflect.get(harness.kernel, "messageControlPlane") as MessageControlPlane;
@@ -369,7 +364,7 @@ const collectRealRoomTerminalDeliveryDiagnostics = async (
 export const runRealRoomTerminalDeliveryScenario = async (
   harness: RealKernelHarness,
 ): Promise<RealRoomTerminalDeliveryScenarioResult> => {
-  const primaryRoomId = getPrimaryRoomId(harness);
+  const roomId = getRoomId(harness);
   const port = await allocateEphemeralPort();
   const url = `http://127.0.0.1:${port}/`;
   const startAt = Date.now();
@@ -397,14 +392,14 @@ export const runRealRoomTerminalDeliveryScenario = async (
   try {
     const prompt = [
       "你正在参与一个真实交付测试，目标是验证 Room + Terminal + URL 交付闭环。",
-      `你只能在房间 ${primaryRoomId} 与用户沟通。`,
+      `你只能在房间 ${roomId} 与用户沟通。`,
       "这条用户消息已经给出完整任务全文，不存在截断。",
       "如果任何工具输出里出现 `...<clipped ...>`，那只是工具预览被截断，不代表任务缺失。",
       "不要先打开任何 runtime skill 的 `SKILL.md`，也不要先用 skill info 浏览技能说明；先做直接命令。",
       "所有用户可见消息都必须使用简短中文，不要回英文。",
       "禁止为了重新确认任务全文而执行 attention list/query、message list/read 或其它上下文读取命令；直接按这条消息执行。",
       "第 1 步：立刻发送一条简短中文消息，确认你开始构建。",
-      `当前房间 chatId 已经明确给出，就是 ${primaryRoomId}；发确认或交付时直接用这个 chatId，不要先跑 message list/read。`,
+      `当前房间 chatId 已经明确给出，就是 ${roomId}；发确认或交付时直接用这个 chatId，不要先跑 message list/read。`,
       "第 2 步：你现在的直接工具是 workspace_list、root_bash、workspace_bash。",
       `共享项目工作目录的绝对路径固定为：${harness.workspacePath}`,
       `推荐最小实现：只写一个 index.html，然后在 terminal 里运行 python3 -m http.server ${port} --bind 127.0.0.1。`,
@@ -427,7 +422,11 @@ export const runRealRoomTerminalDeliveryScenario = async (
       "除了最初的简短确认和两次带链接的交付消息之外，不要发送多余的用户可见消息。",
       "顺序要求：先完成该轮用户可见交付消息，再收敛 attention。不要为了确认当前任务而去查询 attention/context。",
     ].join("\n");
-    const sent = await harness.kernel.sendChat(harness.session.id, prompt);
+    const sent = await harness.kernel.pushUserRoomMessage({
+      sessionId: harness.session.id,
+      chatId: roomId,
+      text: prompt,
+    });
     if (!sent.ok) {
       throw new Error(`failed to send room-terminal delivery prompt: ${sent.reason ?? "unknown"}`);
     }
@@ -436,7 +435,7 @@ export const runRealRoomTerminalDeliveryScenario = async (
     const acknowledgement = await waitForAssistantMessage(harness, {
       label: "room-terminal acknowledgement",
       predicate: (message) =>
-        message.chatId === primaryRoomId &&
+        message.chatId === roomId &&
         message.timestamp >= startAt &&
         message.content.trim().length > 0 &&
         extractLocalDeliveryUrl(message.content) === null,
@@ -447,7 +446,7 @@ export const runRealRoomTerminalDeliveryScenario = async (
     const deliveryMessage = await waitForAssistantMessage(harness, {
       label: "room-terminal delivery url message",
       predicate: (message) =>
-        message.chatId === primaryRoomId &&
+        message.chatId === roomId &&
         message.timestamp > acknowledgement.timestamp &&
         extractLocalDeliveryUrl(message.content) === url,
       timeoutMs: budget.step("room-terminal delivery url", REAL_ROOM_DELIVERY_TIMEOUT_MS),
@@ -470,7 +469,11 @@ export const runRealRoomTerminalDeliveryScenario = async (
       `完成后直接把同一个 URL ${url} 再发我，并明确说明更新后的版本已经可以打开。`,
       "注意：之前那条带链接的交付消息只完成了上一轮义务；这条反馈重新打开了新的房间义务，只有把同一个链接重新交付给我后才算完成。",
     ].join("\n");
-    const feedbackSent = await harness.kernel.sendChat(harness.session.id, feedbackPrompt);
+    const feedbackSent = await harness.kernel.pushUserRoomMessage({
+      sessionId: harness.session.id,
+      chatId: roomId,
+      text: feedbackPrompt,
+    });
     if (!feedbackSent.ok) {
       throw new Error(`failed to send room-terminal feedback: ${feedbackSent.reason ?? "unknown"}`);
     }
@@ -480,7 +483,7 @@ export const runRealRoomTerminalDeliveryScenario = async (
     const updateMessage = await waitForAssistantMessage(harness, {
       label: "room-terminal update acknowledgement",
       predicate: (message) =>
-        message.chatId === primaryRoomId &&
+        message.chatId === roomId &&
         message.timestamp >= feedbackSentAt &&
         extractLocalDeliveryUrl(message.content) === url,
       timeoutMs: budget.step("room-terminal update acknowledgement", REAL_ROOM_DELIVERY_TIMEOUT_MS),

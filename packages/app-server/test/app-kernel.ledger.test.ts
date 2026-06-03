@@ -96,6 +96,7 @@ describe("Feature: app kernel ledger projections", () => {
     await kernel.start();
 
     const session = await kernel.createSession({ cwd: workspace, name: "preview-filter", autoStart: false });
+    const roomId = "room-main";
     const db = new SessionDb(join(session.sessionRoot, "session.db"));
     try {
       upsertHeartbeat(db, {
@@ -104,7 +105,7 @@ describe("Feature: app kernel ledger projections", () => {
           role: "user",
           content: "现在几点？",
           timestamp: 100,
-          chatId: session.primaryRoomId,
+          chatId: roomId,
         },
       });
       upsertHeartbeat(db, {
@@ -115,7 +116,7 @@ describe("Feature: app kernel ledger projections", () => {
           content:
             'agenter-ai call failed: openai-chat response failed after 1 attempt(s): 402 status code ({"error":{"message":"Insufficient Balance"}})',
           timestamp: 120,
-          chatId: session.primaryRoomId,
+          chatId: roomId,
         },
       });
       upsertHeartbeat(db, {
@@ -125,7 +126,7 @@ describe("Feature: app kernel ledger projections", () => {
           channel: "to_user",
           content: "北京时间下午四点。",
           timestamp: 140,
-          chatId: session.primaryRoomId,
+          chatId: roomId,
         },
       });
     } finally {
@@ -147,6 +148,7 @@ describe("Feature: app kernel ledger projections", () => {
     await kernel.start();
 
     const session = await kernel.createSession({ cwd: process.cwd(), name: "ledger-chat", autoStart: false });
+    const roomId = "room-main";
     const db = new SessionDb(join(session.sessionRoot, "session.db"));
     try {
       upsertHeartbeat(db, {
@@ -165,7 +167,7 @@ describe("Feature: app kernel ledger projections", () => {
           id: "assistant-main",
           role: "assistant",
           channel: "to_user",
-          chatId: session.primaryRoomId,
+          chatId: roomId,
           content: "我问了 kzf，他说今天晚上吃蛋炒饭。",
           timestamp: 180,
         },
@@ -189,7 +191,7 @@ describe("Feature: app kernel ledger projections", () => {
                 role: "user",
                 name: "Gaubee",
                 parts: [{ type: "text", text: "ask kzf dinner" }],
-                meta: { chatId: session.primaryRoomId ?? "room-main" },
+                meta: { chatId: roomId },
               },
               {
                 source: "message",
@@ -244,13 +246,13 @@ describe("Feature: app kernel ledger projections", () => {
     const messages = kernel.listChatMessages(session.id, 0, 20);
     expect(messages.map((item) => ({ content: item.content, chatId: item.chatId }))).toEqual([
       { content: "好的，那就吃蛋炒饭吧！", chatId: "chat-relay" },
-      { content: "我问了 kzf，他说今天晚上吃蛋炒饭。", chatId: session.primaryRoomId },
+      { content: "我问了 kzf，他说今天晚上吃蛋炒饭。", chatId: roomId },
     ]);
 
     const cycles = kernel.listChatCycles(session.id, 20);
     expect(cycles.find((cycle) => cycle.cycleId === 11)?.outputs.map((item) => ({ content: item.content, chatId: item.chatId }))).toEqual([
       { content: "好的，那就吃蛋炒饭吧！", chatId: "chat-relay" },
-      { content: "我问了 kzf，他说今天晚上吃蛋炒饭。", chatId: session.primaryRoomId },
+      { content: "我问了 kzf，他说今天晚上吃蛋炒饭。", chatId: roomId },
     ]);
     expect(cycles.find((cycle) => cycle.cycleId === 12)?.compactTrigger).toBe("manual");
 

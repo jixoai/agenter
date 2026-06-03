@@ -33,10 +33,7 @@ describe("Feature: real AI terminal skill learning", () => {
       }
 
       try {
-        const primaryRoomId = harness.session.primaryRoomId;
-        if (!primaryRoomId) {
-          throw new Error("expected session primaryRoomId");
-        }
+        const roomId = harness.room.chatId;
         const result = await runRealTerminalSkillLearningScenario(harness);
         const commands = result.rootWorkspaceBashCommands;
         const firstSkillInfoIndex = commands.findIndex((command) => command.includes("skill info agenter-terminal"));
@@ -44,7 +41,7 @@ describe("Feature: real AI terminal skill learning", () => {
           /\bterminal (create|list|stop|bootstrap|write|input|read)\b/u.test(command),
         );
 
-        expect(result.reply.chatId).toBe(primaryRoomId);
+        expect(result.reply.chatId).toBe(roomId);
         expect(result.reply.content.trim()).toBe("TERMINAL-SKILL-OK");
         expect(result.proofText).toBe("TERMINAL-SKILL-OK");
         expect(result.settledAttention.active).toHaveLength(0);
@@ -84,10 +81,7 @@ describe("Feature: real AI terminal skill learning", () => {
       }
 
       try {
-        const primaryRoomId = harness.session.primaryRoomId;
-        if (!primaryRoomId) {
-          throw new Error("expected session primaryRoomId");
-        }
+        const roomId = harness.room.chatId;
         const result = await runRealTerminalAwaitScenario(harness);
         const commands = result.rootWorkspaceBashCommands;
         const joinedCommands = commands.join("\n");
@@ -95,7 +89,7 @@ describe("Feature: real AI terminal skill learning", () => {
         const firstTerminalAwaitIndex = commands.findIndex((command) => /\bterminal await\b/u.test(command));
         const firstTerminalReadIndex = commands.findIndex((command) => /\bterminal read\b/u.test(command));
 
-        expect(result.reply.chatId).toBe(primaryRoomId);
+        expect(result.reply.chatId).toBe(roomId);
         expect(result.reply.content.trim()).toBe("AWAIT-READY");
         expect(result.settledAttention.active).toHaveLength(0);
         expect(result.recentModelCalls.length).toBeGreaterThan(0);

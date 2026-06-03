@@ -2,7 +2,7 @@ import type { ChatMessage, SessionRuntimeAttentionState } from "../src";
 import { resolveRuntimeShellBinDir } from "../src/runtime-shell-bin";
 import type { RealKernelHarness } from "./real-kernel-harness";
 import {
-  getPrimaryRoomId,
+  getRoomId,
   listRoomTruthMessages,
   readModelOutcomeCode,
   waitForAssistantMessage,
@@ -206,13 +206,13 @@ const assertNoInterimAssistantMessages = (
   }
 };
 
-const buildScenarioPrompt = (input: { primaryRoomId: string; envDumpCommand: string }): string =>
+const buildScenarioPrompt = (input: { roomId: string; envDumpCommand: string }): string =>
   [
     "请执行一次最小 shell profile 审计，只验证事实，不要猜测。",
-    `当前房间 chatId: ${input.primaryRoomId}`,
+    `当前房间 chatId: ${input.roomId}`,
     "不要发送中间确认，不要打开任何 SKILL.md，也不要运行 skill info。",
     "除了最终 required token 以外，不允许发送任何 assistant room 消息。",
-    `最终只在 ${input.primaryRoomId} 发送一条用户可见消息，内容必须精确等于：${PROFILE_DONE_TOKEN}。`,
+    `最终只在 ${input.roomId} 发送一条用户可见消息，内容必须精确等于：${PROFILE_DONE_TOKEN}。`,
     "直接使用 root_bash 和共享 terminal，不要使用 workspace_bash。",
     "第 1 步：先通过 root_bash 精确执行下面这条 env dump 命令，并记住输出里的 __AGT_HOME__ 值：",
     input.envDumpCommand,
@@ -256,7 +256,7 @@ const buildScenarioError = async (
 export const runRealShellProfileScenario = async (
   harness: RealKernelHarness,
 ): Promise<RealShellProfileScenarioResult> => {
-  const primaryRoomId = getPrimaryRoomId(harness);
+  const roomId = getRoomId(harness);
   const envDumpCommand = buildEnvDumpCommand();
   const rootWorkspacePath = getRuntimeRootWorkspacePath(harness);
   const runtimeBinDir = resolveRuntimeShellBinDir(rootWorkspacePath);
@@ -264,20 +264,21 @@ export const runRealShellProfileScenario = async (
   let projectedTrace: ProjectedToolTraceEntry[] = [];
 
   try {
-    const sent = await harness.kernel.sendChat(
-      harness.session.id,
-      buildScenarioPrompt({
-        primaryRoomId,
+    const sent = await harness.kernel.pushUserRoomMessage({
+      sessionId: harness.session.id,
+      chatId: roomId,
+      text: buildScenarioPrompt({
+        roomId,
         envDumpCommand,
       }),
-    );
+    });
     if (!sent.ok) {
       throw new Error(`failed to send shell-profile prompt: ${sent.reason ?? "unknown"}`);
     }
 
     const finalReply = await waitForAssistantMessage(harness, {
       label: "shell-profile final reply",
-      predicate: (message) => message.chatId === primaryRoomId && message.content.trim() === PROFILE_DONE_TOKEN,
+      predicate: (message) => message.chatId === roomId && message.content.trim() === PROFILE_DONE_TOKEN,
       timeoutMs: DEFAULT_TIMEOUT_MS,
     });
     assertNoInterimAssistantMessages(harness, {

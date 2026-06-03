@@ -170,7 +170,6 @@ import { pageHeartbeatGroupsFromDb } from "./heartbeat-groups-page";
 import { HEARTBEAT_INSPECTION_SCOPES, HEARTBEAT_MESSAGE_PART_SCOPE } from "./heartbeat-message-parts";
 import { materializeBuiltinPromptDocs } from "./i18n";
 import { readLocalEnvValue, resolveLocalEnvPath, writeLocalEnvValue } from "./local-env";
-import { repairRoomParticipantsIfNeeded } from "./message-room-participant-repair";
 import { resolveModelCapabilities } from "./model-capabilities";
 import {
   settingsKindSchema,
@@ -1277,11 +1276,7 @@ export class AppKernel {
       this.rememberWorkspace(this.options.initialWorkspace);
     }
     this.ensureSessionCatalogLoaded();
-    const boundSessions = await Promise.all(
-      this.sessions
-        .list()
-        .map(async (session) => this.bindSessionPrimaryRoomId(await this.bindSessionAvatarPrincipal(session))),
-    );
+    const boundSessions = await Promise.all(this.sessions.list().map(async (session) => await this.bindSessionAvatarPrincipal(session)));
     this.repairLegacySessionMessageActors(boundSessions);
     this.syncAvatarCatalogWatchers();
     await Promise.all([
@@ -1394,23 +1389,6 @@ export class AppKernel {
     return this.sessions.update(session.id, {
       avatarPrincipalId: principal.principalId,
     });
-  }
-
-  private async bindSessionPrimaryRoomId(session: SessionMeta): Promise<SessionMeta> {
-    if (typeof session.primaryRoomId === "string" && isPrincipalId(session.primaryRoomId)) {
-      return session;
-    }
-    return this.sessions.update(session.id, {
-      primaryRoomId: await this.allocateGlobalRoomId(DEFAULT_MESSAGE_CHAT_TITLE),
-    });
-  }
-
-  private resolvePersistedSessionPrimaryRoomId(sessionId: string): string {
-    const primaryRoomId = this.sessions.get(sessionId)?.primaryRoomId;
-    if (typeof primaryRoomId === "string" && isPrincipalId(primaryRoomId)) {
-      return primaryRoomId;
-    }
-    throw new Error(`session primary room id unavailable: ${sessionId}`);
   }
 
   private collectLegacySessionMessageActorAliases(
@@ -1762,48 +1740,6 @@ export class AppKernel {
       terminal,
       accessToken: input.accessToken ?? terminal.access?.accessToken,
     };
-  }
-
-  private ensureSessionPrimaryRoom(
-    session: Pick<SessionMeta, "id" | "avatar" | "avatarPrincipalId" | "primaryRoomId" | "createdAt" | "updatedAt">,
-  ): MessageControlPlaneEntry {
-    const actorId = this.resolveSessionMessageContactId(session);
-    const roomId = this.resolvePersistedSessionPrimaryRoomId(session.id);
-    const existing = this.messageControlPlane.getChannelForContact(roomId, actorId, { touchPresence: false });
-    if (existing) {
-      return repairRoomParticipantsIfNeeded(this.messageControlPlane, existing);
-    }
-    const bootstrap = this.messageControlPlane.getChannel(roomId, { includeArchived: true });
-    if (bootstrap) {
-      const repairedBootstrap = repairRoomParticipantsIfNeeded(this.messageControlPlane, bootstrap);
-      this.messageControlPlane.issueChannelGrantAuthorized({
-        chatId: roomId,
-        accessToken: repairedBootstrap.accessToken,
-        role: "admin",
-        label: session.avatar,
-        participantId: actorId,
-      });
-      return (
-        this.messageControlPlane.getChannelForContact(roomId, actorId, {
-          includeArchived: true,
-          touchPresence: false,
-        }) ?? repairedBootstrap
-      );
-    }
-    return this.messageControlPlane.createChannel({
-      chatId: roomId,
-      kind: "room",
-      title: DEFAULT_MESSAGE_CHAT_TITLE,
-      owner: session.avatar,
-      contextId: `ctx-${roomId}`,
-      participants: [],
-      metadata: {
-        builtIn: true,
-        primaryRoom: true,
-        sessionId: session.id,
-      },
-      bootstrapContactId: actorId,
-    });
   }
 
   getSnapshot(): RuntimeSnapshotPayload {
@@ -3180,7 +3116,7 @@ export class AppKernel {
         input.name?.trim().length && input.name.trim() !== reusable.name
           ? this.sessions.update(reusable.id, { name: input.name.trim() })
           : reusable;
-      const updated = await this.bindSessionPrimaryRoomId(renamed);
+      const updated = renamed;
       await this.syncSessionIconSeed(updated);
       this.repairLegacySessionMessageActors([updated]);
       this.emit("session.updated", { session: updated }, updated.id);
@@ -3201,16 +3137,15 @@ export class AppKernel {
       avatarPrincipalId: avatarPrincipal.principalId,
       storeTarget: "global",
     });
-    const boundSession = await this.bindSessionPrimaryRoomId(session);
-    await this.syncSessionIconSeed(boundSession);
-    this.repairLegacySessionMessageActors([boundSession]);
-    this.emit("session.updated", { session: boundSession }, boundSession.id);
+    await this.syncSessionIconSeed(session);
+    this.repairLegacySessionMessageActors([session]);
+    this.emit("session.updated", { session }, session.id);
 
     if (input.autoStart === false) {
-      return boundSession;
+      return session;
     }
 
-    return await this.startSession(boundSession.id);
+    return await this.startSession(session.id);
   }
 
   updateSession(sessionId: string, patch: { name?: string }): SessionMeta {
@@ -3262,8 +3197,7 @@ export class AppKernel {
     if (existingMeta.storageState === "archived") {
       throw new Error(`session is archived: ${sessionId}`);
     }
-    const avatarBoundMeta = await this.bindSessionAvatarPrincipal(existingMeta);
-    const meta = await this.bindSessionPrimaryRoomId(avatarBoundMeta);
+    const meta = await this.bindSessionAvatarPrincipal(existingMeta);
     if (!meta.avatarPrincipalId) {
       throw new Error(`session avatar principal missing: ${meta.id}`);
     }
@@ -3286,10 +3220,8 @@ export class AppKernel {
     }
 
     this.sessions.update(sessionId, { status: "starting", lastError: undefined });
-    const primaryRoomId = meta.primaryRoomId;
-    if (!primaryRoomId) {
-      throw new Error(`session primary room id missing: ${meta.id}`);
-    }
+    // Session bootstrap anchors attention/workspace truth only.
+    // Message and terminal routing rehydrate later from explicit external-system facts.
     const runtime = new SessionRuntime({
       sessionId: meta.id,
       cwd: meta.cwd,
@@ -3315,7 +3247,6 @@ export class AppKernel {
       messageContactId: this.resolveSessionMessageContactId(meta),
       terminalSystem: this.terminalControlPlane,
       terminalActorId: this.resolveSessionTerminalActorId(meta),
-      primaryRoomId,
       resolveRuntimeTerminalCwd: async (input) =>
         this.resolveRuntimeTerminalCwd({
           runtimeId: meta.id,
@@ -3397,29 +3328,6 @@ export class AppKernel {
       includeArchived: input.includeArchived,
       touchPresence: false,
     });
-  }
-
-  async attachSessionPrimaryRoom(
-    sessionId: string,
-    input: { focus?: boolean } = {},
-  ): Promise<MessageControlPlaneEntry> {
-    this.ensureSessionCatalogLoaded();
-    const existingSession = this.sessions.get(sessionId);
-    if (!existingSession) {
-      throw new Error(`session not found: ${sessionId}`);
-    }
-    const avatarBound = await this.bindSessionAvatarPrincipal(existingSession);
-    const session = await this.bindSessionPrimaryRoomId(avatarBound);
-    const room = this.ensureSessionPrimaryRoom(session);
-    if (input.focus ?? true) {
-      this.messageControlPlane.focusForContact(this.resolveSessionMessageContactId(session), "add", [room.chatId]);
-    }
-    return (
-      this.messageControlPlane.getChannelForContact(room.chatId, this.resolveSessionMessageContactId(session), {
-        includeArchived: true,
-        touchPresence: false,
-      }) ?? room
-    );
   }
 
   async createMessageChannel(input: {
@@ -4926,6 +4834,33 @@ export class AppKernel {
     }
   }
 
+  async pushUserRoomMessage(input: {
+    sessionId: string;
+    chatId: string;
+    text: string;
+    assetIds?: string[];
+    clientMessageId?: string;
+  }): Promise<{ ok: boolean; reason?: string }> {
+    const runtime = this.runtimes.get(input.sessionId);
+    if (!runtime) {
+      return { ok: false, reason: "session runtime is not active" };
+    }
+    try {
+      runtime.pushUserRoomMessage({
+        chatId: input.chatId,
+        text: input.text,
+        assetIds: input.assetIds,
+        clientMessageId: input.clientMessageId,
+      });
+      return { ok: true };
+    } catch (error) {
+      return {
+        ok: false,
+        reason: error instanceof Error ? error.message : String(error),
+      };
+    }
+  }
+
   async editMessageChannel(input: {
     sessionId: string;
     chatId: string;
@@ -5049,22 +4984,6 @@ export class AppKernel {
         ok: false,
         reason: error instanceof Error ? error.message : String(error),
       };
-    }
-  }
-
-  async sendChat(
-    sessionId: string,
-    text: string,
-    assetIds: string[] = [],
-    clientMessageId?: string,
-  ): Promise<{ ok: boolean; reason?: string }> {
-    try {
-      const runtime = await this.ensureRuntime(sessionId);
-      runtime.pushUserChat(text, assetIds, clientMessageId);
-      return { ok: true };
-    } catch (error) {
-      const reason = error instanceof Error ? error.message : String(error);
-      return { ok: false, reason };
     }
   }
 
@@ -6036,7 +5955,7 @@ export class AppKernel {
 
   async setChatVisibility(input: {
     sessionId: string;
-    chatId?: string;
+    chatId: string;
     visible: boolean;
     focused: boolean;
   }): Promise<SessionNotificationSnapshot> {
@@ -6372,8 +6291,8 @@ export class AppKernel {
     );
   }
 
-  private resolveNotificationChatContextId(session: SessionMeta, chatId?: string): string {
-    return `ctx-${chatId ?? this.resolvePersistedSessionPrimaryRoomId(session.id)}`;
+  private resolveNotificationChatContextId(_session: SessionMeta, chatId: string): string {
+    return `ctx-${chatId}`;
   }
 
   private resolveNotificationTerminalContextId(terminalId: string): string {
@@ -6404,9 +6323,13 @@ export class AppKernel {
     }
     const runtime = this.runtimes.get(input.sessionId);
     if (runtime) {
+      if (input.target === "chat" && !input.targetId) {
+        // File-truth law: visibility follows the explicit room context, never session identity.
+        throw new Error("room must be specified");
+      }
       return input.target === "chat"
         ? await runtime.setChatVisibility({
-            chatId: input.targetId,
+            chatId: input.targetId!,
             visible: input.focusState !== "muted",
             focused: input.focusState === "focused",
           })
@@ -6417,10 +6340,15 @@ export class AppKernel {
           });
     }
 
+    if (input.target === "chat" && !input.targetId) {
+      // Stopped-session notification state still keys off explicit room context ids only.
+      throw new Error("room must be specified");
+    }
+
     await this.updatePersistedAttentionState(session, (attentionSystem) => {
       const contextId =
         input.target === "chat"
-          ? this.resolveNotificationChatContextId(session, input.targetId)
+          ? this.resolveNotificationChatContextId(session, input.targetId!)
           : this.resolveNotificationTerminalContextId(input.targetId ?? "");
       if (!attentionSystem.getContext(contextId)) {
         attentionSystem.createContext({

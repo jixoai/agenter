@@ -31,9 +31,9 @@ describe("Feature: real AI room terminal cold restart recovery", () => {
         const deliverySpan = await judgeUrlSpan(semanticJudge, result.deliveryMessage.content);
         const resumedSpan = await judgeUrlSpan(semanticJudge, result.resumedMessage.content);
 
-        expect(result.acknowledgement.chatId).toBe(result.primaryRoomIdBeforeRestart);
+        expect(result.acknowledgement.chatId).toBe(result.roomIdBeforeRestart);
         expect(await judgeAcknowledgesWorkAndPromisesFollowUp(semanticJudge, result.acknowledgement.content)).toBe(true);
-        expect(result.deliveryMessage.chatId).toBe(result.primaryRoomIdBeforeRestart);
+        expect(result.deliveryMessage.chatId).toBe(result.roomIdBeforeRestart);
         expect(await judgeReportsReadyUrlDelivery(semanticJudge, result.deliveryMessage.content)).toBe(true);
         expect(deliverySpan).not.toEqual({ start: 0, end: 0 });
         expect(result.deliveryMessage.content.slice(deliverySpan.start, deliverySpan.end)).toBe(result.deliveryUrl);
@@ -42,8 +42,8 @@ describe("Feature: real AI room terminal cold restart recovery", () => {
         expect(result.initialBody).toContain("STATUS-V1");
 
         expect(result.sessionIdAfterRestart).toBe(result.sessionIdBeforeRestart);
-        expect(result.primaryRoomIdAfterRestart).toBe(result.primaryRoomIdBeforeRestart);
-        expect(result.resumedMessage.chatId).toBe(result.primaryRoomIdAfterRestart);
+        expect(result.roomIdAfterRestart).toBe(result.roomIdBeforeRestart);
+        expect(result.resumedMessage.chatId).toBe(result.roomIdAfterRestart);
         expect(await judgeReportsReadyUrlDelivery(semanticJudge, result.resumedMessage.content)).toBe(true);
         expect(resumedSpan).not.toEqual({ start: 0, end: 0 });
         expect(result.resumedMessage.content.slice(resumedSpan.start, resumedSpan.end)).toBe(result.deliveryUrl);

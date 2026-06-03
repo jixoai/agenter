@@ -107,13 +107,13 @@ describe("Feature: Chat cycle page query stays bounded", () => {
     };
 
     try {
-      const page = await caller.chat.cycles({
+      const page = await caller.runtime.cyclesPage({
         sessionId: created.session.id,
         limit: 5,
       });
 
       expect(page.items).toHaveLength(5);
-      expect(page.items.map((cycle) => cycle.cycleId)).toEqual([2_097, 2_098, 2_099, 2_100, 2_101]);
+      expect(page.items.map((cycle: { cycleId: number | null }) => cycle.cycleId)).toEqual([2_097, 2_098, 2_099, 2_100, 2_101]);
       expect(heartbeatPageReads).toBe(0);
     } finally {
       SessionDb.prototype.pageMessagesByScope = originalPageMessagesByScope;

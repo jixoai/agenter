@@ -35,7 +35,7 @@ export interface RoomMessageEvidence {
 
 export interface RealMessageRevisionScenarioResult {
   scenario: "edit" | "recall";
-  primaryRoomId: string;
+  roomId: string;
   packageName: string;
   prompt: string;
   draftText: string;
@@ -46,7 +46,7 @@ export interface RealMessageRevisionScenarioResult {
   revisedMessage: RoomMessageEvidence | null;
   recalledMessage: RoomMessageEvidence | null;
   acknowledgementMessages: RoomMessageEvidence[];
-  primaryRoomMessages: RoomMessageEvidence[];
+  roomMessages: RoomMessageEvidence[];
   assistantMessages: RoomMessageEvidence[];
   settledAttention: SessionRuntimeAttentionState;
   recentModelCalls: RealKernelHarnessDiagnostics["recentModelCalls"];
@@ -54,12 +54,7 @@ export interface RealMessageRevisionScenarioResult {
   directMessageMutationTools: string[];
 }
 
-const getPrimaryRoomId = (harness: RealKernelHarness): string => {
-  if (!harness.session.primaryRoomId) {
-    throw new Error(`missing primaryRoomId for session ${harness.session.id}`);
-  }
-  return harness.session.primaryRoomId;
-};
+const getRoomId = (harness: RealKernelHarness): string => harness.room.chatId;
 
 const getMessageControlPlane = (harness: RealKernelHarness): MessageControlPlane =>
   Reflect.get(harness.kernel, "messageControlPlane") as MessageControlPlane;
@@ -88,7 +83,7 @@ const compareRoomMessages = (left: RoomMessageEvidence, right: RoomMessageEviden
   return left.messageId - right.messageId;
 };
 
-const listPrimaryRoomMessages = (
+const listRoomMessages = (
   harness: RealKernelHarness,
   input: {
     chatId: string;
@@ -108,7 +103,7 @@ const listAssistantMessages = (
     createdAfterOrAt?: number;
   },
 ): RoomMessageEvidence[] =>
-  listPrimaryRoomMessages(harness, input).filter((message) => message.from === harness.session.avatar);
+  listRoomMessages(harness, input).filter((message) => message.from === harness.session.avatar);
 
 const waitForAssistantMessage = async (
   harness: RealKernelHarness,
@@ -254,9 +249,9 @@ const createScenarioResult = async (
     timeoutMs?: number;
   },
 ): Promise<RealMessageRevisionScenarioResult> => {
-  const primaryRoomId = getPrimaryRoomId(harness);
+  const roomId = getRoomId(harness);
   const finalMessage = await waitForAssistantMessage(harness, {
-    chatId: primaryRoomId,
+    chatId: roomId,
     createdAfterOrAt: input.startAt,
     exactContent: input.expectedFinalText,
     label: `${input.scenario} final message`,
@@ -269,11 +264,11 @@ const createScenarioResult = async (
     timeoutMs: input.timeoutMs,
   });
   const relevantCalls = diagnostics.recentModelCalls.filter((call) => call.createdAt >= input.startAt);
-  const primaryRoomMessages = listPrimaryRoomMessages(harness, {
-    chatId: primaryRoomId,
+  const roomMessages = listRoomMessages(harness, {
+    chatId: roomId,
     createdAfterOrAt: input.startAt,
   });
-  const assistantMessages = primaryRoomMessages.filter((message) => message.from === harness.session.avatar);
+  const assistantMessages = roomMessages.filter((message) => message.from === harness.session.avatar);
   const rootWorkspaceBashCommands = extractRootWorkspaceBashCommands(relevantCalls);
   const directMessageMutationTools = extractDirectMessageMutationTools(relevantCalls);
   const revisedMessage =
@@ -289,7 +284,7 @@ const createScenarioResult = async (
 
   return {
     scenario: input.scenario,
-    primaryRoomId,
+    roomId,
     packageName: input.packageName,
     prompt: input.prompt,
     draftText: input.draftText,
@@ -305,7 +300,7 @@ const createScenarioResult = async (
     revisedMessage,
     recalledMessage,
     acknowledgementMessages,
-    primaryRoomMessages,
+    roomMessages,
     assistantMessages,
     settledAttention,
     recentModelCalls: relevantCalls,
@@ -318,14 +313,14 @@ export const runRealDraftEditScenario = async (
   harness: RealKernelHarness,
   timeoutMs = DEFAULT_TIMEOUT_MS,
 ): Promise<RealMessageRevisionScenarioResult> => {
-  const primaryRoomId = getPrimaryRoomId(harness);
+  const roomId = getRoomId(harness);
   const packageName = "ccski";
   const expectedVersion = await fetchNpmLatestVersion(packageName);
   const draftText = `草稿：我先猜 ${packageName} latest 是 0.0.0，正在核实。`;
   const expectedFinalText = `已核实：${packageName} latest 是 ${expectedVersion}。`;
   const prompt = [
     "你正在参与一个真实房间修正测试。",
-    `你只能在房间 ${primaryRoomId} 与用户沟通。`,
+    `你只能在房间 ${roomId} 与用户沟通。`,
     "不要解释内部过程，也不要发送多余的状态消息。",
     `第 1 步：立刻在房间里发送这条精确草稿消息：${draftText}`,
     `第 2 步：通过 shell 或其它客观方式核实 npm 上 ${packageName} 的 latest 版本号。`,
@@ -334,7 +329,11 @@ export const runRealDraftEditScenario = async (
     "完成后把相关 attention 收敛到 0。",
   ].join("\n");
   const startAt = Date.now();
-  const sent = await harness.kernel.sendChat(harness.session.id, prompt);
+  const sent = await harness.kernel.pushUserRoomMessage({
+    sessionId: harness.session.id,
+    chatId: roomId,
+    text: prompt,
+  });
   if (!sent.ok) {
     throw new Error(`failed to send edit scenario prompt: ${sent.reason ?? "unknown"}`);
   }
@@ -354,14 +353,14 @@ export const runRealDraftRecallScenario = async (
   harness: RealKernelHarness,
   timeoutMs = DEFAULT_TIMEOUT_MS,
 ): Promise<RealMessageRevisionScenarioResult> => {
-  const primaryRoomId = getPrimaryRoomId(harness);
+  const roomId = getRoomId(harness);
   const packageName = "ccski";
   const expectedVersion = await fetchNpmLatestVersion(packageName);
   const draftText = `占位：我先查 ${packageName} latest，稍后给最终结果。`;
   const expectedFinalText = `已核实：${packageName} latest 是 ${expectedVersion}。`;
   const prompt = [
     "你正在参与一个真实房间撤回测试。",
-    `你只能在房间 ${primaryRoomId} 与用户沟通。`,
+    `你只能在房间 ${roomId} 与用户沟通。`,
     "不要解释内部过程，也不要发送多余的状态消息。",
     `第 1 步：立刻在房间里发送这条精确占位消息：${draftText}`,
     `第 2 步：通过 shell 或其它客观方式核实 npm 上 ${packageName} 的 latest 版本号。`,
@@ -370,7 +369,11 @@ export const runRealDraftRecallScenario = async (
     "完成后把相关 attention 收敛到 0。",
   ].join("\n");
   const startAt = Date.now();
-  const sent = await harness.kernel.sendChat(harness.session.id, prompt);
+  const sent = await harness.kernel.pushUserRoomMessage({
+    sessionId: harness.session.id,
+    chatId: roomId,
+    text: prompt,
+  });
   if (!sent.ok) {
     throw new Error(`failed to send recall scenario prompt: ${sent.reason ?? "unknown"}`);
   }
@@ -405,20 +408,20 @@ export const writeRealMessageRevisionFailureEvidence = async (
     error: unknown;
   },
 ): Promise<string> => {
-  const primaryRoomId = harness.session.primaryRoomId;
-  const primaryRoomMessages = primaryRoomId
-    ? listPrimaryRoomMessages(harness, {
-        chatId: primaryRoomId,
+  const roomId = harness.room.chatId;
+  const roomMessages = roomId
+    ? listRoomMessages(harness, {
+        chatId: roomId,
       })
     : [];
-  const assistantMessages = primaryRoomMessages.filter((message) => message.from === harness.session.avatar);
+  const assistantMessages = roomMessages.filter((message) => message.from === harness.session.avatar);
   const diagnostics = await harness.collectDiagnostics({
     label: `real-message-revision-${input.scenario}-failure`,
     messageLimit: MESSAGE_LIMIT,
   });
   return await createEvidenceFile(`real-message-revision-${input.scenario}-failure`, {
     scenario: input.scenario,
-    primaryRoomId,
+    roomId,
     observedPattern: classifyObservedPattern({
       assistantMessages,
       expectedFinalText: "",
@@ -435,7 +438,7 @@ export const writeRealMessageRevisionFailureEvidence = async (
         : {
             message: String(input.error),
           },
-    primaryRoomMessages,
+    roomMessages,
     recentModelCalls: diagnostics.recentModelCalls,
   });
 };

@@ -7,7 +7,7 @@ import {
   createScenarioBudget,
   extractLocalDeliveryUrl,
   extractToolTraceTools,
-  getPrimaryRoomId,
+  getRoomId,
   listRoomTruthMessages,
   projectModelCallDiagnostics,
   readModelOutcomeCode,
@@ -121,7 +121,7 @@ const collectDiagnostics = async (
 export const runRealRoomTerminalRealisticUserScenario = async (
   harness: RealKernelHarness,
 ): Promise<RealRoomTerminalRealisticUserScenarioResult> => {
-  const primaryRoomId = getPrimaryRoomId(harness);
+  const roomId = getRoomId(harness);
   const port = await allocateEphemeralPort();
   const url = `http://127.0.0.1:${port}/`;
   const startAt = Date.now();
@@ -155,10 +155,14 @@ export const runRealRoomTerminalRealisticUserScenario = async (
       "我不懂技术，你直接做好并把能打开的那个链接发我就行，不要只说你在处理中。",
       "你给我的用户可见回复请保持简短中文。",
       "不要先打开任何 runtime skill 的 `SKILL.md`，也不要先用 skill info 浏览技能说明；先做直接命令。",
-      `当前房间 chatId 就是 ${primaryRoomId}；如果需要发确认或交付消息，直接用这个 chatId，不要先跑 message list/read。`,
+      `当前房间 chatId 就是 ${roomId}；如果需要发确认或交付消息，直接用这个 chatId，不要先跑 message list/read。`,
       "如果某个命令格式不确定，先直接看该命令的 --help；只有在连命令族都不清楚时才考虑 skill info。",
     ].join("\n");
-    const sent = await harness.kernel.sendChat(harness.session.id, prompt);
+    const sent = await harness.kernel.pushUserRoomMessage({
+      sessionId: harness.session.id,
+      chatId: roomId,
+      text: prompt,
+    });
     if (!sent.ok) {
       throw new Error(`failed to send realistic room-terminal prompt: ${sent.reason ?? "unknown"}`);
     }
@@ -167,7 +171,7 @@ export const runRealRoomTerminalRealisticUserScenario = async (
     const acknowledgement = await waitForAssistantMessage(harness, {
       label: "realistic room-terminal acknowledgement",
       predicate: (message) =>
-        message.chatId === primaryRoomId &&
+        message.chatId === roomId &&
         message.timestamp >= startAt &&
         message.content.trim().length > 0 &&
         extractLocalDeliveryUrl(message.content) === null,
@@ -178,7 +182,7 @@ export const runRealRoomTerminalRealisticUserScenario = async (
     const deliveryMessage = await waitForAssistantMessage(harness, {
       label: "realistic room-terminal delivery",
       predicate: (message) =>
-        message.chatId === primaryRoomId &&
+        message.chatId === roomId &&
         message.timestamp > acknowledgement.timestamp &&
         extractLocalDeliveryUrl(message.content) === url,
       timeoutMs: budget.step("realistic delivery url", REAL_ROOM_DELIVERY_TIMEOUT_MS),
@@ -201,7 +205,11 @@ export const runRealRoomTerminalRealisticUserScenario = async (
       "还是用同一个链接给我就行；如果新版还没生效，你就继续处理到这个链接能看到新版为止。",
       "改完后直接把这个同一个链接再发我。",
     ].join("\n");
-    const feedbackSent = await harness.kernel.sendChat(harness.session.id, feedbackPrompt);
+    const feedbackSent = await harness.kernel.pushUserRoomMessage({
+      sessionId: harness.session.id,
+      chatId: roomId,
+      text: feedbackPrompt,
+    });
     if (!feedbackSent.ok) {
       throw new Error(`failed to send realistic room-terminal feedback: ${feedbackSent.reason ?? "unknown"}`);
     }
@@ -211,7 +219,7 @@ export const runRealRoomTerminalRealisticUserScenario = async (
     const updateMessage = await waitForAssistantMessage(harness, {
       label: "realistic room-terminal update",
       predicate: (message) =>
-        message.chatId === primaryRoomId &&
+        message.chatId === roomId &&
         message.timestamp >= feedbackSentAt &&
         extractLocalDeliveryUrl(message.content) === url,
       timeoutMs: budget.step("realistic updated room message", REAL_ROOM_DELIVERY_TIMEOUT_MS),

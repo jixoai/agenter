@@ -23,14 +23,11 @@ describe("Feature: real AI public-workspace shell profile separation", () => {
       }
 
       try {
-        const primaryRoomId = harness.session.primaryRoomId;
-        if (!primaryRoomId) {
-          throw new Error("expected session primaryRoomId");
-        }
+        const roomId = harness.room.chatId;
 
         const result = await runRealPublicWorkspaceShellScenario(harness);
 
-        expect(result.finalReply.chatId).toBe(primaryRoomId);
+        expect(result.finalReply.chatId).toBe(roomId);
         expect(result.finalReply.content).toBe("PUBLIC-WORKSPACE-OK");
         expect(result.toolTraceTools).toContain("workspace_list");
         expect(result.workspaceBashCommands.some((call) => call.workspaceId === result.workspaceId)).toBeTrue();

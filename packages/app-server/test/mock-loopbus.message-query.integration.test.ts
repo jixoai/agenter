@@ -12,10 +12,10 @@ describe("Feature: mock-loopbus message query", () => {
       const harness = await createMockKernelHarness({ sessionName: "message-query-auth" });
 
       try {
-        const primaryRoomId = harness.session.primaryRoomId;
+        const roomId = harness.room.chatId;
         const actorId = harness.session.avatarPrincipalId as MessageContactId | undefined;
-        if (!primaryRoomId || !actorId) {
-          throw new Error("expected primary room and avatar principal id");
+        if (!actorId) {
+          throw new Error("expected avatar principal id");
         }
 
         const allowedRoom = await harness.kernel.createGlobalRoom({
@@ -39,17 +39,18 @@ describe("Feature: mock-loopbus message query", () => {
           text: "budget incident beta",
         });
 
-        const sent = await harness.kernel.sendChat(
-          harness.session.id,
-          `帮我临时跨房间搜索 ${MOCK_QUERY_KEYWORD}，但只能看我当前有权限访问的房间。`,
-        );
+        const sent = await harness.kernel.pushUserRoomMessage({
+          sessionId: harness.session.id,
+          chatId: roomId,
+          text: `帮我临时跨房间搜索 ${MOCK_QUERY_KEYWORD}，但只能看我当前有权限访问的房间。`,
+        });
         if (!sent.ok) {
           throw new Error(`failed to send query request: ${sent.reason ?? "unknown"}`);
         }
 
         const reply = await waitForAssistantMessage(harness, {
           label: "authorized message query reply",
-          predicate: (message) => message.chatId === primaryRoomId && message.content.trim() === MOCK_QUERY_ALLOWED_REPLY,
+          predicate: (message) => message.chatId === roomId && message.content.trim() === MOCK_QUERY_ALLOWED_REPLY,
         });
         const debug = await harness.kernel.inspectModelDebug(harness.session.id);
         const rootWorkspaceBashRuns = debug.recentModelCalls.flatMap((call) => {
@@ -95,7 +96,7 @@ describe("Feature: mock-loopbus message query", () => {
         });
         const messageQueryOutput = messageQueryRuns.map((run) => run.stdout).join("\n");
 
-        expect(reply.chatId).toBe(primaryRoomId);
+        expect(reply.chatId).toBe(roomId);
         expect(reply.content).toBe(MOCK_QUERY_ALLOWED_REPLY);
         expect(reply.content).not.toContain("Forbidden room");
         expect(messageQueryRuns.length).toBeGreaterThan(0);

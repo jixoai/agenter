@@ -15,10 +15,7 @@ describe("Feature: non-GUI LoopBus compact follow-up replay", () => {
       const harness = await createMockKernelHarness({ sessionName: "two-room-compact-follow-up" });
 
       try {
-        const primaryRoomId = harness.session.primaryRoomId;
-        if (!primaryRoomId) {
-          throw new Error("expected session primaryRoomId");
-        }
+        const roomId = harness.room.chatId;
         const relayChannel = await createGaubeeRoom(harness);
         const relay = await runTwoRoomRelayScenario(harness, relayChannel);
         const followUp = await runCompactFollowUpScenario(harness, {
@@ -28,7 +25,7 @@ describe("Feature: non-GUI LoopBus compact follow-up replay", () => {
 
         expect(followUp.compactCycle.kind).toBe("compact");
         expect(followUp.compactCycle.compactTrigger).toBe("manual");
-        expect(followUp.followUpReply.chatId).toBe(primaryRoomId);
+        expect(followUp.followUpReply.chatId).toBe(roomId);
         expect(followUp.followUpReply.content).toBe(MOCK_FINAL_ANSWER);
         expect(followUp.relayPromptCountAfter).toBe(followUp.relayPromptCountBefore);
         expect(followUp.settledAttention.active).toHaveLength(0);

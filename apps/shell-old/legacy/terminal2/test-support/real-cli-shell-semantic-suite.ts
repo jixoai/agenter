@@ -96,7 +96,7 @@ export interface RealCliShellScenarioResult {
   };
   compactCycleId: number;
   chatMessages: Array<{ messageId: string; chatId: string; role: string; createdAt: number; content: string }>;
-  primaryRoomMessages: Array<{
+  attachedRoomMessages: Array<{
     messageId: number;
     chatId: string;
     from: string;
@@ -122,7 +122,7 @@ export interface RealCliShellScenarioScore {
 }
 
 type RecentModelCall = Awaited<ReturnType<RealCliShellFixture["listRecentModelCalls"]>>[number];
-type PrimaryRoomMessageSnapshot = {
+type AttachedRoomMessageSnapshot = {
   messageId: number;
   chatId: string;
   from: string;
@@ -165,16 +165,13 @@ const waitForPromptWindowCompact = async (fixture: RealCliShellFixture): Promise
   );
 };
 
-const resolvePrimaryRoomChannel = (fixture: RealCliShellFixture): { chatId: string; accessToken: string } => {
-  const primaryRoomId = fixture.attached.session.primaryRoomId;
-  if (!primaryRoomId) {
-    throw new Error(`cli-shell attached session missing primaryRoomId: ${fixture.attached.session.id}`);
-  }
+const resolveAttachedRoomChannel = (fixture: RealCliShellFixture): { chatId: string; accessToken: string } => {
+  const roomId = fixture.attached.room.entry.chatId;
   const channel = fixture.handle.kernel
     .listMessageChannels(fixture.attached.session.id)
-    .find((entry) => entry.chatId === primaryRoomId);
+    .find((entry) => entry.chatId === roomId);
   if (!channel?.accessToken) {
-    throw new Error(`cli-shell primary room is not readable: ${primaryRoomId}`);
+    throw new Error(`cli-shell attached room is not readable: ${roomId}`);
   }
   return {
     chatId: channel.chatId,
@@ -182,10 +179,10 @@ const resolvePrimaryRoomChannel = (fixture: RealCliShellFixture): { chatId: stri
   };
 };
 
-const listPrimaryRoomMessages = (fixture: RealCliShellFixture): PrimaryRoomMessageSnapshot[] =>
+const listAttachedRoomMessages = (fixture: RealCliShellFixture): AttachedRoomMessageSnapshot[] =>
   fixture.handle.kernel
     .snapshotGlobalRoom({
-      ...resolvePrimaryRoomChannel(fixture),
+      ...resolveAttachedRoomChannel(fixture),
       limit: 200,
     })
     .items.map((message) => ({
@@ -198,9 +195,9 @@ const listPrimaryRoomMessages = (fixture: RealCliShellFixture): PrimaryRoomMessa
       ...(typeof message.recalledAt === "number" ? { recalledAt: message.recalledAt } : {}),
     }));
 
-const isAssistantPrimaryRoomMessage = (
+const isAssistantAttachedRoomMessage = (
   fixture: RealCliShellFixture,
-  message: PrimaryRoomMessageSnapshot,
+  message: AttachedRoomMessageSnapshot,
 ): boolean => {
   const avatarPrincipalId = fixture.attached.avatar.avatarPrincipalId;
   const avatarNickname = fixture.attached.avatar.nickname;
@@ -212,9 +209,9 @@ const isAssistantPrimaryRoomMessage = (
   );
 };
 
-const listAssistantPrimaryRoomMessages = (fixture: RealCliShellFixture): PrimaryRoomMessageSnapshot[] =>
-  listPrimaryRoomMessages(fixture).filter(
-    (message) => isAssistantPrimaryRoomMessage(fixture, message) && message.recalledAt === undefined,
+const listAssistantAttachedRoomMessages = (fixture: RealCliShellFixture): AttachedRoomMessageSnapshot[] =>
+  listAttachedRoomMessages(fixture).filter(
+    (message) => isAssistantAttachedRoomMessage(fixture, message) && message.recalledAt === undefined,
   );
 
 const extractToolTraceTools = (calls: readonly RecentModelCall[]): string[] =>
@@ -239,13 +236,10 @@ const listCacheFiles = (fixture: RealCliShellFixture): string[] => {
 };
 
 const buildTurnPrompt = (fixture: RealCliShellFixture, content: string): string => {
-  const primaryRoomId = fixture.attached.session.primaryRoomId;
-  if (!primaryRoomId) {
-    throw new Error(`cli-shell attached session missing primaryRoomId: ${fixture.attached.session.id}`);
-  }
+  const roomId = fixture.attached.room.entry.chatId;
   return [
     content,
-    `当前用户可见回复房间 chatId: ${primaryRoomId}。请把你的可见回复发到这个 chatId。`,
+    `当前用户可见回复房间 chatId: ${roomId}。请把你的可见回复发到这个 chatId。`,
     "如果需要发用户可见回复，使用 root_bash 的 runtime CLI 命令 `message send`；不要调用 localhost API，也不要自己拼 HTTP endpoint。",
     "推荐房间发送方式：先把 JSON 写入临时文件，再执行 `message send \"$(cat msg_payload.json)\"`。如果命令字段不确定，先运行一次 `message send --help`。",
     "root_bash 的当前工作目录已经是 avatar-private root。需要更新 durable memory 时，直接编辑这些相对路径文件：`memory/user-model.md`、`memory/pairing-playbook.md`、`memory/terminal-habits.md`、`memory/self-evolution-log.md`、`memory/hosting-objective.md`。",
@@ -263,7 +257,7 @@ const waitForTurnCompletion = async (
   },
 ): Promise<string> => {
   const reply = await waitForRealValue(
-    () => listAssistantPrimaryRoomMessages(fixture).find((message) => message.messageId > input.afterAssistantMessageId) ?? null,
+    () => listAssistantAttachedRoomMessages(fixture).find((message) => message.messageId > input.afterAssistantMessageId) ?? null,
     {
       label: `${input.label} durable assistant reply`,
       timeoutMs: input.timeoutMs ?? DEFAULT_TIMEOUT_MS,
@@ -305,7 +299,7 @@ const nextAssistantReply = async (
   label: string,
   content: string,
 ): Promise<string> => {
-  const beforeAssistantMessageId = listAssistantPrimaryRoomMessages(fixture).at(-1)?.messageId ?? 0;
+  const beforeAssistantMessageId = listAssistantAttachedRoomMessages(fixture).at(-1)?.messageId ?? 0;
   const beforeModelCallId = (await fixture.listRecentModelCalls()).at(-1)?.id ?? 0;
   await fixture.sendUserChatMessage(buildTurnPrompt(fixture, content));
   return await waitForTurnCompletion(fixture, {
@@ -341,14 +335,6 @@ const runScenarioOnFixture = async (
     createdAt: message.createdAt,
     content: clipText(message.content),
   }));
-  const primaryRoomMessages = listPrimaryRoomMessages(fixture).map((message) => ({
-    messageId: message.messageId,
-    chatId: message.chatId,
-    from: message.from,
-    ...(message.senderActorId ? { senderActorId: message.senderActorId } : {}),
-    createdAt: message.createdAt,
-    content: clipText(message.content),
-  }));
   const memoryPack = Object.fromEntries(
     Object.entries(fixture.readMemoryPack()).map(([role, content]) => [role, clipText(content)]),
   );
@@ -356,6 +342,14 @@ const runScenarioOnFixture = async (
   const recentModelCalls = await fixture.listRecentModelCalls();
   const attention = await fixture.handle.kernel.inspectAttentionState(fixture.attached.session.id);
   const cacheFiles = listCacheFiles(fixture);
+  const attachedRoomMessages = listAttachedRoomMessages(fixture).map((message) => ({
+    messageId: message.messageId,
+    chatId: message.chatId,
+    from: message.from,
+    ...(message.senderActorId ? { senderActorId: message.senderActorId } : {}),
+    createdAt: message.createdAt,
+    content: clipText(message.content),
+  }));
 
   return {
     styleId: style.id,
@@ -369,7 +363,7 @@ const runScenarioOnFixture = async (
     },
     compactCycleId: compact.cycleId,
     chatMessages,
-    primaryRoomMessages,
+    attachedRoomMessages,
     memoryPack,
     prompt,
     modelCallCount: recentModelCalls.length,

@@ -688,30 +688,6 @@ export const appRouter = t.router({
       )
       .mutation(({ ctx, input }) => ctx.kernel.rollbackSessionCycle(input.sessionId, input.cycleId)),
   }),
-  chat: t.router({
-    send: superadminProcedure
-      .input(
-        z.object({
-          sessionId: z.string().min(1),
-          text: z.string().min(1),
-          assetIds: z.array(z.string().min(1)).optional(),
-          clientMessageId: z.string().min(1).optional(),
-        }),
-      )
-      .mutation(({ ctx, input }) =>
-        ctx.kernel.sendChat(input.sessionId, input.text, input.assetIds ?? [], input.clientMessageId),
-      ),
-    list: superadminProcedure
-      .input(reversePageInput)
-      .query(({ ctx, input }) =>
-        ctx.kernel.pageChatMessages(input.sessionId, { before: input.before, limit: input.limit ?? 200 }),
-      ),
-    cycles: superadminProcedure
-      .input(reversePageInput)
-      .query(({ ctx, input }) =>
-        ctx.kernel.pageChatCycles(input.sessionId, { before: input.before, limit: input.limit ?? 120 }),
-      ),
-  }),
   message: t.router({
     listChannels: superadminProcedure
       .input(
@@ -1946,7 +1922,7 @@ export const appRouter = t.router({
       .input(
         z.object({
           sessionId: z.string().min(1),
-          chatId: z.string().min(1).optional(),
+          chatId: z.string().min(1),
           visible: z.boolean(),
           focused: z.boolean(),
         }),
@@ -2105,6 +2081,16 @@ export const appRouter = t.router({
       .input(reversePageInput)
       .query(({ ctx, input }) =>
         ctx.kernel.pageModelCalls(input.sessionId, { before: input.before, limit: input.limit ?? 200 }),
+      ),
+    messagesPage: superadminProcedure
+      .input(reversePageInput)
+      .query(({ ctx, input }) =>
+        ctx.kernel.pageChatMessages(input.sessionId, { before: input.before, limit: input.limit ?? 200 }),
+      ),
+    cyclesPage: superadminProcedure
+      .input(reversePageInput)
+      .query(({ ctx, input }) =>
+        ctx.kernel.pageChatCycles(input.sessionId, { before: input.before, limit: input.limit ?? 120 }),
       ),
     usageAnalytics: superadminProcedure.input(usageAnalyticsInput).query(({ ctx, input }) =>
       ctx.kernel.queryUsageAnalytics(input.sessionId, {

@@ -15,10 +15,7 @@ describe("Feature: non-GUI LoopBus settled follow-up", () => {
       const harness = await createMockKernelHarness({ sessionName: "two-room-settled-follow-up" });
 
       try {
-        const primaryRoomId = harness.session.primaryRoomId;
-        if (!primaryRoomId) {
-          throw new Error("expected session primaryRoomId");
-        }
+        const roomId = harness.room.chatId;
         const relayChannel = await createGaubeeRoom(harness);
         const relay = await runTwoRoomRelayScenario(harness, relayChannel);
         const followUp = await runSettledFollowUpScenario(harness, {
@@ -26,7 +23,7 @@ describe("Feature: non-GUI LoopBus settled follow-up", () => {
           afterReplyTimestamp: relay.finalReply.timestamp,
         });
 
-        expect(followUp.followUpReply.chatId).toBe(primaryRoomId);
+        expect(followUp.followUpReply.chatId).toBe(roomId);
         expect(followUp.followUpReply.content).toBe(MOCK_FINAL_ANSWER);
         expect(followUp.relayPromptCountAfter).toBe(followUp.relayPromptCountBefore);
         expect(followUp.settledAttention.active).toHaveLength(0);

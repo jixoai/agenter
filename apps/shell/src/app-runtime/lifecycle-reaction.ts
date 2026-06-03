@@ -22,9 +22,6 @@ const stateContainsKilledTerminal = (state: Partial<RuntimeClientState>, termina
   containsKilledTerminal(state.globalTerminalArchive?.data, terminalId) ||
   containsKilledTerminal(state.globalTerminals?.data, terminalId);
 
-const isProtectedRoom = (room: GlobalRoomEntry): boolean =>
-  room.metadata?.builtIn === true || room.metadata?.primaryRoom === true;
-
 export const createShellTerminalRoomLifecycleReaction = (input: {
   store: ShellLifecycleReactionStore;
   binding: ShellBindingProjection;
@@ -35,7 +32,9 @@ export const createShellTerminalRoomLifecycleReaction = (input: {
   let archiveTask: Promise<void> | null = null;
 
   const archiveBoundRoom = async (): Promise<void> => {
-    if (disposed || archived || isProtectedRoom(input.room)) {
+    // File-truth law: shell bindings do not invent protected-room exceptions.
+    // Archive eligibility comes only from the room's explicit kernel-managed state.
+    if (disposed || archived) {
       return;
     }
     if (archiveTask) {

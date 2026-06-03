@@ -177,7 +177,6 @@ import {
 import { type ManagedTerminalSnapshot, type TerminalRuntime } from "./managed-terminal";
 import { McpSystem } from "./mcp-system/system";
 import { summarizeMessageChannelPresence } from "./message-channel-presence";
-import { repairRoomParticipantsIfNeeded } from "./message-room-participant-repair";
 import { resolveModelCapabilities } from "./model-capabilities";
 import {
   ModelClient,
@@ -1751,7 +1750,6 @@ export interface SessionRuntimeOptions {
   messageContactId?: MessageContactId;
   terminalSystem: TerminalControlPlane;
   terminalActorId?: TerminalActorId;
-  primaryRoomId: string;
   resolveRuntimeTerminalCwd?: (input: {
     sessionId: string;
     cwd?: string;
@@ -1846,7 +1844,6 @@ export class SessionRuntime {
   private readonly ownsMessageSystem: boolean;
   private readonly messageContactId: MessageContactId;
   private readonly terminalActorId: TerminalActorId;
-  private readonly primaryRoomId: string;
   private readonly inboundMessageQueue: LoopBusInput[] = [];
   private readonly runtimeKernelHost: RuntimeKernelHost;
   private readonly messageKernelAdapter: RuntimeMessageKernelAdapter;
@@ -1969,7 +1966,6 @@ export class SessionRuntime {
   constructor(private readonly options: SessionRuntimeOptions) {
     this.messageContactId = options.messageContactId ?? resolveSessionRoomActorId(options.sessionId);
     this.terminalActorId = options.terminalActorId ?? (resolveSessionRoomActorId(options.sessionId) as TerminalActorId);
-    this.primaryRoomId = options.primaryRoomId;
     this.terminalControlPlane = options.terminalSystem;
     if (options.messageSystem) {
       this.messageSystem = options.messageSystem;
@@ -2505,14 +2501,6 @@ export class SessionRuntime {
     return parseMessageSourceSrc(ref.src);
   }
 
-  private getMessageSourceChannelId(ref: LoopSourceRef): string {
-    return this.parseMessageSource(ref)?.chatId ?? this.getDefaultChatId();
-  }
-
-  private getDefaultChatId(): string {
-    return this.primaryRoomId;
-  }
-
   private getAvatarName(): string {
     return this.config?.avatar?.nickname ?? this.options.avatar ?? DEFAULT_CHAT_OWNER;
   }
@@ -2750,9 +2738,7 @@ export class SessionRuntime {
           ? channel.focused
             ? "focused"
             : "background"
-          : chatId === this.getDefaultChatId()
-            ? "focused"
-            : "background",
+          : "background",
     });
     const state = created.getState();
     return {
@@ -2762,22 +2748,6 @@ export class SessionRuntime {
       unresolvedScoreCount: created.unresolvedScoreCount(),
       updatedAt: state.updatedAt,
     };
-  }
-
-  private requireDefaultChatChannel(): MessageControlPlaneEntry {
-    const chatId = this.getDefaultChatId();
-    const context = this.ensureAttentionContextForChannel(chatId);
-    const existing = this.getActorRoom(chatId);
-    if (!existing) {
-      throw new Error(`default room is not attached: ${chatId}`);
-    }
-    const created = repairRoomParticipantsIfNeeded(this.messageSystem, existing);
-    if (this.resolveAttentionFocusState(context.contextId) === "focused") {
-      this.messageSystem.focusForContact(this.messageContactId, "add", [chatId]);
-    } else {
-      this.messageSystem.focusForContact(this.messageContactId, "remove", [chatId]);
-    }
-    return created;
   }
 
   private async resolveRuntimeTerminalCwd(input: {
@@ -2849,9 +2819,6 @@ export class SessionRuntime {
     chatId: string;
     includeArchived?: boolean;
   }): RuntimeMessageChannelView | null {
-    if (input.chatId === this.getDefaultChatId()) {
-      this.requireDefaultChatChannel();
-    }
     const channel =
       this.getActorRoom(input.chatId, {
         includeArchived: input.includeArchived ?? false,
@@ -3196,9 +3163,6 @@ export class SessionRuntime {
   }
 
   private requireActorChannelWriteAccess(chatId: string): { chatId: string; accessToken: string } {
-    if (chatId === this.getDefaultChatId()) {
-      this.requireDefaultChatChannel();
-    }
     const actorChannel = this.getActorRoom(chatId, { includeArchived: true });
     if (!actorChannel?.accessToken) {
       throw new Error(`runtime actor has no member grant for chat channel: ${chatId}`);
@@ -3871,12 +3835,6 @@ export class SessionRuntime {
     if (!channel) {
       throw new Error(`unknown chat channel: ${input.chatId}`);
     }
-    const builtIn = Boolean(
-      channel.metadata && typeof channel.metadata === "object" && channel.metadata.builtIn === true,
-    );
-    if (channel.chatId === this.getDefaultChatId() || builtIn) {
-      throw new Error("built-in room is protected and cannot be archived");
-    }
     const archived = this.messageSystem.archiveChannelAuthorized({
       chatId: input.chatId,
       accessToken: input.accessToken,
@@ -3893,7 +3851,7 @@ export class SessionRuntime {
     const archived =
       this.getActorRoom(input.chatId, { includeArchived: true }) ??
       this.messageSystem.getChannel(input.chatId, { includeArchived: true });
-    if (!archived?.archivedAt || this.isCompanionLifecycleProtectedRoom(archived)) {
+    if (!archived?.archivedAt) {
       return;
     }
     await this.applyArchivedMessageChannelLifecycle(archived, {
@@ -3925,12 +3883,6 @@ export class SessionRuntime {
       this.messageSystem.getChannel(input.chatId, { includeArchived: true });
     if (!channel) {
       throw new Error(`unknown chat channel: ${input.chatId}`);
-    }
-    const builtIn = Boolean(
-      channel.metadata && typeof channel.metadata === "object" && channel.metadata.builtIn === true,
-    );
-    if (channel.chatId === this.getDefaultChatId() || builtIn) {
-      throw new Error("built-in room is protected and cannot be deleted");
     }
     const deleted = this.messageSystem.deleteChannelAuthorized({
       chatId: input.chatId,
@@ -7352,7 +7304,6 @@ export class SessionRuntime {
         cwd: this.options.cwd,
         avatar: this.config.avatar.nickname,
         avatarPrincipalId: this.options.avatarPrincipalId,
-        primaryRoomId: this.options.primaryRoomId,
         storeTarget: this.options.storeTarget,
       },
     });
@@ -8026,12 +7977,11 @@ export class SessionRuntime {
   }
 
   async setChatVisibility(input: {
-    chatId?: string;
+    chatId: string;
     visible: boolean;
     focused: boolean;
   }): Promise<SessionNotificationSnapshot> {
-    const chatId = input.chatId ?? this.getDefaultChatId();
-    const contextId = this.ensureAttentionContextForChannel(chatId).contextId;
+    const contextId = this.ensureAttentionContextForChannel(input.chatId).contextId;
     await this.applyAttentionFocusState(contextId, toAttentionFocusStateFromVisibility(input));
     return this.inspectNotificationState();
   }
@@ -8603,18 +8553,29 @@ export class SessionRuntime {
     });
   }
 
-  pushUserChat(text: string, assetIds: string[] = [], clientMessageId?: string): void {
-    const isCompactCommand = text.trim() === "/compact";
+  pushUserRoomMessage(input: {
+    chatId: string;
+    text: string;
+    assetIds?: string[];
+    clientMessageId?: string;
+  }): void {
+    const isCompactCommand = input.text.trim() === "/compact";
     if (isCompactCommand) {
       this.queueCompactCycle("manual");
     }
 
-    const channel = this.requireDefaultChatChannel();
+    const channelAccess = this.requireActorChannelWriteAccess(input.chatId);
+    const channel =
+      this.getActorRoom(channelAccess.chatId, { includeArchived: true }) ??
+      this.messageSystem.getChannel(channelAccess.chatId, { includeArchived: true });
+    if (!channel) {
+      throw new Error(`unknown chat channel: ${input.chatId}`);
+    }
     const message = this.appendLocalUserChatMessage({
       chatId: channel.chatId,
-      text,
-      assetIds,
-      clientMessageId,
+      text: input.text,
+      assetIds: input.assetIds,
+      clientMessageId: input.clientMessageId,
     });
     if (!this.isUnreadInboundMessage(message) || !channel.accessToken) {
       return;
@@ -9920,13 +9881,14 @@ export class SessionRuntime {
           .filter((item) => item.text.trim() !== "/compact")
           .flatMap((item): AttentionDraft[] => {
             const messageId = item.id ? Number(item.id) : Number.NaN;
-            if (!Number.isInteger(messageId) || messageId <= 0) {
+            const chatId = typeof item.meta?.chatId === "string" ? item.meta.chatId : null;
+            if (!Number.isInteger(messageId) || messageId <= 0 || !chatId) {
               return [];
             }
             return [
               {
                 sourceRef: this.createMessageSourceRef({
-                  chatId: this.getDefaultChatId(),
+                  chatId,
                   messageId,
                 }),
                 content: item.text,
@@ -9936,7 +9898,7 @@ export class SessionRuntime {
                   author: item.name,
                   source: "message",
                   src: formatMessageSourceSrc({
-                    chatId: this.getDefaultChatId(),
+                    chatId,
                     messageId,
                   }),
                 },
@@ -10104,22 +10066,9 @@ export class SessionRuntime {
     return null;
   }
 
-  private isCompanionLifecycleProtectedRoom(channel: Pick<MessageControlPlaneEntry, "chatId" | "metadata">): boolean {
-    if (channel.chatId === this.getDefaultChatId()) {
-      return true;
-    }
-    return Boolean(channel.metadata && typeof channel.metadata === "object" && channel.metadata.builtIn === true);
-  }
-
   private async syncCompanionRoomArchiveProjection(contextId: string, focusState: AttentionFocusState): Promise<void> {
     const channel = this.resolveMessageChannelForContext(contextId);
     if (!channel) {
-      return;
-    }
-    if (this.isCompanionLifecycleProtectedRoom(channel)) {
-      // Default / built-in runtime rooms still rely on active actor-room lookup
-      // paths in multiple places. Companion mute -> archive is only safe for
-      // non-protected rooms until that broader runtime law is upgraded.
       return;
     }
     if (focusState === "muted") {

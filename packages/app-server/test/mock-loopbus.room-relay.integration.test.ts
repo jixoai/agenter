@@ -14,10 +14,7 @@ describe("Feature: non-GUI LoopBus two-room relay", () => {
       const harness = await createMockKernelHarness({ sessionName: "two-room-relay" });
 
       try {
-        const primaryRoomId = harness.session.primaryRoomId;
-        if (!primaryRoomId) {
-          throw new Error("expected session primaryRoomId");
-        }
+        const roomId = harness.room.chatId;
         const relayChannel = await createGaubeeRoom(harness);
         const roomList = harness.kernel.listMessageChannels(harness.session.id);
         const gaubeeRoom = roomList.find((channel) => channel.chatId === relayChannel.chatId);
@@ -31,7 +28,7 @@ describe("Feature: non-GUI LoopBus two-room relay", () => {
         expect(result.relayPromptMessage.content).toBe(MOCK_RELAY_PROMPT);
         expect(result.relayParticipantReply.chatId).toBe(relayChannel.chatId);
         expect(result.relayParticipantReply.content).toBe(MOCK_GAUBEE_REPLY);
-        expect(result.finalReply.chatId).toBe(primaryRoomId);
+        expect(result.finalReply.chatId).toBe(roomId);
         expect(result.finalReply.content).toBe(MOCK_FINAL_ANSWER);
         expect(result.settledAttention.active).toHaveLength(0);
 

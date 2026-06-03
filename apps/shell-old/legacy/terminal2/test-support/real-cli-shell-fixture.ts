@@ -262,7 +262,6 @@ export const createRealCliShellFixture = async (
     createAvatar: options.createAvatar,
     clearAvatar: options.clearAvatar,
   });
-  await handle.kernel.attachSessionPrimaryRoom(attached.session.id, { focus: true });
   await connection.store.connect();
   await connection.store.hydrateSessionArtifacts(attached.session.id, {
     includeChatHistory: false,
@@ -320,7 +319,12 @@ export const createRealCliShellFixture = async (
       })),
     sendUserChatMessage: async (content) => {
       const beforeCount = handle.kernel.listChatMessages(attached.session.id, 0, 200).length;
-      await connection.store.sendChat(attached.session.id, content);
+      await connection.store.sendMessageChannel({
+        sessionId: attached.session.id,
+        chatId: attached.room.entry.chatId,
+        accessToken: attached.room.entry.accessToken,
+        text: content,
+      });
       return await waitForRealValue(
         () => {
           const next = handle.kernel.listChatMessages(attached.session.id, 0, 200)[beforeCount];
@@ -527,7 +531,6 @@ export const createRealCliShellFixture = async (
         createAvatar: options.createAvatar,
         clearAvatar: options.clearAvatar,
       });
-      await handle.kernel.attachSessionPrimaryRoom(attached.session.id, { focus: true });
       await connection.store.connect();
       await connection.store.hydrateSessionArtifacts(attached.session.id, {
         includeChatHistory: false,
