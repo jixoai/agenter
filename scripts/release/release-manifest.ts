@@ -1,9 +1,12 @@
+import { ghosttyNativeTargets } from "../binaries/artifacts";
+
 export interface ReleasePackageJson {
   name: string;
   version: string;
   description?: string;
   license?: string;
   type?: string;
+  main?: string;
   bin?: Record<string, string>;
   exports?: Record<string, string>;
   dependencies?: Record<string, string>;
@@ -11,6 +14,9 @@ export interface ReleasePackageJson {
   peerDependencies?: Record<string, string>;
   engines?: Record<string, string>;
   publishConfig?: Record<string, string>;
+  os?: string[];
+  cpu?: string[];
+  libc?: string[];
   repository?: {
     type: string;
     url: string;
@@ -28,6 +34,7 @@ export interface ReleaseBundlePackageSpec {
   sourcePackageDir: string;
   bundlePackageDir: string;
   entry?: string;
+  main?: string;
   bin?: Record<string, string>;
   exports?: Record<string, string>;
   dependencies?: Record<string, string>;
@@ -59,76 +66,107 @@ export const releaseBundleManifestFiles = [
   "termless-ghostty-native.node",
 ] as const;
 
+export const releaseGhosttyNativePlatformPackageJsonPaths = ghosttyNativeTargets.map(
+  (target) => `${target.packageDir}/package.json`,
+);
+
 export const releasePublishablePackageJsonPaths = [
   "packages/agenter/package.json",
   "apps/shell/package.json",
   "apps/studio/package.json",
   "packages/ghostty-native/package.json",
+  ...releaseGhosttyNativePlatformPackageJsonPaths,
 ] as const;
 
-export const createReleaseBundlePackageSpecs = (): ReleaseBundlePackageSpec[] => [
-  {
-    sourcePackageDir: "packages/agenter",
-    bundlePackageDir: "bundle/agenter",
-    entry: "src/bin/agenter.ts",
-    bin: { agenter: "./dist/agenter.js" },
-    bundledAssetsRoot: true,
-    dependencies: {
-      "@parcel/watcher": "^2.5.1",
-      "@jixo/ghostty-native": "workspace:*",
-      "@termless/core": "^0.6.0",
-    },
-    // reactive-fs currently depends on missing-path watch, multi-root pooling,
-    // and watcher-recovery semantics that Bun fs.watch has not matched in the
-    // current evidence. Keep parcel watcher install-time/runtime-external until
-    // parity is proven, rather than silently weakening the file-watching law.
-    external: ["@jixo/ghostty-native", "@parcel/watcher"],
+export const createReleaseBundlePackageSpecs = (): ReleaseBundlePackageSpec[] => {
+  const ghosttyPlatformSpecs: ReleaseBundlePackageSpec[] = ghosttyNativeTargets.map((target) => ({
+    sourcePackageDir: target.packageDir,
+    bundlePackageDir: `bundle/${target.packageName}`,
+    main: "./termless-ghostty-native.node",
     assets: [
-      { from: "packages/auth-service/src/server/webauthn-ui", to: "assets/auth-service/webauthn-ui" },
-      { from: "packages/i18n-en/prompts", to: "assets/i18n-en/prompts" },
-      { from: "packages/i18n-en/prompts.json", to: "assets/i18n-en/prompts.json" },
-      { from: "packages/i18n-en/runtime.json", to: "assets/i18n-en/runtime.json" },
-      { from: "packages/i18n-zh-Hans/prompts", to: "assets/i18n-zh-Hans/prompts" },
-      { from: "packages/i18n-zh-Hans/prompts.json", to: "assets/i18n-zh-Hans/prompts.json" },
-      { from: "packages/i18n-zh-Hans/runtime.json", to: "assets/i18n-zh-Hans/runtime.json" },
+      { from: `${target.packageDir}/README.md`, to: "README.md" },
+      { from: `${target.packageDir}/termless-ghostty-native.node`, to: "termless-ghostty-native.node" },
     ],
-  },
-  {
-    sourcePackageDir: "apps/shell",
-    bundlePackageDir: "bundle/agenter-app-shell",
-    entry: "src/bin/agenter-shell.ts",
-    bin: { "agenter-shell": "./dist/agenter-shell.js" },
-    optionalDependencies: {
-      "@opentui/core-darwin-arm64": opentuiNativePackageVersion,
-      "@opentui/core-darwin-x64": opentuiNativePackageVersion,
-      "@opentui/core-linux-arm64": opentuiNativePackageVersion,
-      "@opentui/core-linux-x64": opentuiNativePackageVersion,
-      "@opentui/core-win32-arm64": opentuiNativePackageVersion,
-      "@opentui/core-win32-x64": opentuiNativePackageVersion,
+  }));
+
+  return [
+    {
+      sourcePackageDir: "packages/agenter",
+      bundlePackageDir: "bundle/agenter",
+      entry: "src/bin/agenter.ts",
+      bin: { agenter: "./dist/agenter.js" },
+      bundledAssetsRoot: true,
+      dependencies: {
+        "@parcel/watcher": "^2.5.1",
+        "@jixo/ghostty-native": "workspace:*",
+        "@termless/core": "^0.6.0",
+      },
+      // reactive-fs currently depends on missing-path watch, multi-root pooling,
+      // and watcher-recovery semantics that Bun fs.watch has not matched in the
+      // current evidence. Keep parcel watcher install-time/runtime-external until
+      // parity is proven, rather than silently weakening the file-watching law.
+      external: ["@jixo/ghostty-native", "@parcel/watcher"],
+      assets: [
+        { from: "packages/auth-service/src/server/webauthn-ui", to: "assets/auth-service/webauthn-ui" },
+        { from: "packages/i18n-en/prompts", to: "assets/i18n-en/prompts" },
+        { from: "packages/i18n-en/prompts.json", to: "assets/i18n-en/prompts.json" },
+        { from: "packages/i18n-en/runtime.json", to: "assets/i18n-en/runtime.json" },
+        { from: "packages/i18n-zh-Hans/prompts", to: "assets/i18n-zh-Hans/prompts" },
+        { from: "packages/i18n-zh-Hans/prompts.json", to: "assets/i18n-zh-Hans/prompts.json" },
+        { from: "packages/i18n-zh-Hans/runtime.json", to: "assets/i18n-zh-Hans/runtime.json" },
+      ],
     },
-  },
-  {
-    sourcePackageDir: "apps/studio",
-    bundlePackageDir: "bundle/agenter-app-studio",
-    entry: "src/bin/agenter-studio.ts",
-    bin: { "agenter-studio": "./dist/agenter-studio.js" },
-    bundledAssetsRoot: true,
-    assets: [{ from: "apps/studio/build", to: "assets/studio/build" }],
-  },
-  {
-    sourcePackageDir: "packages/ghostty-native",
-    bundlePackageDir: "bundle/@jixo/ghostty-native",
-    exports: { ".": "./src/index.ts" },
-    peerDependencies: { "@termless/core": "*" },
-    assets: [
-      { from: "packages/ghostty-native/README.md", to: "README.md" },
-      { from: "packages/ghostty-native/src", to: "src" },
-      { from: "packages/ghostty-native/termless-ghostty-native.node", to: "termless-ghostty-native.node" },
-    ],
-  },
-];
+    {
+      sourcePackageDir: "apps/shell",
+      bundlePackageDir: "bundle/agenter-app-shell",
+      entry: "src/bin/agenter-shell.ts",
+      bin: { "agenter-shell": "./dist/agenter-shell.js" },
+      optionalDependencies: {
+        "@opentui/core-darwin-arm64": opentuiNativePackageVersion,
+        "@opentui/core-darwin-x64": opentuiNativePackageVersion,
+        "@opentui/core-linux-arm64": opentuiNativePackageVersion,
+        "@opentui/core-linux-x64": opentuiNativePackageVersion,
+        "@opentui/core-win32-arm64": opentuiNativePackageVersion,
+        "@opentui/core-win32-x64": opentuiNativePackageVersion,
+      },
+    },
+    {
+      sourcePackageDir: "apps/studio",
+      bundlePackageDir: "bundle/agenter-app-studio",
+      entry: "src/bin/agenter-studio.ts",
+      bin: { "agenter-studio": "./dist/agenter-studio.js" },
+      bundledAssetsRoot: true,
+      assets: [{ from: "apps/studio/build", to: "assets/studio/build" }],
+    },
+    {
+      sourcePackageDir: "packages/ghostty-native",
+      bundlePackageDir: "bundle/@jixo/ghostty-native",
+      exports: { ".": "./src/index.ts" },
+      optionalDependencies: {
+        "@jixo/ghostty-native-darwin-arm64": "workspace:*",
+        "@jixo/ghostty-native-darwin-x64": "workspace:*",
+        "@jixo/ghostty-native-linux-arm64-gnu": "workspace:*",
+        "@jixo/ghostty-native-linux-x64-gnu": "workspace:*",
+        "@jixo/ghostty-native-win32-arm64-msvc": "workspace:*",
+        "@jixo/ghostty-native-win32-x64-msvc": "workspace:*",
+      },
+      peerDependencies: { "@termless/core": "*" },
+      assets: [
+        { from: "packages/ghostty-native/README.md", to: "README.md" },
+        { from: "packages/ghostty-native/src", to: "src" },
+      ],
+    },
+    ...ghosttyPlatformSpecs,
+  ];
+};
 
 export const releaseBundlePublishOrder = [
+  "bundle/@jixo/ghostty-native-darwin-arm64",
+  "bundle/@jixo/ghostty-native-darwin-x64",
+  "bundle/@jixo/ghostty-native-linux-arm64-gnu",
+  "bundle/@jixo/ghostty-native-linux-x64-gnu",
+  "bundle/@jixo/ghostty-native-win32-arm64-msvc",
+  "bundle/@jixo/ghostty-native-win32-x64-msvc",
   "bundle/@jixo/ghostty-native",
   "bundle/agenter-app-shell",
   "bundle/agenter-app-studio",

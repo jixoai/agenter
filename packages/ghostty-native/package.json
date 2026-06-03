@@ -27,8 +27,7 @@
   },
   "files": [
     "README.md",
-    "src",
-    "termless-ghostty-native.node"
+    "src"
   ],
   "type": "module",
   "exports": {
@@ -47,6 +46,14 @@
   },
   "peerDependencies": {
     "@termless/core": "*"
+  },
+  "optionalDependencies": {
+    "@jixo/ghostty-native-darwin-arm64": "workspace:*",
+    "@jixo/ghostty-native-darwin-x64": "workspace:*",
+    "@jixo/ghostty-native-linux-arm64-gnu": "workspace:*",
+    "@jixo/ghostty-native-linux-x64-gnu": "workspace:*",
+    "@jixo/ghostty-native-win32-arm64-msvc": "workspace:*",
+    "@jixo/ghostty-native-win32-x64-msvc": "workspace:*"
   },
   "engines": {
     "bun": ">=1.0.0",

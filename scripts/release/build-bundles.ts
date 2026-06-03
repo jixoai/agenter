@@ -2,6 +2,7 @@ import { existsSync } from "node:fs";
 import { chmod, cp, mkdir, rm, writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 
+import { ghosttyNativeTargets, resolveGhosttyNativeTarget, stageArtifact } from "../binaries/artifacts";
 import {
   createReleaseBundlePackageSpecs,
   releaseBundleManifestFiles,
@@ -14,10 +15,29 @@ import {
 } from "./release-manifest";
 
 const repoRoot = resolve(import.meta.dir, "../..");
-const bundleRoot = join(repoRoot, "bundle");
 const expectedZigVersion = releaseToolchain.zigVersion;
 const releaseZigRoot = `/tmp/zig-${expectedZigVersion}`;
 const releaseZigBin = join(releaseZigRoot, "zig");
+const bundleRootNames = {
+  release: "bundle",
+  "host-only-smoke": "bundle-host-smoke",
+} as const;
+
+export type BundleBuildMode = keyof typeof bundleRootNames;
+
+interface BuildBundleOptions {
+  mode: BundleBuildMode;
+}
+
+const defaultBuildBundleOptions: BuildBundleOptions = {
+  mode: "release",
+};
+
+const resolveBundleRoot = (mode: BundleBuildMode): string => join(repoRoot, bundleRootNames[mode]);
+const bundleDirForMode = (bundlePackageDir: string, mode: BundleBuildMode): string =>
+  mode === "release" ? bundlePackageDir : bundlePackageDir.replace(/^bundle\//u, `${bundleRootNames[mode]}/`);
+
+const ghosttyPlatformBundleDirs = new Set(ghosttyNativeTargets.map((target) => `bundle/${target.packageName}`));
 
 const readJson = async <T>(path: string): Promise<T> => (await Bun.file(path).json()) as T;
 
@@ -143,8 +163,9 @@ const buildBundle = async (input: ReleaseBundlePackageSpec): Promise<void> => {
     description: sourcePkg.description,
     license: sourcePkg.license,
     type: sourcePkg.type ?? "module",
+    main: input.main ?? sourcePkg.main,
     bin: packageBin,
-    exports: input.exports,
+    exports: input.exports ?? sourcePkg.exports,
     files: releaseBundleManifestFiles.filter((entry) => existsSync(join(bundlePackageDir, entry))),
     dependencies: input.dependencies ? normalizeWorkspaceDependencies(input.dependencies) : undefined,
     optionalDependencies: input.optionalDependencies
@@ -152,6 +173,9 @@ const buildBundle = async (input: ReleaseBundlePackageSpec): Promise<void> => {
       : undefined,
     peerDependencies: input.peerDependencies ?? sourcePkg.peerDependencies,
     engines: sourcePkg.engines ?? { bun: ">=1.3.10" },
+    os: sourcePkg.os,
+    cpu: sourcePkg.cpu,
+    libc: sourcePkg.libc,
     repository: {
       type: "git",
       url: releaseRepositoryUrl,
@@ -236,30 +260,96 @@ const ensureReleaseZig = async (): Promise<string> => {
   return releaseZigBin;
 };
 
-const ensureNativeAssets = async (): Promise<void> => {
+const stageCurrentHostGhosttyArtifact = async (): Promise<void> => {
+  const target = resolveGhosttyNativeTarget();
+  const stagedArtifact = join(repoRoot, target.artifactPath);
+  if (existsSync(stagedArtifact)) {
+    return;
+  }
   const zigBin = await ensureReleaseZig();
   await run(["bun", "run", "--filter", "@jixo/ghostty-native", "build:ghostty-native"], repoRoot, { ZIG_BIN: zigBin });
+  const localArtifact = join(repoRoot, "packages/ghostty-native/termless-ghostty-native.node");
+  if (!existsSync(localArtifact)) {
+    throw new Error(`ghostty-native local build did not produce ${localArtifact}`);
+  }
+  // Local release smoke should still work on the current host without staging
+  // every foreign target by hand; CI pre-stages the full matrix before publish.
+  await stageArtifact(repoRoot, localArtifact, target.artifactPath);
+};
+
+const ensureNativeAssets = async (): Promise<void> => {
+  await stageCurrentHostGhosttyArtifact();
   await run(["bun", "run", "--filter", "@agenter/auth-service", "build:webauthn-ui"]);
 };
 
-export const createBundlePackageSpecs = createReleaseBundlePackageSpecs;
+export const createHostOnlySmokeBundlePackageSpecs = (
+  platform = process.platform,
+  arch = process.arch,
+): ReleaseBundlePackageSpec[] => {
+  const target = resolveGhosttyNativeTarget(platform, arch);
+  const currentHostBundleDir = `bundle/${target.packageName}`;
+  return createReleaseBundlePackageSpecs()
+    .filter((spec) => !ghosttyPlatformBundleDirs.has(spec.bundlePackageDir) || spec.bundlePackageDir === currentHostBundleDir)
+    .map((spec) => ({
+      ...spec,
+      bundlePackageDir: bundleDirForMode(spec.bundlePackageDir, "host-only-smoke"),
+    }));
+};
 
-export const buildReleaseBundles = async (): Promise<void> => {
+export const createBundlePackageSpecs = (mode: BundleBuildMode = "release"): ReleaseBundlePackageSpec[] =>
+  mode === "release" ? createReleaseBundlePackageSpecs() : createHostOnlySmokeBundlePackageSpecs();
+
+export const parseBuildBundlesArgs = (args: string[]): BuildBundleOptions => {
+  const options = { ...defaultBuildBundleOptions };
+  for (const arg of args) {
+    if (arg === "--host-only-smoke") {
+      options.mode = "host-only-smoke";
+      continue;
+    }
+    throw new Error(`Unknown option: ${arg}`);
+  }
+  return options;
+};
+
+export const buildReleaseBundles = async (options: BuildBundleOptions = defaultBuildBundleOptions): Promise<void> => {
+  const bundleRoot = resolveBundleRoot(options.mode);
   await rm(bundleRoot, { recursive: true, force: true });
   await mkdir(bundleRoot, { recursive: true });
-  await readWorkspacePackageVersion("@jixo/ghostty-native");
+  for (const packageJsonPath of releasePublishablePackageJsonPaths) {
+    const packageName = (await readJson<ReleasePackageJson>(join(repoRoot, packageJsonPath))).name;
+    await readWorkspacePackageVersion(packageName);
+  }
   await ensureI18nAssets();
   await ensureStudioBuild();
   await ensureNativeAssets();
 
-  for (const spec of createBundlePackageSpecs()) {
+  for (const spec of createBundlePackageSpecs(options.mode)) {
     await buildBundle(spec);
   }
 
   await writeFile(join(bundleRoot, ".gitignore"), "*\n!.gitignore\n");
-  console.log("Release bundles written to ./bundle");
+  if (options.mode === "host-only-smoke") {
+    const target = resolveGhosttyNativeTarget();
+    // Host-only smoke is a local honesty path: it proves the current machine's
+    // staging and bundle chain without pretending the full cross-platform
+    // artifact matrix has already been built or validated.
+    await writeJson(join(bundleRoot, "host-only-smoke.json"), {
+      mode: options.mode,
+      packageName: target.packageName,
+      platform: target.packageOs,
+      arch: target.arch,
+      skippedPlatformPackages: ghosttyNativeTargets
+        .filter((candidate) => candidate.packageName !== target.packageName)
+        .map((candidate) => candidate.packageName),
+    });
+  }
+  console.log(
+    options.mode === "release"
+      ? "Release bundles written to ./bundle"
+      : "Host-only smoke bundles written to ./bundle-host-smoke",
+  );
 };
 
 if (import.meta.main) {
-  await buildReleaseBundles();
+  await buildReleaseBundles(parseBuildBundlesArgs(Bun.argv.slice(2)));
 }

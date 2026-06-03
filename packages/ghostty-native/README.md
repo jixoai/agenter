@@ -4,6 +4,17 @@ Native [Ghostty](https://ghostty.org/) backend for [termless](https://termless.d
 
 Same VT processing as the Ghostty terminal emulator, running natively (no WASM overhead). Compare with `@termless/ghostty` which uses the WASM build.
 
+Supported release installs resolve the native `.node` binding from explicit platform packages:
+
+- `@jixo/ghostty-native-darwin-arm64`
+- `@jixo/ghostty-native-darwin-x64`
+- `@jixo/ghostty-native-linux-arm64-gnu`
+- `@jixo/ghostty-native-linux-x64-gnu`
+- `@jixo/ghostty-native-win32-arm64-msvc`
+- `@jixo/ghostty-native-win32-x64-msvc`
+
+This umbrella package keeps the JavaScript API and development fallback path. Production installs should use the packaged platform artifact, not a local build as the default runtime path.
+
 ## Build
 
 Requires **Zig 0.15.2+** (available via nix).

@@ -3,11 +3,12 @@ import { mkdtempSync, readFileSync, readdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
-import { createBundlePackageSpecs } from "./build-bundles";
+import { createBundlePackageSpecs, createHostOnlySmokeBundlePackageSpecs, parseBuildBundlesArgs } from "./build-bundles";
 import { bundlePublishOrder } from "./publish-bundles";
 import {
   createReleaseBundlePackageSpecs,
   releaseBundlePublishOrder,
+  releaseGhosttyNativePlatformPackageJsonPaths,
   releasePublishablePackageJsonPaths,
   releaseRepositoryUrl,
   releaseToolchain,
@@ -45,14 +46,54 @@ describe("Feature: release bundle contract", () => {
       "bundle/agenter-app-shell",
       "bundle/agenter-app-studio",
       "bundle/@jixo/ghostty-native",
+      "bundle/@jixo/ghostty-native-darwin-arm64",
+      "bundle/@jixo/ghostty-native-darwin-x64",
+      "bundle/@jixo/ghostty-native-linux-arm64-gnu",
+      "bundle/@jixo/ghostty-native-linux-x64-gnu",
+      "bundle/@jixo/ghostty-native-win32-arm64-msvc",
+      "bundle/@jixo/ghostty-native-win32-x64-msvc",
     ]);
     expect(bundlePublishOrder).toEqual([
+      "bundle/@jixo/ghostty-native-darwin-arm64",
+      "bundle/@jixo/ghostty-native-darwin-x64",
+      "bundle/@jixo/ghostty-native-linux-arm64-gnu",
+      "bundle/@jixo/ghostty-native-linux-x64-gnu",
+      "bundle/@jixo/ghostty-native-win32-arm64-msvc",
+      "bundle/@jixo/ghostty-native-win32-x64-msvc",
       "bundle/@jixo/ghostty-native",
       "bundle/agenter-app-shell",
       "bundle/agenter-app-studio",
       "bundle/agenter",
     ]);
     expect(bundlePublishOrder).toBe(releaseBundlePublishOrder);
+  });
+
+  test("Scenario: Given a maintainer wants local release validation When host-only smoke is selected Then only the current host platform bundle is staged under a separate smoke root", () => {
+    const options = parseBuildBundlesArgs(["--host-only-smoke"]);
+    const specs = createHostOnlySmokeBundlePackageSpecs("darwin", "arm64");
+    const bundleDirs = specs.map((spec) => spec.bundlePackageDir);
+    const packageJson = JSON.parse(readRepoFile("package.json")) as {
+      scripts?: Record<string, string>;
+    };
+    const buildScript = readRepoFile("scripts/release/build-bundles.ts");
+
+    expect(options.mode).toBe("host-only-smoke");
+    expect(packageJson.scripts?.["release:build-bundles:host-smoke"]).toBe(
+      "bun run scripts/release/build-bundles.ts --host-only-smoke",
+    );
+    expect(bundleDirs).toEqual([
+      "bundle-host-smoke/agenter",
+      "bundle-host-smoke/agenter-app-shell",
+      "bundle-host-smoke/agenter-app-studio",
+      "bundle-host-smoke/@jixo/ghostty-native",
+      "bundle-host-smoke/@jixo/ghostty-native-darwin-arm64",
+    ]);
+    expect(bundleDirs).not.toContain("bundle-host-smoke/@jixo/ghostty-native-darwin-x64");
+    expect(bundleDirs).not.toContain("bundle-host-smoke/@jixo/ghostty-native-linux-x64-gnu");
+    expect(buildScript).toContain('"host-only-smoke": "bundle-host-smoke"');
+    expect(buildScript).toContain('bundlePackageDir: bundleDirForMode(spec.bundlePackageDir, "host-only-smoke")');
+    expect(buildScript).toContain("host-only-smoke.json");
+    expect(buildScript).toContain("Host-only smoke bundles written to ./bundle-host-smoke");
   });
 
   test("Scenario: Given bundled bins need package-local assets When inspecting release scripts Then wrapper bins own AGENTER_BUNDLED_ASSETS_ROOT", () => {
@@ -268,7 +309,8 @@ describe("Feature: release bundle contract", () => {
     expect(packageJson.scripts?.["build:i18n"]).not.toContain("--filter '@agenter/i18n-*'");
     expect(buildScript).toContain('await run(["bun", "run", "build:i18n"])');
     expect(buildScript).toContain("https://ziglang.org/download/");
-    expect(buildScript).toContain("{ ZIG_BIN: zigBin }");
+    expect(buildScript).toContain("stageCurrentHostGhosttyArtifact");
+    expect(buildScript).toContain("await stageArtifact(repoRoot, localArtifact, target.artifactPath)");
     expect(buildScript).toContain('"@jixo/ghostty-native", "build:ghostty-native"');
     expect(buildScript).toContain('"@agenter/auth-service", "build:webauthn-ui"');
     expect(buildScript).not.toContain('"@agenter/auth-service", "build:native"');
@@ -292,25 +334,32 @@ describe("Feature: release bundle contract", () => {
     const ghosttyPkg = JSON.parse(readRepoFile("packages/ghostty-native/package.json")) as {
       files?: string[];
       name?: string;
+      optionalDependencies?: Record<string, string>;
     };
     const termlessCorePkg = JSON.parse(readRepoFile("packages/termless-core/package.json")) as {
       dependencies?: Record<string, string>;
     };
     const specs = createBundlePackageSpecs();
     const ghosttySpec = specs.find((spec) => spec.bundlePackageDir === "bundle/@jixo/ghostty-native");
+    const darwinArm64Spec = specs.find((spec) => spec.bundlePackageDir === "bundle/@jixo/ghostty-native-darwin-arm64");
 
     expect(ghosttyPkg.name).toBe("@jixo/ghostty-native");
-    expect(ghosttyPkg.files).toContain("termless-ghostty-native.node");
+    expect(ghosttyPkg.files).toEqual(["README.md", "src"]);
     expect(ghosttyPkg.files).not.toContain("build");
     expect(ghosttyPkg.files).not.toContain("native");
     expect(ghosttyPkg.files).not.toContain("vendor");
+    expect(ghosttyPkg.optionalDependencies?.["@jixo/ghostty-native-darwin-arm64"]).toBe("workspace:*");
+    expect(ghosttyPkg.optionalDependencies?.["@jixo/ghostty-native-linux-x64-gnu"]).toBe("workspace:*");
     expect(termlessCorePkg.dependencies?.["@jixo/ghostty-native"]).toBe("workspace:*");
     expect(termlessCorePkg.dependencies?.["@termless/ghostty-native"]).toBeUndefined();
-    expect(ghosttySpec?.assets?.map((asset) => asset.to)).toContain("termless-ghostty-native.node");
+    expect(ghosttySpec?.assets?.map((asset) => asset.to)).not.toContain("termless-ghostty-native.node");
+    expect(ghosttySpec?.optionalDependencies?.["@jixo/ghostty-native-win32-x64-msvc"]).toBe("workspace:*");
     expect(ghosttySpec?.assets?.map((asset) => asset.to)).not.toContain("build");
     expect(ghosttySpec?.assets?.map((asset) => asset.to)).not.toContain(
       "native/zig-out/lib/termless-ghostty-native.node",
     );
+    expect(darwinArm64Spec?.assets?.map((asset) => asset.to)).toContain("termless-ghostty-native.node");
+    expect(darwinArm64Spec?.main).toBe("./termless-ghostty-native.node");
   });
 
   test("Scenario: Given GitHub trusted publishing is configured When inspecting the publish path Then npm provenance is mandatory and stale versions are skipped", () => {
@@ -330,11 +379,14 @@ describe("Feature: release bundle contract", () => {
     expect(workflow).toContain("id-token: write");
     expect(workflow).toContain("environment: npm-release");
     expect(workflow).toContain("actions/checkout@v5");
-    expect(workflow).toContain("actions/setup-node@v5");
+    expect(workflow).toContain("actions/setup-node@v6");
     expect(workflow).toContain('node-version: "24"');
     expect(workflow).toContain(`bun-version: "${releaseToolchain.bunVersion}"`);
     expect(workflow).not.toContain("bun-version: latest");
     expect(workflow).toContain('registry-url: "https://registry.npmjs.org"');
+    expect(workflow).toContain('pattern: ghostty-native-*');
+    expect(workflow).toContain("Stage ghostty-native artifacts into npm packages");
+    expect(workflow).toContain('npm install -g "npm@^11.10.0"');
     expect(workflow).toContain("npm --version");
     expect(workflow).toContain("bun run release:preflight --skip-install");
     expect(workflow).toContain("changesets/action@v1");
@@ -343,6 +395,9 @@ describe("Feature: release bundle contract", () => {
     expect(workflow).not.toContain("steps.changesets.outputs.published");
     expect(packageJson.scripts?.["release-packages"]).toBe(
       "bun run release:build-bundles && bun run release:publish-bundles && bun run release:verify-published",
+    );
+    expect(packageJson.scripts?.["release:build-bundles:host-smoke"]).toBe(
+      "bun run scripts/release/build-bundles.ts --host-only-smoke",
     );
     expect(trustedPublishScript).toContain('repo: "jixoai/agenter"');
     expect(trustedPublishScript).toContain("releasePublishablePackageJsonPaths");
@@ -359,6 +414,7 @@ describe("Feature: release bundle contract", () => {
       "apps/shell/package.json",
       "apps/studio/package.json",
       "packages/ghostty-native/package.json",
+      ...releaseGhosttyNativePlatformPackageJsonPaths,
     ]);
     expect(packageJson.packageManager).toBe(`bun@${releaseToolchain.bunVersion}`);
     expect(packageJson.scripts?.["release:preflight"]).toBe("bun run scripts/release/preflight.ts");
@@ -374,6 +430,7 @@ describe("Feature: release bundle contract", () => {
     expect(changesetReadme).toContain("Do not add a long-lived `NPM_TOKEN` secret to CI");
     expect(gitignore).toContain(".env");
     expect(gitignore).toContain(".npmrc");
+    expect(gitignore).toContain("packages/ghostty-native-*/termless-ghostty-native.node");
     expect(spec).toContain("npm release path 固定为 changesets + GitHub Actions trusted publishing");
     expect(spec).toContain("releasePublishablePackageJsonPaths");
   });

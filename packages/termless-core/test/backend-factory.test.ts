@@ -1,10 +1,14 @@
 import { describe, expect, test } from "bun:test";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 
 import {
   assertTerminalBackendKind,
   createTerminalBackend,
   DEFAULT_TERMINAL_BACKEND,
 } from "../src";
+
+const packageRoot = join(import.meta.dir, "..");
 
 describe("Feature: termless backend factory", () => {
   test("Scenario: Given omitted backend When creating a backend Then xterm remains the default launch truth", () => {
@@ -22,6 +26,14 @@ describe("Feature: termless backend factory", () => {
 
   test("Scenario: Given an unsupported backend token When asserting backend kind Then the factory rejects it before launch", () => {
     expect(() => assertTerminalBackendKind("ghostty-web")).toThrow("unsupported terminal backend");
+  });
+
+  test("Scenario: Given ghostty-native now resolves through platform packages When inspecting the factory source Then termless no longer invokes a local build helper", () => {
+    const source = readFileSync(join(packageRoot, "src", "backend-factory.ts"), "utf8");
+
+    expect(source).toContain('return require("@jixo/ghostty-native")');
+    expect(source).not.toContain("execFileSync");
+    expect(source).not.toContain("build/build.sh");
   });
 
   test("Scenario: Given a backend supports viewport reads When reading range and viewport lines Then callers can avoid full scrollback export", () => {

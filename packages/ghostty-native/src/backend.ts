@@ -128,29 +128,83 @@ interface NativeModule {
 let nativeModule: NativeModule | null = null
 const require = createRequire(import.meta.url)
 
+export const GHOSTTY_NATIVE_PLATFORM_PACKAGES = {
+  "darwin:arm64": "@jixo/ghostty-native-darwin-arm64",
+  "darwin:x64": "@jixo/ghostty-native-darwin-x64",
+  "linux:arm64": "@jixo/ghostty-native-linux-arm64-gnu",
+  "linux:x64": "@jixo/ghostty-native-linux-x64-gnu",
+  "win32:arm64": "@jixo/ghostty-native-win32-arm64-msvc",
+  "win32:x64": "@jixo/ghostty-native-win32-x64-msvc",
+} as const
+
+export const GHOSTTY_NATIVE_SUPPORTED_TARGETS = Object.freeze(
+  Object.keys(GHOSTTY_NATIVE_PLATFORM_PACKAGES).map((target) => target.replace(":", "/")),
+)
+
+const LOCAL_NATIVE_PATHS = [
+  "../termless-ghostty-native.node",
+  "../native/zig-out/lib/termless-ghostty-native.node",
+] as const
+
+const formatGhosttyNativeTarget = (platform: string, arch: string): string => `${platform}/${arch}`
+
+export function resolveGhosttyNativePlatformPackageName(
+  platform = process.platform,
+  arch = process.arch,
+): string | null {
+  return GHOSTTY_NATIVE_PLATFORM_PACKAGES[
+    `${platform}:${arch}` as keyof typeof GHOSTTY_NATIVE_PLATFORM_PACKAGES
+  ] ?? null
+}
+
+export function assertSupportedGhosttyNativePlatformPackage(
+  platform = process.platform,
+  arch = process.arch,
+): string {
+  const packageName = resolveGhosttyNativePlatformPackageName(platform, arch)
+  if (packageName) {
+    return packageName
+  }
+  throw new Error(
+    `unsupported ghostty-native platform: ${formatGhosttyNativeTarget(platform, arch)}. ` +
+      `Supported targets: ${GHOSTTY_NATIVE_SUPPORTED_TARGETS.join(", ")}`,
+  )
+}
+
+const tryLoadLocalNativeModule = (): NativeModule | null => {
+  for (const path of LOCAL_NATIVE_PATHS) {
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      return require(path) as NativeModule
+    } catch {
+      // Try next development fallback path.
+    }
+  }
+  return null
+}
+
 export function loadGhosttyNative(): NativeModule {
   if (nativeModule) return nativeModule
 
-  // Try multiple locations — the build script copies to the package root,
-  // and the Zig build system outputs to zig-out/lib/
-  const paths = ["../termless-ghostty-native.node", "../native/zig-out/lib/termless-ghostty-native.node"]
-
-  for (const p of paths) {
-    try {
-      // eslint-disable-next-line @typescript-eslint/no-require-imports
-      nativeModule = require(p) as NativeModule
+  const packageName = assertSupportedGhosttyNativePlatformPackage()
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    nativeModule = require(packageName) as NativeModule
+    return nativeModule
+  } catch (error) {
+    const localModule = tryLoadLocalNativeModule()
+    if (localModule) {
+      nativeModule = localModule
       return nativeModule
-    } catch {
-      // Try next path
     }
+    const reason = error instanceof Error ? error.message : String(error)
+    throw new Error(
+      `ghostty-native platform package unavailable for ${formatGhosttyNativeTarget(process.platform, process.arch)}: ` +
+        `${packageName}. Install the matching package, or in a source checkout run:\n` +
+        "  cd packages/ghostty-native && bash build/build.sh\n" +
+        `\nUnderlying loader error: ${reason}`,
+    )
   }
-
-  throw new Error(
-    "Ghostty native module not found. Build it first:\n" +
-      "  cd packages/ghostty-native && bash build/build.sh\n" +
-      "\n" +
-      "Requirements: Zig 0.15.2 and macOS Command Line Tools",
-  )
 }
 
 // ═══════════════════════════════════════════════════════

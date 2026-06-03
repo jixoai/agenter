@@ -1,7 +1,4 @@
-import { execFileSync } from "node:child_process";
-import { existsSync, readFileSync } from "node:fs";
 import { createRequire } from "node:module";
-import { dirname, join } from "node:path";
 
 import { createXtermBackend } from "./termless-xtermjs.js";
 import type { TerminalBackend } from "./termless-types.js";
@@ -44,68 +41,11 @@ const loadGhosttyNativeModule = (): GhosttyNativeModule => {
   return require("@jixo/ghostty-native") as GhosttyNativeModule;
 };
 
-const resolveInstalledPackageRoot = (packageName: string): string | null => {
-  try {
-    const resolvedEntry = require.resolve(packageName);
-    let dir = dirname(resolvedEntry);
-    for (let depth = 0; depth < 10; depth += 1) {
-      const packageJsonPath = join(dir, "package.json");
-      if (existsSync(packageJsonPath)) {
-        try {
-          const pkg = JSON.parse(readFileSync(packageJsonPath, "utf8")) as { name?: string };
-          if (pkg.name === packageName) {
-            return dir;
-          }
-        } catch {
-          // Ignore malformed package.json and keep walking upward.
-        }
-      }
-      const parentDir = dirname(dir);
-      if (parentDir === dir) {
-        break;
-      }
-      dir = parentDir;
-    }
-  } catch {
-    return null;
-  }
-  return null;
-};
-
-const hasGhosttyNativeArtifact = (packageRoot: string): boolean => existsSync(join(packageRoot, "termless-ghostty-native.node"));
-
-const ensureGhosttyNativeReady = (): void => {
-  const packageRoot = resolveInstalledPackageRoot("@jixo/ghostty-native");
-  if (!packageRoot) {
-    return;
-  }
-  if (hasGhosttyNativeArtifact(packageRoot)) {
-    return;
-  }
-  const buildScript = join(packageRoot, "build", "build.sh");
-  if (existsSync(buildScript)) {
-    execFileSync("bash", [buildScript], {
-      cwd: packageRoot,
-      stdio: "inherit",
-    });
-  }
-  if (!hasGhosttyNativeArtifact(packageRoot)) {
-    throw new Error(`ghostty-native artifact is missing in ${packageRoot}`);
-  }
-};
-
-const ensureTerminalBackendReady = (backend: TerminalBackendKind): void => {
-  if (backend === "ghostty-native") {
-    ensureGhosttyNativeReady();
-  }
-};
-
 const createOfficialTerminalBackend = (
   backend: TerminalBackendKind,
   input: Omit<CreateTerminalBackendInput, "backend">,
 ): TerminalBackend => {
   try {
-    ensureTerminalBackendReady(backend);
     if (backend === "xterm") {
       return createXtermBackend({
         cols: input.cols,

@@ -7,7 +7,11 @@ import { tmpdir } from "node:os";
 
 import { AttentionSystem } from "@agenter/attention-system";
 
-import { AttentionSearchEngine } from "../src/attention-search";
+import {
+  AttentionSearchEngine,
+  ATTENTION_SEARCH_LEGACY_DUCKDB_FILENAME,
+  ATTENTION_SEARCH_SQLITE_FILENAME,
+} from "../src/attention-search";
 
 const roots: string[] = [];
 
@@ -24,9 +28,10 @@ const createHarness = async () => {
   roots.push(root);
   const system = new AttentionSystem();
   system.createContext({ contextId: "ctx-chat-main", owner: "avatar:jane" });
-  const dbPath = join(root, "attention-search.duckdb");
-  const engine = new AttentionSearchEngine(dbPath);
-  return { system, engine, dbPath };
+  const dbPath = join(root, ATTENTION_SEARCH_SQLITE_FILENAME);
+  const legacyDuckdbPath = join(root, ATTENTION_SEARCH_LEGACY_DUCKDB_FILENAME);
+  const engine = new AttentionSearchEngine(dbPath, legacyDuckdbPath);
+  return { system, engine, dbPath, legacyDuckdbPath };
 };
 
 const appendCommit = (
@@ -98,7 +103,7 @@ describe("Feature: attention search query execution", () => {
   });
 
   test("Scenario: Given a legacy DuckDB sidecar remains in a session root When the new attention search runtime starts Then the legacy file does not block rebuildable search semantics", async () => {
-    const { system, engine, dbPath } = await createHarness();
+    const { system, engine, dbPath, legacyDuckdbPath } = await createHarness();
     appendCommit(system, {
       summary: "Weather report for Xiamen",
       change: "Sunny with wind",
@@ -106,7 +111,7 @@ describe("Feature: attention search query execution", () => {
       source: "message",
     });
 
-    await writeFile(dbPath, "legacy duckdb sidecar bytes", "utf8");
+    await writeFile(legacyDuckdbPath, "legacy duckdb sidecar bytes", "utf8");
 
     const items = await engine.query({
       attentionSystem: system,
@@ -115,6 +120,7 @@ describe("Feature: attention search query execution", () => {
     });
 
     expect(items).toHaveLength(1);
+    expect(existsSync(legacyDuckdbPath)).toBe(false);
 
     const sqlite = new Database(dbPath, { readonly: true, strict: true });
     try {

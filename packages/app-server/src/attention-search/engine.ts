@@ -12,8 +12,8 @@ import type { AttentionSearchRequest } from "./types";
 export class AttentionSearchEngine {
   private readonly indexStore: AttentionSearchIndexStore;
 
-  constructor(dbPath: string) {
-    this.indexStore = new AttentionSearchIndexStore(dbPath);
+  constructor(dbPath: string, legacyDuckdbPath?: string) {
+    this.indexStore = new AttentionSearchIndexStore(dbPath, legacyDuckdbPath);
   }
 
   async sync(snapshot: AttentionSystemSnapshot): Promise<void> {

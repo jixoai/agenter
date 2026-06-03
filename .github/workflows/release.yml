@@ -16,16 +16,57 @@ permissions:
   pull-requests: write
 
 jobs:
-  release:
-    name: Version or publish npm bundles
-    runs-on: macos-15
-    environment: npm-release
+  native-artifacts:
+    name: Native artifacts (${{ matrix.target }})
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: darwin-arm64
+            runner: macos-15
+          - target: darwin-x64
+            runner: macos-15-intel
+          - target: linux-arm64
+            runner: ubuntu-24.04-arm
+          - target: linux-x64
+            runner: ubuntu-24.04
+          - target: windows-arm64
+            runner: windows-11-arm
+          - target: windows-x64
+            runner: windows-2025
     steps:
       - name: Checkout
         uses: actions/checkout@v5
 
+      - name: Build ghostty-native artifact
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash packages/ghostty-native/build/build.sh
+          mkdir -p native-artifacts
+          cp packages/ghostty-native/termless-ghostty-native.node native-artifacts/
+
+      - name: Upload native artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ghostty-native-${{ matrix.target }}
+          path: native-artifacts/termless-ghostty-native.node
+          if-no-files-found: error
+
+  release:
+    name: Version or publish npm bundles
+    needs: native-artifacts
+    runs-on: ubuntu-latest
+    environment: npm-release
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
       - name: Setup Node for npm trusted publishing
-        uses: actions/setup-node@v5
+        uses: actions/setup-node@v6
         with:
           node-version: "24"
           registry-url: "https://registry.npmjs.org"
@@ -35,6 +76,9 @@ jobs:
         with:
           bun-version: "1.3.14"
 
+      - name: Install npm with trusted publishing support
+        run: npm install -g "npm@^11.10.0"
+
       - name: Verify release toolchain
         run: |
           node --version
@@ -43,6 +87,45 @@ jobs:
 
       - name: Install dependencies
         run: bun install --frozen-lockfile
+
+      - name: Download native artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: ghostty-native-*
+          path: native-artifacts
+
+      - name: Stage ghostty-native artifacts into npm packages
+        shell: bash
+        run: |
+          set -euo pipefail
+          for target in darwin-arm64 darwin-x64 linux-arm64 linux-x64 windows-arm64 windows-x64; do
+            package_os="${target%-*}"
+            arch="${target##*-}"
+            if [ "$package_os" = "windows" ]; then
+              package_os="win32"
+            fi
+
+            bun run scripts/binaries/stage-local.ts \
+              --source "native-artifacts/ghostty-native-${target}/termless-ghostty-native.node" \
+              --package-os "$package_os" \
+              --arch "$arch"
+          done
+
+      - name: Validate publish package contents
+        shell: bash
+        run: |
+          set -euo pipefail
+          for package_dir in \
+            packages/ghostty-native \
+            packages/ghostty-native-darwin-arm64 \
+            packages/ghostty-native-darwin-x64 \
+            packages/ghostty-native-linux-arm64-gnu \
+            packages/ghostty-native-linux-x64-gnu \
+            packages/ghostty-native-win32-arm64-msvc \
+            packages/ghostty-native-win32-x64-msvc
+          do
+            npm pack --dry-run --json "./${package_dir}" >/dev/null
+          done
 
       - name: Release preflight
         run: bun run release:preflight --skip-install
@@ -55,3 +138,6 @@ jobs:
           publish: bun run release-packages
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Push release tags
+        run: git push origin --tags

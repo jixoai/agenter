@@ -9,7 +9,7 @@
 #
 # Requirements:
 #   - Zig 0.15.2
-#   - macOS Command Line Tools / Xcode SDK
+#   - On macOS: Command Line Tools / Xcode SDK
 #   - Internet access only for the initial ghostty clone
 #
 # Usage:
@@ -25,6 +25,8 @@ PKG_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 NATIVE_DIR="$PKG_DIR/native"
 GHOSTTY_DIR="$NATIVE_DIR/.ghostty-src"
 GHOSTTY_VERSION="v1.3.1"
+ZIG_VERSION="0.15.2"
+RELEASE_ZIG_ROOT="/tmp/zig-$ZIG_VERSION"
 
 echo "Building @jixo/ghostty-native..."
 
@@ -59,25 +61,70 @@ cd "$NATIVE_DIR"
 
 ZIG_BIN="${ZIG_BIN:-}"
 if [[ -z "$ZIG_BIN" ]]; then
-  if [[ -x /tmp/zig-0.15.2/zig ]]; then
-    ZIG_BIN="/tmp/zig-0.15.2/zig"
-  elif command -v zig >/dev/null 2>&1 && [[ "$(zig version 2>/dev/null || true)" == "0.15.2" ]]; then
+  if command -v zig >/dev/null 2>&1 && [[ "$(zig version 2>/dev/null || true)" == "$ZIG_VERSION" ]]; then
     ZIG_BIN="$(command -v zig)"
   else
-    echo
-    echo "ERROR: Zig 0.15.2 is required. Set ZIG_BIN or install Zig 0.15.2."
-    exit 1
+    UNAME_S="$(uname -s)"
+    UNAME_M="$(uname -m)"
+    ZIG_ARCHIVE=""
+    ZIG_EXT=".tar.xz"
+    ZIG_EXE="zig"
+    case "$UNAME_S:$UNAME_M" in
+      Darwin:arm64)
+        ZIG_ARCHIVE="zig-aarch64-macos-$ZIG_VERSION"
+        ;;
+      Darwin:x86_64)
+        ZIG_ARCHIVE="zig-x86_64-macos-$ZIG_VERSION"
+        ;;
+      Linux:aarch64)
+        ZIG_ARCHIVE="zig-aarch64-linux-$ZIG_VERSION"
+        ;;
+      Linux:x86_64)
+        ZIG_ARCHIVE="zig-x86_64-linux-$ZIG_VERSION"
+        ;;
+      MINGW*:aarch64|MSYS*:aarch64|CYGWIN*:aarch64)
+        ZIG_ARCHIVE="zig-aarch64-windows-$ZIG_VERSION"
+        ZIG_EXT=".zip"
+        ZIG_EXE="zig.exe"
+        ;;
+      MINGW*:x86_64|MSYS*:x86_64|CYGWIN*:x86_64)
+        ZIG_ARCHIVE="zig-x86_64-windows-$ZIG_VERSION"
+        ZIG_EXT=".zip"
+        ZIG_EXE="zig.exe"
+        ;;
+      *)
+        echo
+        echo "ERROR: Automatic Zig bootstrap is not configured for $UNAME_S/$UNAME_M."
+        echo "  Set ZIG_BIN to a Zig $ZIG_VERSION binary."
+        exit 1
+        ;;
+    esac
+
+    RELEASE_ZIG_BIN="$RELEASE_ZIG_ROOT/$ZIG_EXE"
+    if [[ ! -x "$RELEASE_ZIG_BIN" ]]; then
+      ARCHIVE_PATH="/tmp/$ZIG_ARCHIVE$ZIG_EXT"
+      echo "  Bootstrapping Zig $ZIG_VERSION ($ZIG_ARCHIVE$ZIG_EXT)..."
+      curl -L "https://ziglang.org/download/$ZIG_VERSION/$ZIG_ARCHIVE$ZIG_EXT" -o "$ARCHIVE_PATH"
+      rm -rf "$RELEASE_ZIG_ROOT"
+      tar -xf "$ARCHIVE_PATH" -C /tmp
+      mv "/tmp/$ZIG_ARCHIVE" "$RELEASE_ZIG_ROOT"
+    fi
+    ZIG_BIN="$RELEASE_ZIG_BIN"
   fi
 fi
 
-SDKROOT="${SDKROOT:-$(xcrun --sdk macosx --show-sdk-path)}"
-DEVELOPER_DIR="${DEVELOPER_DIR:-$(xcode-select -p)}"
+BUILD_ENV=()
+if [[ "$(uname -s)" == "Darwin" ]]; then
+  SDKROOT="${SDKROOT:-$(xcrun --sdk macosx --show-sdk-path)}"
+  DEVELOPER_DIR="${DEVELOPER_DIR:-$(xcode-select -p)}"
+  BUILD_ENV=(env SDKROOT="$SDKROOT" DEVELOPER_DIR="$DEVELOPER_DIR")
+fi
 
-env SDKROOT="$SDKROOT" DEVELOPER_DIR="$DEVELOPER_DIR" "$ZIG_BIN" build --release=fast || {
+"${BUILD_ENV[@]}" "$ZIG_BIN" build --release=fast || {
   echo
   echo "ERROR: Failed to build N-API bindings."
   echo
-  echo "  Expected Zig 0.15.2 plus a working macOS SDK."
+  echo "  Expected Zig 0.15.2 plus any required host SDK/toolchain."
   exit 1
 }
 

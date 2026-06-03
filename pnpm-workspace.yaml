@@ -12,6 +12,12 @@ packages:
   - packages/cli
   - packages/client-sdk
   - packages/ghostty-native
+  - packages/ghostty-native-darwin-arm64
+  - packages/ghostty-native-darwin-x64
+  - packages/ghostty-native-linux-arm64-gnu
+  - packages/ghostty-native-linux-x64-gnu
+  - packages/ghostty-native-win32-arm64-msvc
+  - packages/ghostty-native-win32-x64-msvc
   - packages/i18n-core
   - packages/i18n-en
   - packages/i18n-zh-Hans

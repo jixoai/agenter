@@ -143,7 +143,6 @@
         "agenter": "./src/bin/agenter.ts",
       },
       "dependencies": {
-        "@duckdb/node-api": "^1.5.1-r.1",
         "reflect-metadata": "^0.2.2",
       },
       "devDependencies": {
@@ -182,7 +181,6 @@
         "@agenter/settings": "workspace:*",
         "@agenter/task-system": "workspace:*",
         "@agenter/terminal-system": "workspace:*",
-        "@duckdb/node-api": "^1.5.1-r.1",
         "@jixo/reactive-fs": "workspace:*",
         "@modelcontextprotocol/sdk": "^1.29.0",
         "@opentelemetry/api": "^1.9.0",
@@ -307,9 +305,41 @@
         "@types/bun": "latest",
         "@types/node": "^24",
       },
+      "optionalDependencies": {
+        "@jixo/ghostty-native-darwin-arm64": "workspace:*",
+        "@jixo/ghostty-native-darwin-x64": "workspace:*",
+        "@jixo/ghostty-native-linux-arm64-gnu": "workspace:*",
+        "@jixo/ghostty-native-linux-x64-gnu": "workspace:*",
+        "@jixo/ghostty-native-win32-arm64-msvc": "workspace:*",
+        "@jixo/ghostty-native-win32-x64-msvc": "workspace:*",
+      },
       "peerDependencies": {
         "@termless/core": "*",
       },
+    },
+    "packages/ghostty-native-darwin-arm64": {
+      "name": "@jixo/ghostty-native-darwin-arm64",
+      "version": "0.3.3",
+    },
+    "packages/ghostty-native-darwin-x64": {
+      "name": "@jixo/ghostty-native-darwin-x64",
+      "version": "0.3.3",
+    },
+    "packages/ghostty-native-linux-arm64-gnu": {
+      "name": "@jixo/ghostty-native-linux-arm64-gnu",
+      "version": "0.3.3",
+    },
+    "packages/ghostty-native-linux-x64-gnu": {
+      "name": "@jixo/ghostty-native-linux-x64-gnu",
+      "version": "0.3.3",
+    },
+    "packages/ghostty-native-win32-arm64-msvc": {
+      "name": "@jixo/ghostty-native-win32-arm64-msvc",
+      "version": "0.3.3",
+    },
+    "packages/ghostty-native-win32-x64-msvc": {
+      "name": "@jixo/ghostty-native-win32-x64-msvc",
+      "version": "0.3.3",
     },
     "packages/i18n-core": {
       "name": "@agenter/i18n-core",
@@ -915,22 +945,6 @@
 
     "@csstools/css-tokenizer": ["@csstools/css-tokenizer@3.0.4", "", {}, "sha512-Vd/9EVDiu6PPJt9yAh6roZP6El1xHrdvIVGjyBsHR0RYwNHgL7FJPyIIW4fANJNG6FtyZfvlRPpFI4ZM/lubvw=="],
 
-    "@duckdb/node-api": ["@duckdb/node-api@1.5.1-r.1", "", { "dependencies": { "@duckdb/node-bindings": "1.5.1-r.1" } }, "sha512-8U8p44ZL4rJtUrgVaSLm2hOMk3XTwEgs5eJoxYiR6iQXKVEr8vi6z3Vrxhb61g9sgsEZIAmckD7e3zZ1lmPHYA=="],
-
-    "@duckdb/node-bindings": ["@duckdb/node-bindings@1.5.1-r.1", "", { "optionalDependencies": { "@duckdb/node-bindings-darwin-arm64": "1.5.1-r.1", "@duckdb/node-bindings-darwin-x64": "1.5.1-r.1", "@duckdb/node-bindings-linux-arm64": "1.5.1-r.1", "@duckdb/node-bindings-linux-x64": "1.5.1-r.1", "@duckdb/node-bindings-win32-arm64": "1.5.1-r.1", "@duckdb/node-bindings-win32-x64": "1.5.1-r.1" } }, "sha512-3vmIlY/ACTLutlMup4F+D2Gzo+kiUoMaIL4TvM4x34cMqnKfsZ+4lMjqfSKYmdcgNGXYXwPwIYaJlvMRhU3Tbg=="],
-
-    "@duckdb/node-bindings-darwin-arm64": ["@duckdb/node-bindings-darwin-arm64@1.5.1-r.1", "", { "os": "darwin", "cpu": "arm64" }, "sha512-vm0Q/P8/OB/ZDITNTUe80emlg0b7/EcqTPBRu4GmULbt/fFDtkEAjDHDblKZL1yazf7X6JFEabHBGuWL5jmjEw=="],
-
-    "@duckdb/node-bindings-darwin-x64": ["@duckdb/node-bindings-darwin-x64@1.5.1-r.1", "", { "os": "darwin", "cpu": "x64" }, "sha512-GOKWYbOP1v5jppGjlCaQzvyzVnY8/dGd7UJcnT213uiSMq/mtQk2yvzZCPhq7UdxmqR0TSd+TKttpozd8ANyOQ=="],
-
-    "@duckdb/node-bindings-linux-arm64": ["@duckdb/node-bindings-linux-arm64@1.5.1-r.1", "", { "os": "linux", "cpu": "arm64" }, "sha512-b0tHCtC+GZnD6gJA+ldUwy8FhnugR1Uq0/LjLiusOQOoK5pRXyfiQjgIe/SiKSeE5iEr+FWUXEprSD81HOaaQg=="],
-
-    "@duckdb/node-bindings-linux-x64": ["@duckdb/node-bindings-linux-x64@1.5.1-r.1", "", { "os": "linux", "cpu": "x64" }, "sha512-AczM4qyMuMXHIa7w1YacIu6FFPpwzUsQSkPUFKsAJzyuRcxAlGEwt+2GnVZSACGQFpKbL9nAkuu3Icq6ttxwag=="],
-
-    "@duckdb/node-bindings-win32-arm64": ["@duckdb/node-bindings-win32-arm64@1.5.1-r.1", "", { "os": "win32", "cpu": "arm64" }, "sha512-SrgAiFttkfFXCCAMrmMBWtnBMtEjVaC38XtG6zEdbvmp2RTEPo/dFcvRP75vS/Hm5Iq8Tgiuoq4tIdovwEw5yg=="],
-
-    "@duckdb/node-bindings-win32-x64": ["@duckdb/node-bindings-win32-x64@1.5.1-r.1", "", { "os": "win32", "cpu": "x64" }, "sha512-JkL9xvXx9i8ceU1fGJsb9gqgRn30RFi0HyfpuESK2AZInKx5mJn8fvYcj4AQg/Ip9SZ1S4a2Jh5DOFY81koubw=="],
-
     "@emnapi/core": ["@emnapi/core@1.9.1", "", { "dependencies": { "@emnapi/wasi-threads": "1.2.0", "tslib": "^2.4.0" } }, "sha512-mukuNALVsoix/w1BJwFzwXBN/dHeejQtuVzcDsfOEsdpCumXb/E9j8w11h5S54tT1xhifGfbbSm/ICrObRb3KA=="],
 
     "@emnapi/runtime": ["@emnapi/runtime@1.8.1", "", { "dependencies": { "tslib": "^2.4.0" } }, "sha512-mehfKSMWjjNol8659Z8KxEMrdSJDDot5SXMq00dM8BN4o+CLNXQ0xH2V7EchNHV4RmbZLmmPdEaXZc5H2FXmDg=="],
@@ -1084,6 +1098,18 @@
     "@jitl/quickjs-wasmfile-release-sync": ["@jitl/quickjs-wasmfile-release-sync@0.32.0", "", { "dependencies": { "@jitl/quickjs-ffi-types": "0.32.0" } }, "sha512-BKNDI/TPBfGlLNGYpLrhcDGXmIk4xHm4MRAisOBnOzpXVn9HZWsfmMAc9WMBrAHjvvds6HOikKeaOBKdPdpVrg=="],
 
     "@jixo/ghostty-native": ["@jixo/ghostty-native@workspace:packages/ghostty-native"],
+
+    "@jixo/ghostty-native-darwin-arm64": ["@jixo/ghostty-native-darwin-arm64@workspace:packages/ghostty-native-darwin-arm64"],
+
+    "@jixo/ghostty-native-darwin-x64": ["@jixo/ghostty-native-darwin-x64@workspace:packages/ghostty-native-darwin-x64"],
+
+    "@jixo/ghostty-native-linux-arm64-gnu": ["@jixo/ghostty-native-linux-arm64-gnu@workspace:packages/ghostty-native-linux-arm64-gnu"],
+
+    "@jixo/ghostty-native-linux-x64-gnu": ["@jixo/ghostty-native-linux-x64-gnu@workspace:packages/ghostty-native-linux-x64-gnu"],
+
+    "@jixo/ghostty-native-win32-arm64-msvc": ["@jixo/ghostty-native-win32-arm64-msvc@workspace:packages/ghostty-native-win32-arm64-msvc"],
+
+    "@jixo/ghostty-native-win32-x64-msvc": ["@jixo/ghostty-native-win32-x64-msvc@workspace:packages/ghostty-native-win32-x64-msvc"],
 
     "@jixo/reactive-fs": ["@jixo/reactive-fs@workspace:packages/reactive-fs"],
 

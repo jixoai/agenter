@@ -41,15 +41,19 @@ const buildSeedQuery = (seed: AttentionSearchSeed): string | null => {
 export class AttentionSearchIndexStore {
   private ftsAvailable = true;
   private readonly resolvedDbPath: string;
+  private readonly resolvedLegacyDuckdbPath: string | null;
 
-  constructor(dbPath: string) {
+  constructor(dbPath: string, legacyDuckdbPath?: string) {
     this.resolvedDbPath = resolve(dbPath);
+    this.resolvedLegacyDuckdbPath =
+      legacyDuckdbPath && resolve(legacyDuckdbPath) !== this.resolvedDbPath ? resolve(legacyDuckdbPath) : null;
   }
 
   async ensureSnapshot(matches: readonly AttentionCommitMatch[]): Promise<void> {
     if (!this.ftsAvailable) {
       return;
     }
+    await this.clearLegacyDuckdbSidecar();
     const snapshotHash = buildSnapshotHash(matches);
     const currentHash = await this.readSnapshotHash();
     if (currentHash === snapshotHash) {
@@ -149,5 +153,19 @@ export class AttentionSearchIndexStore {
     } catch {
       return null;
     }
+  }
+
+  private async clearLegacyDuckdbSidecar(): Promise<void> {
+    if (!this.resolvedLegacyDuckdbPath) {
+      return;
+    }
+    // The DuckDB-named sidecar was never durable truth. Once SQLite owns the
+    // canonical projection filename, remove the old projection bytes so future
+    // runs cannot mistake them for a live index.
+    await Promise.all(
+      ["", "-shm", "-wal"].map(async (suffix) => {
+        await rm(`${this.resolvedLegacyDuckdbPath}${suffix}`, { force: true });
+      }),
+    );
   }
 }

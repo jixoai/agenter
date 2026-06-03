@@ -4,6 +4,7 @@ node_modules/
 tmp/
 dist/
 bundle/
+bundle-host-smoke/
 build/
 coverage/
 .tmp/
@@ -24,6 +25,9 @@ packages/tui-bak/tmp/
 .env
 .env.local
 .npmrc
+
+# staged ghostty-native platform binaries
+packages/ghostty-native-*/termless-ghostty-native.node
 
 # demo runtime artifacts
 demo/logs/

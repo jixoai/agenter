@@ -107,7 +107,12 @@ import { homedir } from "node:os";
 import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { z } from "zod";
 import { createRuntimeAttentionPreview } from "./attention-runtime-view";
-import { AttentionSearchEngine, type AttentionSearchRequest } from "./attention-search";
+import {
+  AttentionSearchEngine,
+  ATTENTION_SEARCH_LEGACY_DUCKDB_FILENAME,
+  ATTENTION_SEARCH_SQLITE_FILENAME,
+  type AttentionSearchRequest,
+} from "./attention-search";
 
 import { AgentRuntime } from "./agent-runtime";
 import {
@@ -7238,7 +7243,10 @@ export class SessionRuntime {
       this.mergeBootAttentionHashAliases(persistedHashAliases),
     );
     this.attentionSystem = AttentionSystem.fromSnapshot(this.mergeBootAttentionSnapshot(persistedAttentionSnapshot));
-    this.attentionSearchEngine = new AttentionSearchEngine(join(this.options.sessionRoot, "attention-search.duckdb"));
+    this.attentionSearchEngine = new AttentionSearchEngine(
+      join(this.options.sessionRoot, ATTENTION_SEARCH_SQLITE_FILENAME),
+      join(this.options.sessionRoot, ATTENTION_SEARCH_LEGACY_DUCKDB_FILENAME),
+    );
     await this.persistAttentionSystem();
     await this.runtimeKernelHost.bootstrap();
     this.terminalKernelAdapter.syncFocusedDirtyTerminals();
@@ -8050,7 +8058,8 @@ export class SessionRuntime {
     const engine =
       this.attentionSearchEngine ??
       (this.attentionSearchEngine = new AttentionSearchEngine(
-        join(this.options.sessionRoot, "attention-search.duckdb"),
+        join(this.options.sessionRoot, ATTENTION_SEARCH_SQLITE_FILENAME),
+        join(this.options.sessionRoot, ATTENTION_SEARCH_LEGACY_DUCKDB_FILENAME),
       ));
     return await engine.query({
       attentionSystem: this.attentionSystem,

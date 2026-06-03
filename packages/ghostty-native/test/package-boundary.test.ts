@@ -10,6 +10,7 @@ describe("Feature: ghostty-native package boundary", () => {
       name: string;
       exports?: Record<string, string>;
       files?: string[];
+      optionalDependencies?: Record<string, string>;
       scripts?: Record<string, string>;
       peerDependencies?: Record<string, string>;
     };
@@ -21,17 +22,32 @@ describe("Feature: ghostty-native package boundary", () => {
 
     expect(pkg.name).toBe("@jixo/ghostty-native");
     expect(pkg.exports).toEqual({ ".": "./src/index.ts" });
-    expect(pkg.files).toEqual(["README.md", "src", "termless-ghostty-native.node"]);
+    expect(pkg.files).toEqual(["README.md", "src"]);
     expect(pkg.scripts).toEqual({
       "build:ghostty-native": "bash build/build.sh",
       typecheck: "bunx tsc -p tsconfig.typecheck.json --noEmit",
     });
     expect(pkg.peerDependencies).toEqual({ "@termless/core": "*" });
+    expect(pkg.optionalDependencies).toEqual({
+      "@jixo/ghostty-native-darwin-arm64": "workspace:*",
+      "@jixo/ghostty-native-darwin-x64": "workspace:*",
+      "@jixo/ghostty-native-linux-arm64-gnu": "workspace:*",
+      "@jixo/ghostty-native-linux-x64-gnu": "workspace:*",
+      "@jixo/ghostty-native-win32-arm64-msvc": "workspace:*",
+      "@jixo/ghostty-native-win32-x64-msvc": "workspace:*",
+    });
 
     expect(entrySource).toContain('from "@termless/core"');
     expect(backendSource).toContain('from "@termless/core"');
+    expect(entrySource).toContain("resolveGhosttyNativePlatformPackageName");
     expect(backendSource).toContain("createRequire");
-    expect(buildScript).toContain("/tmp/zig-0.15.2/zig");
+    expect(backendSource).toContain("@jixo/ghostty-native-linux-x64-gnu");
+    expect(backendSource).toContain("unsupported ghostty-native platform");
+    expect(backendSource).toContain("platform package unavailable");
+    expect(backendSource).toContain("../native/zig-out/lib/termless-ghostty-native.node");
+    expect(buildScript).toContain('ZIG_VERSION="0.15.2"');
+    expect(buildScript).toContain("https://ziglang.org/download/$ZIG_VERSION/");
+    expect(buildScript).toContain('RELEASE_ZIG_ROOT="/tmp/zig-$ZIG_VERSION"');
     expect(buildScript).toContain("ghostty-vt minimal dependency graph");
     expect(nativeBuild).toContain('root_source_file = b.path(".ghostty-src/src/lib_vt.zig")');
     expect(nativeBuild).toContain('build_options.addOption(bool, "simd", false)');

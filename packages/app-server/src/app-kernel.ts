@@ -118,7 +118,12 @@ import {
   type TerminalWriteResult,
 } from "@agenter/terminal-system";
 import { privateKeyToAccount } from "viem/accounts";
-import { AttentionSearchEngine, type AttentionSearchRequest } from "./attention-search";
+import {
+  AttentionSearchEngine,
+  ATTENTION_SEARCH_LEGACY_DUCKDB_FILENAME,
+  ATTENTION_SEARCH_SQLITE_FILENAME,
+  type AttentionSearchRequest,
+} from "./attention-search";
 import { appAttentionSourceRegistry } from "./attention-src";
 import { projectAuthActors } from "./auth-actor-catalog";
 import { AuthDraftStore, resolveAuthDraftDbPath } from "./auth-draft-store";
@@ -5807,7 +5812,10 @@ export class AppKernel {
 
     const attention = await this.readPersistedAttentionState(session);
     const attentionSystem = AttentionSystem.fromSnapshot(attention.snapshot);
-    const engine = new AttentionSearchEngine(join(session.sessionRoot, "attention-search.duckdb"));
+    const engine = new AttentionSearchEngine(
+      join(session.sessionRoot, ATTENTION_SEARCH_SQLITE_FILENAME),
+      join(session.sessionRoot, ATTENTION_SEARCH_LEGACY_DUCKDB_FILENAME),
+    );
     return await engine.query({
       attentionSystem,
       snapshot: attention.snapshot,

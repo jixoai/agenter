@@ -1,4 +1,10 @@
-export { createGhosttyNativeBackend } from "./backend.ts"
+export {
+  GHOSTTY_NATIVE_PLATFORM_PACKAGES,
+  GHOSTTY_NATIVE_SUPPORTED_TARGETS,
+  assertSupportedGhosttyNativePlatformPackage,
+  createGhosttyNativeBackend,
+  resolveGhosttyNativePlatformPackageName,
+} from "./backend.ts"
 
 import { createGhosttyNativeBackend } from "./backend.ts"
 import type { TerminalBackend, TerminalOptions } from "@termless/core"
