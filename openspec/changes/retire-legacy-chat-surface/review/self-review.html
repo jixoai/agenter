@@ -1,0 +1,193 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>retire-legacy-chat-surface self review</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      }
+      body {
+        margin: 24px;
+        line-height: 1.5;
+      }
+      h1,
+      h2 {
+        margin: 0 0 12px;
+      }
+      section {
+        margin: 0 0 24px;
+      }
+      table {
+        border-collapse: collapse;
+        width: 100%;
+      }
+      th,
+      td {
+        border: 1px solid color-mix(in srgb, currentColor 20%, transparent);
+        padding: 8px 10px;
+        text-align: left;
+        vertical-align: top;
+      }
+      code,
+      pre {
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      }
+      .pass {
+        color: #0a7f3f;
+        font-weight: 600;
+      }
+      .warn {
+        color: #b36b00;
+        font-weight: 600;
+      }
+      ul {
+        margin: 8px 0 0 20px;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Self Review: retire-legacy-chat-surface</h1>
+
+    <section>
+      <h2>Summary</h2>
+      <table>
+        <tr>
+          <th>Field</th>
+          <th>Value</th>
+        </tr>
+        <tr>
+          <td>Iteration</td>
+          <td>1 / 5</td>
+        </tr>
+        <tr>
+          <td>Exit judgment</td>
+          <td>Implementation intent is satisfied. Archive is deferred until a clean change-local commit exists.</td>
+        </tr>
+        <tr>
+          <td>Known deviation count</td>
+          <td>2</td>
+        </tr>
+        <tr>
+          <td>Next action</td>
+          <td>Run <code>commit-check --phase self-review</code>, then prepare the clean implementation commit.</td>
+        </tr>
+      </table>
+    </section>
+
+    <section>
+      <h2>Intent Alignment</h2>
+      <table>
+        <tr>
+          <th>Intent</th>
+          <th>Evidence</th>
+          <th>Verdict</th>
+        </tr>
+        <tr>
+          <td>No session-owned primary room</td>
+          <td><code>session-doc.ts</code>, <code>session-store.ts</code>, <code>session-catalog.ts</code>, <code>app-kernel.ts</code>, and the restart assertions in <code>app-kernel.test.ts</code></td>
+          <td class="pass">Aligned</td>
+        </tr>
+        <tr>
+          <td>Explicit room or explicit message-origin routing only</td>
+          <td><code>session-runtime.ts</code>, <code>app-kernel.ts</code>, <code>runtime-store.ts</code>, <code>run-tui.ts</code>, relay tests, and missing-room tests</td>
+          <td class="pass">Aligned</td>
+        </tr>
+        <tr>
+          <td>No protected-room concept</td>
+          <td><code>apps/shell/src/app-runtime/lifecycle-reaction.ts</code> no longer blocks archive by hidden metadata; archive/delete behavior is asserted in <code>app-kernel.test.ts</code></td>
+          <td class="pass">Aligned</td>
+        </tr>
+        <tr>
+          <td>Retire top-level <code>chat.*</code> truth surface</td>
+          <td><code>trpc/router.ts</code> now exposes <code>runtime.messagesPage</code> and <code>runtime.cyclesPage</code>; client SDK types and store follow that surface</td>
+          <td class="pass">Aligned</td>
+        </tr>
+        <tr>
+          <td>File truth comments at the cut points</td>
+          <td><code>runtime-store.ts</code>, <code>lifecycle-reaction.ts</code>, and <code>app-kernel.ts</code></td>
+          <td class="pass">Aligned</td>
+        </tr>
+      </table>
+    </section>
+
+    <section>
+      <h2>Deviations</h2>
+      <ol>
+        <li class="warn">
+          Task <code>3.1</code> was skipped in sequence: apply work started before <code>commit-check --phase apply</code> and before an artifact-only commit existed.
+        </li>
+        <li class="warn">
+          The final residue cleanup reused earlier real-provider evidence instead of rerunning every gated real-provider scenario after the last naming-only pass.
+        </li>
+      </ol>
+    </section>
+
+    <section>
+      <h2>Command Evidence</h2>
+      <table>
+        <tr>
+          <th>Command</th>
+          <th>Result</th>
+          <th>Purpose</th>
+        </tr>
+        <tr>
+          <td><code>bun run openspec:vision -- commit-check retire-legacy-chat-surface --phase self-review</code></td>
+          <td class="pass">ok: true</td>
+          <td>Self-review gate passed; suggested next commit is <code>docs(spec): record retire-legacy-chat-surface self-review</code></td>
+        </tr>
+        <tr>
+          <td><code>bun test packages/app-server/test/app-kernel.test.ts -t 'without any attached room|explicit room terminal and workspace authorities|global room authority'</code></td>
+          <td class="pass">pass</td>
+          <td>Missing-room behavior, no persisted <code>primaryRoomId</code>, explicit archived/deleted/unknown room failures</td>
+        </tr>
+        <tr>
+          <td><code>bun test packages/app-server/test/mock-loopbus.room-relay.integration.test.ts ... heartbeat-invocation-ledger.integration.test.ts</code></td>
+          <td class="pass">pass</td>
+          <td>Source-based relay routing, compact follow-up, message-query authorization, cold-restart ledger integrity</td>
+        </tr>
+        <tr>
+          <td><code>bun test packages/client-sdk/test/runtime-store.test.ts -t 'projection message without room identity|explicit focused room|missing-room error|uploaded session assets'</code></td>
+          <td class="pass">pass</td>
+          <td>No synthetic <code>room-main</code> fallback, explicit focused-room send path</td>
+        </tr>
+        <tr>
+          <td><code>bun run --filter '@agenter/app-server' verify:workspace-attention</code></td>
+          <td class="pass">pass</td>
+          <td>Stopped-session unread/notification recovery from attention/source facts</td>
+        </tr>
+        <tr>
+          <td><code>bun run --filter '@agenter/app-server' typecheck</code></td>
+          <td class="pass">pass</td>
+          <td>Server compile safety</td>
+        </tr>
+        <tr>
+          <td><code>bun run --filter 'agenter-app-shell' typecheck</code></td>
+          <td class="pass">pass</td>
+          <td>Shell lifecycle cleanup compiles</td>
+        </tr>
+        <tr>
+          <td><code>bun run openspec:vision -- validate retire-legacy-chat-surface</code></td>
+          <td class="pass">pass</td>
+          <td>OpenSpec artifact validity</td>
+        </tr>
+        <tr>
+          <td><code>AGENTER_RUN_REAL_LOOPBUS=1 bun test packages/app-server/test/real-loopbus.integration.test.ts -t 'asks the assistant to ask gaubee about lunch'</code></td>
+          <td class="pass">pass earlier in same apply round</td>
+          <td>Real AI relay proof with no default-room fallback</td>
+        </tr>
+      </table>
+    </section>
+
+    <section>
+      <h2>Git State</h2>
+      <ul>
+        <li>No change-local commit exists yet for <code>retire-legacy-chat-surface</code>.</li>
+        <li>Base context commit reviewed: <code>18065e15</code>.</li>
+        <li>Self-review commit-check passed against latest OpenSpec commit <code>c0924d40</code>.</li>
+        <li>Working tree is intentionally dirty across app-server, client-sdk, shell, shell-old test helpers, and this OpenSpec review artifact set.</li>
+      </ul>
+    </section>
+  </body>
+</html>
