@@ -75,11 +75,23 @@ describe("Feature: release bundle contract", () => {
       dependencies?: Record<string, string>;
     };
     const buildScript = readRepoFile("scripts/release/build-bundles.ts");
+    const manifest = readRepoFile("scripts/release/release-manifest.ts");
+    const reactiveFsSource = readRepoFile("packages/reactive-fs/src/reactive-fs/reactive-fs.ts");
+    const watcherPoolSource = readRepoFile("packages/reactive-fs/src/reactive-fs/watcher-pool.ts");
+    const projectWatcherSource = readRepoFile("packages/reactive-fs/src/reactive-fs/project-watcher.ts");
+    const reactiveFsTests = readRepoFile("packages/reactive-fs/src/reactive-fs/reactive-fs.test.ts");
 
     expect(reactiveFsPkg.dependencies?.["@parcel/watcher"]).toBe("^2.5.1");
     expect(agenterSpec?.dependencies?.["@parcel/watcher"]).toBe("^2.5.1");
     expect(agenterSpec?.external).toContain("@parcel/watcher");
     expect(buildScript).toContain('...(input.external ?? []).flatMap((name) => ["--external", name])');
+    expect(manifest).toContain("missing-path watch, multi-root pooling,");
+    expect(reactiveFsSource).toContain("支持监听尚未创建的文件");
+    expect(reactiveFsTests).toContain("With @parcel/watcher, we can watch non-existent directories");
+    expect(watcherPoolSource).toContain("ensureWatcherRootForPath");
+    expect(projectWatcherSource).toContain("drop-events");
+    expect(projectWatcherSource).toContain("missing-project-dir");
+    expect(projectWatcherSource).toContain("project-dir-replaced");
   });
 
   test("Scenario: Given the core TUI is retired When probing the agenter bundle Then OpenTUI syntax assets no longer ship in the core package", () => {
@@ -115,6 +127,50 @@ describe("Feature: release bundle contract", () => {
       expect(files.filter((file) => file.endsWith(".wasm"))).toEqual([]);
       expect(output).not.toContain(".scm");
       expect(output).not.toContain(".wasm");
+    } finally {
+      rmSync(outputDir, { recursive: true, force: true });
+    }
+  });
+
+  test("Scenario: Given core bundle asset provenance is audited When probing the agenter bundle Then the surviving native asset still has an explicit owner and load path", () => {
+    const outputDir = mkdtempSync(join(tmpdir(), "agenter-bundle-provenance-"));
+    try {
+      const probe = Bun.spawnSync({
+        cmd: [
+          bunBin,
+          "build",
+          join(repoRoot, "packages/agenter/src/bin/agenter.ts"),
+          "--bundle",
+          "--target=bun",
+          "--outdir",
+          outputDir,
+          "--external",
+          "@duckdb/node-api",
+          "--external",
+          "@jixo/ghostty-native",
+          "--external",
+          "@parcel/watcher",
+        ],
+        cwd: repoRoot,
+        stdout: "pipe",
+        stderr: "pipe",
+      });
+      const files = readdirSync(outputDir).sort();
+      const bundleSource = readFileSync(join(outputDir, "agenter.js"), "utf8");
+      const nativeAssets = files.filter((file) => file.endsWith(".node"));
+
+      expect(probe.exitCode).toBe(0);
+      expect(files).toContain("agenter.js");
+      expect(files.filter((file) => file.endsWith(".scm"))).toEqual([]);
+      expect(files.filter((file) => file.endsWith(".wasm"))).toEqual([]);
+      expect(nativeAssets).toHaveLength(1);
+      expect(nativeAssets[0]).toMatch(/^resvgjs\..+\.node$/u);
+      expect(bundleSource).toContain("packages/auth-service/src/render/resvg-runtime.ts");
+      expect(bundleSource).toContain("@resvg/resvg-js/js-binding.js");
+      expect(bundleSource).toContain("resvgjs.");
+      expect(bundleSource).not.toContain("@opentui/core");
+      expect(bundleSource).not.toContain("highlights.scm");
+      expect(bundleSource).not.toContain("tree-sitter");
     } finally {
       rmSync(outputDir, { recursive: true, force: true });
     }

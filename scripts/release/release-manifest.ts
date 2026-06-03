@@ -79,8 +79,10 @@ export const createReleaseBundlePackageSpecs = (): ReleaseBundlePackageSpec[] =>
       "@jixo/ghostty-native": "workspace:*",
       "@termless/core": "^0.6.0",
     },
-    // The reactive-fs atom depends on a native watcher, so release bundles must
-    // keep parcel watcher install-time and runtime-external instead of inlining it.
+    // reactive-fs currently depends on missing-path watch, multi-root pooling,
+    // and watcher-recovery semantics that Bun fs.watch has not matched in the
+    // current evidence. Keep parcel watcher install-time/runtime-external until
+    // parity is proven, rather than silently weakening the file-watching law.
     external: ["@duckdb/node-api", "@jixo/ghostty-native", "@parcel/watcher"],
     assets: [
       { from: "packages/auth-service/src/server/webauthn-ui", to: "assets/auth-service/webauthn-ui" },

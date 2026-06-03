@@ -131,6 +131,45 @@
 | `可以废弃` | The current TUI surface no longer needs preservation as a live product. | Retirement is acceptable if the boundary cleanup is explicit. |
 | `改名成 tui-bak，并从workspace中剔除` | The old code may remain only as backup material, not as a participating package. | Remove it from the live workspace/package graph rather than carrying a hidden active edge. |
 
+## Current Round Conclusions
+
+### Watcher Parity Conclusion
+
+The watcher question now has a phase-1 answer: **do not replace `@parcel/watcher` yet**.
+
+Why:
+
+- Repo truth in `packages/reactive-fs/src/reactive-fs/*` and its tests shows the current contract already depends on:
+  - watching paths that do not exist yet,
+  - multi-root watcher pooling,
+  - recursive child watching for directories,
+  - runtime-status inspection,
+  - recovery/reinitialize reasons such as `drop-events`, `watcher-error`, `missing-project-dir`, and `project-dir-replaced`.
+- Bun’s public watcher surface is the Node-compatible `fs.watch(...)` API, while Bun’s watch-mode docs only establish that it uses native platform facilities such as `kqueue()` and `inotify()`; they do not establish parity with the higher-level semantics `@jixo/reactive-fs` already consumes.
+- Direct local evidence from this round:
+  - watching a nonexistent path with Bun `fs.watch(...)` failed immediately with `ENOENT`,
+  - recursively watching an existing root and then creating `nested/a.txt` produced only `rename:nested`, which is weaker than the current directory-child semantics the reactive-fs tests assume.
+
+Therefore phase 1 should record an explicit **defer** decision: keep `@parcel/watcher` as the install-time/runtime watcher dependency until parity is proven against the existing contract, rather than replacing it by assumption.
+
+### Core Bundle Asset Provenance Audit
+
+The current `bundle/agenter` asset story is now explicit enough to explain:
+
+| Asset family | Owning package | Command / feature surface | Runtime load path | Current phase-1 status |
+| ------------ | -------------- | ------------------------- | ----------------- | ---------------------- |
+| `highlights-*.scm` | `@opentui/core` | legacy `agenter tui` surface via `@agenter/tui` | `@agenter/tui` -> monolithic `@opentui/core` main entry -> syntax asset imports | no longer emitted in `bundle/agenter` after TUI retirement |
+| `injections-*.scm` | `@opentui/core` | legacy `agenter tui` surface via `@agenter/tui` | `@agenter/tui` -> monolithic `@opentui/core` main entry -> markdown injection asset import | no longer emitted in `bundle/agenter` after TUI retirement |
+| `tree-sitter-*.wasm` | `@opentui/core` / `web-tree-sitter` integration | legacy `agenter tui` surface via `@agenter/tui` | `@agenter/tui` -> monolithic `@opentui/core` main entry -> parser/grammar asset imports | no longer emitted in `bundle/agenter` after TUI retirement |
+| `resvgjs.<platform>.node` | `@resvg/resvg-js-<platform>` via `@resvg/resvg-js` | auth-service default SVG -> raster media path | `packages/auth-service/src/render/resvg-runtime.ts` -> `import("@resvg/resvg-js")` -> package `js-binding.js` -> platform native binding | still emitted while the core bundle inlines auth-service rasterization support |
+
+Direct bundle probe after the TUI retirement and packaged resvg swap now produces only:
+
+- `agenter.js`
+- `resvgjs.darwin-arm64-*.node` on the current darwin/arm64 host
+
+The old `.scm/.wasm` payloads were real OpenTUI syntax assets, not random bundler trash, but they are no longer core-bundle assets once the live TUI edge is removed.
+
 ### Demo / Spike Code
 
 | Path | Question it answers | Keep, migrate, or delete |
@@ -143,6 +182,7 @@
 | -------- | ----------------------------- | ------------------------------------- |
 | Does phase 1 need an actual Bun watcher replacement, or only a proved keep/replace conclusion? | The semantic gap may be real, and forcing replacement without parity would violate the evidence-first rule. | Replacement lands only if parity is proven; otherwise parcel stays with a written reason. |
 | Should the canonical search sidecar filename change away from `attention-search.duckdb` in the same phase? | The engine swap is accepted, but the file-visible migration boundary still needs an explicit choice. | Prefer an explicit SQLite filename because the sidecar is rebuildable projection state, not durable truth. |
+| Should ghostty platform packages encode libc in the package name for Linux, or stay at the user-approved `linux-arm64` / `linux-amd64` surface without a libc split? | The approved host set is concrete, but install-time package names and supported Linux runtime policy are still under-specified. | Do not guess; hold implementation until the package naming and libc policy are explicit. |
 
 ## Intent
 
@@ -244,6 +284,7 @@ On a supported host, starting the daemon or rasterizing a profile icon does not 
 | Gate | Why confirmation is required | Default until user answers |
 | ---- | ---------------------------- | -------------------------- |
 | Search sidecar filename migration | The engine swap is approved, but visible on-disk naming may still matter operationally. | Prefer an explicit SQLite name because the sidecar is rebuildable projection state. |
+| Ghostty platform package naming / Linux libc policy | Phase-1 host families are approved, but exact install-time package atoms are not. | Keep the host matrix explicit, but do not invent package names or libc splits until confirmed. |
 
 ## Intent-Driven Plan
 
@@ -258,6 +299,7 @@ On a supported host, starting the daemon or rasterizing a profile icon does not 
 | Question | Why it matters | Default assumption until user answers |
 | -------- | -------------- | ------------------------------------- |
 | Should the search sidecar filename change now or in a later cleanup? | The engine swap can ship either with or without an on-disk rename. | Prefer the rename now because the sidecar is disposable projection state. |
+| Should Linux ghostty binaries split by libc in phase 1, and if so what package names should become canonical? | Runtime resolution and publish order cannot be implemented cleanly until the platform atoms are named. | Hold the ghostty package implementation until the package naming rule is explicit. |
 | Is Bun watcher replacement part of phase 1 deliverable, or only a proved decision? | This determines whether a failed parity spike is acceptable output. | A proved keep/replace decision is sufficient; replacement itself is conditional. |
 
 ## Rejected Paths
