@@ -28,6 +28,7 @@ packages/tui-bak/tmp/
 
 # staged ghostty-native platform binaries
 packages/ghostty-native-*/termless-ghostty-native.node
+packages/agenter-cli-*/bin/agenter*
 
 # demo runtime artifacts
 demo/logs/

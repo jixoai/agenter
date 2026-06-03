@@ -7,6 +7,7 @@ import { createBundlePackageSpecs, createHostOnlySmokeBundlePackageSpecs, parseB
 import { bundlePublishOrder } from "./publish-bundles";
 import {
   createReleaseBundlePackageSpecs,
+  releaseAgenterCliPlatformPackageJsonPaths,
   releaseBundlePublishOrder,
   releaseGhosttyNativePlatformPackageJsonPaths,
   releasePublishablePackageJsonPaths,
@@ -411,6 +412,7 @@ describe("Feature: release bundle contract", () => {
     );
     expect(releasePublishablePackageJsonPaths).toEqual([
       "packages/agenter/package.json",
+      ...releaseAgenterCliPlatformPackageJsonPaths,
       "apps/shell/package.json",
       "apps/studio/package.json",
       "packages/ghostty-native/package.json",

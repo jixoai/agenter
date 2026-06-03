@@ -1,0 +1,23 @@
+{
+  "name": "@agenter/cli-darwin-x64",
+  "version": "0.0.8",
+  "description": "Prebuilt Agenter CLI for darwin x64",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/jixoai/agenter"
+  },
+  "files": [
+    "README.md",
+    "bin"
+  ],
+  "os": [
+    "darwin"
+  ],
+  "cpu": [
+    "x64"
+  ],
+  "publishConfig": {
+    "access": "public"
+  }
+}

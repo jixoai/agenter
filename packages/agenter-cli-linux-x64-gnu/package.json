@@ -1,0 +1,26 @@
+{
+  "name": "@agenter/cli-linux-x64-gnu",
+  "version": "0.0.8",
+  "description": "Prebuilt Agenter CLI for linux x64 glibc",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/jixoai/agenter"
+  },
+  "files": [
+    "README.md",
+    "bin"
+  ],
+  "os": [
+    "linux"
+  ],
+  "cpu": [
+    "x64"
+  ],
+  "libc": [
+    "glibc"
+  ],
+  "publishConfig": {
+    "access": "public"
+  }
+}

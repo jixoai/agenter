@@ -1,3 +1,4 @@
+import { agenterCliPlatformPackageJsonPaths } from "../binaries/agenter-cli-artifacts";
 import { ghosttyNativeTargets } from "../binaries/artifacts";
 
 export interface ReleasePackageJson {
@@ -69,9 +70,11 @@ export const releaseBundleManifestFiles = [
 export const releaseGhosttyNativePlatformPackageJsonPaths = ghosttyNativeTargets.map(
   (target) => `${target.packageDir}/package.json`,
 );
+export const releaseAgenterCliPlatformPackageJsonPaths = agenterCliPlatformPackageJsonPaths;
 
 export const releasePublishablePackageJsonPaths = [
   "packages/agenter/package.json",
+  ...agenterCliPlatformPackageJsonPaths,
   "apps/shell/package.json",
   "apps/studio/package.json",
   "packages/ghostty-native/package.json",

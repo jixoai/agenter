@@ -1,0 +1,26 @@
+{
+  "name": "@agenter/cli-linux-arm64-musl",
+  "version": "0.0.8",
+  "description": "Prebuilt Agenter CLI for linux arm64 musl",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/jixoai/agenter"
+  },
+  "files": [
+    "README.md",
+    "bin"
+  ],
+  "os": [
+    "linux"
+  ],
+  "cpu": [
+    "arm64"
+  ],
+  "libc": [
+    "musl"
+  ],
+  "publishConfig": {
+    "access": "public"
+  }
+}

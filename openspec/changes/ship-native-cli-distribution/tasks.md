@@ -22,7 +22,7 @@
 - [x] 3.1 Run `bun run openspec:vision -- commit-check ship-native-cli-distribution --phase apply` before app-code work starts and commit the ready OpenSpec artifacts.
 - [x] 3.2 Add durable spec updates for `SPEC.md`, `packages/agenter/SPEC.md`, and `packages/cli/SPEC.md` so the published CLI law shifts from ts-first source bin to wrapper-plus-platform-binary distribution backed by GitHub release archives.
 - [ ] 3.3 Introduce a single source of truth for the Agenter native CLI platform matrix, archive filenames, archive checksums, and npm/Homebrew projection mapping.
-- [ ] 3.4 Add public platform package workspaces for every supported Agenter native target, keeping them thin binary atoms with explicit `os` / `cpu` / `libc` metadata.
+- [x] 3.4 Add public platform package workspaces for every supported Agenter native target, keeping them thin binary atoms with explicit `os` / `cpu` / `libc` metadata.
 - [ ] 3.5 Convert the public `agenter` package into a wrapper shell that uses `optionalDependencies`, `postinstall`, and a documented Node fallback path to reach the host-native compiled executable.
 - [ ] 3.6 Compile the Agenter CLI to standalone executables with Bun for every supported target and stage them into the canonical GitHub release archive layout.
 - [ ] 3.7 Replace the current JS-bundle-first release bundle path for `agenter` with release-archive-first packaging, while preserving the existing package/release manifest truth model.

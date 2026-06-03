@@ -3,6 +3,14 @@ packages:
   - apps/shell
   - apps/studio
   - packages/agenter
+  - packages/agenter-cli-darwin-arm64
+  - packages/agenter-cli-darwin-x64
+  - packages/agenter-cli-linux-arm64-gnu
+  - packages/agenter-cli-linux-arm64-musl
+  - packages/agenter-cli-linux-x64-gnu
+  - packages/agenter-cli-linux-x64-musl
+  - packages/agenter-cli-win32-arm64
+  - packages/agenter-cli-win32-x64
   - packages/app-runtime
   - packages/app-server
   - packages/attention-system

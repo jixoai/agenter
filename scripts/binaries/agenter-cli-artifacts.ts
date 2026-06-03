@@ -92,6 +92,10 @@ export const agenterCliTargets: readonly AgenterCliTarget[] = targetTuples.map((
   createAgenterCliTarget(packageOs, arch, libc),
 );
 
+export const agenterCliPlatformPackageJsonPaths: readonly string[] = agenterCliTargets.map(
+  (target) => `${target.packageDir}/package.json`,
+);
+
 export const normalizeAgenterCliArch = (arch: string): AgenterCliPackageArch => {
   switch (arch) {
     case "arm64":

@@ -1,12 +1,17 @@
 import { describe, expect, test } from "bun:test";
+import { readFileSync } from "node:fs";
+import { join, resolve } from "node:path";
 
 import {
   agenterCliTargets,
+  agenterCliPlatformPackageJsonPaths,
   normalizeAgenterCliArch,
   normalizeAgenterCliPackageLibc,
   normalizeAgenterCliPackageOs,
   resolveAgenterCliPackageTarget,
 } from "./agenter-cli-artifacts";
+
+const repoRoot = resolve(import.meta.dir, "../..");
 
 describe("Feature: agenter native CLI artifact topology", () => {
   test("Scenario: Given the phase-1 native CLI matrix When targets are enumerated Then every supported host maps to one explicit package atom", () => {
@@ -56,5 +61,28 @@ describe("Feature: agenter native CLI artifact topology", () => {
     expect(() => resolveAgenterCliPackageTarget("linux", "x64")).toThrow(
       "linux agenter CLI target resolution requires explicit libc",
     );
+  });
+
+  test("Scenario: Given public platform packages are scaffolded When manifests are inspected Then each target keeps narrow host metadata", () => {
+    for (const packageJsonPath of agenterCliPlatformPackageJsonPaths) {
+      const pkg = JSON.parse(readFileSync(join(repoRoot, packageJsonPath), "utf8")) as {
+        bin?: Record<string, string>;
+        cpu?: string[];
+        files?: string[];
+        libc?: string[];
+        name?: string;
+        os?: string[];
+      };
+      expect(pkg.files).toEqual(["README.md", "bin"]);
+      expect(pkg.bin).toBeUndefined();
+      expect(pkg.name).toMatch(/^@agenter\/cli-/u);
+      expect(pkg.os).toHaveLength(1);
+      expect(pkg.cpu).toHaveLength(1);
+      if (pkg.os[0] === "linux") {
+        expect(pkg.libc === undefined || pkg.libc.length === 1).toBe(true);
+      } else {
+        expect(pkg.libc).toBeUndefined();
+      }
+    }
   });
 });
