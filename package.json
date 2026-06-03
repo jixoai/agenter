@@ -78,6 +78,7 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "homebrew:bootstrap-tap": "bun run scripts/homebrew/bootstrap-tap.ts",
+    "homebrew:generate-formula": "bun run scripts/homebrew/generate-formula.ts",
     "npm:bootstrap-package": "bun run scripts/npm/bootstrap-package.ts",
     "openspec:vision": "bun run scripts/openspec/vision-driven.ts",
     "release:build-bundles": "bun run scripts/release/build-bundles.ts",
