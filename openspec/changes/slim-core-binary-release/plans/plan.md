@@ -77,9 +77,10 @@
 
 | Source | Fact | Why it matters |
 | ------ | ---- | -------------- |
-| `packages/app-server/src/attention-search/index-store.ts` | Attention search currently creates a DuckDB file, installs/loads the DuckDB `fts` extension, and queries candidates from that sidecar. | `@duckdb/node-api` is active runtime truth, not dead residue. |
+| `packages/app-server/src/attention-search/index-store.ts` | Attention search now materializes a Bun SQLite FTS5 projection and rebuilds it wholesale from the current attention snapshot hash. | The storage engine migration is now real code, so the remaining search question is the on-disk naming / legacy-sidecar boundary, not the FTS engine itself. |
 | `packages/app-server/src/app-kernel.ts` and `packages/app-server/src/session-runtime.ts` | The runtime currently names the projection file `attention-search.duckdb`. | The DuckDB-to-SQLite change touches the operator-visible sidecar boundary and migration/cleanup path. |
 | `openspec/specs/attention-search-index/spec.md` | The durable capability currently says attention search SHALL use a rebuildable DuckDB FTS projection. | The change must modify an existing platform law, not only code. |
+| `packages/app-server/package.json`, `packages/agenter/package.json`, and `scripts/release/release-manifest.ts` | `@duckdb/node-api` is no longer in the app-server runtime deps, the public agenter package deps, or the core release bundle metadata/runtime externals. | Phase 1 has already removed DuckDB from the core release dependency graph even before the final sidecar filename decision lands. |
 | `packages/auth-service/src/render/resvg-ffi.ts` | The raster path currently uses `bun:ffi`, loads `libprofile_resvg_bridge.*`, and may invoke Cargo to build the bridge binary. | The current SVG raster contract is source-build-oriented and host-fragile. |
 | `packages/auth-service/SPEC.md` | Auth-service durable package notes still say raster variants come from `bun:ffi + resvg bridge`. | The implementation phase must reconcile package-level durable law, not only OpenSpec deltas. |
 | `scripts/release/release-manifest.ts` and `packages/cli/src/run-cli.ts` | The release bundle currently copies the auth-service `resvg_bridge` native asset and the CLI passes a bridge library path into auth-service startup. | Replacing the bridge requires release-manifest, CLI bootstrap, and auth-service contract changes together. |
@@ -100,8 +101,8 @@
 
 | Checkpoint | Expected commit evidence | Current status |
 | ---------- | ------------------------ | -------------- |
-| OpenSpec artifacts before apply | Commit containing `plans/plan.md`, specs, and `tasks.md` before app-code work starts | Pending artifact creation and validation |
-| Task-progress commits | Commit containing current-context task checkbox updates plus matching code/BDD evidence | Not started |
+| OpenSpec artifacts before apply | Commit containing `plans/plan.md`, specs, and `tasks.md` before app-code work starts | Completed in `1dfceada docs(spec): prepare slim-core-binary-release for apply` |
+| Task-progress commits | Commit containing current-context task checkbox updates plus matching code/BDD evidence | In progress: `30fe371e`, `fc0ec841`, and `42e50734` already land verified implementation batches; attention-search SQLite migration is the next task-progress commit. |
 | Self-review updates | Commit containing review output and any reopened or added OpenSpec tasks before the next apply loop | Not started |
 | Normal archive | Commit containing `openspec archive <change>` result | Not started |
 | Abnormal handoff | Commit containing `HANDOFF.md` / `vN.HANDOFF.md` evidence before returning to user discussion | Not started |

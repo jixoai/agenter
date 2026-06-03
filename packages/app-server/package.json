@@ -36,7 +36,6 @@
     "@agenter/task-system": "workspace:*",
     "@agenter/terminal-system": "workspace:*",
     "@jixo/reactive-fs": "workspace:*",
-    "@duckdb/node-api": "^1.5.1-r.1",
     "@modelcontextprotocol/sdk": "^1.29.0",
     "@opentelemetry/api": "^1.9.0",
     "@opentelemetry/sdk-trace-base": "^2.1.0",

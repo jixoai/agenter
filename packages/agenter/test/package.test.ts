@@ -22,7 +22,7 @@ describe("Feature: agenter publish package", () => {
     expect(pkg.bin).toEqual({ agenter: "./src/bin/agenter.ts" });
     expect(pkg.files).toEqual(["SPEC.md", "src"]);
     expect(pkg.dependencies).toEqual({
-      "@duckdb/node-api": "^1.5.1-r.1",
+      "reflect-metadata": "^0.2.2",
     });
     expect(pkg.devDependencies?.["@agenter/cli"]).toBe("workspace:*");
     expect(pkg.dependencies).not.toHaveProperty("@opentui/react");

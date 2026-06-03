@@ -1,8 +1,9 @@
-import { DuckDBInstance } from "@duckdb/node-api";
+import { Database } from "bun:sqlite";
 import type { AttentionCommitMatch } from "@agenter/attention-system";
 import { createHash } from "node:crypto";
-import { mkdir, rm } from "node:fs/promises";
-import { dirname } from "node:path";
+import { mkdirSync } from "node:fs";
+import { rm } from "node:fs/promises";
+import { dirname, resolve } from "node:path";
 
 import { buildAttentionSearchDocuments } from "./documents";
 import type { AttentionSearchSeed } from "./types";
@@ -16,10 +17,34 @@ const FTS_FIELDS = {
   text: "search_text",
 } as const;
 
+type SnapshotHashRow = {
+  value: string;
+};
+
+type CandidateRow = {
+  commit_key: string;
+};
+
+const quoteFtsTerm = (value: string): string => `"${value.replaceAll('"', '""')}"`;
+
+const buildSeedQuery = (seed: AttentionSearchSeed): string | null => {
+  const term = seed.value.replaceAll("*", "").trim();
+  if (term.length === 0) {
+    return null;
+  }
+  const quoted = quoteFtsTerm(term);
+  const column =
+    seed.field === "summary" || seed.field === "change" || seed.field === "text" ? FTS_FIELDS[seed.field] : null;
+  return column ? `${column}:${quoted}` : quoted;
+};
+
 export class AttentionSearchIndexStore {
   private ftsAvailable = true;
+  private readonly resolvedDbPath: string;
 
-  constructor(private readonly dbPath: string) {}
+  constructor(dbPath: string) {
+    this.resolvedDbPath = resolve(dbPath);
+  }
 
   async ensureSnapshot(matches: readonly AttentionCommitMatch[]): Promise<void> {
     if (!this.ftsAvailable) {
@@ -31,77 +56,52 @@ export class AttentionSearchIndexStore {
       return;
     }
     try {
-      await rm(this.dbPath, { force: true });
-      await mkdir(dirname(this.dbPath), { recursive: true });
-      const instance = await DuckDBInstance.create(this.dbPath);
-      const connection = await instance.connect();
+      await rm(this.resolvedDbPath, { force: true });
+      mkdirSync(dirname(this.resolvedDbPath), { recursive: true });
+      const db = new Database(this.resolvedDbPath, { create: true, strict: true });
       try {
-        await connection.run("INSTALL fts;");
-        await connection.run("LOAD fts;");
-        await connection.run(`
-          create table attention_commit_search (
-            commit_key varchar primary key,
-            context_id varchar not null,
-            commit_id varchar not null,
-            author varchar not null,
-            source varchar not null,
-            summary varchar not null,
-            change_type varchar not null,
-            change_value varchar not null,
-            meta_json varchar not null,
-            search_text varchar not null,
-            created_at_ms bigint not null,
-            updated_at_ms bigint not null,
-            unresolved_score_count integer not null,
-            max_active_score integer not null
-          );
+        db.exec(`pragma journal_mode = WAL;`);
+        db.exec(`
           create table attention_search_meta (
-            key varchar primary key,
-            value varchar not null
+            key text primary key,
+            value text not null
+          ) strict;
+          create virtual table attention_commit_search using fts5(
+            commit_key unindexed,
+            summary,
+            change_value,
+            meta_json,
+            search_text,
+            tokenize = 'unicode61 remove_diacritics 2'
           );
         `);
         const documents = buildAttentionSearchDocuments(matches);
-        for (const doc of documents) {
-          await connection.run(
-            `insert into attention_commit_search (
-               commit_key, context_id, commit_id, author, source, summary, change_type, change_value,
-               meta_json, search_text, created_at_ms, updated_at_ms, unresolved_score_count, max_active_score
-             ) values (
-               $commitKey, $contextId, $commitId, $author, $source, $summary, $changeType, $changeValue,
-               $metaJson, $searchText, $createdAtMs, $updatedAtMs, $unresolvedScoreCount, $maxActiveScore
-             )`,
-            {
-              commitKey: doc.commitKey,
-              contextId: doc.contextId,
-              commitId: doc.commitId,
-              author: doc.author,
-              source: doc.source,
-              summary: doc.summary,
-              changeType: doc.changeType,
-              changeValue: doc.changeValue,
-              metaJson: doc.metaJson,
-              searchText: doc.searchText,
-              createdAtMs: doc.createdAtMs,
-              updatedAtMs: doc.updatedAtMs,
-              unresolvedScoreCount: doc.unresolvedScoreCount,
-              maxActiveScore: doc.maxActiveScore,
-            },
-          );
+        const insertDoc = db.query(
+          `insert into attention_commit_search (
+             commit_key, summary, change_value, meta_json, search_text
+           ) values (?, ?, ?, ?, ?)`,
+        );
+        const writeMeta = db.query(`insert into attention_search_meta(key, value) values ('snapshot_hash', ?)`);
+
+        // The attention search sidecar is rebuildable projection state, so a
+        // snapshot hash change replaces the whole SQLite projection in one pass.
+        db.exec("begin immediate");
+        try {
+          for (const doc of documents) {
+            insertDoc.run(doc.commitKey, doc.summary, doc.changeValue, doc.metaJson, doc.searchText);
+          }
+          writeMeta.run(snapshotHash);
+          db.exec("commit");
+        } catch (error) {
+          db.exec("rollback");
+          throw error;
         }
-        await connection.run(
-          `insert into attention_search_meta(key, value) values ('snapshot_hash', $snapshotHash)`,
-          { snapshotHash },
-        );
-        await connection.run(
-          `PRAGMA create_fts_index('attention_commit_search', 'commit_key', 'summary', 'change_value', 'meta_json', 'search_text');`,
-        );
       } finally {
-        connection.closeSync();
-        instance.closeSync();
+        db.close();
       }
     } catch {
       this.ftsAvailable = false;
-      await rm(this.dbPath, { force: true });
+      await rm(this.resolvedDbPath, { force: true });
     }
   }
 
@@ -110,36 +110,24 @@ export class AttentionSearchIndexStore {
       return null;
     }
     try {
-      const instance = await DuckDBInstance.create(this.dbPath);
-      const connection = await instance.connect();
+      const db = new Database(this.resolvedDbPath, { readonly: true, strict: true });
       try {
-        await connection.run("LOAD fts;");
         const matches = new Set<string>();
         for (const seed of seeds) {
-          const fieldSql =
-            seed.field === "summary" || seed.field === "change" || seed.field === "text"
-              ? `, fields := '${FTS_FIELDS[seed.field]}'`
-              : "";
-          const reader = await connection.runAndReadAll(
-            `select commit_key
-               from (
-                 select commit_key,
-                        fts_main_attention_commit_search.match_bm25(commit_key, $query${fieldSql}) as score
-                 from attention_commit_search
-               ) ranked
-              where score is not null`,
-            { query: seed.value.replaceAll("*", "") },
-          );
-          for (const row of reader.getRowObjectsJS() as Array<Record<string, unknown>>) {
-            if (typeof row.commit_key === "string") {
-              matches.add(row.commit_key);
-            }
+          const ftsQuery = buildSeedQuery(seed);
+          if (!ftsQuery) {
+            continue;
+          }
+          const rows = db
+            .query(`select commit_key from attention_commit_search where attention_commit_search match ?`)
+            .all(ftsQuery) as CandidateRow[];
+          for (const row of rows) {
+            matches.add(row.commit_key);
           }
         }
         return matches;
       } finally {
-        connection.closeSync();
-        instance.closeSync();
+        db.close();
       }
     } catch {
       this.ftsAvailable = false;
@@ -149,17 +137,14 @@ export class AttentionSearchIndexStore {
 
   private async readSnapshotHash(): Promise<string | null> {
     try {
-      const instance = await DuckDBInstance.create(this.dbPath);
-      const connection = await instance.connect();
+      const db = new Database(this.resolvedDbPath, { readonly: true, strict: true });
       try {
-        const reader = await connection.runAndReadAll(
-          `select value from attention_search_meta where key = 'snapshot_hash' limit 1`,
-        );
-        const rows = reader.getRowObjectsJS() as Array<Record<string, unknown>>;
-        return rows[0] && typeof rows[0].value === "string" ? rows[0].value : null;
+        const row = db.query(`select value from attention_search_meta where key = 'snapshot_hash' limit 1`).get() as
+          | SnapshotHashRow
+          | null;
+        return row?.value ?? null;
       } finally {
-        connection.closeSync();
-        instance.closeSync();
+        db.close();
       }
     } catch {
       return null;

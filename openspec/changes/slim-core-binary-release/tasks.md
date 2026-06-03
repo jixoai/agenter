@@ -8,9 +8,9 @@
 
 ## 2. BDD Contract
 
-- [ ] 2.1 Scenario: Given persisted attention commits and no index When the runtime rebuilds search Then Bun SQLite FTS5 restores the projection without a second canonical store.
-- [ ] 2.2 Scenario: Given a legacy DuckDB sidecar remains in a session root When the new attention search runtime starts Then the legacy file does not block rebuildable search semantics.
-- [ ] 2.3 Scenario: Given a search query uses `hash`, `score`, `depth`, or `minscore` filters When SQLite FTS5 narrows candidates Then final results still obey attention graph semantics.
+- [x] 2.1 Scenario: Given persisted attention commits and no index When the runtime rebuilds search Then Bun SQLite FTS5 restores the projection without a second canonical store.
+- [x] 2.2 Scenario: Given a legacy DuckDB sidecar remains in a session root When the new attention search runtime starts Then the legacy file does not block rebuildable search semantics.
+- [x] 2.3 Scenario: Given a search query uses `hash`, `score`, `depth`, or `minscore` filters When SQLite FTS5 narrows candidates Then final results still obey attention graph semantics.
 - [x] 2.4 Scenario: Given a supported release install serves an SVG-backed icon When the default raster media path is used Then the server resolves packaged `@resvg/resvg-js` support without a repo-local bridge build.
 - [x] 2.5 Scenario: Given a host lacks a supported packaged raster runtime When icon rasterization is requested Then the failure is explicit instead of silently pretending raster support exists.
 - [x] 2.6 Scenario: Given `bundle/agenter` emits `.node`, `.wasm`, or `.scm` assets When release provenance is inspected Then each asset has an explicit owner, command surface, and runtime load path.
@@ -24,10 +24,10 @@
 ## 3. Implementation
 
 - [x] 3.1 Run `bun run openspec:vision -- commit-check slim-core-binary-release --phase apply` before app-code work starts and commit the ready OpenSpec artifacts.
-- [ ] 3.2 Replace the attention-search DuckDB index store with a Bun SQLite + FTS5 implementation while preserving rebuildable projection semantics and current query behavior.
+- [x] 3.2 Replace the attention-search DuckDB index store with a Bun SQLite + FTS5 implementation while preserving rebuildable projection semantics and current query behavior.
 - [ ] 3.3 Decide the canonical SQLite sidecar filename and implement the legacy DuckDB cleanup/rebuild path consistent with the rebuildable-projection law.
 - [x] 3.4 Replace the auth-service raster bridge path with packaged `@resvg/resvg-js` resolution and remove release/bootstrap wiring that assumes `libprofile_resvg_bridge.*` is required at runtime.
-- [ ] 3.5 Add concise intent comments at the critical effect points for search projection migration, raster-runtime resolution, and release asset provenance.
+- [x] 3.5 Add concise intent comments at the critical effect points for search projection migration, raster-runtime resolution, and release asset provenance.
 - [x] 3.6 Produce a release asset provenance audit for `bundle/agenter`, including the current `highlights-*.scm`, `injections-*.scm`, `tree-sitter-*.wasm`, and surviving `.node` assets.
 - [x] 3.7 Retire `@agenter/tui` from the live product surface: rename the project to `tui-bak`, remove it from the workspace graph, and ensure release/publish tooling no longer treats it as a live package atom.
 - [x] 3.8 Remove the core CLI `tui` command surface and route `agenter tui` through the unsupported-command path instead of any descriptor, workspace, or remote fallback.
@@ -39,9 +39,9 @@
 
 ## 4. Verification
 
-- [ ] 4.1 Run targeted attention-search tests covering rebuild, graph semantics, and legacy DuckDB-sidecar compatibility.
+- [x] 4.1 Run targeted attention-search tests covering rebuild, graph semantics, and legacy DuckDB-sidecar compatibility.
 - [x] 4.2 Run targeted auth-service tests covering packaged raster runtime resolution and explicit unsupported-host failure behavior.
-- [ ] 4.3 Run release bundle tests covering DuckDB removal, asset provenance, and any explicit app-owned `.scm/.wasm` decision.
+- [x] 4.3 Run release bundle tests covering DuckDB removal, asset provenance, and any explicit app-owned `.scm/.wasm` decision.
 - [ ] 4.4 Run targeted ghostty distribution tests covering supported-host platform resolution and unsupported-host diagnostics.
 - [x] 4.5 Capture watcher parity evidence and record whether Bun watcher replaces `@parcel/watcher` or is explicitly deferred.
 - [x] 4.6 Run `bun run openspec:vision -- validate slim-core-binary-release` for this change.

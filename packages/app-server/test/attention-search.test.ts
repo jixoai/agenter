@@ -1,5 +1,7 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { mkdtemp, rm } from "node:fs/promises";
+import { Database } from "bun:sqlite";
+import { existsSync } from "node:fs";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 
@@ -22,8 +24,9 @@ const createHarness = async () => {
   roots.push(root);
   const system = new AttentionSystem();
   system.createContext({ contextId: "ctx-chat-main", owner: "avatar:jane" });
-  const engine = new AttentionSearchEngine(join(root, "attention-search.duckdb"));
-  return { system, engine };
+  const dbPath = join(root, "attention-search.duckdb");
+  const engine = new AttentionSearchEngine(dbPath);
+  return { system, engine, dbPath };
 };
 
 const appendCommit = (
@@ -51,6 +54,79 @@ const appendCommit = (
   }).commit;
 
 describe("Feature: attention search query execution", () => {
+  test("Scenario: Given persisted attention commits and no index When the runtime rebuilds search Then Bun SQLite FTS5 restores the projection without a second canonical store", async () => {
+    const { system, engine, dbPath } = await createHarness();
+    appendCommit(system, {
+      summary: "Weather report for Xiamen",
+      change: "Sunny with wind",
+      scores: { weather01: 100 },
+      source: "message",
+    });
+
+    expect(existsSync(dbPath)).toBe(false);
+
+    const first = await engine.query({
+      attentionSystem: system,
+      snapshot: system.snapshot(),
+      request: { query: "weather" },
+    });
+
+    expect(first).toHaveLength(1);
+    expect(existsSync(dbPath)).toBe(true);
+
+    const sqlite = new Database(dbPath, { readonly: true, strict: true });
+    try {
+      const row = sqlite
+        .query(`select name from sqlite_master where type = 'table' and name = 'attention_search_meta' limit 1`)
+        .get() as { name?: string } | null;
+      expect(row?.name).toBe("attention_search_meta");
+    } finally {
+      sqlite.close();
+    }
+
+    await rm(dbPath, { force: true });
+    expect(existsSync(dbPath)).toBe(false);
+
+    const rebuilt = await engine.query({
+      attentionSystem: system,
+      snapshot: system.snapshot(),
+      request: { query: "weather" },
+    });
+
+    expect(rebuilt).toHaveLength(1);
+    expect(rebuilt[0]?.commit.summary).toContain("Weather report");
+  });
+
+  test("Scenario: Given a legacy DuckDB sidecar remains in a session root When the new attention search runtime starts Then the legacy file does not block rebuildable search semantics", async () => {
+    const { system, engine, dbPath } = await createHarness();
+    appendCommit(system, {
+      summary: "Weather report for Xiamen",
+      change: "Sunny with wind",
+      scores: { weather01: 100 },
+      source: "message",
+    });
+
+    await writeFile(dbPath, "legacy duckdb sidecar bytes", "utf8");
+
+    const items = await engine.query({
+      attentionSystem: system,
+      snapshot: system.snapshot(),
+      request: { query: "weather" },
+    });
+
+    expect(items).toHaveLength(1);
+
+    const sqlite = new Database(dbPath, { readonly: true, strict: true });
+    try {
+      const row = sqlite
+        .query(`select name from sqlite_master where type = 'table' and name = 'attention_search_meta' limit 1`)
+        .get() as { name?: string } | null;
+      expect(row?.name).toBe("attention_search_meta");
+    } finally {
+      sqlite.close();
+    }
+  });
+
   test("Scenario: Given active and resolved weather commits When plain text query runs Then only active matches return by default", async () => {
     const { system, engine } = await createHarness();
     appendCommit(system, {
@@ -99,7 +175,7 @@ describe("Feature: attention search query execution", () => {
     expect(items.map((item) => item.commit.summary)).toEqual(["Archived forecast"]);
   });
 
-  test("Scenario: Given score-linked commits When score and depth controls are queried Then graph traversal still works", async () => {
+  test("Scenario: Given score-linked commits When hash or score graph controls are queried Then graph traversal still works", async () => {
     const { system, engine } = await createHarness();
     const root = appendCommit(system, {
       summary: "Ask kzf about dinner",
@@ -120,17 +196,19 @@ describe("Feature: attention search query execution", () => {
       source: "attention",
     });
 
-    const items = await engine.query({
-      attentionSystem: system,
-      snapshot: system.snapshot(),
-      request: { query: "score:relay01 deep:2" },
-    });
+    for (const query of ["score:relay01 deep:2", "hash:relay01 deep:2"]) {
+      const items = await engine.query({
+        attentionSystem: system,
+        snapshot: system.snapshot(),
+        request: { query },
+      });
 
-    expect(items.some((item) => item.commit.commitId === root.commitId)).toBe(true);
-    expect(items.map((item) => item.commit.summary).sort()).toEqual([
-      "Follow-up dinner relay",
-      "Ask kzf about dinner",
-    ].sort());
+      expect(items.some((item) => item.commit.commitId === root.commitId)).toBe(true);
+      expect(items.map((item) => item.commit.summary).sort()).toEqual([
+        "Follow-up dinner relay",
+        "Ask kzf about dinner",
+      ].sort());
+    }
   });
 
   test("Scenario: Given a score hash has already been resolved When queried by score without explicit minscore Then history still returns by default", async () => {

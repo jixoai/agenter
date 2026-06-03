@@ -94,6 +94,23 @@ describe("Feature: release bundle contract", () => {
     expect(projectWatcherSource).toContain("project-dir-replaced");
   });
 
+  test("Scenario: Given attention search now projects through Bun SQLite When bundling agenter Then DuckDB leaves the release metadata and runtime externals", () => {
+    const agenterSpec = createBundlePackageSpecs().find((spec) => spec.bundlePackageDir === "bundle/agenter");
+    const agenterPkg = JSON.parse(readRepoFile("packages/agenter/package.json")) as {
+      dependencies?: Record<string, string>;
+    };
+    const appServerPkg = JSON.parse(readRepoFile("packages/app-server/package.json")) as {
+      dependencies?: Record<string, string>;
+    };
+    const manifest = readRepoFile("scripts/release/release-manifest.ts");
+
+    expect(agenterPkg.dependencies).not.toHaveProperty("@duckdb/node-api");
+    expect(appServerPkg.dependencies).not.toHaveProperty("@duckdb/node-api");
+    expect(agenterSpec?.dependencies).not.toHaveProperty("@duckdb/node-api");
+    expect(agenterSpec?.external).not.toContain("@duckdb/node-api");
+    expect(manifest).not.toContain('"@duckdb/node-api"');
+  });
+
   test("Scenario: Given the core TUI is retired When probing the agenter bundle Then OpenTUI syntax assets no longer ship in the core package", () => {
     const outputDir = mkdtempSync(join(tmpdir(), "agenter-bundle-probe-"));
     try {
@@ -106,8 +123,6 @@ describe("Feature: release bundle contract", () => {
           "--target=bun",
           "--outdir",
           outputDir,
-          "--external",
-          "@duckdb/node-api",
           "--external",
           "@jixo/ghostty-native",
           "--external",
@@ -144,8 +159,6 @@ describe("Feature: release bundle contract", () => {
           "--target=bun",
           "--outdir",
           outputDir,
-          "--external",
-          "@duckdb/node-api",
           "--external",
           "@jixo/ghostty-native",
           "--external",

@@ -74,7 +74,6 @@ export const createReleaseBundlePackageSpecs = (): ReleaseBundlePackageSpec[] =>
     bin: { agenter: "./dist/agenter.js" },
     bundledAssetsRoot: true,
     dependencies: {
-      "@duckdb/node-api": "^1.5.1-r.1",
       "@parcel/watcher": "^2.5.1",
       "@jixo/ghostty-native": "workspace:*",
       "@termless/core": "^0.6.0",
@@ -83,7 +82,7 @@ export const createReleaseBundlePackageSpecs = (): ReleaseBundlePackageSpec[] =>
     // and watcher-recovery semantics that Bun fs.watch has not matched in the
     // current evidence. Keep parcel watcher install-time/runtime-external until
     // parity is proven, rather than silently weakening the file-watching law.
-    external: ["@duckdb/node-api", "@jixo/ghostty-native", "@parcel/watcher"],
+    external: ["@jixo/ghostty-native", "@parcel/watcher"],
     assets: [
       { from: "packages/auth-service/src/server/webauthn-ui", to: "assets/auth-service/webauthn-ui" },
       { from: "packages/i18n-en/prompts", to: "assets/i18n-en/prompts" },
