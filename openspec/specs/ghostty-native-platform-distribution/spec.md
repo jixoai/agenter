@@ -1,4 +1,9 @@
-## ADDED Requirements
+# ghostty-native-platform-distribution Specification
+
+## Purpose
+Define the release and runtime law for distributing `@jixo/ghostty-native` as an umbrella package plus explicit platform-native package atoms.
+
+## Requirements
 
 ### Requirement: Ghostty-native SHALL publish platform-native packages under the Jixo namespace
 

@@ -5,9 +5,9 @@ Define the attention full-text search projection and query behavior.
 
 ## Requirements
 
-### Requirement: Attention search SHALL use a rebuildable DuckDB FTS projection
+### Requirement: Attention search SHALL use a rebuildable SQLite FTS5 projection
 
-Attention commit search SHALL project persisted attention commits into a DuckDB sidecar index that can be rebuilt from durable attention facts.
+Attention commit search SHALL project persisted attention commits into a Bun SQLite sidecar index that uses FTS5 and can be rebuilt from durable attention facts.
 
 #### Scenario: Missing index rebuilds from durable attention state
 - **WHEN** a session has persisted attention commits but no search index yet
@@ -15,13 +15,18 @@ Attention commit search SHALL project persisted attention commits into a DuckDB 
 - **THEN** search does not require a second canonical store
 
 #### Scenario: Search index is not treated as durable truth
-- **WHEN** the DuckDB sidecar is deleted or stale
+- **WHEN** the SQLite sidecar is deleted or stale
 - **THEN** the runtime may rebuild it from persisted attention facts
 - **THEN** no attention commit is lost because the sidecar was only projection state
 
+#### Scenario: Legacy DuckDB sidecar does not block search
+- **WHEN** an older session root still contains a DuckDB search sidecar from a previous version
+- **THEN** the runtime can ignore, replace, or remove that legacy sidecar without data migration
+- **THEN** the authoritative attention facts remain the rebuild source for the new SQLite projection
+
 ### Requirement: Attention search SHALL preserve graph controls while upgrading text retrieval
 
-Text retrieval may use DuckDB FTS, but `hash`, `score`, `depth`, and `minscore` SHALL still respect attention graph semantics.
+Text retrieval may use SQLite FTS5, but `hash`, `score`, `depth`, and `minscore` SHALL still respect attention graph semantics.
 
 #### Scenario: Hash traversal still follows attention graph rules
 - **WHEN** a caller queries `score:relay01 deep:2`
@@ -30,7 +35,7 @@ Text retrieval may use DuckDB FTS, but `hash`, `score`, `depth`, and `minscore` 
 
 #### Scenario: Text search narrows candidates without changing final logic
 - **WHEN** a caller queries `context:ctx-chat-kzf weather`
-- **THEN** DuckDB FTS may be used to fetch text candidates
+- **THEN** SQLite FTS5 may be used to fetch text candidates
 - **THEN** the final result still respects the structured context filter and the compiled query logic
 
 ### Requirement: Attention search SHALL default to active work unless explicitly widened

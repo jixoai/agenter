@@ -3,7 +3,7 @@
 ## Current Round
 
 - Round: 3
-- Status: The `.scm/.wasm` investigation is complete, the ghostty phase-1 host matrix is locked, and the user chose the concrete scope answer: retire `@agenter/tui`, rename it to `tui-bak`, and remove it from the workspace graph.
+- Status: The `.scm/.wasm` investigation is complete, the ghostty phase-1 host matrix is locked, the user chose the concrete scope answer to retire `@agenter/tui`, and the follow-up scope is now explicit: add a host-only smoke path for local release validation and include the first live publish/bootstrap for the new `@jixo/ghostty-native-*` packages in this change.
 - Previous plan backup: none
 
 ## Workflow Command Surface
@@ -72,6 +72,7 @@
 | 7 | User | For the `.scm/.wasm` question, investigate first and only then decide whether a boundary change is needed. | Phase 1 must not pre-approve a core/app boundary rewrite. |
 | 8 | User | Ghostty phase-1 support matrix is `darwin|windows|linux-arm64|amd64`. | The distribution contract can now encode the first supported host set explicitly. |
 | 9 | User | The TUI project can be retired, renamed to `tui-bak`, and removed from the workspace. | The OpenTUI asset conclusion is no longer abstract; phase 1 may sever the live TUI workspace/package edge. |
+| 10 | User | Add a host-only smoke path for release bundles and do the real first publish for the new ghostty platform packages. | Phase 1 now needs both an honest local smoke surface and operator-grade bootstrap/publish completion. |
 
 ### Evidence Read
 
@@ -210,6 +211,7 @@ When phase 1 is correct, an operator or release engineer can inspect the publish
 - The default SVG raster path no longer depends on a repo-local Rust bridge build just to run on a supported host.
 - Every `.node`, `.wasm`, and `.scm` asset in the release output has an explicit owner, command surface, and runtime load path.
 - `@jixo/ghostty-native` resolves through install-time platform packages on supported hosts instead of compiling from source as the default release story.
+- A maintainer can run an explicit host-only smoke path to validate the current machine's staging/bundle chain without pretending the full six-platform release matrix is complete.
 - The watcher question has a written answer backed by semantics, not a guess.
 
 ## Platform Diagnosis
@@ -253,6 +255,7 @@ On a supported host, starting the daemon or rasterizing a profile icon does not 
 - Auth-service keeps the same external icon/media endpoints, but its raster runtime contract becomes “packaged multi-platform resvg implementation” instead of “repo-local bridge library path”.
 - Release bundle contracts gain an asset provenance layer: package owner, command surface, runtime load path, and whether an asset is core-owned or app-owned.
 - `@jixo/ghostty-native` keeps the same public JS API for consumers, but runtime resolution changes from “find local `.node` or build it” to “resolve installed platform package or fail clearly”, with phase-1 support covering `darwin`, `windows`, `linux-arm64`, and `linux-amd64`.
+- Release tooling gains an explicit host-only smoke path whose contract is “validate the current host honestly” rather than “simulate a full release”.
 - `@jixo/reactive-fs` keeps its current semantics unless a Bun watcher proves semantic parity; watcher backend choice remains an internal implementation detail behind the same contract.
 
 ### Data Shape
