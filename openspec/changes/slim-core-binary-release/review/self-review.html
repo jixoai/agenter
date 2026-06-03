@@ -1,0 +1,220 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>slim-core-binary-release self-review</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        font-family: Inter, "SF Pro Text", "Helvetica Neue", Arial, sans-serif;
+        line-height: 1.5;
+      }
+      body {
+        margin: 0;
+        padding: 32px;
+        background: #0b1020;
+        color: #e5e7eb;
+      }
+      main {
+        max-width: 1120px;
+        margin: 0 auto;
+      }
+      h1,
+      h2 {
+        margin: 0 0 12px;
+      }
+      section {
+        margin: 0 0 24px;
+        padding: 20px;
+        border: 1px solid #334155;
+        border-radius: 12px;
+        background: #111827;
+      }
+      p,
+      li {
+        color: #cbd5e1;
+      }
+      .summary {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+        gap: 12px;
+      }
+      .tile {
+        padding: 16px;
+        border-radius: 10px;
+        background: #172033;
+        border: 1px solid #334155;
+      }
+      .pass {
+        color: #86efac;
+      }
+      .note {
+        color: #fcd34d;
+      }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        margin-top: 12px;
+      }
+      th,
+      td {
+        padding: 10px 12px;
+        border: 1px solid #334155;
+        text-align: left;
+        vertical-align: top;
+      }
+      th {
+        background: #172033;
+      }
+      code {
+        font-family: "SFMono-Regular", Menlo, Consolas, monospace;
+        font-size: 0.95em;
+      }
+      ul,
+      ol {
+        margin: 12px 0 0;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <section>
+        <h1>Self-review: <code>slim-core-binary-release</code></h1>
+        <p>
+          Review date: June 4, 2026. This pass includes the explicit host-only smoke path and the live first publish of the
+          six new ghostty platform packages.
+        </p>
+        <div class="summary">
+          <div class="tile">
+            <strong>Iteration</strong>
+            <div>2</div>
+          </div>
+          <div class="tile">
+            <strong>Host-only smoke</strong>
+            <div class="pass">Implemented and executed</div>
+          </div>
+          <div class="tile">
+            <strong>Ghostty platform publish</strong>
+            <div class="pass">6 packages bootstrapped live</div>
+          </div>
+          <div class="tile">
+            <strong>Exit judgment</strong>
+            <div class="pass">Technical scope complete; archive/check remain</div>
+          </div>
+        </div>
+      </section>
+
+      <section>
+        <h2>Intent Alignment</h2>
+        <table>
+          <thead>
+            <tr>
+              <th>Intent</th>
+              <th>Evidence</th>
+              <th>Verdict</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Bun-first binary slimming removes DuckDB from the rebuildable attention-search projection.</td>
+              <td>Targeted attention-search tests and OpenSpec validate continue to pass.</td>
+              <td class="pass">Aligned</td>
+            </tr>
+            <tr>
+              <td>Default SVG raster delivery uses packaged <code>@resvg/resvg-js</code> rather than a repo-local bridge build.</td>
+              <td>Release provenance tests pass; no bridge build path was reintroduced.</td>
+              <td class="pass">Aligned</td>
+            </tr>
+            <tr>
+              <td>Core bundle asset ownership is explicit and retired TUI no longer drags OpenTUI syntax assets into <code>bundle/agenter</code>.</td>
+              <td>Bundle probe scenarios show no core <code>.scm</code> or <code>.wasm</code> syntax assets.</td>
+              <td class="pass">Aligned</td>
+            </tr>
+            <tr>
+              <td>Ghostty runtime resolves through explicit platform packages on the approved host matrix.</td>
+              <td>Runtime tests plus live publish/bootstrap results for six platform packages.</td>
+              <td class="pass">Aligned</td>
+            </tr>
+            <tr>
+              <td>Host-only smoke validates the current machine honestly without pretending full local matrix coverage.</td>
+              <td><code>release:build-bundles:host-smoke</code> writes <code>bundle-host-smoke/</code> and a current-host marker file.</td>
+              <td class="pass">Aligned</td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section>
+        <h2>Evidence Ledger</h2>
+        <table>
+          <thead>
+            <tr>
+              <th>Command</th>
+              <th>Observed result</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><code>bun test scripts/release/release-bundles.test.ts scripts/binaries/release-workflow.test.ts scripts/binaries/artifacts.test.ts scripts/npm/bootstrap-package.test.ts</code></td>
+              <td class="pass">32 passing scenarios, 0 failures</td>
+            </tr>
+            <tr>
+              <td><code>bun run release:build-bundles:host-smoke</code></td>
+              <td class="pass">Completed; wrote smoke bundles to <code>bundle-host-smoke/</code></td>
+            </tr>
+            <tr>
+              <td><code>bootstrap-package.ts ... --yes</code> for all six platform packages</td>
+              <td class="pass">All six reported <code>initial publish succeeded</code> and <code>trusted publisher configured</code></td>
+            </tr>
+            <tr>
+              <td><code>npm view @jixo/ghostty-native-*</code></td>
+              <td class="note">Darwin and Linux resolved directly; Windows packuments briefly lagged</td>
+            </tr>
+            <tr>
+              <td><code>npm dist-tag ls @jixo/ghostty-native-win32-arm64-msvc</code><br /><code>npm dist-tag ls @jixo/ghostty-native-win32-x64-msvc</code></td>
+              <td class="pass">Both returned <code>latest: 0.3.3</code></td>
+            </tr>
+            <tr>
+              <td><code>find . -maxdepth 2 -name .npmrc</code></td>
+              <td class="pass">No repo-local npm auth residue found</td>
+            </tr>
+            <tr>
+              <td><code>bun run openspec:vision -- validate slim-core-binary-release</code></td>
+              <td class="pass">Change valid</td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section>
+        <h2>Published Packages</h2>
+        <ul>
+          <li><code>@jixo/ghostty-native-darwin-arm64@0.3.3</code></li>
+          <li><code>@jixo/ghostty-native-darwin-x64@0.3.3</code></li>
+          <li><code>@jixo/ghostty-native-linux-arm64-gnu@0.3.3</code></li>
+          <li><code>@jixo/ghostty-native-linux-x64-gnu@0.3.3</code></li>
+          <li><code>@jixo/ghostty-native-win32-arm64-msvc@0.3.3</code></li>
+          <li><code>@jixo/ghostty-native-win32-x64-msvc@0.3.3</code></li>
+        </ul>
+      </section>
+
+      <section>
+        <h2>Deviations and Resolved Gaps</h2>
+        <ul>
+          <li>The first live publish probe exposed an OTP gap in the bootstrap workflow. The publish step now applies <code>authWithOtp(...)</code> and the canary publish succeeded afterward.</li>
+          <li>
+            Windows package <code>npm view ... version</code> lagged right after publish, but <code>npm dist-tag ls</code> already
+            showed <code>latest: 0.3.3</code> for both packages, so this looks like packument propagation lag rather than a failed publish.
+          </li>
+        </ul>
+      </section>
+
+      <section>
+        <h2>Questions For User</h2>
+        <ol>
+          <li>None.</li>
+        </ol>
+      </section>
+    </main>
+  </body>
+</html>
