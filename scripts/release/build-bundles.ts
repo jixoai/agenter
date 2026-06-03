@@ -5,7 +5,6 @@ import { dirname, join, resolve } from "node:path";
 import {
   createReleaseBundlePackageSpecs,
   releaseBundleManifestFiles,
-  releaseNativeLibrarySuffix,
   releasePublishablePackageJsonPaths,
   releaseRepositoryUrl,
   releaseToolchain,
@@ -240,7 +239,6 @@ const ensureReleaseZig = async (): Promise<string> => {
 const ensureNativeAssets = async (): Promise<void> => {
   const zigBin = await ensureReleaseZig();
   await run(["bun", "run", "--filter", "@jixo/ghostty-native", "build:ghostty-native"], repoRoot, { ZIG_BIN: zigBin });
-  await run(["bun", "run", "--filter", "@agenter/auth-service", "build:native"]);
   await run(["bun", "run", "--filter", "@agenter/auth-service", "build:webauthn-ui"]);
 };
 
@@ -260,7 +258,6 @@ export const buildReleaseBundles = async (): Promise<void> => {
 
   await writeFile(join(bundleRoot, ".gitignore"), "*\n!.gitignore\n");
   console.log("Release bundles written to ./bundle");
-  console.log(`Auth resvg suffix: ${releaseNativeLibrarySuffix}`);
 };
 
 if (import.meta.main) {

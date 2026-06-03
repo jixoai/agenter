@@ -3,7 +3,7 @@ import { HTTPException } from "hono/http-exception";
 import { z } from "zod";
 import { readBearerToken } from "../auth/tokens";
 import { buildAvatarIconUrl, buildRoomIconUrl, buildSessionIconUrl } from "../render/fallback-icons";
-import { rasterizeSvg, type RasterImageFormat } from "../render/resvg-ffi";
+import { rasterizeSvg, type RasterImageFormat } from "../render/resvg-runtime";
 import type { ProfileService } from "../service/profile-service";
 import type { CreateManagedPrincipalInput, ProfileMetadata } from "../types";
 import { renderWebAuthnUiPage, resolveWebAuthnUiAsset } from "./webauthn-ui";
@@ -211,7 +211,7 @@ const parseRequestedSize = (value: string | null | undefined): number => {
 
 const resolveIconVariant = async (
   icon: IconResponsePayload,
-  input: { format: "svg" | RasterImageFormat | null; size: number; resvgLibraryPath?: string },
+  input: { format: "svg" | RasterImageFormat | null; size: number },
 ): Promise<IconResponsePayload> => {
   const svgSource = icon.svg ?? (icon.mimeType === SVG_ICON_MIME_TYPE ? icon.bytes : undefined);
   if (input.format === null) {
@@ -220,12 +220,11 @@ const resolveIconVariant = async (
     }
     return {
       mimeType: "image/png",
-      bytes: rasterizeSvg({
+      bytes: await rasterizeSvg({
         svg: svgSource,
         format: "png",
         width: input.size,
         height: input.size,
-        libraryPath: input.resvgLibraryPath,
       }),
     };
   }
@@ -246,12 +245,11 @@ const resolveIconVariant = async (
   }
   return {
     mimeType: `image/${input.format}`,
-    bytes: rasterizeSvg({
+    bytes: await rasterizeSvg({
       svg: svgSource,
       format: input.format,
       width: input.size,
       height: input.size,
-      libraryPath: input.resvgLibraryPath,
     }),
   };
 };
@@ -269,7 +267,6 @@ const writeIconResponse = (icon: IconResponsePayload): Response => {
 export interface CreateProfileServiceAppOptions {
   service: ProfileService;
   publicBaseUrl: string;
-  resvgLibraryPath?: string;
   webauthnUiDir?: string;
 }
 
@@ -278,7 +275,6 @@ export type CreateAuthServiceAppOptions = CreateProfileServiceAppOptions;
 export const createProfileServiceApp = ({
   service,
   publicBaseUrl,
-  resvgLibraryPath,
   webauthnUiDir,
 }: CreateProfileServiceAppOptions) => {
   const app = new Hono();
@@ -389,7 +385,6 @@ export const createProfileServiceApp = ({
     const icon = await resolveIconVariant(await service.resolveProfileIcon(context.req.param("reference")), {
       format: parseRequestedFormat(context.req.query("format")),
       size: parseRequestedSize(context.req.query("size")),
-      resvgLibraryPath,
     });
     return writeIconResponse(icon);
   });
@@ -417,7 +412,6 @@ export const createProfileServiceApp = ({
     const resolved = await resolveIconVariant(icon, {
       format: parseRequestedFormat(context.req.query("format")),
       size: parseRequestedSize(context.req.query("size")),
-      resvgLibraryPath,
     });
     return writeIconResponse(resolved);
   });
@@ -453,7 +447,6 @@ export const createProfileServiceApp = ({
     const icon = await resolveIconVariant(await service.resolveSessionIcon(sessionId), {
       format: parseRequestedFormat(context.req.query("format")),
       size: parseRequestedSize(context.req.query("size")),
-      resvgLibraryPath,
     });
     return writeIconResponse(icon);
   });
@@ -474,7 +467,6 @@ export const createProfileServiceApp = ({
     const icon = await resolveIconVariant(await service.resolveRoomIcon(roomId), {
       format: parseRequestedFormat(context.req.query("format")),
       size: parseRequestedSize(context.req.query("size")),
-      resvgLibraryPath,
     });
     return writeIconResponse(icon);
   });

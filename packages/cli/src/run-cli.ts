@@ -1,6 +1,5 @@
 import { type AuthServiceBridgeOptions } from "@agenter/app-server";
 import type { AuthServiceHandle } from "@agenter/auth-service";
-import { suffix } from "bun:ffi";
 import { spawn as spawnChildProcess } from "node:child_process";
 import { closeSync, existsSync, mkdirSync, openSync, readFileSync } from "node:fs";
 import { request as httpRequest } from "node:http";
@@ -649,14 +648,6 @@ const startStandaloneAuthService = async (args: StandaloneAuthServiceCliArgs): P
     host: args.host,
     port: args.port,
     dataDir: args.dataDir,
-    resvgLibraryPath: resolveBundledAssetPath(
-      "auth-service",
-      "native",
-      "resvg_bridge",
-      "target",
-      "release",
-      `libprofile_resvg_bridge.${suffix}`,
-    ),
     webauthnUiDir: resolveBundledAssetPath("auth-service", "webauthn-ui"),
   });
 };

@@ -21,7 +21,6 @@ import {
 } from "@agenter/auth-service";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
-import { suffix } from "bun:ffi";
 
 export interface AuthServiceBridgeOptions {
   endpoint?: string;
@@ -99,7 +98,6 @@ export class AuthServiceBridge {
       host: this.options.host,
       port: this.options.port ?? 0,
       rootAuthPrivateKey: this.options.rootAuthPrivateKey,
-      resvgLibraryPath: resolveBundledAssetPath("auth-service", "native", "resvg_bridge", "target", "release", `libprofile_resvg_bridge.${suffix}`),
       webauthnUiDir: resolveBundledAssetPath("auth-service", "webauthn-ui"),
     });
   }

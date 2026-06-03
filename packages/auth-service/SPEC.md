@@ -62,8 +62,9 @@
 - avatar deterministic renderer 的背景色场只由 avatar principal seed 决定，并以 canonical SVG/HSL color stops 输出；调用方不得再按 nickname、label 或页面上下文重算第二套颜色法则
 - avatar deterministic renderer 的中心 glyph 必须只由 canonical `classify` 决定，并复用 Lucide SVG asset；调用方不得手写第二套 classify glyph switch 或页面私有 avatar renderer
 - `room` 与 future typed owner 图形 seed 由 owner-specific stable icon seed 决定
-- deterministic renderer 的 canonical source 是 SVG；PNG/JPEG 等 raster variant 必须由服务端通过 `bun:ffi + resvg bridge` 生成
+- deterministic renderer 的 canonical source 是 SVG；PNG/JPEG 等 raster variant 必须由服务端生成，其中 SVG -> raster 的默认运行时固定为打包安装即可用的 `@resvg/resvg-js`
 - 默认 icon read 对于 SVG-backed source 也必须返回服务端光栅化后的 raster bytes；只有显式 `format=svg` 才允许返回原始 SVG
+- 默认 raster icon delivery 不得要求 repo-local Cargo bridge、手工 libraryPath 或签出中的 native source tree 才能工作
 - 前端不得再为了“让后端有图可读”而先上传浏览器本地 rasterized fallback
 - 前端消费 avatar 图像时必须以 auth-service 返回的 `iconUrl` / raster variant 为唯一真源，不得在 Studio、catalog、skills 或其他 feature 内发明第二套 avatar fallback renderer
 

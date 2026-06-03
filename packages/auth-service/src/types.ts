@@ -150,7 +150,6 @@ export interface AuthServiceOptions {
   port?: number;
   rootAuthPrivateKey?: string;
   authJwtTtlMs?: number;
-  resvgLibraryPath?: string;
   webauthnOrigin?: string;
   webauthnRpId?: string;
   webauthnRpName?: string;

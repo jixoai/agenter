@@ -69,7 +69,6 @@ export const createAuthServiceRuntime = async (options: AuthServiceOptions = {})
   const app = createAuthServiceApp({
     service,
     publicBaseUrl: config.publicBaseUrl,
-    resvgLibraryPath: config.resvgLibraryPath,
     webauthnUiDir: config.webauthnUiDir,
   });
   return {

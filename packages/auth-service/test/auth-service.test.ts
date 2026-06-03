@@ -503,6 +503,15 @@ describe("Feature: auth-service control plane", () => {
     expect([...bytes.slice(0, 4)]).toEqual([137, 80, 78, 71]);
   });
 
+  test("Scenario: Given a temporary identifier When jpeg output is requested Then the service preserves the raster variant contract without the bridge", async () => {
+    const { handle } = await startServer();
+    const response = await fetch(`http://${handle.host}:${handle.port}/media/profiles/demo-user/icon?format=jpeg&size=64`);
+    expect(response.status).toBe(200);
+    expect(response.headers.get("content-type")).toBe("image/jpeg");
+    const bytes = new Uint8Array(await response.arrayBuffer());
+    expect([...bytes.slice(0, 3)]).toEqual([255, 216, 255]);
+  });
+
   test("Scenario: Given a temporary identifier When svg output is requested Then the service returns the canonical Agenter profile fallback", async () => {
     const { handle } = await startServer();
     const response = await fetch(`http://${handle.host}:${handle.port}/media/profiles/demo-user/icon?format=svg`);

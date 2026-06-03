@@ -1,5 +1,3 @@
-import { suffix } from "bun:ffi";
-
 export interface ReleasePackageJson {
   name: string;
   version: string;
@@ -48,7 +46,6 @@ export const releaseToolchain = {
 
 export const releaseRepositoryUrl = "git+https://github.com/jixoai/agenter.git";
 export const opentuiNativePackageVersion = "0.3.0";
-export const releaseNativeLibrarySuffix = suffix;
 
 export const releaseBundleManifestFiles = [
   "bin",
@@ -86,10 +83,6 @@ export const createReleaseBundlePackageSpecs = (): ReleaseBundlePackageSpec[] =>
     // keep parcel watcher install-time and runtime-external instead of inlining it.
     external: ["@duckdb/node-api", "@jixo/ghostty-native", "@parcel/watcher"],
     assets: [
-      {
-        from: `packages/auth-service/native/resvg_bridge/target/release/libprofile_resvg_bridge.${releaseNativeLibrarySuffix}`,
-        to: `assets/auth-service/native/resvg_bridge/target/release/libprofile_resvg_bridge.${releaseNativeLibrarySuffix}`,
-      },
       { from: "packages/auth-service/src/server/webauthn-ui", to: "assets/auth-service/webauthn-ui" },
       { from: "packages/i18n-en/prompts", to: "assets/i18n-en/prompts" },
       { from: "packages/i18n-en/prompts.json", to: "assets/i18n-en/prompts.json" },

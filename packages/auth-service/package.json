@@ -4,9 +4,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build:native": "cargo build --release --manifest-path native/resvg_bridge/Cargo.toml",
     "build:webauthn-ui": "node ./scripts/build-webauthn-ui.mjs",
-    "test": "bun run build:native && bun test",
+    "test": "bun test",
     "typecheck": "bunx tsc --noEmit"
   },
   "exports": {
@@ -16,10 +15,12 @@
     "@agenter/avatar": "workspace:*",
     "@agenter/principal-crypto": "workspace:*",
     "@hono/node-server": "^1.19.11",
+    "@resvg/resvg-js": "^2.6.2",
     "@simplewebauthn/server": "^13.3.0",
     "@solana/web3.js": "^1.98.4",
     "bs58": "^6.0.0",
     "hono": "^4.12.9",
+    "jpeg-js": "^0.4.4",
     "tweetnacl": "^1.0.3",
     "viem": "^2.47.6",
     "zod": "^4.0.0"

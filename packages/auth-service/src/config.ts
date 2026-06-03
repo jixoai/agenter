@@ -11,7 +11,6 @@ export interface ResolvedAuthServiceConfig {
   port: number;
   publicBaseUrl: string;
   authJwtTtlMs: number;
-  resvgLibraryPath?: string;
   webauthnOrigin: string;
   webauthnRpId: string;
   webauthnRpName: string;
@@ -43,7 +42,6 @@ export const resolveAuthServiceConfig = (options: AuthServiceOptions = {}): Reso
     port,
     publicBaseUrl,
     authJwtTtlMs: options.authJwtTtlMs ?? DEFAULT_AUTH_JWT_TTL_MS,
-    resvgLibraryPath: options.resvgLibraryPath ? resolve(options.resvgLibraryPath) : undefined,
     webauthnOrigin,
     webauthnRpId: options.webauthnRpId ?? new URL(webauthnOrigin).hostname,
     webauthnRpName: options.webauthnRpName ?? "agenter auth-service",

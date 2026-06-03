@@ -64,9 +64,9 @@ describe("Feature: release bundle contract", () => {
     expect(assetOwners).toEqual(["bundle/agenter", "bundle/agenter-app-studio"]);
     expect(buildScript).toContain("[name, `bin/${name}.js`]");
     expect(buildScript).toContain('process.env.AGENTER_BUNDLED_ASSETS_ROOT = resolve(packageRoot, "assets")');
-    expect(manifest).toContain("libprofile_resvg_bridge.${releaseNativeLibrarySuffix}");
+    expect(manifest).not.toContain("libprofile_resvg_bridge");
     expect(buildScript).toContain("await chmod(binAbsolutePath, 0o755)");
-    expect(manifest).not.toContain('from: "packages/auth-service/native/resvg_bridge/target/release",');
+    expect(buildScript).not.toContain('"@agenter/auth-service", "build:native"');
   });
 
   test("Scenario: Given reactive-fs depends on a native watcher When bundling agenter Then parcel watcher stays external and install-time metadata is explicit", () => {
@@ -185,6 +185,10 @@ describe("Feature: release bundle contract", () => {
 
   test("Scenario: Given release CI starts from a clean checkout When building bundles Then generated prompt and native assets are built before copy", () => {
     const buildScript = readRepoFile("scripts/release/build-bundles.ts");
+    const authServicePkg = JSON.parse(readRepoFile("packages/auth-service/package.json")) as {
+      dependencies?: Record<string, string>;
+      scripts?: Record<string, string>;
+    };
     const packageJson = JSON.parse(readRepoFile("package.json")) as {
       scripts?: Record<string, string>;
     };
@@ -197,6 +201,11 @@ describe("Feature: release bundle contract", () => {
     expect(buildScript).toContain("https://ziglang.org/download/");
     expect(buildScript).toContain("{ ZIG_BIN: zigBin }");
     expect(buildScript).toContain('"@jixo/ghostty-native", "build:ghostty-native"');
+    expect(buildScript).toContain('"@agenter/auth-service", "build:webauthn-ui"');
+    expect(buildScript).not.toContain('"@agenter/auth-service", "build:native"');
+    expect(authServicePkg.dependencies?.["@resvg/resvg-js"]).toBe("^2.6.2");
+    expect(authServicePkg.dependencies?.["jpeg-js"]).toBe("^0.4.4");
+    expect(authServicePkg.scripts?.["build:native"]).toBeUndefined();
   });
 
   test("Scenario: Given npm provenance validates repository identity When writing bundle package manifests Then every publishable atom points at the agenter repository", () => {
