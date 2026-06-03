@@ -40,8 +40,8 @@
 - [x] 4.1 Run targeted tests for platform-matrix resolution, wrapper fallback behavior, and thin platform-package packaging.
 - [ ] 4.2 Run targeted release-tooling tests proving GitHub release archives are emitted as canonical binary truth and downstream npm projection consumes them.
 - [ ] 4.3 Run targeted Homebrew-generation tests proving formula metadata maps to canonical archive URLs and checksums.
-- [ ] 4.4 Run packaging checks (`npm pack --dry-run` or equivalent) for the public `agenter` wrapper and every public `@agenter/cli-*` platform package.
-- [ ] 4.5 Run `bun run openspec:vision -- validate ship-native-cli-distribution` for this change.
+- [x] 4.4 Run packaging checks (`npm pack --dry-run` or equivalent) for the public `agenter` wrapper and every public `@agenter/cli-*` platform package.
+- [x] 4.5 Run `bun run openspec:vision -- validate ship-native-cli-distribution` for this change.
 - [ ] 4.6 Run `bun run openspec:vision -- commit-check ship-native-cli-distribution --phase self-review` before writing final review evidence.
 - [ ] 4.7 If GitHub auth is available, create or update the tap repository projection and verify the generated formula content matches main-repo truth; otherwise record the exact blocker and keep the rest of the verification evidence honest.
 

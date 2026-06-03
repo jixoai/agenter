@@ -4,15 +4,18 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
 import {
-  buildAgenterCliBinary,
-  buildAgenterCliCompileCommand,
-  resolveBuildAgenterCliOutputPath,
-} from "./build-agenter-cli";
-import {
+  agenterCliTargets,
   createAgenterCliNativeArtifactPath,
   resolveAgenterCliTargetById,
   resolveCurrentAgenterCliTarget,
 } from "./agenter-cli-artifacts";
+import {
+  buildAgenterCliBinaries,
+  buildAgenterCliBinary,
+  buildAgenterCliCompileCommand,
+  resolveBuildAgenterCliOutputPath,
+  resolveBuildAgenterCliTargets,
+} from "./build-agenter-cli";
 
 const tempDirs: string[] = [];
 
@@ -37,6 +40,9 @@ describe("Feature: agenter native CLI build staging", () => {
     expect(packageJson.scripts?.["release:build-native-cli:host-smoke"]).toBe(
       "bun run scripts/binaries/build-agenter-cli.ts --stage-package",
     );
+    expect(packageJson.scripts?.["release:build-native-cli:all-targets"]).toBe(
+      "bun run scripts/binaries/build-agenter-cli.ts --all-targets --stage-package",
+    );
   });
 
   test("Scenario: Given a target is resolved for package staging When the output path is derived Then the compiled binary lands inside the target-owned bin slot", () => {
@@ -48,6 +54,18 @@ describe("Feature: agenter native CLI build staging", () => {
     );
     expect(resolveBuildAgenterCliOutputPath(target, { root, stagePackage: false })).toBe(
       resolve(createAgenterCliNativeArtifactPath("/repo/native-artifacts", target)),
+    );
+  });
+
+  test("Scenario: Given maintainers need to stage every public platform package When build targets are resolved Then the full target matrix is returned without ad hoc per-script drift", () => {
+    expect(resolveBuildAgenterCliTargets({ allTargets: true }).map((target) => target.targetId)).toEqual(
+      agenterCliTargets.map((target) => target.targetId),
+    );
+    expect(() => resolveBuildAgenterCliTargets({ allTargets: true, targetId: "darwin-arm64" })).toThrow(
+      "build-agenter-cli cannot combine --all-targets with --target-id",
+    );
+    expect(() => resolveBuildAgenterCliTargets({ allTargets: true, output: "/tmp/agenter" })).toThrow(
+      "build-agenter-cli cannot combine --all-targets with --output",
     );
   });
 
@@ -66,6 +84,19 @@ describe("Feature: agenter native CLI build staging", () => {
       outputPath,
     ]);
   });
+
+  test("Scenario: Given all-target staging runs When the build loop executes Then every result stays on the matrix-derived package path", async () => {
+    const outputRoot = createTempDir();
+    const results = await buildAgenterCliBinaries({
+      allTargets: true,
+      root: outputRoot,
+      stagePackage: true,
+    });
+
+    expect(results).toHaveLength(agenterCliTargets.length);
+    expect(results.map((result) => result.target.targetId)).toEqual(agenterCliTargets.map((target) => target.targetId));
+    expect(results.every((result) => existsSync(result.outputPath))).toBe(true);
+  }, 240_000);
 
   test("Scenario: Given host-only smoke build runs When the current host target is compiled Then a real executable is emitted without touching package staging", async () => {
     const outputRoot = createTempDir();
