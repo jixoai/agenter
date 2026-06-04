@@ -10,7 +10,7 @@
 npm install -g agenter
 ```
 
-The public `agenter` package is a thin wrapper. Normal installs resolve one host-native `@agenter/cli-*` platform package and run that compiled executable directly.
+The public `agenter` package is a thin wrapper. Normal installs resolve one host-native `@jixoai/cli-*` platform package and run that compiled executable directly.
 
 ### Homebrew
 
@@ -39,7 +39,7 @@ Phase-1 native CLI support:
 GitHub release archives are the canonical binary truth for Agenter.
 
 - `agenter` on npm is a wrapper projection over those archives
-- `@agenter/cli-*` packages are thin per-target binary atoms
+- `@jixoai/cli-*` packages are thin per-target binary atoms
 - the Homebrew tap is a generated projection from the same release manifest
 
 Canonical archive naming:

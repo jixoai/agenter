@@ -1,5 +1,5 @@
 {
-  "name": "@agenter/cli-win32-arm64",
+  "name": "@jixoai/cli-win32-arm64",
   "version": "0.0.10",
   "description": "Prebuilt Agenter CLI for win32 arm64",
   "license": "MIT",

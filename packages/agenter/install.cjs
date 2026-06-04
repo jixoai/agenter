@@ -3,12 +3,17 @@
 const { chmodSync, copyFileSync, mkdirSync } = require("fs");
 const path = require("path");
 
-const { resolvePlatformInfo, resolvePackageBinaryPath, SUPPORTED_PLATFORM_KEYS } = require("./native-platform.cjs");
+const {
+  PACKAGE_NAME_PREFIX,
+  resolvePlatformInfo,
+  resolvePackageBinaryPath,
+  SUPPORTED_PLATFORM_KEYS,
+} = require("./native-platform.cjs");
 
 function listAvailableTargets(optionalDependencies) {
   return Object.keys(optionalDependencies)
-    .filter((name) => name.startsWith("@agenter/cli-"))
-    .map((name) => name.replace("@agenter/cli-", ""))
+    .filter((name) => name.startsWith(PACKAGE_NAME_PREFIX))
+    .map((name) => name.replace(PACKAGE_NAME_PREFIX, ""))
     .sort();
 }
 

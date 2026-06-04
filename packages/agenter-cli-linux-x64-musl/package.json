@@ -1,5 +1,5 @@
 {
-  "name": "@agenter/cli-linux-x64-musl",
+  "name": "@jixoai/cli-linux-x64-musl",
   "version": "0.0.10",
   "description": "Prebuilt Agenter CLI for linux x64 musl",
   "license": "MIT",

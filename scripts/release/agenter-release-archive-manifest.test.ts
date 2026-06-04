@@ -30,7 +30,7 @@ describe("Feature: agenter release archive manifest contract", () => {
           archiveSha256: "abc123",
           archiveUrl: "https://example.invalid/agenter-darwin-arm64.tar.gz",
           homebrewBinaryPath: "agenter",
-          packageName: "@agenter/cli-darwin-arm64",
+          packageName: "@jixoai/cli-darwin-arm64",
           packageBinaryPath: "bin/agenter",
           targetId: "darwin-arm64",
         },
@@ -68,7 +68,7 @@ describe("Feature: agenter release archive manifest contract", () => {
       archiveBinaryPath: "agenter",
       archiveUrl: "https://github.com/jixoai/agenter/releases/download/v0.0.10/agenter-darwin-arm64.tar.gz",
       homebrewBinaryPath: "agenter",
-      packageName: "@agenter/cli-darwin-arm64",
+      packageName: "@jixoai/cli-darwin-arm64",
       packageBinaryPath: "bin/agenter",
     });
     expect(resolveReleaseArchiveRecord(manifest, { targetId: "win32-x64" })).toMatchObject({
@@ -76,7 +76,7 @@ describe("Feature: agenter release archive manifest contract", () => {
       archiveBinaryPath: "agenter.exe",
       archiveUrl: "https://github.com/jixoai/agenter/releases/download/v0.0.10/agenter-win32-x64.zip",
       homebrewBinaryPath: "agenter.exe",
-      packageName: "@agenter/cli-win32-x64",
+      packageName: "@jixoai/cli-win32-x64",
       packageBinaryPath: "bin/agenter.exe",
     });
   });

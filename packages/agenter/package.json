@@ -19,14 +19,14 @@
     "typecheck": "bunx tsc --noEmit"
   },
   "optionalDependencies": {
-    "@agenter/cli-darwin-arm64": "workspace:*",
-    "@agenter/cli-darwin-x64": "workspace:*",
-    "@agenter/cli-linux-arm64-gnu": "workspace:*",
-    "@agenter/cli-linux-arm64-musl": "workspace:*",
-    "@agenter/cli-linux-x64-gnu": "workspace:*",
-    "@agenter/cli-linux-x64-musl": "workspace:*",
-    "@agenter/cli-win32-arm64": "workspace:*",
-    "@agenter/cli-win32-x64": "workspace:*"
+    "@jixoai/cli-darwin-arm64": "workspace:*",
+    "@jixoai/cli-darwin-x64": "workspace:*",
+    "@jixoai/cli-linux-arm64-gnu": "workspace:*",
+    "@jixoai/cli-linux-arm64-musl": "workspace:*",
+    "@jixoai/cli-linux-x64-gnu": "workspace:*",
+    "@jixoai/cli-linux-x64-musl": "workspace:*",
+    "@jixoai/cli-win32-arm64": "workspace:*",
+    "@jixoai/cli-win32-x64": "workspace:*"
   },
   "devDependencies": {
     "@agenter/cli": "workspace:*",

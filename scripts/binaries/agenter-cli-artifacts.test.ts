@@ -4,6 +4,7 @@ import { join, resolve } from "node:path";
 
 import {
   agenterCliTargets,
+  agenterCliPublicPackageNamePrefix,
   createAgenterCliArchivePath,
   agenterCliPlatformPackageJsonPaths,
   normalizeAgenterCliArch,
@@ -18,14 +19,14 @@ describe("Feature: agenter native CLI artifact topology", () => {
   test("Scenario: Given the phase-1 native CLI matrix When targets are enumerated Then every supported host maps to one explicit package atom", () => {
     expect(agenterCliTargets).toHaveLength(8);
     expect(agenterCliTargets.map((target) => target.packageName)).toEqual([
-      "@agenter/cli-darwin-arm64",
-      "@agenter/cli-darwin-x64",
-      "@agenter/cli-linux-arm64-gnu",
-      "@agenter/cli-linux-arm64-musl",
-      "@agenter/cli-linux-x64-gnu",
-      "@agenter/cli-linux-x64-musl",
-      "@agenter/cli-win32-arm64",
-      "@agenter/cli-win32-x64",
+      "@jixoai/cli-darwin-arm64",
+      "@jixoai/cli-darwin-x64",
+      "@jixoai/cli-linux-arm64-gnu",
+      "@jixoai/cli-linux-arm64-musl",
+      "@jixoai/cli-linux-x64-gnu",
+      "@jixoai/cli-linux-x64-musl",
+      "@jixoai/cli-win32-arm64",
+      "@jixoai/cli-win32-x64",
     ]);
     expect(agenterCliTargets.map((target) => target.bunTarget)).toEqual([
       "bun-darwin-arm64",
@@ -85,7 +86,7 @@ describe("Feature: agenter native CLI artifact topology", () => {
       };
       expect(pkg.files).toEqual(["README.md", "bin"]);
       expect(pkg.bin).toBeUndefined();
-      expect(pkg.name).toMatch(/^@agenter\/cli-/u);
+      expect(pkg.name?.startsWith(agenterCliPublicPackageNamePrefix)).toBe(true);
       expect(pkg.os).toHaveLength(1);
       expect(pkg.cpu).toHaveLength(1);
       if (pkg.os[0] === "linux") {

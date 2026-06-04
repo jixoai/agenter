@@ -7,7 +7,7 @@
 `agenter` 是面向 npm / Homebrew 用户的 public wrapper shell：
 
 - 持有 `agenter` command name 与固定 public bin path
-- 解析当前 host 到一个显式 `@agenter/cli-*` 平台包
+- 解析当前 host 到一个显式 `@jixoai/cli-*` 平台包
 - 在正常运行路径上把控制权交给 compiled native CLI，而不是把 source entry 暴露给终端用户
 - 保持 launcher / daemon bootstrap source authority 仍然属于 internal `@agenter/cli`
 

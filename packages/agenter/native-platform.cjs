@@ -1,7 +1,8 @@
 const path = require("path");
 const { arch: osArch } = require("os");
 
-const PACKAGE_PREFIX = "@agenter/cli";
+const PACKAGE_PREFIX = "@jixoai/cli";
+const PACKAGE_NAME_PREFIX = `${PACKAGE_PREFIX}-`;
 const BINARY_NAME = "agenter";
 const PUBLIC_BIN_PATH = path.join("bin", "agenter.exe");
 
@@ -65,6 +66,7 @@ function resolvePackageBinaryPath(packageRoot, runtime = {}, resolvePackageJsonP
 
 module.exports = {
   BINARY_NAME,
+  PACKAGE_NAME_PREFIX,
   PACKAGE_PREFIX,
   PLATFORMS,
   PUBLIC_BIN_PATH,

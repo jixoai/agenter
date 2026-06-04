@@ -38,7 +38,7 @@ const createFakePlatformPackage = (root: string, packageName: string, binaryName
 describe("Feature: agenter wrapper runtime projection", () => {
   test("Scenario: Given install scripts are disabled When the operator invokes the documented fallback path Then it resolves the same host-native platform package explicitly", () => {
     const sandbox = mkdtempSync(join(tmpdir(), "agenter-wrapper-"));
-    const packageName = "@agenter/cli-darwin-arm64";
+    const packageName = "@jixoai/cli-darwin-arm64";
     const platformPackageDir = createFakePlatformPackage(sandbox, packageName, "agenter", "native-darwin-arm64");
     const packageJson = {
       name: "agenter",
@@ -65,7 +65,7 @@ describe("Feature: agenter wrapper runtime projection", () => {
 
   test("Scenario: Given a supported host install completes When postinstall projects the native package Then the fixed public bin path becomes the host-native executable", () => {
     const sandbox = mkdtempSync(join(tmpdir(), "agenter-install-"));
-    const packageName = "@agenter/cli-darwin-arm64";
+    const packageName = "@jixoai/cli-darwin-arm64";
     const platformPackageDir = createFakePlatformPackage(sandbox, packageName, "agenter", "native-darwin-arm64");
     const packageJson = {
       name: "agenter",

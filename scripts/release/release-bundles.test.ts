@@ -182,7 +182,7 @@ describe("Feature: release bundle contract", () => {
     expect(cliBin).toMatch(/import "reflect-metadata";\s*import \{ runCli \} from "\.\.\/run-cli";/u);
     expect(sourcePkg.bin?.agenter).toBe("./bin/agenter.exe");
     expect(sourcePkg.dependencies).toBeUndefined();
-    expect(sourcePkg.optionalDependencies?.["@agenter/cli-darwin-arm64"]).toBe("workspace:*");
+    expect(sourcePkg.optionalDependencies?.["@jixoai/cli-darwin-arm64"]).toBe("workspace:*");
     expect(wrapperSource).toContain("resolvePackageBinaryPath");
     expect(installSource).toContain("placeBinary");
     expect(cliPkg.dependencies?.["reflect-metadata"]).toBe("^0.2.2");

@@ -31,6 +31,11 @@ export interface AgenterCliTarget {
   homebrewTargetId: string;
 }
 
+// This file is the release-side truth for the public native CLI package names
+// and target matrix. Wrapper/runtime projections must follow this surface.
+export const agenterCliPublicPackagePrefix = "@jixoai/cli";
+export const agenterCliPublicPackageNamePrefix = `${agenterCliPublicPackagePrefix}-`;
+
 const targetTuples = [
   ["darwin", "arm64"],
   ["darwin", "x64"],
@@ -90,7 +95,7 @@ export const createAgenterCliTarget = (
     libc,
     bunTarget: toBunTarget(packageOs, arch, libc),
     targetId,
-    packageName: `@agenter/cli-${targetId}`,
+    packageName: `${agenterCliPublicPackageNamePrefix}${targetId}`,
     packageDir,
     binaryName,
     packageBinaryPath,
