@@ -1,0 +1,4 @@
+interface:
+  display_name: "Develop Agenter"
+  short_description: "Repo workflow for agenter development"
+  default_prompt: "Use $develop-agenter to implement and verify changes in this agenter repository."
