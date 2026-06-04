@@ -1,6 +1,7 @@
 export type AgenterCliPackageOs = "darwin" | "linux" | "win32";
 export type AgenterCliPackageArch = "arm64" | "x64";
 export type AgenterCliPackageLibc = "gnu" | "musl";
+export type AgenterCliArchiveFormat = "tar.gz" | "zip";
 export type AgenterCliBunTarget =
   | "bun-darwin-arm64"
   | "bun-darwin-x64"
@@ -22,7 +23,10 @@ export interface AgenterCliTarget {
   binaryName: string;
   packageBinaryPath: string;
   artifactPath: string;
+  archiveFormat: AgenterCliArchiveFormat;
   archiveStem: string;
+  archiveFileName: string;
+  archiveBinaryPath: string;
   checksumFileName: string;
   homebrewTargetId: string;
 }
@@ -66,6 +70,9 @@ const toBunTarget = (
   throw new Error(`unsupported bun target mapping: packageOs=${packageOs} arch=${arch} libc=${libc ?? "none"}`);
 };
 
+const toArchiveFormat = (packageOs: AgenterCliPackageOs): AgenterCliArchiveFormat =>
+  packageOs === "win32" ? "zip" : "tar.gz";
+
 export const createAgenterCliTarget = (
   packageOs: AgenterCliPackageOs,
   arch: AgenterCliPackageArch,
@@ -75,6 +82,8 @@ export const createAgenterCliTarget = (
   const binaryName = packageOs === "win32" ? "agenter.exe" : "agenter";
   const packageDir = `packages/agenter-cli-${targetId}`;
   const packageBinaryPath = `bin/${binaryName}`;
+  const archiveStem = `agenter-${targetId}`;
+  const archiveFormat = toArchiveFormat(packageOs);
   return {
     packageOs,
     arch,
@@ -86,8 +95,11 @@ export const createAgenterCliTarget = (
     binaryName,
     packageBinaryPath,
     artifactPath: `${packageDir}/${packageBinaryPath}`,
-    archiveStem: `agenter-${targetId}`,
-    checksumFileName: `agenter-${targetId}.sha256`,
+    archiveFormat,
+    archiveStem,
+    archiveFileName: `${archiveStem}.${archiveFormat}`,
+    archiveBinaryPath: binaryName,
+    checksumFileName: `${archiveStem}.sha256`,
     homebrewTargetId: targetId,
   };
 };
@@ -102,6 +114,9 @@ export const agenterCliPlatformPackageJsonPaths: readonly string[] = agenterCliT
 
 export const createAgenterCliNativeArtifactPath = (rootDir: string, target: AgenterCliTarget): string =>
   `${rootDir}/agenter-cli-${target.targetId}/${target.binaryName}`;
+
+export const createAgenterCliArchivePath = (rootDir: string, target: AgenterCliTarget): string =>
+  `${rootDir}/${target.archiveFileName}`;
 
 export const normalizeAgenterCliArch = (arch: string): AgenterCliPackageArch => {
   switch (arch) {

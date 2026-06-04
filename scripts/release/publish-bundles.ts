@@ -1,14 +1,14 @@
 import { existsSync } from "node:fs";
 import { join, resolve } from "node:path";
 
-import { releaseBundlePublishOrder } from "./release-manifest";
+import { releasePublishOrder } from "./release-manifest";
 
 interface PackageJson {
   name: string;
   version: string;
 }
 
-export const bundlePublishOrder = releaseBundlePublishOrder;
+export const releasePackagePublishOrder = releasePublishOrder;
 
 const repoRoot = resolve(import.meta.dir, "../..");
 
@@ -39,7 +39,7 @@ const publishPackage = async (packageDir: string, dryRun: boolean): Promise<void
   const absolutePackageDir = join(repoRoot, packageDir);
   const packageJsonPath = join(absolutePackageDir, "package.json");
   if (!existsSync(packageJsonPath)) {
-    throw new Error(`bundle package is missing package.json: ${packageDir}`);
+    throw new Error(`release package is missing package.json: ${packageDir}`);
   }
   const pkg = await readPackageJson(absolutePackageDir);
   if (await isPackageVersionPublished(pkg.name, pkg.version)) {
@@ -64,7 +64,7 @@ const publishPackage = async (packageDir: string, dryRun: boolean): Promise<void
 };
 
 export const publishReleaseBundles = async (input: { dryRun?: boolean } = {}): Promise<void> => {
-  for (const packageDir of bundlePublishOrder) {
+  for (const packageDir of releasePackagePublishOrder) {
     await publishPackage(packageDir, input.dryRun ?? false);
   }
 };

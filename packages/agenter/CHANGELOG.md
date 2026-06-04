@@ -1,5 +1,17 @@
 # agenter
 
+## 0.0.10
+
+### Patch Changes
+
+- Fix compiled native CLI public version truth and package daemon launcher identity so published binaries and Homebrew installs track the public agenter release identity.
+
+## 0.0.9
+
+### Patch Changes
+
+- Ship wrapper-plus-platform native CLI distribution backed by canonical GitHub release archives.
+
 ## 0.0.8
 
 ### Patch Changes

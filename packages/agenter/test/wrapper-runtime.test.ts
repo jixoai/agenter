@@ -43,7 +43,7 @@ describe("Feature: agenter wrapper runtime projection", () => {
     const packageJson = {
       name: "agenter",
       optionalDependencies: {
-        [packageName]: "0.0.8",
+        [packageName]: "0.0.10",
       },
     };
 
@@ -70,7 +70,7 @@ describe("Feature: agenter wrapper runtime projection", () => {
     const packageJson = {
       name: "agenter",
       optionalDependencies: {
-        [packageName]: "0.0.8",
+        [packageName]: "0.0.10",
       },
     };
 

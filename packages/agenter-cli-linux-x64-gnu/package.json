@@ -1,6 +1,6 @@
 {
   "name": "@agenter/cli-linux-x64-gnu",
-  "version": "0.0.8",
+  "version": "0.0.10",
   "description": "Prebuilt Agenter CLI for linux x64 glibc",
   "license": "MIT",
   "repository": {

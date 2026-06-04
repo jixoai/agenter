@@ -4,6 +4,7 @@ import { join, resolve } from "node:path";
 
 import {
   agenterCliTargets,
+  createAgenterCliArchivePath,
   agenterCliPlatformPackageJsonPaths,
   normalizeAgenterCliArch,
   normalizeAgenterCliPackageLibc,
@@ -45,12 +46,19 @@ describe("Feature: agenter native CLI artifact topology", () => {
     expect(linuxMusl.targetId).toBe("linux-x64-musl");
     expect(linuxMusl.packageDir).toBe("packages/agenter-cli-linux-x64-musl");
     expect(linuxMusl.archiveStem).toBe("agenter-linux-x64-musl");
+    expect(linuxMusl.archiveFormat).toBe("tar.gz");
+    expect(linuxMusl.archiveFileName).toBe("agenter-linux-x64-musl.tar.gz");
+    expect(linuxMusl.archiveBinaryPath).toBe("agenter");
     expect(linuxMusl.checksumFileName).toBe("agenter-linux-x64-musl.sha256");
     expect(linuxMusl.packageBinaryPath).toBe("bin/agenter");
     expect(linuxMusl.artifactPath).toBe("packages/agenter-cli-linux-x64-musl/bin/agenter");
+    expect(createAgenterCliArchivePath("/release", linuxMusl)).toBe("/release/agenter-linux-x64-musl.tar.gz");
 
     expect(windows.targetId).toBe("win32-arm64");
     expect(windows.archiveStem).toBe("agenter-win32-arm64");
+    expect(windows.archiveFormat).toBe("zip");
+    expect(windows.archiveFileName).toBe("agenter-win32-arm64.zip");
+    expect(windows.archiveBinaryPath).toBe("agenter.exe");
     expect(windows.packageBinaryPath).toBe("bin/agenter.exe");
     expect(windows.artifactPath).toBe("packages/agenter-cli-win32-arm64/bin/agenter.exe");
     expect(windows.homebrewTargetId).toBe("win32-arm64");

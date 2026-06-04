@@ -53,6 +53,8 @@ const resolveSharedHomebrewBinaryPath = (manifest: AgenterReleaseArchiveManifest
   );
   const first = values[0];
   if (values.some((value) => value !== first)) {
+    // Homebrew stays a projection over the canonical manifest, so the formula
+    // only accepts one shared binary path across every projected host block.
     throw new Error("homebrew formula projection requires one shared binary path across projected targets");
   }
   return first;

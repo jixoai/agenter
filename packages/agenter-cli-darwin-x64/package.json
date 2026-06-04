@@ -1,6 +1,6 @@
 {
   "name": "@agenter/cli-darwin-x64",
-  "version": "0.0.8",
+  "version": "0.0.10",
   "description": "Prebuilt Agenter CLI for darwin x64",
   "license": "MIT",
   "repository": {

@@ -1,7 +1,7 @@
 import { existsSync } from "node:fs";
 import { join, resolve } from "node:path";
 
-import { releaseBundlePublishOrder, type ReleasePackageJson } from "./release-manifest";
+import { releasePublishOrder, type ReleasePackageJson } from "./release-manifest";
 
 type NpmViewPayload = Partial<
   Pick<ReleasePackageJson, "version" | "bin" | "dependencies" | "optionalDependencies" | "peerDependencies">
@@ -86,7 +86,7 @@ const verifyPackage = async (packageDir: string): Promise<void> => {
 };
 
 export const verifyPublishedReleaseBundles = async (): Promise<void> => {
-  for (const packageDir of releaseBundlePublishOrder) {
+  for (const packageDir of releasePublishOrder) {
     await verifyPackage(packageDir);
   }
 };

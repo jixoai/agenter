@@ -5,6 +5,7 @@ tmp/
 dist/
 bundle/
 native-artifacts/
+release-archives/
 bundle-host-smoke/
 build/
 coverage/

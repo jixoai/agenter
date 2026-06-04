@@ -5,12 +5,12 @@ import { spawn as spawnChildProcess } from "node:child_process";
 import { closeSync, mkdirSync, openSync, readFileSync } from "node:fs";
 import { request as httpRequest } from "node:http";
 import { request as httpsRequest } from "node:https";
-import { createRequire } from "node:module";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import yargs from "yargs";
 import { hideBin } from "yargs/helpers";
+import { launcherPackageIdentity, packageLauncherIdentity, publicReleaseIdentity } from "./public-release-identity" with { type: "macro" };
 import {
   clearOwnedDaemonRuntimeDescriptor,
   compatibleDaemonLauncherIdentity,
@@ -66,7 +66,9 @@ const INTERNAL_DAEMON_FOREGROUND_ENV = "AGENTER_INTERNAL_DAEMON_FOREGROUND";
 const HEALTH_REQUEST_TIMEOUT_MS = 5_000;
 const MANAGED_DAEMON_START_TIMEOUT_MS = 60_000;
 const MANAGED_DAEMON_START_HEALTH_REQUEST_TIMEOUT_MS = 1_000;
-const cliPackageJson = createRequire(import.meta.url)("../package.json") as { name?: string; version?: string };
+const cliPublicReleaseIdentity = publicReleaseIdentity() as { name?: string; version?: string };
+const cliLauncherPackageIdentity = launcherPackageIdentity() as { name?: string; version?: string };
+const cliPackageLauncherIdentity = packageLauncherIdentity() as { name?: string; version?: string };
 
 interface DaemonCompatibilityMismatch {
   expected: DaemonLauncherIdentity;
@@ -118,16 +120,27 @@ const resolveCurrentLauncherIdentity = (): DaemonLauncherIdentity => {
     importMetaUrl: import.meta.url,
     cliEntryPath: resolveCliEntryPath(),
   });
-  const packageName = cliPackageJson.name ?? "@agenter/cli";
-  const packageVersion = cliPackageJson.version ?? "unknown";
   const sourceKind = resolveCurrentLauncherSourceKind(entrypoint, {
     importMetaUrl: import.meta.url,
   });
+  const packageIdentity =
+    sourceKind === "package"
+      ? {
+          packageName: cliPackageLauncherIdentity.name ?? "agenter",
+          packageVersion: cliPackageLauncherIdentity.version ?? "unknown",
+        }
+      : {
+          packageName: cliLauncherPackageIdentity.name ?? "@agenter/cli",
+          packageVersion: cliLauncherPackageIdentity.version ?? "unknown",
+        };
   return {
-    packageName,
-    packageVersion,
+    packageName: packageIdentity.packageName,
+    packageVersion: packageIdentity.packageVersion,
     sourceKind,
-    entrypoint: sourceKind === "package" ? `${packageName}@${packageVersion}` : entrypoint,
+    entrypoint:
+      sourceKind === "package"
+        ? `${packageIdentity.packageName}@${packageIdentity.packageVersion}`
+        : entrypoint,
   };
 };
 
@@ -843,7 +856,7 @@ export const runCli = async (argvInput = process.argv): Promise<void> => {
     argv = await applyAppCommandsToYargs(
       yargs(rawArgs)
         .scriptName("agenter")
-        .version(cliPackageJson.version ?? "unknown")
+        .version(cliPublicReleaseIdentity.version ?? "unknown")
         .option("host", {
           type: "string",
           default: "127.0.0.1",

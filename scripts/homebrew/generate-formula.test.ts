@@ -26,38 +26,46 @@ afterEach(() => {
 });
 
 const createManifest = (): AgenterReleaseArchiveManifest => ({
-  releaseTag: "v0.0.8",
-  version: "0.0.8",
+  releaseTag: "v0.0.10",
+  version: "0.0.10",
   archives: [
     {
+      archiveBinaryPath: "agenter",
       archiveFileName: "agenter-darwin-arm64.tar.gz",
       archiveSha256: "sha-darwin-arm64",
       archiveUrl: "https://example.invalid/agenter-darwin-arm64.tar.gz",
       homebrewBinaryPath: "agenter",
+      packageName: "@agenter/cli-darwin-arm64",
       packageBinaryPath: "bin/agenter",
       targetId: "darwin-arm64",
     },
     {
+      archiveBinaryPath: "agenter",
       archiveFileName: "agenter-darwin-x64.tar.gz",
       archiveSha256: "sha-darwin-x64",
       archiveUrl: "https://example.invalid/agenter-darwin-x64.tar.gz",
       homebrewBinaryPath: "agenter",
+      packageName: "@agenter/cli-darwin-x64",
       packageBinaryPath: "bin/agenter",
       targetId: "darwin-x64",
     },
     {
+      archiveBinaryPath: "agenter",
       archiveFileName: "agenter-linux-arm64-gnu.tar.gz",
       archiveSha256: "sha-linux-arm64",
       archiveUrl: "https://example.invalid/agenter-linux-arm64-gnu.tar.gz",
       homebrewBinaryPath: "agenter",
+      packageName: "@agenter/cli-linux-arm64-gnu",
       packageBinaryPath: "bin/agenter",
       targetId: "linux-arm64-gnu",
     },
     {
+      archiveBinaryPath: "agenter",
       archiveFileName: "agenter-linux-x64-gnu.tar.gz",
       archiveSha256: "sha-linux-x64",
       archiveUrl: "https://example.invalid/agenter-linux-x64-gnu.tar.gz",
       homebrewBinaryPath: "agenter",
+      packageName: "@agenter/cli-linux-x64-gnu",
       packageBinaryPath: "bin/agenter",
       targetId: "linux-x64-gnu",
     },

@@ -1,6 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { mkdtempSync, readFileSync, readdirSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 
 import {
@@ -8,19 +7,19 @@ import {
   createHostOnlySmokeBundlePackageSpecs,
   parseBuildBundlesArgs,
 } from "./build-bundles";
-import { bundlePublishOrder } from "./publish-bundles";
+import { releasePackagePublishOrder } from "./publish-bundles";
 import {
   createReleaseBundlePackageSpecs,
   releaseAgenterCliPlatformPackageJsonPaths,
   releaseBundlePublishOrder,
   releaseGhosttyNativePlatformPackageJsonPaths,
+  releasePublishOrder,
   releasePublishablePackageJsonPaths,
   releaseRepositoryUrl,
   releaseToolchain,
 } from "./release-manifest";
 
 const repoRoot = resolve(import.meta.dir, "../..");
-const bunBin = Bun.which("bun") ?? process.execPath;
 
 const readRepoFile = (relativePath: string): string => readFileSync(join(repoRoot, relativePath), "utf8");
 
@@ -42,12 +41,21 @@ describe("Feature: release bundle contract", () => {
     expect(backupPkg.name).toBe("@agenter/tui-bak");
   });
 
+  test("Scenario: Given operators need one durable install entrypoint When inspecting the repo root Then README documents npm, Homebrew, supported targets, and archive truth", () => {
+    const readme = readRepoFile("README.md");
+
+    expect(readme).toContain("npm install -g agenter");
+    expect(readme).toContain("brew tap jixoai/agenter");
+    expect(readme).toContain("GitHub release archives are the canonical binary truth");
+    expect(readme).toContain("linux-x64-musl");
+    expect(readme).toContain("agenter-release-archives.json");
+  });
+
   test("Scenario: Given release bundles are generated When inspecting the bundle specs Then only the public package atoms are publishable", () => {
     const specs = createBundlePackageSpecs();
 
     expect(specs).toEqual(createReleaseBundlePackageSpecs());
     expect(specs.map((spec) => spec.bundlePackageDir)).toEqual([
-      "bundle/agenter",
       "bundle/agenter-app-shell",
       "bundle/agenter-app-studio",
       "bundle/@jixo/ghostty-native",
@@ -58,7 +66,7 @@ describe("Feature: release bundle contract", () => {
       "bundle/@jixo/ghostty-native-win32-arm64-msvc",
       "bundle/@jixo/ghostty-native-win32-x64-msvc",
     ]);
-    expect(bundlePublishOrder).toEqual([
+    expect(releaseBundlePublishOrder).toEqual([
       "bundle/@jixo/ghostty-native-darwin-arm64",
       "bundle/@jixo/ghostty-native-darwin-x64",
       "bundle/@jixo/ghostty-native-linux-arm64-gnu",
@@ -68,9 +76,11 @@ describe("Feature: release bundle contract", () => {
       "bundle/@jixo/ghostty-native",
       "bundle/agenter-app-shell",
       "bundle/agenter-app-studio",
-      "bundle/agenter",
     ]);
-    expect(bundlePublishOrder).toBe(releaseBundlePublishOrder);
+    expect(releasePackagePublishOrder).toEqual(releasePublishOrder);
+    expect(releasePackagePublishOrder).toContain("packages/agenter-cli-darwin-arm64");
+    expect(releasePackagePublishOrder).toContain("packages/agenter");
+    expect(releasePackagePublishOrder).not.toContain("bundle/agenter");
   });
 
   test("Scenario: Given a maintainer wants local release validation When host-only smoke is selected Then only the current host platform bundle is staged under a separate smoke root", () => {
@@ -87,7 +97,6 @@ describe("Feature: release bundle contract", () => {
       "bun run scripts/release/build-bundles.ts --host-only-smoke",
     );
     expect(bundleDirs).toEqual([
-      "bundle-host-smoke/agenter",
       "bundle-host-smoke/agenter-app-shell",
       "bundle-host-smoke/agenter-app-studio",
       "bundle-host-smoke/@jixo/ghostty-native",
@@ -107,7 +116,7 @@ describe("Feature: release bundle contract", () => {
     const buildScript = readRepoFile("scripts/release/build-bundles.ts");
     const manifest = readRepoFile("scripts/release/release-manifest.ts");
 
-    expect(assetOwners).toEqual(["bundle/agenter", "bundle/agenter-app-studio"]);
+    expect(assetOwners).toEqual(["bundle/agenter-app-studio"]);
     expect(buildScript).toContain("[name, `bin/${name}.js`]");
     expect(buildScript).toContain('process.env.AGENTER_BUNDLED_ASSETS_ROOT = resolve(packageRoot, "assets")');
     expect(manifest).not.toContain("libprofile_resvg_bridge");
@@ -115,124 +124,28 @@ describe("Feature: release bundle contract", () => {
     expect(buildScript).not.toContain('"@agenter/auth-service", "build:native"');
   });
 
-  test("Scenario: Given reactive-fs depends on a native watcher When bundling agenter Then parcel watcher stays external and install-time metadata is explicit", () => {
-    const agenterSpec = createBundlePackageSpecs().find((spec) => spec.bundlePackageDir === "bundle/agenter");
-    const reactiveFsPkg = JSON.parse(readRepoFile("packages/reactive-fs/package.json")) as {
-      dependencies?: Record<string, string>;
-    };
-    const buildScript = readRepoFile("scripts/release/build-bundles.ts");
+  test("Scenario: Given agenter shifted to wrapper-plus-platform binaries When inspecting release metadata Then no JS bundle pretends to be the public CLI runtime", () => {
     const manifest = readRepoFile("scripts/release/release-manifest.ts");
-    const reactiveFsSource = readRepoFile("packages/reactive-fs/src/reactive-fs/reactive-fs.ts");
-    const watcherPoolSource = readRepoFile("packages/reactive-fs/src/reactive-fs/watcher-pool.ts");
-    const projectWatcherSource = readRepoFile("packages/reactive-fs/src/reactive-fs/project-watcher.ts");
-    const reactiveFsTests = readRepoFile("packages/reactive-fs/src/reactive-fs/reactive-fs.test.ts");
-
-    expect(reactiveFsPkg.dependencies?.["@parcel/watcher"]).toBe("^2.5.1");
-    expect(agenterSpec?.dependencies?.["@parcel/watcher"]).toBe("^2.5.1");
-    expect(agenterSpec?.external).toContain("@parcel/watcher");
-    expect(buildScript).toContain('...(input.external ?? []).flatMap((name) => ["--external", name])');
-    expect(manifest).toContain("missing-path watch, multi-root pooling,");
-    expect(reactiveFsSource).toContain("支持监听尚未创建的文件");
-    expect(reactiveFsTests).toContain("With @parcel/watcher, we can watch non-existent directories");
-    expect(watcherPoolSource).toContain("ensureWatcherRootForPath");
-    expect(projectWatcherSource).toContain("drop-events");
-    expect(projectWatcherSource).toContain("missing-project-dir");
-    expect(projectWatcherSource).toContain("project-dir-replaced");
-  });
-
-  test("Scenario: Given attention search now projects through Bun SQLite When bundling agenter Then DuckDB leaves the release metadata and runtime externals", () => {
-    const agenterSpec = createBundlePackageSpecs().find((spec) => spec.bundlePackageDir === "bundle/agenter");
-    const agenterPkg = JSON.parse(readRepoFile("packages/agenter/package.json")) as {
-      dependencies?: Record<string, string>;
+    const packageJson = JSON.parse(readRepoFile("package.json")) as {
+      scripts?: Record<string, string>;
     };
-    const appServerPkg = JSON.parse(readRepoFile("packages/app-server/package.json")) as {
-      dependencies?: Record<string, string>;
-    };
-    const manifest = readRepoFile("scripts/release/release-manifest.ts");
 
-    expect(agenterPkg.dependencies ?? {}).not.toHaveProperty("@duckdb/node-api");
-    expect(appServerPkg.dependencies ?? {}).not.toHaveProperty("@duckdb/node-api");
-    expect(agenterSpec?.dependencies ?? {}).not.toHaveProperty("@duckdb/node-api");
-    expect(agenterSpec?.external).not.toContain("@duckdb/node-api");
+    expect(createBundlePackageSpecs().find((spec) => spec.bundlePackageDir === "bundle/agenter")).toBeUndefined();
+    expect(releasePackagePublishOrder).toContain("packages/agenter");
+    expect(releasePackagePublishOrder).toContain("packages/agenter-cli-win32-x64");
+    expect(packageJson.scripts?.["release:build-native-cli-archives"]).toBe(
+      "bun run scripts/release/build-agenter-release-archives.ts --input-dir native-artifacts --output-dir release-archives/agenter-cli",
+    );
+    expect(packageJson.scripts?.["release:stage-native-cli-packages-from-archives"]).toBe(
+      "bun run scripts/release/stage-agenter-cli-packages-from-release-archives.ts --manifest release-archives/agenter-cli/agenter-release-archives.json",
+    );
+    expect(packageJson.scripts?.["release:prepare-native-cli-packages"]).toBe(
+      "bun run release:build-native-cli:all-targets && bun run release:build-native-cli-archives && bun run release:stage-native-cli-packages-from-archives && bun run release:verify-native-cli-packages",
+    );
+    expect(packageJson.scripts?.["release:prepare-packages"]).toBe(
+      "bun run release:build-bundles && bun run release:prepare-native-cli-packages",
+    );
     expect(manifest).not.toContain('"@duckdb/node-api"');
-  });
-
-  test("Scenario: Given the core TUI is retired When probing the agenter bundle Then OpenTUI syntax assets no longer ship in the core package", () => {
-    const outputDir = mkdtempSync(join(tmpdir(), "agenter-bundle-probe-"));
-    try {
-      const probe = Bun.spawnSync({
-        cmd: [
-          bunBin,
-          "build",
-          join(repoRoot, "packages/agenter/src/bin/agenter.ts"),
-          "--bundle",
-          "--target=bun",
-          "--outdir",
-          outputDir,
-          "--external",
-          "@jixo/ghostty-native",
-          "--external",
-          "@parcel/watcher",
-        ],
-        cwd: repoRoot,
-        stdout: "pipe",
-        stderr: "pipe",
-      });
-      const output = `${new TextDecoder().decode(probe.stdout)}${new TextDecoder().decode(probe.stderr)}`;
-      const files = readdirSync(outputDir).sort();
-
-      expect(probe.exitCode).toBe(0);
-      expect(files).toContain("agenter.js");
-      expect(files.some((file) => file.endsWith(".node"))).toBe(true);
-      expect(files.filter((file) => file.endsWith(".scm"))).toEqual([]);
-      expect(files.filter((file) => file.endsWith(".wasm"))).toEqual([]);
-      expect(output).not.toContain(".scm");
-      expect(output).not.toContain(".wasm");
-    } finally {
-      rmSync(outputDir, { recursive: true, force: true });
-    }
-  });
-
-  test("Scenario: Given core bundle asset provenance is audited When probing the agenter bundle Then the surviving native asset still has an explicit owner and load path", () => {
-    const outputDir = mkdtempSync(join(tmpdir(), "agenter-bundle-provenance-"));
-    try {
-      const probe = Bun.spawnSync({
-        cmd: [
-          bunBin,
-          "build",
-          join(repoRoot, "packages/agenter/src/bin/agenter.ts"),
-          "--bundle",
-          "--target=bun",
-          "--outdir",
-          outputDir,
-          "--external",
-          "@jixo/ghostty-native",
-          "--external",
-          "@parcel/watcher",
-        ],
-        cwd: repoRoot,
-        stdout: "pipe",
-        stderr: "pipe",
-      });
-      const files = readdirSync(outputDir).sort();
-      const bundleSource = readFileSync(join(outputDir, "agenter.js"), "utf8");
-      const nativeAssets = files.filter((file) => file.endsWith(".node"));
-
-      expect(probe.exitCode).toBe(0);
-      expect(files).toContain("agenter.js");
-      expect(files.filter((file) => file.endsWith(".scm"))).toEqual([]);
-      expect(files.filter((file) => file.endsWith(".wasm"))).toEqual([]);
-      expect(nativeAssets).toHaveLength(1);
-      expect(nativeAssets[0]).toMatch(/^resvgjs\..+\.node$/u);
-      expect(bundleSource).toContain("packages/auth-service/src/render/resvg-runtime.ts");
-      expect(bundleSource).toContain("@resvg/resvg-js/js-binding.js");
-      expect(bundleSource).toContain("resvgjs.");
-      expect(bundleSource).not.toContain("@opentui/core");
-      expect(bundleSource).not.toContain("highlights.scm");
-      expect(bundleSource).not.toContain("tree-sitter");
-    } finally {
-      rmSync(outputDir, { recursive: true, force: true });
-    }
   });
 
   test("Scenario: Given the public agenter package is wrapper-first When inspecting wrapper and launcher sources Then reflect metadata stays with the internal launcher path", () => {
@@ -303,7 +216,7 @@ describe("Feature: release bundle contract", () => {
     };
     const buildScript = readRepoFile("scripts/release/build-bundles.ts");
 
-    expect(shellPkg.peerDependencies?.agenter).toBe(">=0.0.8 <0.1.0");
+    expect(shellPkg.peerDependencies?.agenter).toBe(">=0.0.10 <0.1.0");
     expect(studioPkg.peerDependencies?.agenter).toBe(">=0.0.7 <0.1.0");
     expect(shellPkg.devDependencies?.agenter).toBe("workspace:*");
     expect(studioPkg.devDependencies?.agenter).toBe("workspace:*");
@@ -407,11 +320,22 @@ describe("Feature: release bundle contract", () => {
     expect(workflow).toContain("npm --version");
     expect(workflow).toContain("bun run release:preflight --skip-install");
     expect(workflow).toContain("changesets/action@v1");
-    expect(workflow).toContain("publish: bun run release-packages");
+    expect(workflow).toContain("createGithubReleases: false");
+    expect(workflow).toContain('should_release: ${{ steps.agenter-release.outputs.should_release }}');
+    expect(workflow).toContain('npm view "agenter@${version}" version --json');
+    expect(workflow).toContain("needs.changesets.outputs.should_release == 'true'");
+    expect(workflow).toContain("bun run release:prepare-packages");
+    expect(workflow).toContain("softprops/action-gh-release@v3");
+    expect(workflow).toContain("release-archives/agenter-cli/*.tar.gz");
+    expect(workflow).toContain("release-archives/agenter-cli/agenter-release-archives.json");
+    expect(workflow).toContain("bun run release:publish-bundles");
+    expect(workflow).toContain("bun run release:verify-published");
+    expect(workflow).toContain("bun run homebrew:generate-formula -- \\");
+    expect(workflow).toContain("HOMEBREW_TAP_GITHUB_TOKEN");
     expect(workflow).not.toContain("NPM_TOKEN");
     expect(workflow).not.toContain("steps.changesets.outputs.published");
     expect(packageJson.scripts?.["release-packages"]).toBe(
-      "bun run release:build-bundles && bun run release:publish-bundles && bun run release:verify-published",
+      "bun run release:prepare-packages && bun run release:publish-bundles && bun run release:verify-published",
     );
     expect(packageJson.scripts?.["release:build-bundles:host-smoke"]).toBe(
       "bun run scripts/release/build-bundles.ts --host-only-smoke",
@@ -448,6 +372,7 @@ describe("Feature: release bundle contract", () => {
     expect(changesetReadme).toContain("Do not add a long-lived `NPM_TOKEN` secret to CI");
     expect(gitignore).toContain(".env");
     expect(gitignore).toContain(".npmrc");
+    expect(gitignore).toContain("release-archives/");
     expect(gitignore).toContain("packages/ghostty-native-*/termless-ghostty-native.node");
     expect(spec).toContain("npm release path 固定为 changesets + GitHub Actions trusted publishing");
     expect(spec).toContain("releasePublishablePackageJsonPaths");
@@ -462,7 +387,7 @@ describe("Feature: release bundle contract", () => {
     expect(preflightScript).toContain("release-bundles.test.ts");
     expect(preflightScript).toContain("release:build-bundles");
     expect(preflightScript).not.toContain("audit-app-platform-vocabulary");
-    expect(verifyScript).toContain("releaseBundlePublishOrder");
+    expect(verifyScript).toContain("releasePublishOrder");
     expect(verifyScript).toContain("npm");
     expect(verifyScript).toContain("peerDependencies");
     expect(verifyScript).toContain("optionalDependencies");
