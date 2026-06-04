@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 
 import {
@@ -22,6 +22,8 @@ import {
 const repoRoot = resolve(import.meta.dir, "../..");
 
 const readRepoFile = (relativePath: string): string => readFileSync(join(repoRoot, relativePath), "utf8");
+const readGitignoreLines = (): string[] => readRepoFile(".gitignore").split("\n");
+const listDirNames = (relativePath: string): string[] => readdirSync(join(repoRoot, relativePath), { withFileTypes: true }).map((entry) => entry.name);
 
 describe("Feature: release bundle contract", () => {
   test("Scenario: Given the retired tui backup remains in the repo When inspecting workspace and publish graphs Then tui-bak stays outside live package atoms", () => {
@@ -39,6 +41,20 @@ describe("Feature: release bundle contract", () => {
     expect(pnpmWorkspace).not.toContain("packages/tui-bak");
     expect(releasePublishablePackageJsonPaths).not.toContain("packages/tui-bak/package.json");
     expect(backupPkg.name).toBe("@agenter/tui-bak");
+  });
+
+  test("Scenario: Given backup trees stay in the repo When inspecting file truth rules Then generated Storybook outputs from *-bak and *-old stay outside git truth", () => {
+    const gitignore = readGitignoreLines();
+    const backupPackageDirs = listDirNames("packages").filter((name) => name.endsWith("-bak"));
+    const backupAppDirs = listDirNames("apps").filter((name) => name.endsWith("-old"));
+
+    expect(backupPackageDirs).toContain("tui-bak");
+    expect(backupPackageDirs).toContain("webui-bak");
+    expect(backupAppDirs).toContain("shell-old");
+    expect(gitignore).toContain("packages/*-bak/storybook-static/");
+    expect(gitignore).toContain("packages/*-bak/test/storybook/__screenshots__/");
+    expect(gitignore).toContain("apps/*-old/storybook-static/");
+    expect(gitignore).toContain("apps/*-old/test/storybook/__screenshots__/");
   });
 
   test("Scenario: Given operators need one durable install entrypoint When inspecting the repo root Then README documents npm, Homebrew, supported targets, and archive truth", () => {

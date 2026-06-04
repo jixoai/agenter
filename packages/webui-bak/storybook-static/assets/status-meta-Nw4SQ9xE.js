@@ -1,1 +1,0 @@
-const n=r=>r==="running"?{label:"running",variant:"success"}:r==="starting"?{label:"starting",variant:"warning"}:r==="paused"?{label:"paused",variant:"warning"}:r==="error"?{label:"error",variant:"destructive"}:{label:"stopped",variant:"secondary"},a=r=>r<=0?null:{label:`running ${r}`,variant:"success"};export{a as r,n as s};

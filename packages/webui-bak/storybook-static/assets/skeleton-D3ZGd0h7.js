@@ -1,1 +1,0 @@
-import{j as s}from"./jsx-runtime-u17CrQMm.js";import{a}from"./utils-VtdL_sx5.js";const t=({className:e,...o})=>s.jsx("div",{"aria-hidden":"true",className:a("animate-pulse rounded-md bg-slate-200/80",e),...o});t.__docgenInfo={description:"",methods:[],displayName:"Skeleton"};export{t as S};

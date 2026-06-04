@@ -68,3 +68,9 @@ packages/webui/test-results/
 # storybook build artifacts
 packages/webui/storybook-static/
 packages/webui/test/storybook/__screenshots__/
+
+# backup trees are code snapshots, not file-truth for generated Storybook output
+packages/*-bak/storybook-static/
+packages/*-bak/test/storybook/__screenshots__/
+apps/*-old/storybook-static/
+apps/*-old/test/storybook/__screenshots__/
