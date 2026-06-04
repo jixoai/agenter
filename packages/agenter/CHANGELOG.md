@@ -1,5 +1,11 @@
 # agenter
 
+## 0.0.12
+
+### Patch Changes
+
+- Finalize the native CLI release path after the scoped publish verification fix so new release runs only verify packages owned by the current publish round.
+
 ## 0.0.11
 
 ### Patch Changes
