@@ -1,6 +1,10 @@
 import { describe, expect, test } from "bun:test";
 
-import { readPublishedPackageWithRetry, selectPackageDirsForVerification } from "./verify-published";
+import {
+  assertOptionalDependenciesCompatibleWithRegistryProjection,
+  readPublishedPackageWithRetry,
+  selectPackageDirsForVerification,
+} from "./verify-published";
 import type { ReleasePublishReport } from "./publish-bundles";
 
 describe("Feature: published release verification scope", () => {
@@ -91,5 +95,31 @@ describe("Feature: published release verification scope", () => {
       }),
     ).rejects.toThrow("npm error code E403");
     expect(sleeps).toEqual([]);
+  });
+
+  test("Scenario: Given npm registry omits optionalDependencies from its package projection When release verification compares package metadata Then omission is treated as a projection gap instead of a publish mismatch", () => {
+    expect(() =>
+      assertOptionalDependenciesCompatibleWithRegistryProjection(
+        "@jixo/ghostty-native",
+        {
+          "@jixo/ghostty-native-darwin-arm64": "^0.3.3",
+        },
+        undefined,
+      ),
+    ).not.toThrow();
+  });
+
+  test("Scenario: Given npm registry returns optionalDependencies and they differ from the release bundle truth When release verification compares package metadata Then the mismatch still fails loudly", () => {
+    expect(() =>
+      assertOptionalDependenciesCompatibleWithRegistryProjection(
+        "agenter",
+        {
+          "@jixoai/cli-darwin-arm64": "^0.0.13",
+        },
+        {
+          "@jixoai/cli-darwin-arm64": "^0.0.12",
+        },
+      ),
+    ).toThrow("agenter optionalDependencies mismatch");
   });
 });
