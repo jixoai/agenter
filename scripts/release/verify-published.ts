@@ -2,6 +2,7 @@ import { existsSync } from "node:fs";
 import { join, resolve } from "node:path";
 
 import { releasePublishOrder, type ReleasePackageJson } from "./release-manifest";
+import { releasePublishReportPath, type ReleasePublishReport } from "./publish-bundles";
 
 type NpmViewPayload = Partial<
   Pick<ReleasePackageJson, "version" | "bin" | "dependencies" | "optionalDependencies" | "peerDependencies">
@@ -11,6 +12,27 @@ const repoRoot = resolve(import.meta.dir, "../..");
 
 const readPackageJson = async (packageDir: string): Promise<ReleasePackageJson> =>
   (await Bun.file(join(packageDir, "package.json")).json()) as ReleasePackageJson;
+
+const readPublishReport = async (): Promise<ReleasePublishReport | undefined> => {
+  const reportPath = join(repoRoot, releasePublishReportPath);
+  if (!existsSync(reportPath)) {
+    return undefined;
+  }
+  return (await Bun.file(reportPath).json()) as ReleasePublishReport;
+};
+
+export const selectPackageDirsForVerification = (
+  report: ReleasePublishReport | undefined,
+  packageDirs: readonly string[],
+): readonly string[] => {
+  if (!report) {
+    return packageDirs;
+  }
+  const publishedPackageDirs = report.packages
+    .filter((entry) => entry.status === "published")
+    .map((entry) => entry.packageDir);
+  return publishedPackageDirs.length > 0 ? publishedPackageDirs : packageDirs;
+};
 
 const normalizeRecord = (record: Record<string, string> | undefined): Record<string, string> | undefined => {
   if (!record || Object.keys(record).length === 0) {
@@ -82,7 +104,8 @@ const verifyPackage = async (packageDir: string): Promise<void> => {
 };
 
 export const verifyPublishedReleaseBundles = async (): Promise<void> => {
-  for (const packageDir of releasePublishOrder) {
+  const report = await readPublishReport();
+  for (const packageDir of selectPackageDirsForVerification(report, releasePublishOrder)) {
     await verifyPackage(packageDir);
   }
 };

@@ -421,6 +421,7 @@ describe("Feature: release bundle contract", () => {
 
   test("Scenario: Given release reliability scripts run When inspecting preflight and published verification Then they reuse release manifest without extension vocabulary checks", () => {
     const preflightScript = readRepoFile("scripts/release/preflight.ts");
+    const publishScript = readRepoFile("scripts/release/publish-bundles.ts");
     const verifyScript = readRepoFile("scripts/release/verify-published.ts");
 
     expect(preflightScript).toContain("releaseToolchain");
@@ -428,7 +429,12 @@ describe("Feature: release bundle contract", () => {
     expect(preflightScript).toContain("release-bundles.test.ts");
     expect(preflightScript).toContain("release:build-bundles");
     expect(preflightScript).not.toContain("audit-app-platform-vocabulary");
+    expect(publishScript).toContain('releasePublishReportPath = "bundle/release-publish-report.json"');
+    expect(publishScript).toContain('status: "skipped-existing"');
+    expect(publishScript).toContain('status: "published"');
     expect(verifyScript).toContain("releasePublishOrder");
+    expect(verifyScript).toContain("readPublishReport");
+    expect(verifyScript).toContain("selectPackageDirsForVerification");
     expect(verifyScript).toContain('"npm"');
     expect(verifyScript).toContain('"--json"');
     expect(verifyScript).not.toContain('"version",');
