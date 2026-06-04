@@ -74,6 +74,9 @@ import {
 import { isPrincipalId, normalizePrincipalId } from "@agenter/principal-crypto";
 import {
   SessionDb,
+  type HeartbeatRecordDetail,
+  type HeartbeatRecordPage,
+  type HeartbeatRecordPageInput,
   type ReversePage,
   type ReverseTimeCursor,
   type SessionAiCallRecord,
@@ -240,8 +243,8 @@ import {
   resolveWorkspaceAvatarAssetRoot,
   resolveWorkspaceGrantModeFromAbsolutePath,
   resolveWorkspacePublicAssetRoot,
-  WorkspaceSystemStore,
   serializeEnvAvatarHome,
+  WorkspaceSystemStore,
   type WorkspaceAssetRoots,
   type WorkspaceBashExecResult,
   type WorkspaceGrantInput,
@@ -549,6 +552,21 @@ const emptyReversePage = <T>(): ReversePage<T> => ({
   items: [],
   nextBefore: null,
   hasMoreBefore: false,
+});
+
+const emptyHeartbeatRecordPage = (input: HeartbeatRecordPageInput): HeartbeatRecordPage => ({
+  records: [],
+  pageIndex: 0,
+  pageSize: input.pageSize,
+  totalRecords: 0,
+  totalPages: 0,
+  windowTotalRecords: 0,
+  windowTotalPages: 0,
+  latestRecordId: null,
+  anchor: input.anchor,
+  hasOlder: false,
+  hasNewer: false,
+  newRecordsAvailable: false,
 });
 
 const toPersistedChatMessage = (sessionId: string, message: SessionMessageRecord): PersistedChatMessage => ({
@@ -2070,7 +2088,12 @@ export class AppKernel {
     };
   }
 
-  async searchNoteCatalog(input: { avatarNickname?: string | null; query?: string; limit?: number; tags?: readonly string[] }): Promise<
+  async searchNoteCatalog(input: {
+    avatarNickname?: string | null;
+    query?: string;
+    limit?: number;
+    tags?: readonly string[];
+  }): Promise<
     NoteSearchOutput & {
       avatar: NoteAvatarContext;
     }
@@ -2087,7 +2110,9 @@ export class AppKernel {
     };
   }
 
-  async listNoteTagCatalog(input: { avatarNickname?: string | null; notebook?: string; section?: string } = {}): Promise<
+  async listNoteTagCatalog(
+    input: { avatarNickname?: string | null; notebook?: string; section?: string } = {},
+  ): Promise<
     NoteTagQueryOutput & {
       avatar: NoteAvatarContext;
     }
@@ -3007,6 +3032,24 @@ export class AppKernel {
       return emptyReversePage();
     }
     return this.readHeartbeatGroupsPageFromDb(session.sessionRoot, input);
+  }
+
+  pageHeartbeatRecords(sessionId: string, input: HeartbeatRecordPageInput): HeartbeatRecordPage {
+    this.ensureSessionCatalogLoaded();
+    const session = this.sessions.get(sessionId);
+    if (!session) {
+      return emptyHeartbeatRecordPage(input);
+    }
+    return this.readHeartbeatRecordsPageFromDb(session.sessionRoot, input);
+  }
+
+  getHeartbeatRecordDetail(sessionId: string, recordId: number): HeartbeatRecordDetail | null {
+    this.ensureSessionCatalogLoaded();
+    const session = this.sessions.get(sessionId);
+    if (!session) {
+      return null;
+    }
+    return this.readHeartbeatRecordDetailFromDb(session.sessionRoot, recordId);
   }
 
   pageRequestAuxMessages(
@@ -6744,6 +6787,34 @@ export class AppKernel {
     const db = new SessionDb(dbPath);
     try {
       return pageHeartbeatGroupsFromDb(db, input);
+    } finally {
+      db.close();
+    }
+  }
+
+  private readHeartbeatRecordsPageFromDb(sessionRoot: string, input: HeartbeatRecordPageInput): HeartbeatRecordPage {
+    const dbPath = join(sessionRoot, "session.db");
+    if (!existsSync(dbPath)) {
+      return emptyHeartbeatRecordPage(input);
+    }
+    const db = new SessionDb(dbPath);
+    try {
+      db.rebuildHeartbeatRecords();
+      return db.pageHeartbeatRecords(input);
+    } finally {
+      db.close();
+    }
+  }
+
+  private readHeartbeatRecordDetailFromDb(sessionRoot: string, recordId: number): HeartbeatRecordDetail | null {
+    const dbPath = join(sessionRoot, "session.db");
+    if (!existsSync(dbPath)) {
+      return null;
+    }
+    const db = new SessionDb(dbPath);
+    try {
+      db.rebuildHeartbeatRecords();
+      return db.getHeartbeatRecordDetail(recordId);
     } finally {
       db.close();
     }

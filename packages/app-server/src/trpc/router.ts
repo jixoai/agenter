@@ -2,17 +2,17 @@ import { TRPCError } from "@trpc/server";
 import { observable } from "@trpc/server/observable";
 import { z } from "zod";
 
-import { AVATAR_CLASSIFY_VALUES } from "@agenter/auth-service";
-import type { MessageContactId } from "@agenter/message-system";
-import { isPrincipalId } from "@agenter/principal-crypto";
 import {
   appAttentionCommitInputSchema,
   appAttentionQueryInputSchema,
   appAttentionSettleInputSchema,
-  appMemoryPackEnsureInputSchema,
   appAvatarPromptSeedInputSchema,
+  appMemoryPackEnsureInputSchema,
   appPrivateTextAssetEnsureInputSchema,
 } from "@agenter/app-runtime";
+import { AVATAR_CLASSIFY_VALUES } from "@agenter/auth-service";
+import type { MessageContactId } from "@agenter/message-system";
+import { isPrincipalId } from "@agenter/principal-crypto";
 import { TERMINAL_BACKEND_KINDS, type TerminalActorId } from "@agenter/terminal-system";
 import {
   authDraftCreateInputSchema,
@@ -44,6 +44,23 @@ const reversePageInput = z.object({
   sessionId: z.string().min(1),
   before: reverseTimeCursorSchema.optional(),
   limit: z.number().int().positive().max(500).optional(),
+});
+const heartbeatRecordAnchorSchema = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("latest") }),
+  z.object({
+    kind: z.literal("fixed"),
+    pageIndex: z.number().int().nonnegative(),
+    latestRecordId: z.number().int().positive().nullable().optional(),
+  }),
+]);
+const heartbeatRecordPageInput = z.object({
+  sessionId: z.string().min(1),
+  pageSize: z.number().int().positive().max(200).optional(),
+  anchor: heartbeatRecordAnchorSchema.optional(),
+});
+const heartbeatRecordDetailInput = z.object({
+  sessionId: z.string().min(1),
+  recordId: z.number().int().positive(),
 });
 const usageAnalyticsInput = z
   .object({
@@ -2098,6 +2115,15 @@ export const appRouter = t.router({
       .query(({ ctx, input }) =>
         ctx.kernel.pageHeartbeatGroups(input.sessionId, { before: input.before, limit: input.limit ?? 5 }),
       ),
+    heartbeatRecordPage: superadminProcedure.input(heartbeatRecordPageInput).query(({ ctx, input }) =>
+      ctx.kernel.pageHeartbeatRecords(input.sessionId, {
+        pageSize: input.pageSize ?? 20,
+        anchor: input.anchor ?? { kind: "latest" },
+      }),
+    ),
+    heartbeatRecordDetail: superadminProcedure
+      .input(heartbeatRecordDetailInput)
+      .query(({ ctx, input }) => ctx.kernel.getHeartbeatRecordDetail(input.sessionId, input.recordId)),
     modelCallsPage: superadminProcedure
       .input(reversePageInput)
       .query(({ ctx, input }) =>

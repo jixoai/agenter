@@ -22,7 +22,7 @@
 
 - [x] 3.1 Run `bun run openspec:vision -- commit-check add-heartbeat-ledger-pagination --phase apply` before app-code work starts, then commit the ready OpenSpec artifacts for this change.
 - [x] 3.2 Implement the `heartbeat_record` projection, migration, indexes, classifier rules, summary payload, and source-ref law in `session.db` without replacing underlying objective source facts.
-- [ ] 3.3 Implement runtime publication for exact record count, page windows, latest/fixed anchor state, selected detail, and `newRecordsAvailable` invalidation.
+- [x] 3.3 Implement runtime publication for exact record count, page windows, latest/fixed anchor state, selected detail, and `newRecordsAvailable` invalidation.
 - [ ] 3.4 Keep grouped/message-part reconstruction only as the selected-record detail evidence path; stop using query-time regrouping as the primary list-page source.
 - [ ] 3.5 Implement package-owned record list/detail presentation in `@agenter/web-heartbeat-view`, including a data-driven `ModelRunCard` with chip-fit math, input-chip derivation, line-duration law, compression-style `compact` cards, changed-controls `config` cards, and mobile-first list/detail navigation.
 - [ ] 3.6 Implement selected-record detail components for `model_call`, `compact`, and `config`: vertical sticky-step Model Run detail, Compact `New Context | Old Context` tabs, and Config YAML `Diff | New | Old` tabs.
