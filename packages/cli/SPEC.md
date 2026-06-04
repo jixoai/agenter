@@ -31,5 +31,6 @@
 - `stop` / `restart` 只允许操作当前 runtime home root 通过 descriptor 发现到的 daemon authority；CLI 不得跨 home root 猜测或扫描别人的 daemon。
 - 当同一 home root 上的 descriptor 已经指向健康 daemon，`start` 必须复用并直接返回，而不是再启动第二个 writer。
 - daemon descriptor 与 `/health` 必须暴露 launcher identity（package、version、source kind、entrypoint/source id），让 CLI 能判断自己是否正在连接同一套启动来源。
+- package-projected launcher identity 必须暴露 public `agenter` package name/version；workspace source launcher identity 继续暴露 internal `@agenter/cli` package name/version 与 workspace entrypoint。公开安装升级后的 daemon compatibility 必须跟随 public release 版本变化，而不是停留在 private launcher package 的静态版本上。
 - app launcher 与 core TUI 在复用 daemon 前必须校验 launcher identity compatibility；同一 package/version/sourceKind 的 workspace checkout 或 worktree 可复用同一 runtime home root daemon，但 package 版、workspace 版、不同版本或旧 daemon 缺少 identity 时必须给出明确错误并要求用户用当前命令执行 `agenter daemon restart`，不得静默连到错误 server。
 - legacy descriptor 只能作为 stop/restart 的定位事实使用；缺少 identity 的 daemon 不得作为 app runtime authority 被复用。
