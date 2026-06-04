@@ -7,10 +7,10 @@
 
 ## 2. BDD Contract
 
-- [ ] 2.1 Scenario: Given mixed `message_part`, `ai_call`, compact, and config facts When the `heartbeat_record` projection runs Then exact record count, ordering, kind, timestamps, preview, and source refs are deterministic and traceable.
-- [ ] 2.2 Scenario: Given a `tool_result` followed by a new user-visible input boundary When record classification runs Then the previous `model_call` record closes and the next `model_call` record starts objectively.
-- [ ] 2.3 Scenario: Given latest and fixed page-window anchors When newer records arrive Then latest windows advance, fixed windows stay pinned, and `newRecordsAvailable` becomes visible without scroll theft.
-- [ ] 2.4 Scenario: Given large markdown, reasoning, JSON, and tool payloads When a record page renders Then list rows stay bounded and selected detail reconstructs the full structured content separately.
+- [x] 2.1 Scenario: Given mixed `message_part`, `ai_call`, compact, and config facts When the `heartbeat_record` projection runs Then exact record count, ordering, kind, timestamps, preview, and source refs are deterministic and traceable.
+- [x] 2.2 Scenario: Given a `tool_result` followed by a new user-visible input boundary When record classification runs Then the previous `model_call` record closes and the next `model_call` record starts objectively.
+- [x] 2.3 Scenario: Given latest and fixed page-window anchors When newer records arrive Then latest windows advance, fixed windows stay pinned, and `newRecordsAvailable` becomes visible without scroll theft.
+- [x] 2.4 Scenario: Given large markdown, reasoning, JSON, and tool payloads When a record page renders Then list rows stay bounded and selected detail reconstructs the full structured content separately.
 - [ ] 2.5 Scenario: Given multiple viewport widths on mobile and desktop When `model_call`, `compact`, and `config` rows render Then the adaptive metro card computes `inputChip + line + chip` layout from data, merges tool results back into tool chips, expands tail-first without overflow, and the non-model cards keep their own grammars.
 - [ ] 2.6 Scenario: Given `readonly` and `configable` modes When bottom toolbar actions and detail flows render Then unauthorized mutation paths stay hidden or disabled while inspection remains intact.
 - [ ] 2.7 Scenario: Given a selected `model_call` record When detail opens Then the horizontal metro semantics expand into vertical sticky step chips plus full right-side step content without changing list-page membership.
@@ -21,14 +21,14 @@
 ## 3. Implementation
 
 - [x] 3.1 Run `bun run openspec:vision -- commit-check add-heartbeat-ledger-pagination --phase apply` before app-code work starts, then commit the ready OpenSpec artifacts for this change.
-- [ ] 3.2 Implement the `heartbeat_record` projection, migration, indexes, classifier rules, summary payload, and source-ref law in `session.db` without replacing underlying objective source facts.
+- [x] 3.2 Implement the `heartbeat_record` projection, migration, indexes, classifier rules, summary payload, and source-ref law in `session.db` without replacing underlying objective source facts.
 - [ ] 3.3 Implement runtime publication for exact record count, page windows, latest/fixed anchor state, selected detail, and `newRecordsAvailable` invalidation.
 - [ ] 3.4 Keep grouped/message-part reconstruction only as the selected-record detail evidence path; stop using query-time regrouping as the primary list-page source.
 - [ ] 3.5 Implement package-owned record list/detail presentation in `@agenter/web-heartbeat-view`, including a data-driven `ModelRunCard` with chip-fit math, input-chip derivation, line-duration law, compression-style `compact` cards, changed-controls `config` cards, and mobile-first list/detail navigation.
 - [ ] 3.6 Implement selected-record detail components for `model_call`, `compact`, and `config`: vertical sticky-step Model Run detail, Compact `New Context | Old Context` tabs, and Config YAML `Diff | New | Old` tabs.
 - [ ] 3.7 Integrate the new record/list/detail contract into the relevant runtime shell consumer and `@agenter/web-heartbeat-view:example`, including page-window controls and selected-detail behavior.
-- [ ] 3.8 Add concise intent comments at critical effect points derived from `plans/plan.md`, especially around record classification, anchor invalidation, and detail reconstruction boundaries.
-- [ ] 3.9 Update only the task checkboxes completed in the current working context, and pair those checkbox updates with the matching implementation or BDD evidence commits.
+- [x] 3.8 Add concise intent comments at critical effect points derived from `plans/plan.md`, especially around record classification, anchor invalidation, and detail reconstruction boundaries.
+- [x] 3.9 Update only the task checkboxes completed in the current working context, and pair those checkbox updates with the matching implementation or BDD evidence commits.
 
 ## 4. Verification
 

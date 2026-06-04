@@ -4,6 +4,14 @@ import { dirname, resolve } from "node:path";
 import { Database } from "bun:sqlite";
 
 import type {
+  HeartbeatRecord,
+  HeartbeatRecordDetail,
+  HeartbeatRecordKind,
+  HeartbeatRecordPage,
+  HeartbeatRecordPageInput,
+  HeartbeatRecordSourceRef,
+  HeartbeatRecordStatus,
+  HeartbeatRecordSummary,
   ReversePage,
   ReverseTimeCursor,
   SessionAiCallInsert,
@@ -13,19 +21,19 @@ import type {
   SessionAssetRecord,
   SessionAttentionDispatchInsert,
   SessionAttentionDispatchRecord,
-  SessionEffectLedgerInsert,
-  SessionEffectLedgerRecord,
-  SessionNotifyQuotaInsert,
-  SessionNotifyQuotaRecord,
   SessionAttentionReceiptInsert,
   SessionAttentionReceiptProviderEventKind,
   SessionAttentionReceiptRecord,
   SessionAttentionReceiptStatus,
+  SessionEffectLedgerInsert,
+  SessionEffectLedgerRecord,
   SessionHeadRecord,
   SessionMessagePartRecord,
   SessionMessageRecord,
   SessionMessageScope,
   SessionMessageUpsertInput,
+  SessionNotifyQuotaInsert,
+  SessionNotifyQuotaRecord,
   SessionPromptWindowRecord,
   SessionRuntimeWatchInsert,
   SessionRuntimeWatchRecord,
@@ -34,7 +42,7 @@ import type {
 } from "./types";
 import { PROMPT_WINDOW_STATE_PART_TYPE } from "./types";
 
-const SESSION_DB_SCHEMA_VERSION = 4;
+const SESSION_DB_SCHEMA_VERSION = 5;
 
 const parseJson = <T>(value: string | null, fallback: T): T => {
   if (!value) {
@@ -63,6 +71,39 @@ interface StoredMessageHeadRow {
   role: SessionMessageRecord["role"];
   created_at: number;
   updated_at: number;
+}
+
+interface StoredHeartbeatRecordRow {
+  id: number;
+  record_key: string;
+  kind: HeartbeatRecordKind;
+  status: HeartbeatRecordStatus;
+  primary_ai_call_id: number | null;
+  ai_call_ids_json: string;
+  source_refs_json: string;
+  feature_flags_json: string;
+  summary_json: string;
+  preview_text: string | null;
+  started_at: number;
+  updated_at: number;
+  completed_at: number | null;
+  is_complete: number;
+}
+
+interface HeartbeatRecordProjection {
+  recordKey: string;
+  kind: HeartbeatRecordKind;
+  status: HeartbeatRecordStatus;
+  primaryAiCallId: number | null;
+  aiCallIds: number[];
+  sourceRefs: HeartbeatRecordSourceRef[];
+  featureFlags: Record<string, boolean>;
+  summary: HeartbeatRecordSummary;
+  previewText: string | null;
+  startedAt: number;
+  updatedAt: number;
+  completedAt: number | null;
+  isComplete: boolean;
 }
 
 /**
@@ -1049,7 +1090,8 @@ export class SessionDb {
     }
     const updatedAt = input.updatedAt ?? Date.now();
     const status = input.status ?? "pending";
-    const resolvedAt = input.resolvedAt !== undefined ? input.resolvedAt : status === "pending" ? null : current.resolvedAt;
+    const resolvedAt =
+      input.resolvedAt !== undefined ? input.resolvedAt : status === "pending" ? null : current.resolvedAt;
     this.db
       .query(
         `update runtime_watch
@@ -1101,11 +1143,15 @@ export class SessionDb {
     const updatedAt = input.updatedAt ?? Date.now();
     const nextStatus = input.status ?? current.status;
     const nextResolvedAt =
-      input.resolvedAt !== undefined ? input.resolvedAt : nextStatus === "pending" ? null : current.resolvedAt ?? updatedAt;
+      input.resolvedAt !== undefined
+        ? input.resolvedAt
+        : nextStatus === "pending"
+          ? null
+          : (current.resolvedAt ?? updatedAt);
     const nextReminderContextId =
-      input.reminderContextId !== undefined ? input.reminderContextId : current.reminderContextId ?? null;
+      input.reminderContextId !== undefined ? input.reminderContextId : (current.reminderContextId ?? null);
     const nextReminderCommitId =
-      input.reminderCommitId !== undefined ? input.reminderCommitId : current.reminderCommitId ?? null;
+      input.reminderCommitId !== undefined ? input.reminderCommitId : (current.reminderCommitId ?? null);
     const nextMeta = input.meta !== undefined ? input.meta : current.meta;
     this.db
       .query(
@@ -1514,6 +1560,518 @@ export class SessionDb {
     return row ? this.getMessageById(row.message_id) : null;
   }
 
+  rebuildHeartbeatRecords(): void {
+    const projections = this.buildHeartbeatRecordProjections();
+    const nextKeys = new Set(projections.map((record) => record.recordKey));
+    this.db.exec("begin immediate");
+    try {
+      for (const record of projections) {
+        this.upsertHeartbeatRecordProjection(record);
+      }
+      const storedKeys = this.db.query(`select record_key from heartbeat_record`).all() as Array<{
+        record_key: string;
+      }>;
+      for (const row of storedKeys) {
+        if (!nextKeys.has(row.record_key)) {
+          this.db.query(`delete from heartbeat_record where record_key = ?`).run(row.record_key);
+        }
+      }
+      this.db.exec("commit");
+    } catch (error) {
+      this.db.exec("rollback");
+      throw error;
+    }
+  }
+
+  pageHeartbeatRecords(input: HeartbeatRecordPageInput): HeartbeatRecordPage {
+    const pageSize = resolvePageLimit(input.pageSize, 200);
+    const totalRecords = this.countHeartbeatRecords();
+    const totalPages = totalRecords === 0 ? 0 : Math.ceil(totalRecords / pageSize);
+    const latestRecord = this.getLatestHeartbeatRecord();
+    const latestRecordId = latestRecord?.id ?? null;
+    const fixedAnchor = input.anchor.kind === "fixed" ? input.anchor : null;
+    // Fixed anchors read through the snapshot latest row; newer rows set a signal instead of moving membership.
+    const fixedLatest = fixedAnchor?.latestRecordId ? this.getHeartbeatRecord(fixedAnchor.latestRecordId) : null;
+    const windowTotalRecords = fixedLatest ? this.countHeartbeatRecordsThrough(fixedLatest) : totalRecords;
+    const windowTotalPages = windowTotalRecords === 0 ? 0 : Math.ceil(windowTotalRecords / pageSize);
+    const newRecordsAvailable =
+      fixedAnchor?.latestRecordId !== undefined &&
+      latestRecordId !== null &&
+      fixedAnchor.latestRecordId !== null &&
+      latestRecordId !== fixedAnchor.latestRecordId;
+    const pageIndex =
+      input.anchor.kind === "latest"
+        ? Math.max(0, totalPages - 1)
+        : Math.max(0, Math.min(fixedAnchor?.pageIndex ?? 0, Math.max(0, windowTotalPages - 1)));
+    const offset =
+      input.anchor.kind === "latest" ? Math.max(0, totalRecords - pageSize) : Math.max(0, pageIndex * pageSize);
+    const records = this.listHeartbeatRecordWindow({
+      limit: pageSize,
+      offset,
+      through: fixedLatest,
+    });
+    return {
+      records,
+      pageIndex,
+      pageSize,
+      totalRecords,
+      totalPages,
+      windowTotalRecords,
+      windowTotalPages,
+      latestRecordId,
+      anchor: input.anchor,
+      hasOlder: offset > 0,
+      hasNewer: offset + records.length < windowTotalRecords || newRecordsAvailable,
+      newRecordsAvailable,
+    };
+  }
+
+  getHeartbeatRecordDetail(recordId: number): HeartbeatRecordDetail | null {
+    const record = this.getHeartbeatRecord(recordId);
+    if (!record) {
+      return null;
+    }
+    // Detail owns full reconstruction; list rows only carry bounded refs and summaries.
+    const aiCalls = record.aiCallIds
+      .map((id) => this.getAiCallById(id))
+      .filter((call): call is SessionAiCallRecord => call !== null);
+    const messageIds = [
+      ...new Set(
+        record.sourceRefs.flatMap((ref) => {
+          if (ref.kind !== "message_part") {
+            return [];
+          }
+          return [ref.messageId];
+        }),
+      ),
+    ];
+    return {
+      record,
+      aiCalls,
+      messages: this.listMessagesByIds(messageIds),
+      sourceRefs: record.sourceRefs,
+    };
+  }
+
+  private buildHeartbeatRecordProjections(): HeartbeatRecordProjection[] {
+    const configRecords = this.listConfigHeartbeatMessages().map((message) =>
+      this.buildMessageBackedHeartbeatProjection({
+        recordKey: `heartbeat-record:config:${message.messageId}`,
+        kind: "config",
+        messages: [message],
+      }),
+    );
+    const callRecords = this.listAllAiCalls().map((call) => this.buildAiCallHeartbeatProjection(call));
+    return [...configRecords, ...callRecords].sort((left, right) => {
+      if (left.startedAt !== right.startedAt) {
+        return left.startedAt - right.startedAt;
+      }
+      return left.recordKey.localeCompare(right.recordKey);
+    });
+  }
+
+  private buildAiCallHeartbeatProjection(call: SessionAiCallRecord): HeartbeatRecordProjection {
+    // Classification is call-bound: tool activity remains message-part evidence, not a top-level record kind.
+    const kind: HeartbeatRecordKind = call.kind === "compact" ? "compact" : "model_call";
+    const messages = this.listHeartbeatMessagesForAiCall(call, kind);
+    const status = this.toHeartbeatRecordStatus(call.status);
+    const sourceRefs: HeartbeatRecordSourceRef[] = [
+      { kind: "ai_call", id: call.id, role: "primary" },
+      ...this.buildMessagePartSourceRefs(messages),
+    ];
+    const summary = this.buildHeartbeatRecordSummary({
+      provider: call.provider,
+      model: call.model,
+      messages,
+      startedAt: call.createdAt,
+    });
+    const messageStartedAt = this.minMessageCreatedAt(messages);
+    const messageUpdatedAt = this.maxMessageUpdatedAt(messages);
+    const isComplete = call.isComplete && messages.every((message) => message.isComplete);
+    const callActivityUpdatedAt = call.completedAt ?? call.updatedAt;
+    const activityUpdatedAt = Math.max(callActivityUpdatedAt, messageUpdatedAt ?? callActivityUpdatedAt);
+    return {
+      recordKey: `heartbeat-record:${kind}:${call.id}`,
+      kind,
+      status,
+      primaryAiCallId: call.id,
+      aiCallIds: [call.id],
+      sourceRefs,
+      featureFlags: {
+        hasPreview: this.pickAssistantPreviewText(messages) !== null,
+        hasToolCalls: summary.counts.toolCalls > 0,
+        hasToolResults: summary.counts.toolResults > 0,
+        hasErrors: summary.counts.errors > 0 || status === "error",
+      },
+      summary,
+      previewText: this.pickAssistantPreviewText(messages),
+      startedAt: Math.min(call.createdAt, messageStartedAt ?? call.createdAt),
+      updatedAt: activityUpdatedAt,
+      completedAt: isComplete ? (call.completedAt ?? activityUpdatedAt) : null,
+      isComplete,
+    };
+  }
+
+  private buildMessageBackedHeartbeatProjection(input: {
+    recordKey: string;
+    kind: HeartbeatRecordKind;
+    messages: SessionMessageRecord[];
+  }): HeartbeatRecordProjection {
+    const startedAt = this.minMessageCreatedAt(input.messages) ?? Date.now();
+    const updatedAt = this.maxMessageUpdatedAt(input.messages) ?? startedAt;
+    const isComplete = input.messages.every((message) => message.isComplete);
+    const summary = this.buildHeartbeatRecordSummary({
+      provider: null,
+      model: null,
+      messages: input.messages,
+      startedAt,
+    });
+    return {
+      recordKey: input.recordKey,
+      kind: input.kind,
+      status: isComplete ? "completed" : "running",
+      primaryAiCallId: null,
+      aiCallIds: [],
+      sourceRefs: this.buildMessagePartSourceRefs(input.messages),
+      featureFlags: {
+        hasPreview: false,
+        hasToolCalls: summary.counts.toolCalls > 0,
+        hasToolResults: summary.counts.toolResults > 0,
+        hasErrors: summary.counts.errors > 0,
+      },
+      summary,
+      previewText: null,
+      startedAt,
+      updatedAt,
+      completedAt: isComplete ? updatedAt : null,
+      isComplete,
+    };
+  }
+
+  private listAllAiCalls(): SessionAiCallRecord[] {
+    const rows = this.db.query(`select id from ai_call order by created_at asc, id asc`).all() as Array<{ id: number }>;
+    return rows.map((row) => this.getAiCallById(row.id)).filter((row): row is SessionAiCallRecord => row !== null);
+  }
+
+  private listConfigHeartbeatMessages(): SessionMessageRecord[] {
+    const rows = this.db
+      .query(
+        `select distinct message_id, created_at, part_id
+         from message_part
+         where scope = 'request_aux' and part_type = 'config'
+         order by created_at asc, part_id asc`,
+      )
+      .all() as Array<{ message_id: string }>;
+    return rows
+      .map((row) => this.getMessageById(row.message_id))
+      .filter((message): message is SessionMessageRecord => message !== null);
+  }
+
+  private listHeartbeatMessagesForAiCall(call: SessionAiCallRecord, kind: HeartbeatRecordKind): SessionMessageRecord[] {
+    const referencedMessageIds =
+      kind === "compact"
+        ? [...call.auxiliaryMessageIds, ...call.requestMessageIds, ...call.responseMessageIds]
+        : [...call.requestMessageIds, ...call.responseMessageIds];
+    const referencedMessages = this.listMessagesByIds([...new Set(referencedMessageIds)]);
+    const scopedMessages = this.listMessagesByScopesAndAiCallIds(["heartbeat_part"], [call.id]);
+    const byId = new Map<string, SessionMessageRecord>();
+    for (const message of [...referencedMessages, ...scopedMessages]) {
+      byId.set(message.messageId, message);
+    }
+    return [...byId.values()].sort((left, right) => {
+      if (left.createdAt !== right.createdAt) {
+        return left.createdAt - right.createdAt;
+      }
+      return left.id - right.id;
+    });
+  }
+
+  private buildHeartbeatRecordSummary(input: {
+    provider: string | null;
+    model: string | null;
+    messages: readonly SessionMessageRecord[];
+    startedAt: number;
+  }): HeartbeatRecordSummary {
+    const parts = input.messages
+      .flatMap((message) =>
+        message.parts.map((part) => ({
+          messageId: message.messageId,
+          partId: this.buildStableMessagePartRef(part),
+          role: message.role,
+          type: part.partType,
+          mimeType: part.mimeType,
+          aiCallId: part.aiCallId,
+          startedAt: part.createdAt,
+          completedAt: part.isComplete ? part.updatedAt : null,
+          label: this.buildHeartbeatPartLabel(part),
+          isComplete: part.isComplete,
+        })),
+      )
+      .sort((left, right) => {
+        if (left.startedAt !== right.startedAt) {
+          return left.startedAt - right.startedAt;
+        }
+        return left.partId.localeCompare(right.partId);
+      });
+    const firstOutput = parts.find((part) => part.role === "assistant" || part.role === "tool");
+    return {
+      provider: input.provider,
+      model: input.model,
+      parts,
+      counts: {
+        parts: parts.length,
+        toolCalls: parts.filter((part) => part.type === "tool_call").length,
+        toolResults: parts.filter((part) => part.type === "tool_result").length,
+        errors: parts.filter((part) => part.type === "error" || this.isErrorPartLabel(part.label)).length,
+      },
+      firstFrameMs: firstOutput ? Math.max(0, firstOutput.startedAt - input.startedAt) : null,
+      thinkingDurationMs: parts
+        .filter((part) => part.type === "thinking")
+        .reduce((total, part) => total + Math.max(0, (part.completedAt ?? part.startedAt) - part.startedAt), 0),
+    };
+  }
+
+  private buildMessagePartSourceRefs(messages: readonly SessionMessageRecord[]): HeartbeatRecordSourceRef[] {
+    return messages.flatMap((message) =>
+      message.parts.map((part) => ({
+        kind: "message_part" as const,
+        messageId: message.messageId,
+        partId: this.buildStableMessagePartRef(part),
+        role: this.resolveMessagePartSourceRole(message, part),
+      })),
+    );
+  }
+
+  private buildStableMessagePartRef(part: SessionMessagePartRecord): string {
+    return `${part.messageId}:${part.partIndex}`;
+  }
+
+  private resolveMessagePartSourceRole(
+    message: SessionMessageRecord,
+    part: SessionMessagePartRecord,
+  ): Extract<HeartbeatRecordSourceRef, { kind: "message_part" }>["role"] {
+    if (part.partType === "tool_call") {
+      return "tool_call";
+    }
+    if (part.partType === "tool_result") {
+      return "tool_result";
+    }
+    if (part.partType === "compact") {
+      return "compact";
+    }
+    if (message.role === "config" || part.partType === "config") {
+      return "config";
+    }
+    if (message.role === "user" || message.role === "tool") {
+      return "input";
+    }
+    return "output";
+  }
+
+  private pickAssistantPreviewText(messages: readonly SessionMessageRecord[]): string | null {
+    const candidates = messages
+      .flatMap((message) =>
+        message.role === "assistant"
+          ? message.parts
+              .filter((part) => part.partType === "text")
+              .map((part) => ({
+                text: this.partPayloadToText(part.payload).trim(),
+                updatedAt: part.updatedAt,
+                partId: part.partId,
+              }))
+          : [],
+      )
+      .filter((candidate) => candidate.text.length > 0)
+      .sort((left, right) => {
+        if (left.updatedAt !== right.updatedAt) {
+          return right.updatedAt - left.updatedAt;
+        }
+        return right.partId - left.partId;
+      });
+    return candidates[0]?.text ?? null;
+  }
+
+  private buildHeartbeatPartLabel(part: SessionMessagePartRecord): string {
+    if (part.partType === "tool_call" || part.partType === "tool_result") {
+      const payload = part.payload;
+      if (payload && typeof payload === "object" && !Array.isArray(payload)) {
+        if ("tool" in payload && typeof payload.tool === "string") {
+          return payload.tool;
+        }
+        if ("name" in payload && typeof payload.name === "string") {
+          return payload.name;
+        }
+      }
+    }
+    return part.partType;
+  }
+
+  private isErrorPartLabel(label: string): boolean {
+    return label.toLowerCase().includes("error");
+  }
+
+  private minMessageCreatedAt(messages: readonly SessionMessageRecord[]): number | null {
+    return messages.length === 0 ? null : Math.min(...messages.map((message) => message.createdAt));
+  }
+
+  private maxMessageUpdatedAt(messages: readonly SessionMessageRecord[]): number | null {
+    return messages.length === 0 ? null : Math.max(...messages.map((message) => message.updatedAt));
+  }
+
+  private toHeartbeatRecordStatus(status: SessionAiCallRecord["status"]): HeartbeatRecordStatus {
+    if (status === "done") {
+      return "completed";
+    }
+    if (status === "error" || status === "cancelled" || status === "running") {
+      return status;
+    }
+    return "running";
+  }
+
+  private upsertHeartbeatRecordProjection(record: HeartbeatRecordProjection): void {
+    // This table is only a countable page index; source refs keep detail reconstruction anchored to objective facts.
+    this.db
+      .query(
+        `insert into heartbeat_record (
+           record_key,
+           kind,
+           status,
+           primary_ai_call_id,
+           ai_call_ids_json,
+           source_refs_json,
+           feature_flags_json,
+           summary_json,
+           preview_text,
+           started_at,
+           updated_at,
+           completed_at,
+           is_complete
+         ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         on conflict(record_key) do update set
+           kind = excluded.kind,
+           status = excluded.status,
+           primary_ai_call_id = excluded.primary_ai_call_id,
+           ai_call_ids_json = excluded.ai_call_ids_json,
+           source_refs_json = excluded.source_refs_json,
+           feature_flags_json = excluded.feature_flags_json,
+           summary_json = excluded.summary_json,
+           preview_text = excluded.preview_text,
+           started_at = excluded.started_at,
+           updated_at = excluded.updated_at,
+           completed_at = excluded.completed_at,
+           is_complete = excluded.is_complete`,
+      )
+      .run(
+        record.recordKey,
+        record.kind,
+        record.status,
+        record.primaryAiCallId,
+        toJson(record.aiCallIds),
+        toJson(record.sourceRefs),
+        toJson(record.featureFlags),
+        toJson(record.summary),
+        record.previewText,
+        record.startedAt,
+        record.updatedAt,
+        record.completedAt,
+        record.isComplete ? 1 : 0,
+      );
+  }
+
+  private getHeartbeatRecord(id: number): HeartbeatRecord | null {
+    const row = this.db
+      .query(
+        `select id, record_key, kind, status, primary_ai_call_id, ai_call_ids_json, source_refs_json,
+                feature_flags_json, summary_json, preview_text, started_at, updated_at, completed_at, is_complete
+         from heartbeat_record
+         where id = ?`,
+      )
+      .get(id) as StoredHeartbeatRecordRow | null;
+    return row ? this.toHeartbeatRecord(row) : null;
+  }
+
+  private getLatestHeartbeatRecord(): HeartbeatRecord | null {
+    const row = this.db
+      .query(
+        `select id, record_key, kind, status, primary_ai_call_id, ai_call_ids_json, source_refs_json,
+                feature_flags_json, summary_json, preview_text, started_at, updated_at, completed_at, is_complete
+         from heartbeat_record
+         order by started_at desc, id desc
+         limit 1`,
+      )
+      .get() as StoredHeartbeatRecordRow | null;
+    return row ? this.toHeartbeatRecord(row) : null;
+  }
+
+  private listHeartbeatRecordWindow(input: {
+    limit: number;
+    offset: number;
+    through: HeartbeatRecord | null;
+  }): HeartbeatRecord[] {
+    const throughWhere = input.through ? `where (started_at < ? or (started_at = ? and id <= ?))` : "";
+    const params = input.through
+      ? [input.through.startedAt, input.through.startedAt, input.through.id, input.limit, input.offset]
+      : [input.limit, input.offset];
+    const rows = this.db
+      .query(
+        `select id, record_key, kind, status, primary_ai_call_id, ai_call_ids_json, source_refs_json,
+                feature_flags_json, summary_json, preview_text, started_at, updated_at, completed_at, is_complete
+         from heartbeat_record
+         ${throughWhere}
+         order by started_at asc, id asc
+         limit ? offset ?`,
+      )
+      .all(...params) as StoredHeartbeatRecordRow[];
+    return rows.map((row) => this.toHeartbeatRecord(row));
+  }
+
+  private countHeartbeatRecords(): number {
+    const row = this.db.query(`select count(*) as count from heartbeat_record`).get() as { count: number };
+    return row.count;
+  }
+
+  private countHeartbeatRecordsThrough(record: HeartbeatRecord): number {
+    const row = this.db
+      .query(
+        `select count(*) as count
+         from heartbeat_record
+         where started_at < ? or (started_at = ? and id <= ?)`,
+      )
+      .get(record.startedAt, record.startedAt, record.id) as { count: number };
+    return row.count;
+  }
+
+  private toHeartbeatRecord(row: StoredHeartbeatRecordRow): HeartbeatRecord {
+    return {
+      id: row.id,
+      recordKey: row.record_key,
+      kind: row.kind,
+      status: row.status,
+      primaryAiCallId: row.primary_ai_call_id,
+      aiCallIds: parseJson<number[]>(row.ai_call_ids_json, []),
+      sourceRefs: parseJson<HeartbeatRecordSourceRef[]>(row.source_refs_json, []),
+      featureFlags: parseJson<Record<string, boolean>>(row.feature_flags_json, {}),
+      summary: parseJson<HeartbeatRecordSummary>(row.summary_json, {
+        provider: null,
+        model: null,
+        parts: [],
+        counts: {
+          parts: 0,
+          toolCalls: 0,
+          toolResults: 0,
+          errors: 0,
+        },
+        firstFrameMs: null,
+        thinkingDurationMs: 0,
+      }),
+      previewText: row.preview_text,
+      startedAt: row.started_at,
+      updatedAt: row.updated_at,
+      completedAt: row.completed_at,
+      isComplete: row.is_complete === 1,
+    };
+  }
+
   private queryMessageHeadRowsByScopes(
     scopes: readonly SessionMessageScope[],
     input?: {
@@ -1822,6 +2380,34 @@ export class SessionDb {
           on notify_quota(context_id, sent_at desc, id desc);
         create index if not exists idx_notify_quota_focus_sent
           on notify_quota(focus_state, sent_at desc, id desc);
+      `);
+    }
+    if (currentVersion < 5) {
+      this.db.exec(`
+        create table if not exists heartbeat_record (
+          id integer primary key autoincrement,
+          record_key text not null unique,
+          kind text not null,
+          status text not null,
+          primary_ai_call_id integer,
+          ai_call_ids_json text not null,
+          source_refs_json text not null,
+          feature_flags_json text not null,
+          summary_json text not null,
+          preview_text text,
+          started_at integer not null,
+          updated_at integer not null,
+          completed_at integer,
+          is_complete integer not null default 0
+        );
+        create index if not exists idx_heartbeat_record_started
+          on heartbeat_record(started_at desc, id desc);
+        create index if not exists idx_heartbeat_record_window
+          on heartbeat_record(started_at asc, id asc);
+        create index if not exists idx_heartbeat_record_ai_call
+          on heartbeat_record(primary_ai_call_id, started_at asc, id asc);
+        create index if not exists idx_heartbeat_record_kind_status
+          on heartbeat_record(kind, status, started_at desc, id desc);
       `);
     }
     this.db.exec(`pragma user_version = ${SESSION_DB_SCHEMA_VERSION}`);

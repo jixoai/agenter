@@ -159,6 +159,94 @@ export interface SessionAiCallUpdate {
   isComplete?: boolean;
 }
 
+export type HeartbeatRecordKind = "model_call" | "compact" | "config";
+export type HeartbeatRecordStatus = "running" | "completed" | "error" | "blocked" | "cancelled";
+
+export type HeartbeatRecordSourceRef =
+  | { kind: "ai_call"; id: number; role: "primary" | "related" }
+  | {
+      kind: "message_part";
+      messageId: string;
+      partId: string;
+      role: "input" | "output" | "tool_call" | "tool_result" | "config" | "compact";
+    }
+  | { kind: "effect"; id: string; role: "compact" | "config" | "other" };
+
+export interface HeartbeatRecordPartSummary {
+  messageId: string;
+  partId: string;
+  role: SessionMessageRole;
+  type: string;
+  mimeType: string | null;
+  aiCallId: number | null;
+  startedAt: number;
+  completedAt: number | null;
+  label: string;
+  isComplete: boolean;
+}
+
+export interface HeartbeatRecordSummary {
+  provider: string | null;
+  model: string | null;
+  parts: HeartbeatRecordPartSummary[];
+  counts: {
+    parts: number;
+    toolCalls: number;
+    toolResults: number;
+    errors: number;
+  };
+  firstFrameMs: number | null;
+  thinkingDurationMs: number;
+}
+
+export interface HeartbeatRecord {
+  id: number;
+  recordKey: string;
+  kind: HeartbeatRecordKind;
+  status: HeartbeatRecordStatus;
+  primaryAiCallId: number | null;
+  aiCallIds: number[];
+  sourceRefs: HeartbeatRecordSourceRef[];
+  featureFlags: Record<string, boolean>;
+  summary: HeartbeatRecordSummary;
+  previewText: string | null;
+  startedAt: number;
+  updatedAt: number;
+  completedAt: number | null;
+  isComplete: boolean;
+}
+
+export type HeartbeatRecordPageAnchor =
+  | { kind: "latest" }
+  | { kind: "fixed"; pageIndex: number; latestRecordId?: number | null };
+
+export interface HeartbeatRecordPageInput {
+  pageSize: number;
+  anchor: HeartbeatRecordPageAnchor;
+}
+
+export interface HeartbeatRecordPage {
+  records: HeartbeatRecord[];
+  pageIndex: number;
+  pageSize: number;
+  totalRecords: number;
+  totalPages: number;
+  windowTotalRecords: number;
+  windowTotalPages: number;
+  latestRecordId: number | null;
+  anchor: HeartbeatRecordPageAnchor;
+  hasOlder: boolean;
+  hasNewer: boolean;
+  newRecordsAvailable: boolean;
+}
+
+export interface HeartbeatRecordDetail {
+  record: HeartbeatRecord;
+  aiCalls: SessionAiCallRecord[];
+  messages: SessionMessageRecord[];
+  sourceRefs: HeartbeatRecordSourceRef[];
+}
+
 export type SessionAttentionReceiptStatus = "accepted" | "errored" | "aborted" | "completed";
 
 export type SessionAttentionReceiptProviderEventKind =
@@ -246,12 +334,11 @@ export interface SessionAttentionReceiptInsert {
 
 export type SessionRuntimeWatchStatus = "pending" | "expired" | "satisfied";
 
-export type SessionRuntimeWatchPredicate =
-  | {
-      kind: "message_latest_visible";
-      chatId: string;
-      anchorMessageId: number;
-    };
+export type SessionRuntimeWatchPredicate = {
+  kind: "message_latest_visible";
+  chatId: string;
+  anchorMessageId: number;
+};
 
 export interface SessionRuntimeWatchRecord {
   id: number;

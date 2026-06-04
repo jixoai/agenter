@@ -23,6 +23,344 @@ afterEach(() => {
 });
 
 describe("Feature: session-system AI-call ledger persistence", () => {
+  test("Scenario: Given mixed message_part ai_call compact and config facts When heartbeat records rebuild Then record count ordering kind timestamps preview and source refs are deterministic", () => {
+    const db = createDb();
+    try {
+      db.upsertMessage({
+        messageId: "config-1",
+        roundIndex: 1,
+        scope: "request_aux",
+        role: "config",
+        createdAt: 80,
+        updatedAt: 82,
+        parts: [{ partType: "config", payload: { content: { thinking: true, maxToken: 4096 } } }],
+      });
+
+      const call = db.appendAiCall({
+        roundIndex: 1,
+        kind: "chat",
+        status: "done",
+        provider: "openai",
+        model: "gpt-5.1",
+        requestUrl: "https://api.example.test/v1/responses",
+        requestBody: { model: "gpt-5.1" },
+        createdAt: 100,
+        updatedAt: 180,
+        completedAt: 180,
+        isComplete: true,
+      });
+      db.upsertMessage({
+        messageId: "request-1",
+        aiCallId: call.id,
+        roundIndex: 1,
+        scope: "heartbeat_part",
+        role: "user",
+        createdAt: 100,
+        updatedAt: 105,
+        parts: [{ partType: "text", payload: { content: "commit attention items" } }],
+      });
+      db.upsertMessage({
+        messageId: "response-1",
+        aiCallId: call.id,
+        roundIndex: 1,
+        scope: "heartbeat_part",
+        role: "assistant",
+        createdAt: 120,
+        updatedAt: 180,
+        parts: [
+          { partType: "thinking", payload: { content: "checking files" } },
+          { partType: "tool_call", payload: { name: "workspace_read", arguments: { path: "README.md" } } },
+          { partType: "text", payload: { content: "Updated the record projection." } },
+        ],
+      });
+      db.updateAiCall(call.id, {
+        requestMessageIds: ["request-1"],
+        responseMessageIds: ["response-1"],
+      });
+
+      const compact = db.appendAiCall({
+        roundIndex: 2,
+        kind: "compact",
+        status: "done",
+        provider: "openai",
+        model: "gpt-5.1",
+        requestUrl: "https://api.example.test/v1/responses",
+        requestBody: { model: "gpt-5.1" },
+        createdAt: 220,
+        updatedAt: 260,
+        completedAt: 260,
+        isComplete: true,
+      });
+      db.upsertMessage({
+        messageId: "compact-response-1",
+        aiCallId: compact.id,
+        roundIndex: 2,
+        scope: "heartbeat_part",
+        role: "assistant",
+        createdAt: 240,
+        updatedAt: 260,
+        parts: [{ partType: "text", payload: { content: "New compact context." } }],
+      });
+      db.updateAiCall(compact.id, {
+        responseMessageIds: ["compact-response-1"],
+      });
+
+      db.rebuildHeartbeatRecords();
+
+      const page = db.pageHeartbeatRecords({ pageSize: 10, anchor: { kind: "latest" } });
+      expect(page.totalRecords).toBe(3);
+      expect(page.records.map((record) => record.kind)).toEqual(["config", "model_call", "compact"]);
+      expect(page.records.map((record) => record.status)).toEqual(["completed", "completed", "completed"]);
+      expect(page.records[1]).toMatchObject({
+        primaryAiCallId: call.id,
+        aiCallIds: [call.id],
+        previewText: "Updated the record projection.",
+        startedAt: 100,
+        updatedAt: 180,
+        completedAt: 180,
+        isComplete: true,
+      });
+      expect(page.records[1]?.summary.counts).toMatchObject({
+        parts: 4,
+        toolCalls: 1,
+        toolResults: 0,
+        errors: 0,
+      });
+      expect(page.records[1]?.sourceRefs).toContainEqual({ kind: "ai_call", id: call.id, role: "primary" });
+      expect(page.records[1]?.sourceRefs).toContainEqual({
+        kind: "message_part",
+        messageId: "response-1",
+        partId: "response-1:2",
+        role: "output",
+      });
+    } finally {
+      db.close();
+    }
+  });
+
+  test("Scenario: Given latest and fixed page-window anchors When newer records arrive Then latest windows advance fixed windows stay pinned and newRecordsAvailable is visible", () => {
+    const db = createDb();
+    try {
+      for (let index = 1; index <= 5; index += 1) {
+        const call = db.appendAiCall({
+          roundIndex: index,
+          kind: "chat",
+          status: "done",
+          provider: "openai",
+          model: "gpt-5.1",
+          requestUrl: "https://api.example.test/v1/responses",
+          requestBody: { model: "gpt-5.1" },
+          createdAt: index * 100,
+          updatedAt: index * 100 + 20,
+          completedAt: index * 100 + 20,
+          isComplete: true,
+        });
+        db.upsertMessage({
+          messageId: `response-${index}`,
+          aiCallId: call.id,
+          roundIndex: index,
+          scope: "heartbeat_part",
+          role: "assistant",
+          createdAt: index * 100 + 10,
+          updatedAt: index * 100 + 20,
+          parts: [{ partType: "text", payload: { content: `record ${index}` } }],
+        });
+        db.updateAiCall(call.id, { responseMessageIds: [`response-${index}`] });
+      }
+      db.rebuildHeartbeatRecords();
+
+      const latest = db.pageHeartbeatRecords({ pageSize: 2, anchor: { kind: "latest" } });
+      expect(latest.pageIndex).toBe(2);
+      expect(latest.records.map((record) => record.previewText)).toEqual(["record 4", "record 5"]);
+
+      const fixed = db.pageHeartbeatRecords({
+        pageSize: 2,
+        anchor: { kind: "fixed", pageIndex: 1, latestRecordId: latest.latestRecordId },
+      });
+      expect(fixed.records.map((record) => record.previewText)).toEqual(["record 3", "record 4"]);
+      expect(fixed.newRecordsAvailable).toBe(false);
+
+      const sixth = db.appendAiCall({
+        roundIndex: 6,
+        kind: "chat",
+        status: "done",
+        provider: "openai",
+        model: "gpt-5.1",
+        requestUrl: "https://api.example.test/v1/responses",
+        requestBody: { model: "gpt-5.1" },
+        createdAt: 600,
+        updatedAt: 620,
+        completedAt: 620,
+        isComplete: true,
+      });
+      db.upsertMessage({
+        messageId: "response-6",
+        aiCallId: sixth.id,
+        roundIndex: 6,
+        scope: "heartbeat_part",
+        role: "assistant",
+        createdAt: 610,
+        updatedAt: 620,
+        parts: [{ partType: "text", payload: { content: "record 6" } }],
+      });
+      db.updateAiCall(sixth.id, { responseMessageIds: ["response-6"] });
+      db.rebuildHeartbeatRecords();
+
+      const fixedAfterInsert = db.pageHeartbeatRecords({
+        pageSize: 2,
+        anchor: { kind: "fixed", pageIndex: 1, latestRecordId: latest.latestRecordId },
+      });
+      expect(fixedAfterInsert.records.map((record) => record.previewText)).toEqual(["record 3", "record 4"]);
+      expect(fixedAfterInsert.newRecordsAvailable).toBe(true);
+
+      const latestAfterInsert = db.pageHeartbeatRecords({ pageSize: 2, anchor: { kind: "latest" } });
+      expect(latestAfterInsert.records.map((record) => record.previewText)).toEqual(["record 5", "record 6"]);
+    } finally {
+      db.close();
+    }
+  });
+
+  test("Scenario: Given a tool_result followed by a new user-visible input boundary When record classification runs Then previous and next model_call records stay objectively separated", () => {
+    const db = createDb();
+    try {
+      const firstCall = db.appendAiCall({
+        roundIndex: 1,
+        kind: "chat",
+        status: "done",
+        provider: "openai",
+        model: "gpt-5.1",
+        requestUrl: "https://api.example.test/v1/responses",
+        requestBody: { model: "gpt-5.1" },
+        createdAt: 100,
+        updatedAt: 180,
+        completedAt: 180,
+        isComplete: true,
+      });
+      db.upsertMessage({
+        messageId: "first-tool-result",
+        aiCallId: firstCall.id,
+        roundIndex: 1,
+        scope: "heartbeat_part",
+        role: "user",
+        createdAt: 150,
+        updatedAt: 180,
+        parts: [
+          { partType: "tool_call", payload: { name: "workspace_read", arguments: { path: "README.md" } } },
+          { partType: "tool_result", payload: { name: "workspace_read", output: "readme content" } },
+        ],
+      });
+      db.updateAiCall(firstCall.id, { responseMessageIds: ["first-tool-result"] });
+
+      const secondCall = db.appendAiCall({
+        roundIndex: 2,
+        kind: "chat",
+        status: "done",
+        provider: "openai",
+        model: "gpt-5.1",
+        requestUrl: "https://api.example.test/v1/responses",
+        requestBody: { model: "gpt-5.1" },
+        createdAt: 220,
+        updatedAt: 280,
+        completedAt: 280,
+        isComplete: true,
+      });
+      db.upsertMessage({
+        messageId: "second-input",
+        aiCallId: secondCall.id,
+        roundIndex: 2,
+        scope: "heartbeat_part",
+        role: "user",
+        createdAt: 220,
+        updatedAt: 225,
+        parts: [{ partType: "text", payload: { content: "commit attention items for the next step" } }],
+      });
+      db.upsertMessage({
+        messageId: "second-response",
+        aiCallId: secondCall.id,
+        roundIndex: 2,
+        scope: "heartbeat_part",
+        role: "assistant",
+        createdAt: 240,
+        updatedAt: 280,
+        parts: [{ partType: "text", payload: { content: "Next record completed." } }],
+      });
+      db.updateAiCall(secondCall.id, {
+        requestMessageIds: ["second-input"],
+        responseMessageIds: ["second-response"],
+      });
+
+      db.rebuildHeartbeatRecords();
+
+      const page = db.pageHeartbeatRecords({ pageSize: 10, anchor: { kind: "latest" } });
+      expect(page.records.map((record) => record.kind)).toEqual(["model_call", "model_call"]);
+      expect(page.records.map((record) => record.primaryAiCallId)).toEqual([firstCall.id, secondCall.id]);
+      expect(page.records[0]?.previewText).toBeNull();
+      expect(page.records[0]?.summary.counts).toMatchObject({ toolCalls: 1, toolResults: 1 });
+      expect(page.records[0]?.sourceRefs).toContainEqual({
+        kind: "message_part",
+        messageId: "first-tool-result",
+        partId: "first-tool-result:1",
+        role: "tool_result",
+      });
+      expect(page.records[1]?.sourceRefs).toContainEqual({
+        kind: "message_part",
+        messageId: "second-input",
+        partId: "second-input:0",
+        role: "input",
+      });
+    } finally {
+      db.close();
+    }
+  });
+
+  test("Scenario: Given one selected heartbeat record When detail is loaded Then full structured content is reconstructed separately from the bounded list row", () => {
+    const db = createDb();
+    try {
+      const call = db.appendAiCall({
+        roundIndex: 1,
+        kind: "chat",
+        status: "running",
+        provider: "openai",
+        model: "gpt-5.1",
+        requestUrl: "https://api.example.test/v1/responses",
+        requestBody: { model: "gpt-5.1" },
+        createdAt: 100,
+        updatedAt: 150,
+        isComplete: false,
+      });
+      db.upsertMessage({
+        messageId: "tool-run",
+        aiCallId: call.id,
+        roundIndex: 1,
+        scope: "heartbeat_part",
+        role: "assistant",
+        createdAt: 120,
+        updatedAt: 150,
+        parts: [
+          {
+            partType: "tool_call",
+            payload: { name: "workspace_read", arguments: { path: "package.json" } },
+            isComplete: false,
+          },
+        ],
+      });
+      db.updateAiCall(call.id, { responseMessageIds: ["tool-run"] });
+      db.rebuildHeartbeatRecords();
+
+      const record = db.pageHeartbeatRecords({ pageSize: 1, anchor: { kind: "latest" } }).records[0]!;
+      const detail = db.getHeartbeatRecordDetail(record.id);
+      expect(detail?.record.id).toBe(record.id);
+      expect(detail?.aiCalls.map((item) => item.id)).toEqual([call.id]);
+      expect(detail?.messages.map((item) => item.messageId)).toEqual(["tool-run"]);
+      expect(detail?.messages[0]?.parts[0]).toMatchObject({
+        partType: "tool_call",
+        isComplete: false,
+      });
+    } finally {
+      db.close();
+    }
+  });
+
   test("Scenario: Given attention delivery facts When dispatches bind to ai_call rows later Then attempts and receipts stay durable without rewriting commit truth", () => {
     const db = createDb();
     try {
@@ -264,10 +602,12 @@ describe("Feature: session-system AI-call ledger persistence", () => {
         }),
       ).toHaveLength(2);
       expect(
-        db.listNotifyQuotaRecords({
-          quotaTarget: "ctx-room-muted:msg:room-muted/202",
-          sentAfter: 1_500,
-        }).map((record) => record.notifyId),
+        db
+          .listNotifyQuotaRecords({
+            quotaTarget: "ctx-room-muted:msg:room-muted/202",
+            sentAfter: 1_500,
+          })
+          .map((record) => record.notifyId),
       ).toEqual(["notify-2"]);
     } finally {
       db.close();
