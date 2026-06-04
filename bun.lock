@@ -148,46 +148,46 @@
         "typescript": "latest",
       },
       "optionalDependencies": {
-        "@agenter/cli-darwin-arm64": "workspace:*",
-        "@agenter/cli-darwin-x64": "workspace:*",
-        "@agenter/cli-linux-arm64-gnu": "workspace:*",
-        "@agenter/cli-linux-arm64-musl": "workspace:*",
-        "@agenter/cli-linux-x64-gnu": "workspace:*",
-        "@agenter/cli-linux-x64-musl": "workspace:*",
-        "@agenter/cli-win32-arm64": "workspace:*",
-        "@agenter/cli-win32-x64": "workspace:*",
+        "@jixoai/cli-darwin-arm64": "workspace:*",
+        "@jixoai/cli-darwin-x64": "workspace:*",
+        "@jixoai/cli-linux-arm64-gnu": "workspace:*",
+        "@jixoai/cli-linux-arm64-musl": "workspace:*",
+        "@jixoai/cli-linux-x64-gnu": "workspace:*",
+        "@jixoai/cli-linux-x64-musl": "workspace:*",
+        "@jixoai/cli-win32-arm64": "workspace:*",
+        "@jixoai/cli-win32-x64": "workspace:*",
       },
     },
     "packages/agenter-cli-darwin-arm64": {
-      "name": "@agenter/cli-darwin-arm64",
+      "name": "@jixoai/cli-darwin-arm64",
       "version": "0.0.10",
     },
     "packages/agenter-cli-darwin-x64": {
-      "name": "@agenter/cli-darwin-x64",
+      "name": "@jixoai/cli-darwin-x64",
       "version": "0.0.10",
     },
     "packages/agenter-cli-linux-arm64-gnu": {
-      "name": "@agenter/cli-linux-arm64-gnu",
+      "name": "@jixoai/cli-linux-arm64-gnu",
       "version": "0.0.10",
     },
     "packages/agenter-cli-linux-arm64-musl": {
-      "name": "@agenter/cli-linux-arm64-musl",
+      "name": "@jixoai/cli-linux-arm64-musl",
       "version": "0.0.10",
     },
     "packages/agenter-cli-linux-x64-gnu": {
-      "name": "@agenter/cli-linux-x64-gnu",
+      "name": "@jixoai/cli-linux-x64-gnu",
       "version": "0.0.10",
     },
     "packages/agenter-cli-linux-x64-musl": {
-      "name": "@agenter/cli-linux-x64-musl",
+      "name": "@jixoai/cli-linux-x64-musl",
       "version": "0.0.10",
     },
     "packages/agenter-cli-win32-arm64": {
-      "name": "@agenter/cli-win32-arm64",
+      "name": "@jixoai/cli-win32-arm64",
       "version": "0.0.10",
     },
     "packages/agenter-cli-win32-x64": {
-      "name": "@agenter/cli-win32-x64",
+      "name": "@jixoai/cli-win32-x64",
       "version": "0.0.10",
     },
     "packages/app-runtime": {
@@ -798,22 +798,6 @@
 
     "@agenter/cli": ["@agenter/cli@workspace:packages/cli"],
 
-    "@agenter/cli-darwin-arm64": ["@agenter/cli-darwin-arm64@workspace:packages/agenter-cli-darwin-arm64"],
-
-    "@agenter/cli-darwin-x64": ["@agenter/cli-darwin-x64@workspace:packages/agenter-cli-darwin-x64"],
-
-    "@agenter/cli-linux-arm64-gnu": ["@agenter/cli-linux-arm64-gnu@workspace:packages/agenter-cli-linux-arm64-gnu"],
-
-    "@agenter/cli-linux-arm64-musl": ["@agenter/cli-linux-arm64-musl@workspace:packages/agenter-cli-linux-arm64-musl"],
-
-    "@agenter/cli-linux-x64-gnu": ["@agenter/cli-linux-x64-gnu@workspace:packages/agenter-cli-linux-x64-gnu"],
-
-    "@agenter/cli-linux-x64-musl": ["@agenter/cli-linux-x64-musl@workspace:packages/agenter-cli-linux-x64-musl"],
-
-    "@agenter/cli-win32-arm64": ["@agenter/cli-win32-arm64@workspace:packages/agenter-cli-win32-arm64"],
-
-    "@agenter/cli-win32-x64": ["@agenter/cli-win32-x64@workspace:packages/agenter-cli-win32-x64"],
-
     "@agenter/client-sdk": ["@agenter/client-sdk@workspace:packages/client-sdk"],
 
     "@agenter/demo": ["@agenter/demo@workspace:demo"],
@@ -1167,6 +1151,22 @@
     "@jixo/ghostty-native-win32-x64-msvc": ["@jixo/ghostty-native-win32-x64-msvc@workspace:packages/ghostty-native-win32-x64-msvc"],
 
     "@jixo/reactive-fs": ["@jixo/reactive-fs@workspace:packages/reactive-fs"],
+
+    "@jixoai/cli-darwin-arm64": ["@jixoai/cli-darwin-arm64@workspace:packages/agenter-cli-darwin-arm64"],
+
+    "@jixoai/cli-darwin-x64": ["@jixoai/cli-darwin-x64@workspace:packages/agenter-cli-darwin-x64"],
+
+    "@jixoai/cli-linux-arm64-gnu": ["@jixoai/cli-linux-arm64-gnu@workspace:packages/agenter-cli-linux-arm64-gnu"],
+
+    "@jixoai/cli-linux-arm64-musl": ["@jixoai/cli-linux-arm64-musl@workspace:packages/agenter-cli-linux-arm64-musl"],
+
+    "@jixoai/cli-linux-x64-gnu": ["@jixoai/cli-linux-x64-gnu@workspace:packages/agenter-cli-linux-x64-gnu"],
+
+    "@jixoai/cli-linux-x64-musl": ["@jixoai/cli-linux-x64-musl@workspace:packages/agenter-cli-linux-x64-musl"],
+
+    "@jixoai/cli-win32-arm64": ["@jixoai/cli-win32-arm64@workspace:packages/agenter-cli-win32-arm64"],
+
+    "@jixoai/cli-win32-x64": ["@jixoai/cli-win32-x64@workspace:packages/agenter-cli-win32-x64"],
 
     "@jridgewell/gen-mapping": ["@jridgewell/gen-mapping@0.3.13", "", { "dependencies": { "@jridgewell/sourcemap-codec": "^1.5.0", "@jridgewell/trace-mapping": "^0.3.24" } }, "sha512-2kkt/7niJ6MgEPxF0bYdQ6etZaA+fQvDcLKckhy1yIQOzaoKjBBjSj63/aLVjYE3qhRt5dvM+uUyfCg6UKCBbA=="],
 
