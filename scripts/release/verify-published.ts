@@ -9,6 +9,7 @@ type NpmViewPayload = Partial<
 >;
 
 const repoRoot = resolve(import.meta.dir, "../..");
+const verifyPublishedRetryDelaysMs = [2_000, 4_000, 8_000, 16_000] as const;
 
 const readPackageJson = async (packageDir: string): Promise<ReleasePackageJson> =>
   (await Bun.file(join(packageDir, "package.json")).json()) as ReleasePackageJson;
@@ -28,10 +29,12 @@ export const selectPackageDirsForVerification = (
   if (!report) {
     return packageDirs;
   }
-  const publishedPackageDirs = report.packages
+  // The publish report is the attempt-scoped truth. Verification only follows
+  // package writes performed by this attempt and must not widen itself back to
+  // historical packages on reruns where every package is already published.
+  return report.packages
     .filter((entry) => entry.status === "published")
     .map((entry) => entry.packageDir);
-  return publishedPackageDirs.length > 0 ? publishedPackageDirs : packageDirs;
 };
 
 const normalizeRecord = (record: Record<string, string> | undefined): Record<string, string> | undefined => {
@@ -78,6 +81,45 @@ const runNpmView = async (name: string, version: string): Promise<NpmViewPayload
   return typeof payload === "string" ? { version: payload } : payload;
 };
 
+const isRetryableNpmViewError = (error: unknown): error is Error => {
+  if (!(error instanceof Error)) {
+    return false;
+  }
+  return error.message.includes("npm error code E404") || error.message.includes("No match found for version");
+};
+
+type ReadPublishedPackageOptions = {
+  readonly retryDelaysMs?: readonly number[];
+  readonly runView?: typeof runNpmView;
+  readonly sleep?: (delayMs: number) => Promise<void>;
+};
+
+export const readPublishedPackageWithRetry = async (
+  name: string,
+  version: string,
+  options: ReadPublishedPackageOptions = {},
+): Promise<NpmViewPayload> => {
+  const retryDelaysMs = options.retryDelaysMs ?? verifyPublishedRetryDelaysMs;
+  const runView = options.runView ?? runNpmView;
+  const sleep = options.sleep ?? Bun.sleep;
+
+  for (const [attemptIndex, retryDelayMs] of retryDelaysMs.entries()) {
+    try {
+      return await runView(name, version);
+    } catch (error) {
+      if (!isRetryableNpmViewError(error)) {
+        throw error;
+      }
+      console.warn(
+        `npm view for ${name}@${version} is not visible yet; retrying in ${retryDelayMs}ms (${attemptIndex + 1}/${retryDelaysMs.length})`,
+      );
+      await sleep(retryDelayMs);
+    }
+  }
+
+  return await runView(name, version);
+};
+
 const verifyPackage = async (packageDir: string): Promise<void> => {
   const absolutePackageDir = join(repoRoot, packageDir);
   const packageJsonPath = join(absolutePackageDir, "package.json");
@@ -86,7 +128,7 @@ const verifyPackage = async (packageDir: string): Promise<void> => {
   }
 
   const expected = await readPackageJson(absolutePackageDir);
-  const actual = await runNpmView(expected.name, expected.version);
+  const actual = await readPublishedPackageWithRetry(expected.name, expected.version);
   if (actual.version !== expected.version) {
     throw new Error(
       `${expected.name} version mismatch: expected ${expected.version}, got ${actual.version ?? "<missing>"}`,

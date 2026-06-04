@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import { selectPackageDirsForVerification } from "./verify-published";
+import { readPublishedPackageWithRetry, selectPackageDirsForVerification } from "./verify-published";
 import type { ReleasePublishReport } from "./publish-bundles";
 
 describe("Feature: published release verification scope", () => {
@@ -35,7 +35,7 @@ describe("Feature: published release verification scope", () => {
     ).toEqual(["bundle/agenter"]);
   });
 
-  test("Scenario: Given a report contains no newly published packages When verification scope is resolved Then the verifier falls back to the full release order", () => {
+  test("Scenario: Given a rerun report contains no newly published packages When verification scope is resolved Then the verifier keeps scope at the current attempt write set instead of widening to historical packages", () => {
     const report = {
       generatedAt: "2026-06-04T00:00:00.000Z",
       packages: [
@@ -48,9 +48,48 @@ describe("Feature: published release verification scope", () => {
       ],
     } satisfies ReleasePublishReport;
 
-    expect(selectPackageDirsForVerification(report, ["bundle/@jixo/ghostty-native", "bundle/agenter"])).toEqual([
-      "bundle/@jixo/ghostty-native",
-      "bundle/agenter",
-    ]);
+    expect(selectPackageDirsForVerification(report, ["bundle/@jixo/ghostty-native", "bundle/agenter"])).toEqual([]);
+  });
+
+  test("Scenario: Given npm registry propagation lags a newly published package When release verification reads package metadata Then bounded E404 retries wait for the visible version instead of failing immediately", async () => {
+    const calls: string[] = [];
+    const sleeps: number[] = [];
+    let attempts = 0;
+
+    const payload = await readPublishedPackageWithRetry("agenter", "0.0.12", {
+      retryDelaysMs: [10, 20],
+      runView: async () => {
+        calls.push("runView");
+        attempts += 1;
+        if (attempts < 3) {
+          throw new Error("npm view failed for agenter@0.0.12: npm error code E404\nnpm error 404 No match found for version 0.0.12");
+        }
+        return { version: "0.0.12" };
+      },
+      sleep: async (delayMs) => {
+        sleeps.push(delayMs);
+      },
+    });
+
+    expect(payload.version).toBe("0.0.12");
+    expect(calls).toHaveLength(3);
+    expect(sleeps).toEqual([10, 20]);
+  });
+
+  test("Scenario: Given npm view fails for a non-propagation reason When release verification reads package metadata Then the verifier fails immediately instead of masking the publish error", async () => {
+    const sleeps: number[] = [];
+
+    await expect(
+      readPublishedPackageWithRetry("agenter", "0.0.12", {
+        retryDelaysMs: [10, 20],
+        runView: async () => {
+          throw new Error("npm view failed for agenter@0.0.12: npm error code E403");
+        },
+        sleep: async (delayMs) => {
+          sleeps.push(delayMs);
+        },
+      }),
+    ).rejects.toThrow("npm error code E403");
+    expect(sleeps).toEqual([]);
   });
 });
