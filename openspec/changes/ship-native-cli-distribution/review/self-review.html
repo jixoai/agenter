@@ -1,0 +1,202 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>ship-native-cli-distribution self-review</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        font-family: Inter, "SF Pro Text", "Helvetica Neue", Arial, sans-serif;
+        line-height: 1.5;
+      }
+      body {
+        margin: 0;
+        padding: 32px;
+        background: #0b1020;
+        color: #e5e7eb;
+      }
+      main {
+        max-width: 1120px;
+        margin: 0 auto;
+      }
+      section {
+        margin: 0 0 24px;
+        padding: 20px;
+        border: 1px solid #334155;
+        border-radius: 12px;
+        background: #111827;
+      }
+      h1,
+      h2 {
+        margin: 0 0 12px;
+      }
+      p,
+      li {
+        color: #cbd5e1;
+      }
+      .summary {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+        gap: 12px;
+      }
+      .tile {
+        padding: 16px;
+        border-radius: 10px;
+        background: #172033;
+        border: 1px solid #334155;
+      }
+      .pass {
+        color: #86efac;
+      }
+      .note {
+        color: #fcd34d;
+      }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        margin-top: 12px;
+      }
+      th,
+      td {
+        padding: 10px 12px;
+        border: 1px solid #334155;
+        text-align: left;
+        vertical-align: top;
+      }
+      th {
+        background: #172033;
+      }
+      code {
+        font-family: "SFMono-Regular", Menlo, Consolas, monospace;
+        font-size: 0.95em;
+      }
+      ul,
+      ol {
+        margin: 12px 0 0;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <section>
+        <h1>Self-review: <code>ship-native-cli-distribution</code></h1>
+        <p>
+          Review date: June 4, 2026. This pass covers the public identity fix, canonical <code>v0.0.10</code> release
+          archives, archive-fed npm projection, Homebrew tap reprojection, and a live Homebrew install/test run.
+        </p>
+        <div class="summary">
+          <div class="tile">
+            <strong>Iteration</strong>
+            <div>2</div>
+          </div>
+          <div class="tile">
+            <strong>Release truth</strong>
+            <div class="pass"><code>v0.0.10</code> published</div>
+          </div>
+          <div class="tile">
+            <strong>Homebrew tap</strong>
+            <div class="pass">Projected live to <code>jixoai/homebrew-agenter</code></div>
+          </div>
+          <div class="tile">
+            <strong>End-to-end result</strong>
+            <div class="pass"><code>brew install</code> and <code>brew test</code> passed</div>
+          </div>
+        </div>
+      </section>
+
+      <section>
+        <h2>Intent Alignment</h2>
+        <table>
+          <thead>
+            <tr>
+              <th>Intent</th>
+              <th>Evidence</th>
+              <th>Verdict</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>GitHub release archives become the canonical Agenter binary truth.</td>
+              <td><code>agenter-release-archives.json</code> and <code>gh release view v0.0.10</code>.</td>
+              <td class="pass">Aligned</td>
+            </tr>
+            <tr>
+              <td>Npm platform packages remain thin projections over those archives.</td>
+              <td><code>stage-agenter-cli-packages-from-release-archives.ts</code> plus package verification.</td>
+              <td class="pass">Aligned</td>
+            </tr>
+            <tr>
+              <td>The compiled public CLI follows public <code>agenter</code> identity rather than private launcher truth.</td>
+              <td><code>public-release-identity.ts</code>, <code>run-cli.ts</code>, and compiled binary smoke tests.</td>
+              <td class="pass">Aligned</td>
+            </tr>
+            <tr>
+              <td>Homebrew remains a generated projection from main-repo truth.</td>
+              <td>Generated formula, pushed tap update, and remote formula inspection.</td>
+              <td class="pass">Aligned</td>
+            </tr>
+            <tr>
+              <td>Operators get a real native install surface.</td>
+              <td>Live <code>brew tap</code>, <code>brew install</code>, <code>brew test</code>, and <code>agenter --version</code>.</td>
+              <td class="pass">Aligned</td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section>
+        <h2>Evidence Ledger</h2>
+        <table>
+          <thead>
+            <tr>
+              <th>Command / artifact</th>
+              <th>Observed result</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><code>bun test scripts/release/... scripts/binaries/... packages/agenter/... packages/cli/...</code></td>
+              <td class="pass">40 passing scenarios, 0 failures</td>
+            </tr>
+            <tr>
+              <td><code>bun run release:prepare-native-cli-packages</code></td>
+              <td class="pass">Rebuilt the full target matrix, generated canonical archives, restaged platform packages from archives, and reverified package contents</td>
+            </tr>
+            <tr>
+              <td><code>gh release create v0.0.10 ...</code></td>
+              <td class="pass">Published <code>v0.0.10</code> with all target archives, checksums, and manifest assets</td>
+            </tr>
+            <tr>
+              <td><code>gh api repos/jixoai/homebrew-agenter/contents/Formula/agenter.rb ...</code></td>
+              <td class="pass">Remote formula now points at the <code>v0.0.10</code> release URLs and matching sha256 values</td>
+            </tr>
+            <tr>
+              <td><code>brew tap jixoai/agenter && brew install agenter && brew test agenter</code></td>
+              <td class="pass">Tap succeeded, package installed, and formula test passed by asserting <code>agenter --version</code> => <code>0.0.10</code></td>
+            </tr>
+            <tr>
+              <td><code>brew info agenter</code></td>
+              <td class="pass">Installed package reports <code>jixoai/agenter/agenter 0.0.10</code></td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section>
+        <h2>Historical Defect Closure</h2>
+        <p>
+          The previous public release, <code>v0.0.9</code>, proved that the archive and tap topology existed, but it also
+          exposed a real compatibility bug: the compiled binary still derived public identity from the wrong runtime truth,
+          so <code>brew test agenter</code> did not provide an honest public-version result. This loop fixed that defect by
+          moving public identity to file truth under <code>packages/agenter/package.json</code> and republishing as
+          <code>v0.0.10</code>.
+        </p>
+      </section>
+
+      <section>
+        <h2>Open Gap</h2>
+        <p class="pass">No blocking gap remains for this change. The next valid move is archive plus final workflow check.</p>
+      </section>
+    </main>
+  </body>
+</html>

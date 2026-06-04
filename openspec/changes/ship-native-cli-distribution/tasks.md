@@ -12,10 +12,10 @@
 - [x] 2.2 Scenario: Given install scripts are disabled or platform package placement fails When the operator invokes the documented fallback path Then the wrapper still resolves the same host-native platform package explicitly.
 - [x] 2.3 Scenario: Given a release is cut for a supported target When binary truth is inspected Then GitHub release archives are the canonical source and npm/Homebrew projections resolve to those same archives.
 - [x] 2.4 Scenario: Given a projection publish step runs before the canonical archive exists When release automation checks the target Then the publish step fails before it exposes a broken npm or Homebrew install surface.
-- [ ] 2.5 Scenario: Given the Homebrew tap is updated for a release When an operator runs `brew tap jixoai/agenter` and `brew install agenter` Then the formula downloads the canonical host archive, verifies checksum, and installs the native executable directly.
+- [x] 2.5 Scenario: Given the Homebrew tap is updated for a release When an operator runs `brew tap jixoai/agenter` and `brew install agenter` Then the formula downloads the canonical host archive, verifies checksum, and installs the native executable directly.
 - [x] 2.6 Scenario: Given the supported target matrix changes When release metadata, npm platform packages, and Homebrew generation inputs are inspected Then all projections expose the same matrix without silent drift.
 - [x] 2.7 Scenario: Given a maintainer inspects one published `@agenter/cli-*` platform package When packaged files are listed Then the package contains only one target’s compiled executable plus minimal metadata.
-- [ ] 2.8 Confirm each task checkbox will be updated only by the agent that completed and verified that task in the current working context.
+- [x] 2.8 Confirm each task checkbox will be updated only by the agent that completed and verified that task in the current working context.
 
 ## 3. Implementation
 
@@ -47,9 +47,9 @@
 
 ## 5. Self-Review Loop
 
-- [ ] 5.1 Generate `review/self-review.md` as the macro review thinking record comparing implementation against `plans/plan.md` and all delta specs.
-- [ ] 5.2 Generate separate `review/self-review.html` as the structured evidence presentation for release archives, npm wrapper behavior, platform packages, and Homebrew projection.
-- [ ] 5.3 If self-review updates OpenSpec artifacts or reopens tasks, commit those artifact changes before the next apply loop.
+- [x] 5.1 Generate `review/self-review.md` as the macro review thinking record comparing implementation against `plans/plan.md` and all delta specs.
+- [x] 5.2 Generate separate `review/self-review.html` as the structured evidence presentation for release archives, npm wrapper behavior, platform packages, and Homebrew projection.
+- [x] 5.3 If self-review updates OpenSpec artifacts or reopens tasks, commit those artifact changes before the next apply loop.
 - [ ] 5.4 If review enters a real loop, run `bun run openspec:vision -- review-state ship-native-cli-distribution` to persist iteration / recurrence state.
 - [ ] 5.5 If review cannot exit normally, run `bun run openspec:vision -- handoff ship-native-cli-distribution` and commit the handoff evidence before returning to user discussion.
 - [ ] 5.6 If review exits normally, run `openspec archive ship-native-cli-distribution` and commit the archive result.
