@@ -86,6 +86,22 @@ The package SHALL render the Avatar runtime story as one continuous virtualizabl
 - **THEN** the package exposes a top-of-stream load-older affordance
 - **AND** while the request is in flight, the same affordance shows loading without unmounting the already visible rows
 
+### Requirement: Web heartbeat view SHALL reuse a shared RecordCard and chips-line detail grammar
+
+The package SHALL present grouped Heartbeat records through a shared `RecordCard` atom in list surfaces. The corresponding detail surface SHALL read as a long list whose primary navigation is a chips-line rail. The package SHALL treat the former standalone Component Continuity surface as folded into `List + Detail` rather than as a separate user-facing mode.
+
+#### Scenario: List rows reuse the same shared card atom
+
+- **WHEN** grouped Heartbeat records are shown in list form
+- **THEN** each record is rendered through the shared `RecordCard` atom
+- **AND** the list does not introduce a parallel record card implementation for the same content
+
+#### Scenario: Detail navigation uses chips-line as the primary rail
+
+- **WHEN** the operator opens the record detail surface
+- **THEN** the page uses chips as the primary navigation atom
+- **AND** the visible flow remains a long list rather than a bespoke left-side continuity panel
+
 ### Requirement: Web heartbeat view SHALL expose readonly and configable capability modes
 
 The package SHALL model Heartbeat presentation capability through an explicit `HeartbeatCapabilityMode` with values `readonly` and `configable`. In `readonly` mode, the package SHALL render inspection surfaces without exposing compact/config mutation actions. `readonly` SHALL be a frontend presentation mode for keeping the interface clean, not a backend permission boundary or a promise of zero backend writes. Real isolation SHALL be enforced by transport authentication/authorization. In `configable` mode, the package SHALL expose authorized compact/config actions from the bottom statusbar action area. Missing action handlers or denied authority SHALL be represented as unavailable capability state instead of falling through to fake transcript commands or hidden side effects.

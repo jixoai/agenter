@@ -164,6 +164,8 @@ This keeps the current platform law intact: facts stay in runtime/session storag
 
 An operator can open the standalone example from a live URL, connect it to an Agenter target, see a mobile-first Avatar directory, choose any Avatar, and land on a Framework7 HeartbeatPage. The page objectively displays the Avatar's Heartbeat database content and live-push state. It shows the same meaningful Heartbeat story Studio shows today: pre-call facts, model calls, assistant text/thinking, tool calls/results, compact boundaries, load older behavior, live refresh when available, scheduler status, context usage, and attention summary.
 
+The record surface itself follows one shared grammar: list rows reuse a shared `RecordCard` atom, the former Component Continuity canvas is folded into `List + Detail`, and detail navigation becomes a chips-line rail inside a long list page instead of a separate side panel.
+
 In `readonly` mode, the operator can inspect without mutating runtime/config. In `configable` mode, the bottom statusbar exposes compact/config Actions with explicit authority. Desktop support extends the mobile interaction law instead of overriding it.
 
 `readonly` is a presentation capability mode, not a backend authorization model. It keeps the independent Heartbeat page visually clean by hiding write controls. Real isolation belongs to the authentication/authorization layer. Therefore the example may still create or reuse stopped session metadata with `autoStart:false` when that is required to read existing Heartbeat DB facts through the current client-sdk path.
@@ -220,6 +222,13 @@ Mobile-first acceptance topology:
 - bottom statusbar Actions must remain reachable above safe-area
 - no desktop-only shortcut may be required to inspect Heartbeat or change configable Actions
 
+List/detail continuity law:
+
+- The list surface reuses one shared `RecordCard` atom for grouped Heartbeat records.
+- `Component Continuity` is not a separate surface anymore; its semantics live inside `List + Detail`.
+- Detail navigation reuses chips first, then chips-line as the rail.
+- The detail page reads like a long list, not a bespoke left-nav panel.
+
 ### Interface Shape
 
 Package-level components and contracts should be split by responsibility:
@@ -227,6 +236,7 @@ Package-level components and contracts should be split by responsibility:
 - `HeartbeatView`: pure presentational runtime stream; no transport creation.
 - `HeartbeatPage`: Framework7 page shell around `HeartbeatView`, optional if package owns F7 page primitive.
 - `HeartbeatAvatarDirectory`: optional example-level component unless later hosts need it.
+- `HeartbeatRecordCard`: shared record atom for list rows and detail previews.
 - `HeartbeatConnectionAdapter`: typed interface consumed by example for Avatar catalog, deterministic Avatar runtime/session identity, Heartbeat hydration, optional runtime state, model calls, scheduler/attention slices, and realtime lifecycle.
 - `createAgenterHeartbeatConnection`: example or package helper over `@agenter/client-sdk`, using existing session create/hydrate/read APIs rather than a new backend protocol.
 - `HeartbeatCapabilityMode`: explicit `readonly | configable` mode. `readonly` renders inspection only; `configable` enables authorized compact/config Actions in the bottom statusbar.
