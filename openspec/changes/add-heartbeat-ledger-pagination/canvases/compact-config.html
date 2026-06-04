@@ -1,0 +1,358 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Compact Config Canvas</title>
+    <link rel="stylesheet" href="record-color-tokens.css" />
+    <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js"></script>
+    <style>
+      :root {
+        --bg: var(--tone-canvas);
+        --paper: var(--tone-surface);
+        --ink: var(--tone-ink);
+        --muted: var(--tone-muted);
+        --soft: var(--tone-surface-soft);
+        --line: var(--tone-border);
+        --blue: var(--tone-accent);
+        font-family:
+          Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--ink);
+      }
+
+      .page {
+        display: grid;
+        gap: 16px;
+        padding: 22px;
+      }
+
+      h1,
+      h2,
+      p {
+        margin: 0;
+      }
+
+      h1 {
+        font-size: 18px;
+      }
+
+      p,
+      label {
+        color: var(--muted);
+        font-size: 12px;
+        line-height: 1.45;
+      }
+
+      .grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 12px;
+      }
+
+      .panel {
+        display: grid;
+        align-content: start;
+        gap: 12px;
+        border: 1px solid var(--line);
+        border-radius: 16px;
+        background: var(--paper);
+        padding: 14px;
+      }
+
+      .card-stack {
+        display: grid;
+        gap: 10px;
+      }
+
+      .controls {
+        display: grid;
+        gap: 8px;
+      }
+
+      .variants {
+        display: flex;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 8px;
+      }
+
+      .variants button {
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        background: #fff;
+        padding: 6px 10px;
+        color: var(--muted);
+        font: inherit;
+        font-size: 11px;
+        font-weight: 760;
+      }
+
+      .variants button[aria-pressed="true"] {
+        border-color: var(--blue);
+        color: var(--blue);
+      }
+
+      @media (max-width: 780px) {
+        .grid {
+          grid-template-columns: 1fr;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="page">
+      <section>
+        <h1>Compact / Config</h1>
+        <p>BasicRecordCard is shared here too. These two kinds keep the same head law and only swap the body grammar.</p>
+      </section>
+      <div class="grid">
+        <section class="panel">
+          <h2>Compact</h2>
+          <div class="card-stack">
+            <x-basic-record-card>
+              <template shadowrootmode="open">
+                <link rel="stylesheet" href="basic-record-card.css" />
+                <article class="card">
+                  <header class="head">
+                    <div class="stack"><slot name="time"></slot><slot name="duration"></slot></div>
+                    <div class="stack"><slot name="title"></slot><slot name="meta"></slot></div>
+                    <div class="status-wrap"><slot name="status"></slot></div>
+                  </header>
+                  <div class="body"><slot name="body"></slot></div>
+                  <footer class="support"><slot name="support"></slot></footer>
+                </article>
+              </template>
+              <span slot="time">14:18</span>
+              <span slot="duration">3s</span>
+              <span slot="title">Compact</span>
+              <span slot="meta">context reclaimed</span>
+              <span slot="status">completed</span>
+              <x-compact-body id="compactBody" slot="body" before="63.4" after="24.1"></x-compact-body>
+            </x-basic-record-card>
+
+            <x-basic-record-card>
+              <template shadowrootmode="open">
+                <link rel="stylesheet" href="basic-record-card.css" />
+                <article class="card">
+                  <header class="head">
+                    <div class="stack"><slot name="time"></slot><slot name="duration"></slot></div>
+                    <div class="stack"><slot name="title"></slot><slot name="meta"></slot></div>
+                    <div class="status-wrap"><slot name="status"></slot></div>
+                  </header>
+                  <div class="body"><slot name="body"></slot></div>
+                  <footer class="support"><slot name="support"></slot></footer>
+                </article>
+              </template>
+              <span slot="time" data-live>14:23</span>
+              <span slot="duration" data-live>2.8s</span>
+              <span slot="title">Compact</span>
+              <span slot="meta">context compressing</span>
+              <span slot="status" data-status="running">compacting</span>
+              <x-compact-body slot="body" before="71.2" after="38.6" state="running"></x-compact-body>
+            </x-basic-record-card>
+
+            <x-basic-record-card>
+              <template shadowrootmode="open">
+                <link rel="stylesheet" href="basic-record-card.css" />
+                <article class="card">
+                  <header class="head">
+                    <div class="stack"><slot name="time"></slot><slot name="duration"></slot></div>
+                    <div class="stack"><slot name="title"></slot><slot name="meta"></slot></div>
+                    <div class="status-wrap"><slot name="status"></slot></div>
+                  </header>
+                  <div class="body"><slot name="body"></slot></div>
+                  <footer class="support"><slot name="support"></slot></footer>
+                </article>
+              </template>
+              <span slot="time">14:31</span>
+              <span slot="duration">failed</span>
+              <span slot="title">Compact</span>
+              <span slot="meta">context unchanged</span>
+              <span slot="status" data-status="error">error</span>
+              <x-compact-body slot="body" before="68.9" after="68.9" state="error"></x-compact-body>
+            </x-basic-record-card>
+          </div>
+          <div class="controls">
+            <label>before <input id="before" type="range" min="30" max="95" step="0.1" value="63.4" /></label>
+            <label>after <input id="after" type="range" min="8" max="55" step="0.1" value="24.1" /></label>
+          </div>
+        </section>
+
+        <section class="panel">
+          <h2>Config</h2>
+          <p>Changed controls stay in the row.</p>
+          <div class="variants" aria-label="Config profiles">
+            <button type="button" data-config-preset="balanced" aria-pressed="true">Balanced</button>
+            <button type="button" data-config-preset="sharp" aria-pressed="false">Sharp</button>
+            <button type="button" data-config-preset="deep" aria-pressed="false">Deep</button>
+            <button type="button" data-config-preset="saving" aria-pressed="false">Saving</button>
+            <button type="button" data-config-preset="error" aria-pressed="false">Error</button>
+            <button type="button" data-config-preset="unavailable" aria-pressed="false">Unavailable</button>
+          </div>
+          <x-basic-record-card>
+            <template shadowrootmode="open">
+              <link rel="stylesheet" href="basic-record-card.css" />
+              <article class="card">
+                <header class="head">
+                  <div class="stack"><slot name="time"></slot><slot name="duration"></slot></div>
+                  <div class="stack"><slot name="title"></slot><slot name="meta"></slot></div>
+                  <div class="status-wrap"><slot name="status"></slot></div>
+                </header>
+                <div class="body"><slot name="body"></slot></div>
+                <footer class="support"><slot name="support"></slot></footer>
+              </article>
+            </template>
+            <span slot="time">14:21</span>
+            <span id="configDuration" slot="duration">next call</span>
+            <span slot="title">Config</span>
+            <span id="configMeta" slot="meta">next-call knobs</span>
+            <span id="configStatus" slot="status">applied</span>
+            <x-config-body
+              id="configBody"
+              slot="body"
+              provider="openai · gpt-5.1"
+              scope="avatar: user:avatar"
+              state="applied"
+              temperature="0.4"
+              topk="32"
+              maxtoken="8192"
+              thinking="on"
+              thinking-budget="2048"
+            ></x-config-body>
+          </x-basic-record-card>
+        </section>
+      </div>
+    </main>
+
+    <script src="record-components.js"></script>
+    <script>
+      const configPresets = {
+        balanced: {
+          provider: "openai · gpt-5.1",
+          scope: "avatar: user:avatar",
+          state: "applied",
+          status: "applied",
+          duration: "next call",
+          temperature: "0.4",
+          topk: "32",
+          maxtoken: "8192",
+          thinking: true,
+          thinkingBudget: "2048",
+          error: "",
+        },
+        sharp: {
+          provider: "openai · gpt-5.1",
+          scope: "avatar: user:avatar",
+          state: "applied",
+          status: "applied",
+          duration: "next call",
+          temperature: "0.2",
+          topk: "12",
+          maxtoken: "4096",
+          thinking: false,
+          thinkingBudget: "",
+          error: "",
+        },
+        deep: {
+          provider: "openai · gpt-5.1",
+          scope: "avatar: user:avatar",
+          state: "applied",
+          status: "applied",
+          duration: "next call",
+          temperature: "0.3",
+          topk: "24",
+          maxtoken: "16384",
+          thinking: true,
+          thinkingBudget: "4096",
+          error: "",
+        },
+        saving: {
+          provider: "openai · gpt-5.1",
+          scope: "avatar: user:avatar",
+          state: "saving",
+          status: "saving",
+          duration: "writing",
+          temperature: "0.4",
+          topk: "32",
+          maxtoken: "8192",
+          thinking: true,
+          thinkingBudget: "2048",
+          error: "",
+        },
+        error: {
+          provider: "openai · gpt-5.1",
+          scope: "avatar: user:avatar",
+          state: "error",
+          status: "error",
+          duration: "failed",
+          temperature: "0.4",
+          topk: "32",
+          maxtoken: "8192",
+          thinking: true,
+          thinkingBudget: "2048",
+          error: "Conflict while saving next-call config.",
+        },
+        unavailable: {
+          provider: "",
+          scope: "",
+          state: "unavailable",
+          status: "unavailable",
+          duration: "locked",
+          temperature: "0.4",
+          topk: "32",
+          maxtoken: "8192",
+          thinking: true,
+          thinkingBudget: "2048",
+          error: "",
+        },
+      };
+
+      const config = document.getElementById("configBody");
+      const configStatus = document.getElementById("configStatus");
+      const configDuration = document.getElementById("configDuration");
+      const configMeta = document.getElementById("configMeta");
+      const configPresetButtons = [...document.querySelectorAll("[data-config-preset]")];
+
+      const setStatusTone = (value) => {
+        if (value) {
+          configStatus.setAttribute("data-status", value);
+          return;
+        }
+        configStatus.removeAttribute("data-status");
+      };
+
+      const setConfigProfile = (name) => {
+        const preset = configPresets[name] ?? configPresets.balanced;
+        config.setAttribute("provider", preset.provider);
+        config.setAttribute("scope", preset.scope);
+        config.setAttribute("temperature", preset.temperature);
+        config.setAttribute("topk", preset.topk);
+        config.setAttribute("maxtoken", preset.maxtoken);
+        config.setAttribute("thinking", preset.thinking ? "on" : "off");
+        config.setAttribute("thinking-budget", preset.thinkingBudget);
+        config.setAttribute("error", preset.error);
+        configStatus.textContent = preset.status;
+        setStatusTone(preset.state === "saving" ? "running" : preset.state === "error" ? "error" : "");
+        configDuration.textContent = preset.duration;
+        configMeta.textContent = preset.state === "unavailable" ? "no settings scope" : "next-call knobs";
+        config.setAttribute("state", preset.state);
+        configPresetButtons.forEach((button) => button.setAttribute("aria-pressed", String(button.dataset.configPreset === name)));
+      };
+
+      configPresetButtons.forEach((button) => {
+        button.addEventListener("click", () => setConfigProfile(button.dataset.configPreset));
+      });
+
+      setConfigProfile("balanced");
+    </script>
+  </body>
+</html>

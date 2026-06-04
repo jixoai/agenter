@@ -1,0 +1,1031 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>List Detail Anchor Canvas</title>
+    <link rel="stylesheet" href="record-color-tokens.css" />
+    <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js"></script>
+    <style>
+      :root {
+        --bg: var(--tone-canvas, #f5f6f8);
+        --paper: var(--tone-surface, #fff);
+        --ink: var(--tone-ink, #111827);
+        --muted: var(--tone-muted, #667085);
+        --line: var(--tone-border, #d9e1ea);
+        --blue: var(--tone-accent, #2563eb);
+        --green: var(--part-tool, #0e9f6e);
+        --warn: var(--part-error, #b54708);
+        --shadow: 0 18px 46px rgba(15, 23, 42, 0.12);
+        font-family:
+          Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        background:
+          radial-gradient(circle at 12% 0%, rgba(37, 99, 235, 0.08), transparent 28%),
+          radial-gradient(circle at 100% 12%, rgba(14, 159, 110, 0.06), transparent 25%),
+          var(--bg);
+        color: var(--ink);
+      }
+
+      h1,
+      h2,
+      p {
+        margin: 0;
+      }
+
+      button {
+        font: inherit;
+      }
+
+      .icon-svg {
+        inline-size: 15px;
+        block-size: 15px;
+        flex: 0 0 auto;
+      }
+
+      .page {
+        display: grid;
+        gap: 14px;
+        min-height: 100vh;
+        padding: 18px;
+      }
+
+      .hero,
+      .anchor-bar,
+      .panel,
+      x-detail-surface {
+        border: 1px solid var(--line);
+        border-radius: 18px;
+        background: rgba(255, 255, 255, 0.94);
+        box-shadow: var(--shadow);
+      }
+
+      .hero {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        gap: 12px;
+        align-items: end;
+        padding: 16px;
+      }
+
+      .hero h1 {
+        font-size: 18px;
+        letter-spacing: 0;
+      }
+
+      .hero p,
+      .small,
+      .meta {
+        color: var(--muted);
+        font-size: 12px;
+        line-height: 1.45;
+      }
+
+      .pill-row,
+      .anchor-actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+      }
+
+      .pill,
+      .anchor-actions button {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        min-height: 28px;
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        background: #fbfcfe;
+        padding: 0 10px;
+        color: var(--muted);
+        font-size: 11px;
+        font-weight: 720;
+        white-space: nowrap;
+      }
+
+      .anchor-bar {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        gap: 12px;
+        align-items: center;
+        padding: 12px;
+      }
+
+      .anchor-actions button[aria-selected="true"],
+      .record-row[aria-selected="true"] {
+        border-color: color-mix(in oklab, var(--blue), white 24%);
+        box-shadow: 0 0 0 3px color-mix(in oklab, var(--blue), transparent 88%);
+      }
+
+      .workbench {
+        display: grid;
+        grid-template-columns: minmax(300px, 0.92fr) minmax(420px, 1.3fr);
+        gap: 14px;
+        min-height: 690px;
+      }
+
+      .panel {
+        display: grid;
+        grid-template-rows: auto minmax(0, 1fr);
+        min-width: 0;
+        overflow: hidden;
+      }
+
+      .panel-head {
+        display: flex;
+        justify-content: space-between;
+        gap: 10px;
+        align-items: center;
+        border-bottom: 1px solid var(--line);
+        padding: 12px;
+      }
+
+      .panel-head h2 {
+        font-size: 13px;
+      }
+
+      .record-list {
+        display: grid;
+        align-content: start;
+        gap: 10px;
+        overflow: auto;
+        padding: 12px;
+      }
+
+      .record-row {
+        display: grid;
+        gap: 10px;
+        width: 100%;
+        border: 1px solid var(--line);
+        border-radius: 16px;
+        background: #fbfcfe;
+        padding: 12px;
+        color: inherit;
+        text-align: left;
+      }
+
+      .record-row:hover {
+        border-color: color-mix(in oklab, var(--blue), white 36%);
+      }
+
+      .row-top {
+        display: grid;
+        grid-template-columns: 58px minmax(0, 1fr) auto;
+        gap: 10px;
+        align-items: start;
+      }
+
+      .time strong,
+      .identity strong {
+        display: block;
+        overflow: hidden;
+        font-size: 12px;
+        line-height: 1.25;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .status {
+        justify-self: end;
+      }
+
+      .mini-metro {
+        display: grid;
+        grid-template-columns: auto minmax(20px, 1fr) auto minmax(20px, 1fr) auto;
+        gap: 6px;
+        align-items: center;
+      }
+
+      .mini-chip {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 4px;
+        min-width: 26px;
+        min-height: 24px;
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        background: #fff;
+        padding: 0 7px;
+        color: var(--muted);
+        font-size: 10.5px;
+        font-weight: 760;
+        white-space: nowrap;
+      }
+
+      .mini-chip.input {
+        color: var(--blue);
+        border-color: color-mix(in oklab, var(--blue), white 68%);
+      }
+
+      .mini-chip.error {
+        color: var(--warn);
+        border-color: color-mix(in oklab, var(--warn), white 62%);
+      }
+
+      .mini-line {
+        min-width: 0;
+        height: 1px;
+        background: linear-gradient(90deg, transparent, var(--line), transparent);
+      }
+
+      x-detail-surface {
+        display: block;
+        min-width: 0;
+        min-height: 690px;
+        overflow: hidden;
+        padding: 0;
+      }
+
+      @media (max-width: 980px) {
+        .workbench {
+          grid-template-columns: 1fr;
+          min-height: 0;
+        }
+
+        .panel {
+          min-height: 330px;
+        }
+
+        x-detail-surface {
+          min-height: 720px;
+        }
+      }
+
+      @media (max-width: 620px) {
+        .page {
+          padding: 10px;
+        }
+
+        .hero,
+        .anchor-bar {
+          grid-template-columns: 1fr;
+        }
+
+        .row-top {
+          grid-template-columns: 54px minmax(0, 1fr);
+        }
+
+        .status {
+          justify-self: start;
+          grid-column: 2;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="page">
+      <section class="hero">
+        <div>
+          <h1>List + Detail + Page Anchors</h1>
+          <p>The list is the stable page index. Detail owns full content and its own scroll surface.</p>
+        </div>
+        <div class="pill-row" aria-label="Canvas laws">
+          <span class="pill"><i data-lucide="list" class="icon-svg" aria-hidden="true"></i>bounded rows</span>
+          <span class="pill"><i data-lucide="panel-right" class="icon-svg" aria-hidden="true"></i>separate detail</span>
+          <span class="pill"><i data-lucide="anchor" class="icon-svg" aria-hidden="true"></i>latest/fixed anchors</span>
+        </div>
+      </section>
+
+      <section class="anchor-bar" aria-label="Pagination anchor controls">
+        <div>
+          <strong id="anchorTitle">Latest anchor</strong>
+          <div id="anchorText" class="small">Latest page follows new records and keeps the selected detail mounted.</div>
+        </div>
+        <div class="anchor-actions">
+          <button type="button" data-anchor="latest" aria-selected="true">Latest</button>
+          <button type="button" data-anchor="fixed" aria-selected="false">Fixed page 16</button>
+          <button type="button" data-anchor="new" aria-selected="false">3 new records</button>
+        </div>
+      </section>
+
+      <div class="workbench">
+        <section class="panel" aria-label="Heartbeat record list">
+          <div class="panel-head">
+            <div>
+              <h2>Heartbeat Records</h2>
+              <div class="small">Page 18 of 18 · 32 records</div>
+            </div>
+            <span class="pill"><i data-lucide="rows-3" class="icon-svg" aria-hidden="true"></i>index</span>
+          </div>
+          <div class="record-list">
+            <button type="button" class="record-row" data-record="model" aria-selected="true">
+              <span class="row-top">
+                <span class="time"><strong>14:26</strong><span class="meta">18.4s</span></span>
+                <span class="identity"><strong>Model run</strong><span class="meta">gpt-5.1 · thinking + tool + text</span></span>
+                <span class="pill status"><i data-lucide="radio" class="icon-svg" aria-hidden="true"></i>streaming</span>
+              </span>
+              <span class="mini-metro" aria-hidden="true">
+                <span class="mini-chip input"><i data-lucide="user-round" class="icon-svg"></i>input</span>
+                <span class="mini-line"></span>
+                <span class="mini-chip"><i data-lucide="brain" class="icon-svg"></i>18s</span>
+                <span class="mini-line"></span>
+                <span class="mini-chip"><i data-lucide="message-square-text" class="icon-svg"></i>now</span>
+              </span>
+              <span class="small">Selected detail expands the horizontal metro into vertical steps.</span>
+            </button>
+
+            <button type="button" class="record-row" data-record="compact" aria-selected="false">
+              <span class="row-top">
+                <span class="time"><strong>14:18</strong><span class="meta">3.1s</span></span>
+                <span class="identity"><strong>Compact</strong><span class="meta">new context generated from old context</span></span>
+                <span class="pill status"><i data-lucide="sparkles" class="icon-svg" aria-hidden="true"></i>streaming</span>
+              </span>
+              <span class="mini-metro" aria-hidden="true">
+                <span class="mini-chip"><i data-lucide="archive" class="icon-svg"></i>old</span>
+                <span class="mini-line"></span>
+                <span class="mini-chip"><i data-lucide="shredder" class="icon-svg"></i>compact</span>
+                <span class="mini-line"></span>
+                <span class="mini-chip"><i data-lucide="file-text" class="icon-svg"></i>new</span>
+              </span>
+              <span class="small">Tabs keep New Context first while Old Context stays inspectable.</span>
+            </button>
+
+            <button type="button" class="record-row" data-record="config" aria-selected="false">
+              <span class="row-top">
+                <span class="time"><strong>14:21</strong><span class="meta">done</span></span>
+                <span class="identity"><strong>Config</strong><span class="meta">thinking, maxToken, system prompt</span></span>
+                <span class="pill status"><i data-lucide="check" class="icon-svg" aria-hidden="true"></i>applied</span>
+              </span>
+              <span class="mini-metro" aria-hidden="true">
+                <span class="mini-chip"><i data-lucide="settings-2" class="icon-svg"></i>old</span>
+                <span class="mini-line"></span>
+                <span class="mini-chip"><i data-lucide="diff" class="icon-svg"></i>yaml</span>
+                <span class="mini-line"></span>
+                <span class="mini-chip"><i data-lucide="settings" class="icon-svg"></i>new</span>
+              </span>
+              <span class="small">Detail is diff-first; New/Old config are secondary YAML tabs.</span>
+            </button>
+
+            <button type="button" class="record-row" data-record="error" aria-selected="false">
+              <span class="row-top">
+                <span class="time"><strong>14:12</strong><span class="meta">7.0s</span></span>
+                <span class="identity"><strong>Model run</strong><span class="meta">tool failed before final text</span></span>
+                <span class="pill status"><i data-lucide="triangle-alert" class="icon-svg" aria-hidden="true"></i>error</span>
+              </span>
+              <span class="mini-metro" aria-hidden="true">
+                <span class="mini-chip input"><i data-lucide="user-round" class="icon-svg"></i>input</span>
+                <span class="mini-line"></span>
+                <span class="mini-chip"><i data-lucide="wrench" class="icon-svg"></i>tool</span>
+                <span class="mini-line"></span>
+                <span class="mini-chip error"><i data-lucide="circle-x" class="icon-svg"></i>error</span>
+              </span>
+              <span class="small">Error is a state, not a separate record kind.</span>
+            </button>
+          </div>
+        </section>
+
+        <x-detail-surface record="model" anchor="latest" aria-live="polite">
+          <template shadowrootmode="open">
+            <style>
+              :host {
+                --surface: #fff;
+                --subtle: #667085;
+                --border: #d9e1ea;
+                --accent: #2563eb;
+                --good: #0e9f6e;
+                --danger: #b54708;
+                display: block;
+                color: #111827;
+              }
+
+              * {
+                box-sizing: border-box;
+              }
+
+              .detail {
+                display: grid;
+                grid-template-rows: auto minmax(0, 1fr);
+                min-height: 690px;
+                background: var(--surface);
+              }
+
+              .detail-head {
+                display: grid;
+                grid-template-columns: minmax(0, 1fr) auto;
+                gap: 10px;
+                align-items: start;
+                border-bottom: 1px solid var(--border);
+                background: #f8fafc;
+                padding: 14px;
+              }
+
+              .title {
+                display: grid;
+                gap: 4px;
+              }
+
+              .title strong {
+                overflow: hidden;
+                font-size: 14px;
+                text-overflow: ellipsis;
+                white-space: nowrap;
+              }
+
+              .small,
+              .tab,
+              .step-meta,
+              .yaml {
+                color: var(--subtle);
+                font-size: 12px;
+                line-height: 1.48;
+              }
+
+              .pill-row {
+                display: flex;
+                flex-wrap: wrap;
+                justify-content: flex-end;
+                gap: 7px;
+              }
+
+              .pill,
+              .tab {
+                display: inline-flex;
+                align-items: center;
+                gap: 6px;
+                min-height: 28px;
+                border: 1px solid var(--border);
+                border-radius: 999px;
+                background: #fff;
+                padding: 0 10px;
+                font-weight: 720;
+                white-space: nowrap;
+              }
+
+              .icon-svg {
+                inline-size: 15px;
+                block-size: 15px;
+                flex: 0 0 auto;
+              }
+
+              .detail-body {
+                overflow: auto;
+                padding: 14px;
+              }
+
+              .model-detail {
+                display: grid;
+                grid-template-columns: 128px minmax(0, 1fr);
+                gap: 14px;
+                align-items: start;
+                min-height: 820px;
+              }
+
+              .step-rail {
+                position: sticky;
+                top: 0;
+                display: grid;
+                align-content: start;
+                gap: 12px;
+                max-height: calc(100vh - 220px);
+                overflow: auto;
+                padding: 4px 0 20px 6px;
+              }
+
+              .step-rail::before {
+                content: "";
+                position: absolute;
+                left: 19px;
+                top: 16px;
+                bottom: 28px;
+                width: 2px;
+                background: linear-gradient(var(--border), color-mix(in oklab, var(--accent), white 48%), var(--border));
+              }
+
+              .step-chip {
+                position: relative;
+                z-index: 1;
+                display: grid;
+                gap: 3px;
+                width: 112px;
+                border: 1px solid var(--border);
+                border-radius: 15px;
+                background: #fff;
+                padding: 9px 10px;
+                box-shadow: 0 8px 18px rgba(15, 23, 42, 0.06);
+              }
+
+              .step-chip strong {
+                display: flex;
+                gap: 6px;
+                align-items: center;
+                font-size: 12px;
+              }
+
+              .step-chip.pending {
+                border-style: dashed;
+                animation: breathe 2.8s ease-in-out infinite;
+              }
+
+              .step-content {
+                display: grid;
+                align-content: start;
+                gap: 12px;
+              }
+
+              .step-block,
+              .tab-card,
+              .yaml-card {
+                border: 1px solid var(--border);
+                border-radius: 16px;
+                background: linear-gradient(180deg, #fff, #fbfcfe);
+                padding: 13px;
+              }
+
+              .step-block {
+                display: grid;
+                gap: 10px;
+                min-height: 118px;
+              }
+
+              .step-title {
+                display: flex;
+                flex-wrap: wrap;
+                align-items: center;
+                gap: 8px;
+              }
+
+              .step-title strong {
+                font-size: 13px;
+              }
+
+              .step-main {
+                color: #273449;
+                font-size: 13px;
+                line-height: 1.62;
+              }
+
+              .code,
+              .yaml {
+                overflow: auto;
+                border: 1px solid rgba(15, 23, 42, 0.08);
+                border-radius: 12px;
+                background: #f7f9fc;
+                padding: 10px;
+                font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+                white-space: pre-wrap;
+              }
+
+              .tabs {
+                display: flex;
+                flex-wrap: wrap;
+                gap: 8px;
+                border-bottom: 1px solid var(--border);
+                padding-bottom: 12px;
+              }
+
+              .tab {
+                color: #475467;
+                cursor: pointer;
+              }
+
+              .tab[aria-selected="true"] {
+                border-color: color-mix(in oklab, var(--accent), white 55%);
+                background: color-mix(in oklab, var(--accent), white 92%);
+                color: #1748b8;
+              }
+
+              .tab-panel {
+                display: grid;
+                gap: 12px;
+                padding-top: 14px;
+              }
+
+              .tab-card {
+                display: grid;
+                gap: 10px;
+              }
+
+              .stream-frame {
+                display: grid;
+                gap: 10px;
+              }
+
+              .stream-line {
+                min-height: 44px;
+                border: 1px dashed color-mix(in oklab, var(--accent), white 62%);
+                border-radius: 13px;
+                background: linear-gradient(
+                  90deg,
+                  rgba(37, 99, 235, 0.04),
+                  rgba(37, 99, 235, 0.12),
+                  rgba(37, 99, 235, 0.04)
+                );
+                animation: shimmer 2.6s linear infinite;
+              }
+
+              .error {
+                border: 1px solid color-mix(in oklab, var(--danger), white 58%);
+                border-radius: 13px;
+                background: color-mix(in oklab, var(--danger), white 94%);
+                color: #9a4312;
+                padding: 10px;
+                font-size: 12px;
+                line-height: 1.48;
+              }
+
+              .diff {
+                display: grid;
+                gap: 8px;
+              }
+
+              .diff-line {
+                display: grid;
+                grid-template-columns: 18px minmax(0, 1fr);
+                gap: 8px;
+                border-radius: 11px;
+                padding: 7px 9px;
+              }
+
+              .diff-line.same {
+                background: #f7f9fc;
+              }
+
+              .diff-line.add {
+                background: color-mix(in oklab, var(--good), white 92%);
+              }
+
+              .diff-line.del {
+                background: color-mix(in oklab, var(--danger), white 92%);
+              }
+
+              .empty-state {
+                display: grid;
+                place-items: center;
+                min-height: 180px;
+                border: 1px dashed color-mix(in oklab, var(--accent), white 60%);
+                border-radius: 16px;
+                color: var(--subtle);
+                animation: breathe 2.8s ease-in-out infinite;
+              }
+
+              @keyframes shimmer {
+                0% {
+                  background-position: -180px 0;
+                }
+                100% {
+                  background-position: 180px 0;
+                }
+              }
+
+              @keyframes breathe {
+                0%,
+                100% {
+                  opacity: 0.72;
+                  transform: translateY(0);
+                }
+                50% {
+                  opacity: 1;
+                  transform: translateY(-1px);
+                }
+              }
+
+              @media (max-width: 680px) {
+                .detail,
+                .model-detail {
+                  min-height: 0;
+                }
+
+                .detail-head {
+                  grid-template-columns: 1fr;
+                }
+
+                .pill-row {
+                  justify-content: flex-start;
+                }
+
+                .model-detail {
+                  grid-template-columns: 88px minmax(0, 1fr);
+                  gap: 10px;
+                }
+
+                .step-chip {
+                  width: 78px;
+                  padding-inline: 8px;
+                }
+
+                .step-chip .step-meta {
+                  display: none;
+                }
+              }
+            </style>
+            <section class="detail">
+              <div class="detail-head">
+                <div class="title">
+                  <strong id="title"></strong>
+                  <span id="meta" class="small"></span>
+                </div>
+                <div id="badges" class="pill-row"></div>
+              </div>
+              <div id="body" class="detail-body"></div>
+            </section>
+          </template>
+        </x-detail-surface>
+      </div>
+    </main>
+
+    <script>
+      const hydrateLucide = (root = document) => {
+        if (!window.lucide?.createIcons || !window.lucide.icons) return;
+        window.lucide.createIcons({
+          root,
+          icons: window.lucide.icons,
+          attrs: { width: 15, height: 15, "stroke-width": 1.8 }
+        });
+      };
+
+      const icon = (name) => `<i data-lucide="${name}" class="icon-svg" aria-hidden="true"></i>`;
+
+      const yamlNew = `model: gpt-5.1
+thinking: true
+maxToken: 4096
+effect: high
+systemPrompt:
+  - keep the runtime facts objective
+  - show only changed controls in the row
+  - keep full prompt content in detail`;
+
+      const yamlOld = `model: gpt-5.1
+thinking: false
+maxToken: 2048
+effect: default
+systemPrompt:
+  - keep the runtime facts objective
+  - compact UI before long sessions`;
+
+      const detailModels = {
+        model: {
+          title: "Model run detail",
+          meta: "gpt-5.1 · 18.4s · input to current streaming text",
+          badges: [
+            ["route", "detail scroll"],
+            ["panel-right", "list stable"],
+            ["radio", "streaming"]
+          ],
+          kind: "model"
+        },
+        compact: {
+          title: "Compact detail",
+          meta: "New Context is focused by default; Old Context remains one tab away.",
+          badges: [
+            ["shredder", "compact"],
+            ["sparkles", "streaming"],
+            ["triangle-alert", "error-visible"]
+          ],
+          kind: "compact"
+        },
+        config: {
+          title: "Config detail",
+          meta: "Diff-first YAML view for next-call configuration changes.",
+          badges: [
+            ["diff", "yaml diff"],
+            ["settings-2", "new/old"],
+            ["check", "applied"]
+          ],
+          kind: "config"
+        },
+        error: {
+          title: "Model run detail",
+          meta: "Error state is shown as the latest step, not as a separate record kind.",
+          badges: [
+            ["triangle-alert", "error"],
+            ["wrench", "tool"],
+            ["panel-right", "detail"]
+          ],
+          kind: "error"
+        }
+      };
+
+      customElements.define(
+        "x-detail-surface",
+        class extends HTMLElement {
+          connectedCallback() {
+            this.render();
+          }
+
+          static get observedAttributes() {
+            return ["record", "anchor"];
+          }
+
+          attributeChangedCallback() {
+            this.render();
+          }
+
+          render() {
+            if (!this.shadowRoot) return;
+            const model = detailModels[this.getAttribute("record") ?? "model"] ?? detailModels.model;
+            this.shadowRoot.getElementById("title").textContent = model.title;
+            this.shadowRoot.getElementById("meta").textContent = `${model.meta} · anchor=${this.getAttribute("anchor") ?? "latest"}`;
+            this.shadowRoot.getElementById("badges").innerHTML = model.badges
+              .map(([iconName, label]) => `<span class="pill" title="${label}">${icon(iconName)}${label}</span>`)
+              .join("");
+            this.shadowRoot.getElementById("body").innerHTML = this.renderBody(model.kind);
+            this.bindTabs();
+            hydrateLucide(this.shadowRoot);
+          }
+
+          renderBody(kind) {
+            if (kind === "compact") return this.renderCompact();
+            if (kind === "config") return this.renderConfig();
+            return this.renderModel(kind === "error");
+          }
+
+          renderModel(error) {
+            const finalStep = error
+              ? {
+                  chip: "error",
+                  icon: "circle-x",
+                  meta: "7.0s",
+                  title: "Tool failed",
+                  body: "The detail keeps the input, thinking, and tool context visible before the error, so the operator can inspect the failure without the row expanding.",
+                  code: "status: error\\ntool: workspace.apply_patch\\nreason: invalid patch context",
+                  className: ""
+                }
+              : {
+                  chip: "text",
+                  icon: "message-square-text",
+                  meta: "now",
+                  title: "Streaming assistant text",
+                  body: "The latest station can still be pending. The left rail chip stays sticky while the right pane streams the full content.",
+                  code: "partialText: Updating the record projection and detail shell...\\nstream: open",
+                  className: "pending"
+                };
+            const steps = [
+              {
+                chip: "input",
+                icon: "user-round",
+                meta: "0.0s",
+                title: "User message input",
+                body: "Input is the first station. It replaces the old generic start chip and only shows real user-message parts, excluding tool-call results merged back to their source tools.",
+                code: "parts: user.text + user.image\\ntoolCallResult: excluded from input chip",
+                className: ""
+              },
+              {
+                chip: "thinking",
+                icon: "brain",
+                meta: "11.8s",
+                title: "Reasoning step",
+                body: "Thinking duration is readable as a step and as part of the list summary. Long reasoning stays in detail, not in the record row.",
+                code: "durationMs: 11840\\nsourceRefs: message_part.assistant.thinking[*]",
+                className: ""
+              },
+              {
+                chip: "tool",
+                icon: "wrench",
+                meta: "2 calls",
+                title: "Tool calls and merged results",
+                body: "Tool calls and tool results are merged into the source tool step. Running tool arguments remain visible before completion.",
+                code: "toolCalls: 2\\nresultsMerged: true\\nrunningArgsVisible: true",
+                className: ""
+              },
+              finalStep
+            ];
+            const rail = steps
+              .map(
+                (step) => `
+                  <div class="step-chip ${step.className}" title="${step.title}: ${step.meta}">
+                    <strong>${icon(step.icon)}${step.chip}</strong>
+                    <span class="step-meta">${step.meta}</span>
+                  </div>`
+              )
+              .join("");
+            const content = steps
+              .map(
+                (step) => `
+                  <article class="step-block">
+                    <div class="step-title">
+                      <span class="pill">${icon(step.icon)}${step.chip}</span>
+                      <strong>${step.title}</strong>
+                      <span class="step-meta">${step.meta}</span>
+                    </div>
+                    <div class="step-main">${step.body}</div>
+                    <pre class="code">${step.code}</pre>
+                  </article>`
+              )
+              .join("");
+            return `<div class="model-detail"><aside class="step-rail">${rail}</aside><div class="step-content">${content}</div></div>`;
+          }
+
+          renderCompact() {
+            return `
+              <div class="tabs" role="tablist" aria-label="Compact detail tabs">
+                <button class="tab" type="button" data-tab="new" aria-selected="true">New Context</button>
+                <button class="tab" type="button" data-tab="old" aria-selected="false">Old Context</button>
+              </div>
+              <div class="tab-panel" data-panel="new">
+                <div class="error">Error stays at the beginning of the tab content when it exists. It does not replace the streamed context that already arrived.</div>
+                <article class="tab-card">
+                  <strong>New Context · streaming</strong>
+                  <div class="stream-frame">
+                    <div class="stream-line"></div>
+                    <pre class="code">- record terminology is now durable
+- list rows stay bounded
+- detail reconstructs full content from source refs</pre>
+                    <div class="stream-line" style="min-height: 70px;"></div>
+                  </div>
+                </article>
+                <article class="tab-card">
+                  <strong>Empty state variant</strong>
+                  <div class="empty-state">waiting for first compact context chunk</div>
+                </article>
+              </div>
+              <div class="tab-panel" data-panel="old" hidden>
+                <article class="tab-card">
+                  <strong>Old Context</strong>
+                  <pre class="code">Previous context remains inspectable here.
+Long context lives in the detail tab,
+not inside the paginated list row.</pre>
+                </article>
+              </div>`;
+          }
+
+          renderConfig() {
+            return `
+              <div class="tabs" role="tablist" aria-label="Config detail tabs">
+                <button class="tab" type="button" data-tab="diff" aria-selected="true">Diff Config</button>
+                <button class="tab" type="button" data-tab="new" aria-selected="false">New Config</button>
+                <button class="tab" type="button" data-tab="old" aria-selected="false">Old Config</button>
+              </div>
+              <div class="tab-panel" data-panel="diff">
+                <article class="yaml-card">
+                  <strong>YAML diff</strong>
+                  <div class="diff yaml">
+                    <div class="diff-line same"><span> </span><span>model: gpt-5.1</span></div>
+                    <div class="diff-line del"><span>-</span><span>thinking: false</span></div>
+                    <div class="diff-line add"><span>+</span><span>thinking: true</span></div>
+                    <div class="diff-line del"><span>-</span><span>maxToken: 2048</span></div>
+                    <div class="diff-line add"><span>+</span><span>maxToken: 4096</span></div>
+                    <div class="diff-line del"><span>-</span><span>effect: default</span></div>
+                    <div class="diff-line add"><span>+</span><span>effect: high</span></div>
+                    <div class="diff-line same"><span> </span><span>systemPrompt:</span></div>
+                    <div class="diff-line add"><span>+</span><span>  - show only changed controls in the row</span></div>
+                    <div class="diff-line add"><span>+</span><span>  - keep full prompt content in detail</span></div>
+                  </div>
+                </article>
+              </div>
+              <div class="tab-panel" data-panel="new" hidden>
+                <article class="yaml-card">
+                  <strong>New Config</strong>
+                  <pre class="yaml">${yamlNew}</pre>
+                </article>
+              </div>
+              <div class="tab-panel" data-panel="old" hidden>
+                <article class="yaml-card">
+                  <strong>Old Config</strong>
+                  <pre class="yaml">${yamlOld}</pre>
+                </article>
+              </div>`;
+          }
+
+          bindTabs() {
+            const tabs = [...this.shadowRoot.querySelectorAll(".tab")];
+            tabs.forEach((tab) => {
+              tab.addEventListener("click", () => {
+                const next = tab.dataset.tab;
+                tabs.forEach((item) => item.setAttribute("aria-selected", String(item === tab)));
+                this.shadowRoot.querySelectorAll("[data-panel]").forEach((panel) => {
+                  panel.hidden = panel.dataset.panel !== next;
+                });
+              });
+            });
+          }
+        }
+      );
+
+      const detailSurface = document.querySelector("x-detail-surface");
+      document.querySelectorAll("[data-record]").forEach((button) => {
+        button.addEventListener("click", () => {
+          document.querySelectorAll("[data-record]").forEach((item) => item.setAttribute("aria-selected", "false"));
+          button.setAttribute("aria-selected", "true");
+          detailSurface.setAttribute("record", button.dataset.record);
+        });
+      });
+
+      const anchors = {
+        latest: ["Latest anchor", "Latest page follows new records and keeps the selected detail mounted."],
+        fixed: ["Fixed page window", "Historical page membership stays stable while newer records arrive elsewhere."],
+        new: ["New records available", "New records are visible as objective state, not silent scroll movement."]
+      };
+      document.querySelectorAll("[data-anchor]").forEach((button) => {
+        button.addEventListener("click", () => {
+          document.querySelectorAll("[data-anchor]").forEach((item) => item.setAttribute("aria-selected", "false"));
+          button.setAttribute("aria-selected", "true");
+          const [title, text] = anchors[button.dataset.anchor];
+          document.getElementById("anchorTitle").textContent = title;
+          document.getElementById("anchorText").textContent = text;
+          detailSurface.setAttribute("anchor", button.dataset.anchor);
+        });
+      });
+      hydrateLucide();
+      requestAnimationFrame(() => hydrateLucide(detailSurface.shadowRoot));
+    </script>
+  </body>
+</html>
