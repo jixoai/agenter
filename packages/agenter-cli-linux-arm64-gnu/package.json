@@ -1,6 +1,6 @@
 {
   "name": "@jixoai/cli-linux-arm64-gnu",
-  "version": "0.0.12",
+  "version": "0.0.13",
   "description": "Prebuilt Agenter CLI for linux arm64 glibc",
   "license": "MIT",
   "repository": {

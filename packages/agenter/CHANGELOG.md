@@ -1,5 +1,11 @@
 # agenter
 
+## 0.0.13
+
+### Patch Changes
+
+- Stabilize release verification against npm propagation lag and rerun scope drift so native CLI publishes can complete and reach the Homebrew projection step.
+
 ## 0.0.12
 
 ### Patch Changes

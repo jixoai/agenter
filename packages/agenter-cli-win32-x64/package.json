@@ -1,6 +1,6 @@
 {
   "name": "@jixoai/cli-win32-x64",
-  "version": "0.0.12",
+  "version": "0.0.13",
   "description": "Prebuilt Agenter CLI for win32 x64",
   "license": "MIT",
   "repository": {

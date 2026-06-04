@@ -1,6 +1,6 @@
 {
   "name": "@jixoai/cli-darwin-arm64",
-  "version": "0.0.12",
+  "version": "0.0.13",
   "description": "Prebuilt Agenter CLI for darwin arm64",
   "license": "MIT",
   "repository": {
