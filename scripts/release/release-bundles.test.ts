@@ -72,6 +72,7 @@ describe("Feature: release bundle contract", () => {
 
     expect(specs).toEqual(createReleaseBundlePackageSpecs());
     expect(specs.map((spec) => spec.bundlePackageDir)).toEqual([
+      "bundle/agenter",
       "bundle/agenter-app-shell",
       "bundle/agenter-app-studio",
       "bundle/@jixo/ghostty-native",
@@ -90,13 +91,14 @@ describe("Feature: release bundle contract", () => {
       "bundle/@jixo/ghostty-native-win32-arm64-msvc",
       "bundle/@jixo/ghostty-native-win32-x64-msvc",
       "bundle/@jixo/ghostty-native",
+      "bundle/agenter",
       "bundle/agenter-app-shell",
       "bundle/agenter-app-studio",
     ]);
     expect(releasePackagePublishOrder).toEqual(releasePublishOrder);
     expect(releasePackagePublishOrder).toContain("packages/agenter-cli-darwin-arm64");
-    expect(releasePackagePublishOrder).toContain("packages/agenter");
-    expect(releasePackagePublishOrder).not.toContain("bundle/agenter");
+    expect(releasePackagePublishOrder).toContain("bundle/agenter");
+    expect(releasePackagePublishOrder).not.toContain("packages/agenter");
   });
 
   test("Scenario: Given a maintainer wants local release validation When host-only smoke is selected Then only the current host platform bundle is staged under a separate smoke root", () => {
@@ -113,6 +115,7 @@ describe("Feature: release bundle contract", () => {
       "bun run scripts/release/build-bundles.ts --host-only-smoke",
     );
     expect(bundleDirs).toEqual([
+      "bundle-host-smoke/agenter",
       "bundle-host-smoke/agenter-app-shell",
       "bundle-host-smoke/agenter-app-studio",
       "bundle-host-smoke/@jixo/ghostty-native",
@@ -140,14 +143,15 @@ describe("Feature: release bundle contract", () => {
     expect(buildScript).not.toContain('"@agenter/auth-service", "build:native"');
   });
 
-  test("Scenario: Given agenter shifted to wrapper-plus-platform binaries When inspecting release metadata Then no JS bundle pretends to be the public CLI runtime", () => {
+  test("Scenario: Given agenter shifted to wrapper-plus-platform binaries When inspecting release metadata Then the public npm wrapper is published from an explicit bundle projection", () => {
     const manifest = readRepoFile("scripts/release/release-manifest.ts");
     const packageJson = JSON.parse(readRepoFile("package.json")) as {
       scripts?: Record<string, string>;
     };
 
-    expect(createBundlePackageSpecs().find((spec) => spec.bundlePackageDir === "bundle/agenter")).toBeUndefined();
-    expect(releasePackagePublishOrder).toContain("packages/agenter");
+    expect(createBundlePackageSpecs().find((spec) => spec.bundlePackageDir === "bundle/agenter")).toBeDefined();
+    expect(releasePackagePublishOrder).toContain("bundle/agenter");
+    expect(releasePackagePublishOrder).not.toContain("packages/agenter");
     expect(releasePackagePublishOrder).toContain("packages/agenter-cli-win32-x64");
     expect(packageJson.scripts?.["release:build-native-cli-archives"]).toBe(
       "bun run scripts/release/build-agenter-release-archives.ts --input-dir native-artifacts --output-dir release-archives/agenter-cli",
@@ -162,6 +166,7 @@ describe("Feature: release bundle contract", () => {
       "bun run release:build-bundles && bun run release:prepare-native-cli-packages",
     );
     expect(manifest).not.toContain('"@duckdb/node-api"');
+    expect(manifest).toContain('bundlePackageDir: "bundle/agenter"');
   });
 
   test("Scenario: Given the public agenter package is wrapper-first When inspecting wrapper and launcher sources Then reflect metadata stays with the internal launcher path", () => {
@@ -186,6 +191,26 @@ describe("Feature: release bundle contract", () => {
     expect(wrapperSource).toContain("resolvePackageBinaryPath");
     expect(installSource).toContain("placeBinary");
     expect(cliPkg.dependencies?.["reflect-metadata"]).toBe("^0.2.2");
+  });
+
+  test("Scenario: Given agenter publishes through the release bundle projection When inspecting release metadata Then workspace protocols are resolved before npm sees the wrapper package", () => {
+    const specs = createBundlePackageSpecs();
+    const agenterSpec = specs.find((spec) => spec.bundlePackageDir === "bundle/agenter");
+    const buildScript = readRepoFile("scripts/release/build-bundles.ts");
+
+    expect(agenterSpec?.sourcePackageDir).toBe("packages/agenter");
+    expect(agenterSpec?.scripts).toEqual({ postinstall: "node ./install.cjs" });
+    expect(agenterSpec?.optionalDependencies?.["@jixoai/cli-darwin-arm64"]).toBe("workspace:*");
+    expect(agenterSpec?.assets?.map((asset) => asset.to)).toEqual([
+      "CHANGELOG.md",
+      "SPEC.md",
+      "bin",
+      "cli-wrapper.cjs",
+      "install.cjs",
+      "native-platform.cjs",
+    ]);
+    expect(buildScript).toContain("scripts: input.scripts");
+    expect(buildScript).toContain("releaseBundleManifestFiles.filter");
   });
 
   test("Scenario: Given npm daemon start forks a background child When inspecting the CLI source Then it reuses the current executable entrypoint", () => {
@@ -404,7 +429,9 @@ describe("Feature: release bundle contract", () => {
     expect(preflightScript).toContain("release:build-bundles");
     expect(preflightScript).not.toContain("audit-app-platform-vocabulary");
     expect(verifyScript).toContain("releasePublishOrder");
-    expect(verifyScript).toContain("npm");
+    expect(verifyScript).toContain('"npm"');
+    expect(verifyScript).toContain('"--json"');
+    expect(verifyScript).not.toContain('"version",');
     expect(verifyScript).toContain("peerDependencies");
     expect(verifyScript).toContain("optionalDependencies");
   });

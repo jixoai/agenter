@@ -13,6 +13,7 @@ export interface ReleasePackageJson {
   dependencies?: Record<string, string>;
   optionalDependencies?: Record<string, string>;
   peerDependencies?: Record<string, string>;
+  scripts?: Record<string, string>;
   engines?: Record<string, string>;
   publishConfig?: Record<string, string>;
   os?: string[];
@@ -41,6 +42,7 @@ export interface ReleaseBundlePackageSpec {
   dependencies?: Record<string, string>;
   optionalDependencies?: Record<string, string>;
   peerDependencies?: Record<string, string>;
+  scripts?: Record<string, string>;
   external?: string[];
   assets?: ReleaseBundleAssetSpec[];
   bundledAssetsRoot?: boolean;
@@ -56,6 +58,11 @@ export const releaseRepositoryUrl = "git+https://github.com/jixoai/agenter.git";
 export const opentuiNativePackageVersion = "0.3.0";
 
 export const releaseBundleManifestFiles = [
+  "CHANGELOG.md",
+  "SPEC.md",
+  "cli-wrapper.cjs",
+  "install.cjs",
+  "native-platform.cjs",
   "bin",
   "dist",
   "assets",
@@ -93,6 +100,23 @@ export const createReleaseBundlePackageSpecs = (): ReleaseBundlePackageSpec[] =>
   }));
 
   return [
+    {
+      sourcePackageDir: "packages/agenter",
+      bundlePackageDir: "bundle/agenter",
+      // packages/agenter stays as workspace truth. The publish truth that npm
+      // sees is this generated bundle projection, so workspace:* never leaks
+      // into the public wrapper manifest.
+      scripts: { postinstall: "node ./install.cjs" },
+      optionalDependencies: Object.fromEntries(agenterCliTargets.map((target) => [target.packageName, "workspace:*"])),
+      assets: [
+        { from: "packages/agenter/CHANGELOG.md", to: "CHANGELOG.md" },
+        { from: "packages/agenter/SPEC.md", to: "SPEC.md" },
+        { from: "packages/agenter/bin", to: "bin" },
+        { from: "packages/agenter/cli-wrapper.cjs", to: "cli-wrapper.cjs" },
+        { from: "packages/agenter/install.cjs", to: "install.cjs" },
+        { from: "packages/agenter/native-platform.cjs", to: "native-platform.cjs" },
+      ],
+    },
     {
       sourcePackageDir: "apps/shell",
       bundlePackageDir: "bundle/agenter-app-shell",
@@ -145,6 +169,7 @@ export const releaseBundlePublishOrder = [
   "bundle/@jixo/ghostty-native-win32-arm64-msvc",
   "bundle/@jixo/ghostty-native-win32-x64-msvc",
   "bundle/@jixo/ghostty-native",
+  "bundle/agenter",
   "bundle/agenter-app-shell",
   "bundle/agenter-app-studio",
 ] as const;
@@ -158,7 +183,7 @@ export const releasePublishOrder: readonly string[] = [
   "bundle/@jixo/ghostty-native-win32-x64-msvc",
   "bundle/@jixo/ghostty-native",
   ...agenterCliTargets.map((target) => target.packageDir),
-  "packages/agenter",
+  "bundle/agenter",
   "bundle/agenter-app-shell",
   "bundle/agenter-app-studio",
 ];

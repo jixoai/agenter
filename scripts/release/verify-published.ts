@@ -39,11 +39,6 @@ const runNpmView = async (name: string, version: string): Promise<NpmViewPayload
       "npm",
       "view",
       `${name}@${version}`,
-      "version",
-      "bin",
-      "dependencies",
-      "optionalDependencies",
-      "peerDependencies",
       "--json",
     ],
     stdout: "pipe",
@@ -57,7 +52,8 @@ const runNpmView = async (name: string, version: string): Promise<NpmViewPayload
   if (exitCode !== 0) {
     throw new Error(`npm view failed for ${name}@${version}: ${stderr.trim()}`);
   }
-  return JSON.parse(stdout) as NpmViewPayload;
+  const payload = JSON.parse(stdout) as NpmViewPayload | string;
+  return typeof payload === "string" ? { version: payload } : payload;
 };
 
 const verifyPackage = async (packageDir: string): Promise<void> => {

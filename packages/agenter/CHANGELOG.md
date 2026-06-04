@@ -1,5 +1,11 @@
 # agenter
 
+## 0.0.11
+
+### Patch Changes
+
+- Publish the public `agenter` wrapper from the generated release bundle projection so npm never receives `workspace:*`, and keep the release/archive/native package version truth aligned at `0.0.11`.
+
 ## 0.0.10
 
 ### Patch Changes

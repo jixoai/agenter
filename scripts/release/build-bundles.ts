@@ -172,6 +172,7 @@ const buildBundle = async (input: ReleaseBundlePackageSpec): Promise<void> => {
       ? normalizeWorkspaceDependencies(input.optionalDependencies)
       : undefined,
     peerDependencies: input.peerDependencies ?? sourcePkg.peerDependencies,
+    scripts: input.scripts,
     engines: sourcePkg.engines ?? { bun: ">=1.3.10" },
     os: sourcePkg.os,
     cpu: sourcePkg.cpu,
