@@ -49,6 +49,9 @@ describe("Feature: ghostty-native package boundary", () => {
     expect(buildScript).toContain("https://ziglang.org/download/$ZIG_VERSION/");
     expect(buildScript).toContain('RELEASE_ZIG_ROOT="/tmp/zig-$ZIG_VERSION"');
     expect(buildScript).toContain("ghostty-vt minimal dependency graph");
+    expect(buildScript).toContain('if [[ "$ZIG_EXT" == ".zip" ]]; then');
+    expect(buildScript).toContain("Expand-Archive -LiteralPath");
+    expect(buildScript).toContain('ARCHIVE_PATH_WIN="$(cygpath -w "$ARCHIVE_PATH")"');
     expect(nativeBuild).toContain('root_source_file = b.path(".ghostty-src/src/lib_vt.zig")');
     expect(nativeBuild).toContain('build_options.addOption(bool, "simd", false)');
     expect(nativeBuild).toContain('terminal_options.add(b, ghostty_module)');

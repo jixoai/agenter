@@ -106,7 +106,15 @@ if [[ -z "$ZIG_BIN" ]]; then
       echo "  Bootstrapping Zig $ZIG_VERSION ($ZIG_ARCHIVE$ZIG_EXT)..."
       curl -L "https://ziglang.org/download/$ZIG_VERSION/$ZIG_ARCHIVE$ZIG_EXT" -o "$ARCHIVE_PATH"
       rm -rf "$RELEASE_ZIG_ROOT"
-      tar -xf "$ARCHIVE_PATH" -C /tmp
+      if [[ "$ZIG_EXT" == ".zip" ]]; then
+        # Git Bash tar does not reliably unpack Windows Zig zip archives.
+        ARCHIVE_PATH_WIN="$(cygpath -w "$ARCHIVE_PATH")"
+        TMP_DIR_WIN="$(cygpath -w /tmp)"
+        powershell.exe -NoProfile -Command \
+          "\$ErrorActionPreference = 'Stop'; Expand-Archive -LiteralPath '$ARCHIVE_PATH_WIN' -DestinationPath '$TMP_DIR_WIN' -Force"
+      else
+        tar -xf "$ARCHIVE_PATH" -C /tmp
+      fi
       mv "/tmp/$ZIG_ARCHIVE" "$RELEASE_ZIG_ROOT"
     fi
     ZIG_BIN="$RELEASE_ZIG_BIN"
