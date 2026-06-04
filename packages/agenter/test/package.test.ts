@@ -17,7 +17,9 @@ describe("Feature: agenter publish package", () => {
       engines?: Record<string, string>;
       name?: string;
       optionalDependencies?: Record<string, string>;
+      publishConfig?: Record<string, string>;
       private?: boolean;
+      repository?: { type?: string; url?: string };
       scripts?: Record<string, string>;
     };
     const nativePlatform = require(join(packageRoot, "native-platform.cjs")) as {
@@ -34,6 +36,7 @@ describe("Feature: agenter publish package", () => {
     expect(pkg.name).toBe("agenter");
     expect(pkg.private).toBeUndefined();
     expect(pkg.bin).toEqual({ agenter: "./bin/agenter.exe" });
+    expect(pkg.repository).toEqual({ type: "git", url: "https://github.com/jixoai/agenter" });
     expect(pkg.files).toEqual([
       "CHANGELOG.md",
       "SPEC.md",
@@ -42,6 +45,7 @@ describe("Feature: agenter publish package", () => {
       "install.cjs",
       "native-platform.cjs",
     ]);
+    expect(pkg.publishConfig).toEqual({ access: "public" });
     expect(pkg.optionalDependencies).toEqual(expectedOptionalDependencies);
     expect(pkg.devDependencies?.["@agenter/cli"]).toBe("workspace:*");
     expect(pkg.scripts).toEqual({

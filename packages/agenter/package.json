@@ -2,6 +2,10 @@
   "name": "agenter",
   "version": "0.0.10",
   "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/jixoai/agenter"
+  },
   "files": [
     "CHANGELOG.md",
     "SPEC.md",
@@ -12,6 +16,9 @@
   ],
   "bin": {
     "agenter": "./bin/agenter.exe"
+  },
+  "publishConfig": {
+    "access": "public"
   },
   "scripts": {
     "postinstall": "node ./install.cjs",
