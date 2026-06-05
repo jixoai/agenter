@@ -34,11 +34,6 @@ const percent = (value: number): string => `${Math.round(value * 100)}%`;
 
 const normalizeHue = (value: number): number => ((value % 360) + 360) % 360;
 
-const formatCssNumber = (value: number): string => Number(value.toFixed(1)).toString();
-
-const hslColor = (hue: number, saturation: number, lightness: number): string =>
-  `hsl(${formatCssNumber(normalizeHue(hue))}, ${formatCssNumber(Math.max(0, Math.min(100, saturation)))}%, ${formatCssNumber(Math.max(0, Math.min(100, lightness)))}%)`;
-
 const channelToHex = (value: number): string => Math.round(Math.max(0, Math.min(255, value))).toString(16).padStart(2, "0");
 
 const hslToHex = (hue: number, saturation: number, lightness: number): string => {
@@ -62,6 +57,8 @@ const hslToHex = (hue: number, saturation: number, lightness: number): string =>
   const match = l - chroma / 2;
   return `#${channelToHex((r1 + match) * 255)}${channelToHex((g1 + match) * 255)}${channelToHex((b1 + match) * 255)}`;
 };
+
+const hslColor = (hue: number, saturation: number, lightness: number): string => hslToHex(hue, saturation, lightness);
 
 const labelFromValue = (value: string, fallback: string): string => {
   const trimmed = value.trim();

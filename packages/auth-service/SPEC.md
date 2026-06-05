@@ -59,7 +59,7 @@
   - `room` 与 future typed owner: uploaded asset -> deterministic renderer
 - `profile` 图形 seed 由 resolved identifier 决定
 - `avatar` 图形 seed 由 avatar principal / address 决定；`classify` 只决定中心 glyph，不改变 canonical identity
-- avatar deterministic renderer 的背景色场只由 avatar principal seed 决定，并以 canonical SVG/HSL color stops 输出；调用方不得再按 nickname、label 或页面上下文重算第二套颜色法则
+- avatar deterministic renderer 的背景色场只由 avatar principal seed 决定，并以 HSL-derived、resvg-compatible sRGB SVG color stops 输出；调用方不得再按 nickname、label 或页面上下文重算第二套颜色法则
 - avatar deterministic renderer 的中心 glyph 必须只由 canonical `classify` 决定，并复用 Lucide SVG asset；调用方不得手写第二套 classify glyph switch 或页面私有 avatar renderer
 - `room` 与 future typed owner 图形 seed 由 owner-specific stable icon seed 决定
 - deterministic renderer 的 canonical source 是 SVG；PNG/JPEG 等 raster variant 必须由服务端生成，其中 SVG -> raster 的默认运行时固定为打包安装即可用的 `@resvg/resvg-js`
