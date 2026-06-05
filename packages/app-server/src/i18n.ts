@@ -2,7 +2,7 @@ import { copyFile, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promi
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { resolveBundledAssetPath } from "@agenter/app-runtime";
+import { resolveBundledAssetPath } from "@agenter/app-runtime/bundled-assets";
 import {
   buildPromptDocsFromDir,
   PROMPT_DOC_KEYS,

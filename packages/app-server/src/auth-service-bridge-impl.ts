@@ -1,4 +1,4 @@
-import { resolveBundledAssetPath } from "@agenter/app-runtime";
+import { resolveBundledAssetPath } from "@agenter/app-runtime/bundled-assets";
 import {
   type AuthChallengeDescriptor,
   type AuthDescriptor,

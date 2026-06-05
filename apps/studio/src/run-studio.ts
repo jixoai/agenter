@@ -7,7 +7,14 @@ import { parseStudioArgs } from "./argv";
 import { resolveStudioStaticRoot } from "./static-root";
 import { startStudioHost, type StudioHostHandle } from "./studio-host";
 
-const BUN_BIN = Bun.which("bun") ?? process.execPath;
+interface BunRuntimeGlobal {
+  which(command: string): string | null;
+}
+
+const resolveBunBin = (): string => {
+  const runtime = globalThis as typeof globalThis & { Bun?: BunRuntimeGlobal };
+  return runtime.Bun?.which("bun") ?? "bun";
+};
 const DEFAULT_WEB_CHAT_APP_VIEW_PORT = Number(process.env.WEB_CHAT_VIEW_APP_VIEW_PORT?.trim() || "4292");
 
 const waitForSignal = async (cleanup?: () => Promise<void> | void): Promise<void> => {
@@ -72,6 +79,15 @@ const isPortAvailable = async (host: string, port: number): Promise<boolean> => 
   });
 };
 
+export const assertStudioDevWebPortAvailable = async (input: { webHost: string; webPort: number }): Promise<void> => {
+  if (await isPortAvailable(input.webHost, input.webPort)) {
+    return;
+  }
+  throw new Error(
+    `studio dev web port ${input.webHost}:${input.webPort} is already in use. Stop the existing Studio dev server or pass --web-port to use a different port.`,
+  );
+};
+
 const pickAvailablePort = async (host: string, preferred: number): Promise<number> => {
   for (let port = preferred; port < preferred + 100; port += 1) {
     if (await isPortAvailable(host, port)) {
@@ -94,8 +110,9 @@ const startStudioDevServer = async (input: {
   daemonPort: number;
   appViewUrl: string;
 }): Promise<Bun.Subprocess<"ignore", "inherit", "inherit">> => {
+  await assertStudioDevWebPortAvailable(input);
   const proc = Bun.spawn({
-    cmd: [BUN_BIN, "run", "dev", "--host", input.webHost, "--port", String(input.webPort)],
+    cmd: [resolveBunBin(), "run", "dev", "--host", input.webHost, "--port", String(input.webPort), "--strictPort"],
     cwd: fileURLToPath(new URL("..", import.meta.url)),
     stdin: "ignore",
     stdout: "inherit",
@@ -119,7 +136,7 @@ const startWebChatAppViewDevServer = async (input: {
   const port = await pickAvailablePort(input.webHost, DEFAULT_WEB_CHAT_APP_VIEW_PORT);
   const url = `http://${input.webHost}:${port}`;
   const proc = Bun.spawn({
-    cmd: [BUN_BIN, "run", "dev", "--host", input.webHost, "--port", String(port), "--strictPort"],
+    cmd: [resolveBunBin(), "run", "dev", "--host", input.webHost, "--port", String(port), "--strictPort"],
     cwd: resolveWebChatAppViewExampleRoot(),
     stdin: "ignore",
     stdout: "inherit",

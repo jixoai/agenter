@@ -1,5 +1,5 @@
 import type { AuthServiceBridgeOptions } from "@agenter/app-server";
-import { resolveBundledAssetPath } from "@agenter/app-runtime";
+import { resolveBundledAssetPath } from "@agenter/app-runtime/bundled-assets";
 import type { AuthServiceHandle } from "@agenter/auth-service";
 import { spawn as spawnChildProcess } from "node:child_process";
 import { closeSync, mkdirSync, openSync, readFileSync } from "node:fs";

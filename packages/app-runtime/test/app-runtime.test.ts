@@ -8,7 +8,6 @@ import {
   APP_HOSTING_ENABLED_SCORES,
   APP_HOSTING_SCORE_KEY,
   APP_HOSTING_USER_DISABLED_REASON,
-  BUNDLED_ASSETS_ROOT_ENV,
   appAssistantEnsureInputSchema,
   appAttentionCommitInputSchema,
   appAttentionProjectionSchema,
@@ -19,9 +18,12 @@ import {
   buildAppBindingMetadata,
   createLocalFirstAppSourcePolicy,
   matchesAppBindingMetadata,
+} from "../src";
+import {
+  BUNDLED_ASSETS_ROOT_ENV,
   resolveBundledAssetPath,
   resolveBundledAssetsRoot,
-} from "../src";
+} from "@agenter/app-runtime/bundled-assets";
 
 const repoRoot = join(import.meta.dir, "..", "..", "..");
 const tempDirs: string[] = [];
@@ -110,6 +112,17 @@ describe("Feature: app runtime contracts", () => {
 
     expect(matchesAppBindingMetadata(metadata, { appId: "shell", resourceKey: "shell-1" })).toBe(true);
     expect(matchesAppBindingMetadata(metadata, { appId: "shell", resourceKey: "shell-2" })).toBe(false);
+  });
+
+  test("Scenario: Given browser clients import the runtime root When inspecting exports Then Node-only asset resolution stays on an explicit subpath", () => {
+    const indexSource = readRepoFile("packages/app-runtime/src/index.ts");
+    const packageJson = JSON.parse(readRepoFile("packages/app-runtime/package.json")) as {
+      exports?: Record<string, string>;
+    };
+
+    expect(indexSource).not.toContain("./bundled-assets");
+    expect(packageJson.exports?.["."]).toBe("./src/index.ts");
+    expect(packageJson.exports?.["./bundled-assets"]).toBe("./src/bundled-assets.ts");
   });
 
   test("Scenario: Given hosting attention helpers When managed mode toggles Then the fixed hosting score and user-disabled reason stay durable runtime law", () => {
