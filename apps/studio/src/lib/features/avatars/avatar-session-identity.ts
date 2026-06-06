@@ -9,7 +9,10 @@ export interface AvatarSessionIdentityResolverInput {
   resolveAvatarIconUrl: (principalId: string) => string | null;
   resolveAvatarCatalogEntry?: (
     avatarNickname: string,
-  ) => Pick<GlobalAvatarCatalogEntry, "avatarPrincipalId" | "iconUrl"> | null;
+  ) => Pick<GlobalAvatarCatalogEntry, "avatarPrincipalId" | "displayName" | "iconUrl" | "nickname"> | null;
+  resolveAvatarCatalogEntryByPrincipalId?: (
+    principalId: string,
+  ) => Pick<GlobalAvatarCatalogEntry, "avatarPrincipalId" | "displayName" | "iconUrl" | "nickname"> | null;
 }
 
 export const resolveAvatarSessionIdentity = (

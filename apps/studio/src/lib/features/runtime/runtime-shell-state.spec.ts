@@ -271,7 +271,9 @@ describe("Feature: Avatar submenu navigation order", () => {
         avatarNickname === "backend"
           ? {
               avatarPrincipalId: "avatar-backend",
+              displayName: null,
               iconUrl: "https://profiles.test/media/avatars/avatar-backend/icon",
+              nickname: "backend",
             }
           : null,
     });
@@ -310,7 +312,9 @@ describe("Feature: Avatar submenu navigation order", () => {
         avatarNickname === "backend"
           ? {
               avatarPrincipalId: "canonical-backend",
+              displayName: null,
               iconUrl: "https://profiles.test/media/avatars/canonical-backend/icon",
+              nickname: "backend",
             }
           : null,
     });

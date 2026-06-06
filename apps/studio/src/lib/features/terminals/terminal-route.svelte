@@ -79,10 +79,18 @@
 	const isAuthenticated = $derived(Boolean(controller.authSession));
 	const authRequired = $derived(authReady && !isAuthenticated);
 
+	const avatarIdentity = $derived({
+		resolveAvatarIconUrl: (principalId: string) => controller.runtimeStore.avatarIconUrl(principalId),
+		resolveAvatarCatalogEntry: (avatarNickname: string) =>
+			controller.runtimeState.globalAvatarCatalog.data.find((entry) => entry.nickname === avatarNickname) ?? null,
+		resolveAvatarCatalogEntryByPrincipalId: (principalId: string) =>
+			controller.runtimeState.globalAvatarCatalog.data.find((entry) => entry.avatarPrincipalId === principalId) ?? null,
+	});
 	const actorDirectory = $derived(
 		buildActorDirectory({
 			sessions: controller.runtimeState.sessions,
 			authActors: controller.authActors,
+			avatarIdentity,
 			profileIconUrl: (reference) => controller.runtimeStore.profileIconUrl(reference ?? ''),
 			sessionIconUrl: (sessionId) => (sessionId ? controller.runtimeStore.sessionIconUrl(sessionId) : null),
 		}),

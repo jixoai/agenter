@@ -11,6 +11,13 @@ export interface ActorDirectoryEntry {
   sessionId?: string;
 }
 
+export interface ActorPresentationResolverInput {
+  actorDirectory: ReadonlyMap<string, ActorDirectoryEntry>;
+  avatarIdentity: AvatarSessionIdentityResolverInput;
+  fallbackLabel?: string;
+  profileIconUrl: (reference: string | null | undefined) => string | null;
+}
+
 const SYSTEM_ACTOR_LABELS: Record<string, string> = {
   "system:trusted-bootstrap": "Bootstrap admin",
   "system:trusted-terminal-bootstrap": "Bootstrap admin",
@@ -51,9 +58,9 @@ export const resolveActorKind = (actorId: string | null | undefined): ActorDirec
 export const buildActorDirectory = (input: {
   sessions: RuntimeClientState["sessions"];
   authActors: AuthActorCatalogEntry[];
+  avatarIdentity: AvatarSessionIdentityResolverInput;
   profileIconUrl: (reference: string | null | undefined) => string | null;
   sessionIconUrl: (sessionId: string | null | undefined) => string | null;
-  avatarIdentity?: AvatarSessionIdentityResolverInput;
 }): ActorDirectoryEntry[] => {
   const entries: ActorDirectoryEntry[] = [];
   const seen = new Set<string>();
@@ -76,8 +83,8 @@ export const buildActorDirectory = (input: {
     if (session.storageState !== "active") {
       continue;
     }
-    const identity = input.avatarIdentity ? resolveAvatarSessionIdentity(session, input.avatarIdentity) : null;
-    const actorId = identity?.avatarPrincipalId?.trim() || session.avatarPrincipalId?.trim() || `session:${session.id}`;
+    const identity = resolveAvatarSessionIdentity(session, input.avatarIdentity);
+    const actorId = identity.avatarPrincipalId?.trim() || session.avatarPrincipalId?.trim() || `session:${session.id}`;
     const preferredSessionLabel = session.avatar?.trim() || session.name?.trim() || session.id;
     if (seen.has(actorId)) {
       continue;
@@ -88,7 +95,7 @@ export const buildActorDirectory = (input: {
       actorKind: "session",
       label: preferredSessionLabel,
       subtitle: resolveSessionActorSubtitle(session),
-      iconUrl: identity?.iconUrl ?? input.sessionIconUrl(session.id),
+      iconUrl: identity.iconUrl ?? input.sessionIconUrl(session.id),
       sessionId: session.id,
     });
   }
@@ -112,3 +119,36 @@ export const buildActorDirectory = (input: {
 
 export const buildActorDirectoryMap = (entries: ActorDirectoryEntry[]): Map<string, ActorDirectoryEntry> =>
   new Map(entries.map((entry) => [entry.actorId, entry]));
+
+export const resolveActorPresentation = (
+  actorId: string | null | undefined,
+  input: ActorPresentationResolverInput,
+): ActorDirectoryEntry => {
+  const resolvedActorId = actorId?.trim() || input.fallbackLabel?.trim() || "unknown";
+  const directoryActor = input.actorDirectory.get(resolvedActorId);
+  if (directoryActor) {
+    return directoryActor;
+  }
+
+  if (isPrincipalActorId(resolvedActorId)) {
+    const avatar = input.avatarIdentity.resolveAvatarCatalogEntryByPrincipalId?.(resolvedActorId) ?? null;
+    const avatarIconUrl =
+      avatar?.iconUrl ??
+      (avatar?.avatarPrincipalId ? input.avatarIdentity.resolveAvatarIconUrl(avatar.avatarPrincipalId) : null);
+    return {
+      actorId: resolvedActorId,
+      actorKind: "session",
+      label: avatar?.displayName?.trim() || avatar?.nickname?.trim() || input.fallbackLabel || fallbackActorLabel(resolvedActorId),
+      subtitle: avatar ? "Avatar principal" : resolvedActorId,
+      iconUrl: avatarIconUrl ?? input.profileIconUrl(resolvedActorId),
+    };
+  }
+
+  return {
+    actorId: resolvedActorId,
+    actorKind: resolveActorKind(resolvedActorId),
+    label: input.fallbackLabel || fallbackActorLabel(resolvedActorId),
+    subtitle: actorId ?? undefined,
+    iconUrl: !isSystemActorId(resolvedActorId) ? input.profileIconUrl(resolvedActorId) : null,
+  };
+};

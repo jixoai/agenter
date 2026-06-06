@@ -18,7 +18,7 @@
 		isPrincipalActorId,
 		isSystemActorId,
 		isUserFacingActorId,
-		resolveActorKind,
+		resolveActorPresentation,
 		type ActorDirectoryEntry,
 	} from '$lib/features/collaboration/actor-directory';
 	import MessageSystemSurface from './message-system-surface.svelte';
@@ -90,10 +90,18 @@
 	let viewerPreferenceHydrated = $state(false);
 	let routeNotice = $state<WebChatNotice | null>(null);
 
+	const avatarIdentity = $derived({
+		resolveAvatarIconUrl: (principalId: string) => controller.runtimeStore.avatarIconUrl(principalId),
+		resolveAvatarCatalogEntry: (avatarNickname: string) =>
+			controller.runtimeState.globalAvatarCatalog.data.find((entry) => entry.nickname === avatarNickname) ?? null,
+		resolveAvatarCatalogEntryByPrincipalId: (principalId: string) =>
+			controller.runtimeState.globalAvatarCatalog.data.find((entry) => entry.avatarPrincipalId === principalId) ?? null,
+	});
 	const actorDirectory = $derived(
 		buildActorDirectory({
 			sessions: controller.runtimeState.sessions,
 			authActors: controller.authActors,
+			avatarIdentity,
 			profileIconUrl: (reference) => controller.runtimeStore.profileIconUrl(reference ?? ''),
 			sessionIconUrl: (sessionId) => (sessionId ? controller.runtimeStore.sessionIconUrl(sessionId) : null),
 		}),
@@ -150,25 +158,12 @@
 	const isUserFacingRoomActorId = (value: string | null | undefined): value is string => isUserFacingActorId(value);
 
 	const describeActor = (actorId: string | undefined, fallback: string): ActorDirectoryEntry => {
-		if (actorId && actorDirectoryMap.has(actorId)) {
-			const actor = actorDirectoryMap.get(actorId)!;
-			return {
-				...actor,
-				iconUrl:
-					actor.iconUrl ??
-					(actor.actorKind === 'session'
-						? (actor.sessionId ? controller.runtimeStore.sessionIconUrl(actor.sessionId) : null)
-						: controller.runtimeStore.profileIconUrl(actor.actorId)),
-			};
-		}
-		return {
-			actorId: actorId ?? fallback,
-			actorKind: resolveActorKind(actorId ?? fallback),
-			label: fallbackActorLabel(actorId ?? fallback),
-			subtitle: actorId,
-			iconUrl:
-				actorId && !isSystemActorId(actorId) ? controller.runtimeStore.profileIconUrl(actorId) : null,
-		};
+		return resolveActorPresentation(actorId, {
+			actorDirectory: actorDirectoryMap,
+			avatarIdentity,
+			fallbackLabel: fallback,
+			profileIconUrl: (reference) => controller.runtimeStore.profileIconUrl(reference ?? ''),
+		});
 	};
 
 	const sendAsOptions = $derived.by(() => {
@@ -188,29 +183,26 @@
 				accessToken: grant.accessToken ?? '',
 				participantId: grant.participantId,
 				role: grant.role,
-				label:
-					(grant.participantId ? actorDirectoryMap.get(grant.participantId)?.label : undefined) ??
-					grant.label ??
-					fallbackActorLabel(grant.participantId ?? grant.grantId),
+				label: describeActor(grant.participantId, grant.label ?? fallbackActorLabel(grant.participantId ?? grant.grantId)).label,
 			}));
 
-			const roomOption = (() => {
-				if (!room.accessToken) {
-					return null;
-				}
-				if (room.accessRole !== 'readonly' && isUserFacingRoomActorId(room.participantId)) {
-					return {
-						accessToken: room.accessToken,
-						participantId: room.participantId,
-						role: room.accessRole,
-						label: actorDirectoryMap.get(room.participantId)?.label ?? fallbackActorLabel(room.participantId),
-					} satisfies MessageSystemSendAsOption;
-				}
+		const roomOption = (() => {
+			if (!room.accessToken) {
 				return null;
-			})();
+			}
+			if (room.accessRole !== 'readonly' && isUserFacingRoomActorId(room.participantId)) {
+				return {
+					accessToken: room.accessToken,
+					participantId: room.participantId,
+					role: room.accessRole,
+					label: describeActor(room.participantId, fallbackActorLabel(room.participantId)).label,
+				} satisfies MessageSystemSendAsOption;
+			}
+			return null;
+		})();
 
-			return (roomOption ? [roomOption, ...grantOptions] : grantOptions).filter((option) => option.accessToken);
-		});
+		return (roomOption ? [roomOption, ...grantOptions] : grantOptions).filter((option) => option.accessToken);
+	});
 
 	const roomSeatStates = $derived.by(() => {
 		const room = selectedRoomProjection;
@@ -233,7 +225,7 @@
 			mergeSeat({
 				actorId: room.participantId,
 				role: room.accessRole,
-				label: actorDirectoryMap.get(room.participantId)?.label ?? fallbackActorLabel(room.participantId),
+				label: describeActor(room.participantId, fallbackActorLabel(room.participantId)).label,
 				currentAdmin: room.currentAdmin ?? room.accessRole === 'admin',
 				online: false,
 				focused: room.focused,
@@ -249,7 +241,7 @@
 			mergeSeat({
 				actorId: grant.participantId,
 				role: grant.role,
-				label: grant.label,
+				label: describeActor(grant.participantId, grant.label ?? fallbackActorLabel(grant.participantId)).label,
 				currentAdmin: false,
 				online: false,
 				focused: false,
@@ -266,7 +258,7 @@
 			mergeSeat({
 				actorId: state.contactId,
 				role: state.role,
-				label: state.label,
+				label: describeActor(state.contactId, state.label ?? fallbackActorLabel(state.contactId)).label,
 				currentAdmin: state.currentAdmin,
 				online: state.online,
 				focused: state.focused,
@@ -494,7 +486,7 @@
 			accessToken: room.accessToken,
 			role: input.role,
 			participantId,
-			label: actorDirectoryMap.get(input.participantId)?.label,
+			label: describeActor(input.participantId, fallbackActorLabel(input.participantId)).label,
 		});
 		routeNotice = null;
 	};

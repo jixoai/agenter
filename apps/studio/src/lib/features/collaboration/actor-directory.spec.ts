@@ -1,7 +1,12 @@
 import type { SessionEntry } from "@agenter/client-sdk";
 import { describe, expect, test } from 'vitest';
 
-import { buildActorDirectory, buildActorDirectoryMap, fallbackActorLabel } from './actor-directory';
+import {
+	buildActorDirectory,
+	buildActorDirectoryMap,
+	fallbackActorLabel,
+	resolveActorPresentation,
+} from './actor-directory';
 
 const createSessionEntry = (input: {
 	id: string;
@@ -26,11 +31,25 @@ const createSessionEntry = (input: {
 	avatarPrincipalId: input.avatarPrincipalId,
 });
 
+const nullAvatarIdentity = {
+	resolveAvatarIconUrl: () => null,
+};
+
+const backendPrincipalId = "0x775921bde52b52d29ff37b46e742ec4500000000";
+const backendAvatarIconUrl = `https://profiles.test/media/avatars/${backendPrincipalId}/icon`;
+const backendAvatarCatalogEntry = {
+	avatarPrincipalId: backendPrincipalId,
+	displayName: "Backend Avatar",
+	iconUrl: backendAvatarIconUrl,
+	nickname: "backend",
+};
+
 describe('Feature: collaboration actor directory', () => {
 	test('Scenario: Given bootstrap system actors When building the actor directory Then shared UI surfaces resolve the canonical bootstrap label', () => {
 		const directory = buildActorDirectory({
 			sessions: [],
 			authActors: [],
+			avatarIdentity: nullAvatarIdentity,
 			profileIconUrl: () => null,
 			sessionIconUrl: () => null,
 		});
@@ -54,6 +73,7 @@ describe('Feature: collaboration actor directory', () => {
 				}),
 			],
 			authActors: [],
+			avatarIdentity: nullAvatarIdentity,
 			profileIconUrl: () => null,
 			sessionIconUrl: () => null,
 		});
@@ -66,6 +86,33 @@ describe('Feature: collaboration actor directory', () => {
 		);
 	});
 
+	test("Scenario: Given a room seat only stores an Avatar principal id When resolving actor presentation Then shared room surfaces use the canonical Avatar icon", () => {
+		const avatarIdentity = {
+			resolveAvatarIconUrl: (principalId: string) => `https://profiles.test/media/avatars/${principalId}/icon`,
+			resolveAvatarCatalogEntryByPrincipalId: (principalId: string) =>
+				principalId === backendPrincipalId ? backendAvatarCatalogEntry : null,
+		};
+		const directory = buildActorDirectory({
+			sessions: [],
+			authActors: [],
+			avatarIdentity,
+			profileIconUrl: () => null,
+			sessionIconUrl: () => null,
+		});
+		const actor = resolveActorPresentation(backendPrincipalId, {
+			actorDirectory: buildActorDirectoryMap(directory),
+			avatarIdentity,
+			profileIconUrl: () => null,
+		});
+
+		expect(actor).toMatchObject({
+			actorId: backendPrincipalId,
+			actorKind: "session",
+			label: "Backend Avatar",
+			iconUrl: backendAvatarIconUrl,
+		});
+	});
+
 	test("Scenario: Given an avatar session is missing avatarPrincipalId When the global avatar catalog knows that avatar Then actor selectors use the Avatar principal icon", () => {
 		const directory = buildActorDirectory({
 			sessions: [
@@ -76,25 +123,27 @@ describe('Feature: collaboration actor directory', () => {
 				}),
 			],
 			authActors: [],
-			profileIconUrl: () => null,
-			sessionIconUrl: (sessionId) => `https://profiles.test/media/sessions/${sessionId}/icon`,
 			avatarIdentity: {
 				resolveAvatarIconUrl: (principalId) => `https://profiles.test/media/avatars/${principalId}/icon`,
 				resolveAvatarCatalogEntry: (avatarNickname) =>
 					avatarNickname === "backend"
 						? {
-								avatarPrincipalId: "0x775921bde52b52d29ff37b46e742ec4500000000",
-								iconUrl: "https://profiles.test/media/avatars/0x775921bde52b52d29ff37b46e742ec4500000000/icon",
+								avatarPrincipalId: backendPrincipalId,
+								displayName: null,
+								iconUrl: backendAvatarIconUrl,
+								nickname: "backend",
 							}
 						: null,
 			},
+			profileIconUrl: () => null,
+			sessionIconUrl: (sessionId) => `https://profiles.test/media/sessions/${sessionId}/icon`,
 		});
 		const directoryMap = buildActorDirectoryMap(directory);
 
 		expect(directoryMap.get("session:session-backend")).toBeUndefined();
-		expect(directoryMap.get("0x775921bde52b52d29ff37b46e742ec4500000000")).toMatchObject({
+		expect(directoryMap.get(backendPrincipalId)).toMatchObject({
 			label: "backend",
-			iconUrl: "https://profiles.test/media/avatars/0x775921bde52b52d29ff37b46e742ec4500000000/icon",
+			iconUrl: backendAvatarIconUrl,
 			sessionId: "session-backend",
 		});
 	});
@@ -110,18 +159,20 @@ describe('Feature: collaboration actor directory', () => {
 				}),
 			],
 			authActors: [],
-			profileIconUrl: () => null,
-			sessionIconUrl: (sessionId) => `https://profiles.test/media/sessions/${sessionId}/icon`,
 			avatarIdentity: {
 				resolveAvatarIconUrl: (principalId) => `https://profiles.test/media/avatars/${principalId}/icon`,
 				resolveAvatarCatalogEntry: (avatarNickname) =>
 					avatarNickname === "backend"
 						? {
 								avatarPrincipalId: "0x2222222222222222222222222222222222222222",
+								displayName: null,
 								iconUrl: "https://profiles.test/media/avatars/0x2222222222222222222222222222222222222222/icon",
+								nickname: "backend",
 							}
 						: null,
 			},
+			profileIconUrl: () => null,
+			sessionIconUrl: (sessionId) => `https://profiles.test/media/sessions/${sessionId}/icon`,
 		});
 		const directoryMap = buildActorDirectoryMap(directory);
 
@@ -143,6 +194,7 @@ describe('Feature: collaboration actor directory', () => {
 				}),
 			],
 			authActors: [],
+			avatarIdentity: nullAvatarIdentity,
 			profileIconUrl: () => null,
 			sessionIconUrl: () => null,
 		});
