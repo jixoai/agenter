@@ -5,8 +5,8 @@
 - Round: 6
 - Status: Model Run Record Card and Record Detail visual convergence before backend/page implementation.
 - Previous plan backup: `plans/plan-v1.md`
-- Working change id: `add-heartbeat-ledger-pagination`
-- Working terminology correction: use **Heartbeat Record** as the domain term; treat `ledger` as a retired planning word unless the change id is renamed later.
+- Working change id: `add-heartbeat-record-pagination`
+- Working terminology correction: use **Heartbeat Record** as the domain term; `ledger` is retired from current docs and remains only in historical backups.
 - Canonical visual artifact: `plan.html` is the current design entry. It routes focused iframe canvases so each hard visual question can evolve independently.
 - Record item visual correction: use a metro-platform timeline, not a left/middle/right card.
 - Metro graph correction: graph stations use icons, not type words, and must remain responsive inside the record item.
@@ -27,10 +27,9 @@
 
 ## Workflow Command Surface
 
-- Check status: `bun run openspec:vision -- status add-heartbeat-ledger-pagination`
-- Backup plan before major rewrites: `bun run openspec:vision -- backup-plan add-heartbeat-ledger-pagination`
-- Validate after specs exist: `bun run openspec:vision -- validate add-heartbeat-ledger-pagination`
-- Rename after intent realignment, if approved: `bun run openspec:vision -- rename add-heartbeat-ledger-pagination add-heartbeat-record-pagination`
+- Check status: `bun run openspec:vision -- status add-heartbeat-record-pagination`
+- Backup plan before major rewrites: `bun run openspec:vision -- backup-plan add-heartbeat-record-pagination`
+- Validate after specs exist: `bun run openspec:vision -- validate add-heartbeat-record-pagination`
 
 ## Original User Input
 
@@ -115,7 +114,7 @@ Backend boundary decision:
 
 Change id decision:
 
-- Keep `add-heartbeat-ledger-pagination` as the active OpenSpec change id for history and tooling continuity.
+- Use `add-heartbeat-record-pagination` as the active OpenSpec change id; `ledger` remains only in historical plan backups.
 - Do not use `ledger` in new table/API/UI names.
 - Archive/review language should call the feature `Heartbeat Record pagination`.
 
