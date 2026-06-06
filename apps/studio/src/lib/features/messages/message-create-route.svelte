@@ -54,6 +54,11 @@
 			authActors: controller.authActors,
 			profileIconUrl: (reference) => controller.runtimeStore.profileIconUrl(reference ?? ''),
 			sessionIconUrl: (sessionId) => (sessionId ? controller.runtimeStore.sessionIconUrl(sessionId) : null),
+			avatarIdentity: {
+				resolveAvatarIconUrl: (principalId) => controller.runtimeStore.avatarIconUrl(principalId),
+				resolveAvatarCatalogEntry: (avatarNickname) =>
+					controller.runtimeState.globalAvatarCatalog.data.find((entry) => entry.nickname === avatarNickname) ?? null,
+			},
 		}).filter((actor) => actor.actorKind !== 'system');
 		if (!creator) {
 			return actors;

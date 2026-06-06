@@ -66,6 +66,73 @@ describe('Feature: collaboration actor directory', () => {
 		);
 	});
 
+	test("Scenario: Given an avatar session is missing avatarPrincipalId When the global avatar catalog knows that avatar Then actor selectors use the Avatar principal icon", () => {
+		const directory = buildActorDirectory({
+			sessions: [
+				createSessionEntry({
+					id: "session-backend",
+					name: "session-backend",
+					avatar: "backend",
+				}),
+			],
+			authActors: [],
+			profileIconUrl: () => null,
+			sessionIconUrl: (sessionId) => `https://profiles.test/media/sessions/${sessionId}/icon`,
+			avatarIdentity: {
+				resolveAvatarIconUrl: (principalId) => `https://profiles.test/media/avatars/${principalId}/icon`,
+				resolveAvatarCatalogEntry: (avatarNickname) =>
+					avatarNickname === "backend"
+						? {
+								avatarPrincipalId: "0x775921bde52b52d29ff37b46e742ec4500000000",
+								iconUrl: "https://profiles.test/media/avatars/0x775921bde52b52d29ff37b46e742ec4500000000/icon",
+							}
+						: null,
+			},
+		});
+		const directoryMap = buildActorDirectoryMap(directory);
+
+		expect(directoryMap.get("session:session-backend")).toBeUndefined();
+		expect(directoryMap.get("0x775921bde52b52d29ff37b46e742ec4500000000")).toMatchObject({
+			label: "backend",
+			iconUrl: "https://profiles.test/media/avatars/0x775921bde52b52d29ff37b46e742ec4500000000/icon",
+			sessionId: "session-backend",
+		});
+	});
+
+	test("Scenario: Given session avatarPrincipalId diverges from the canonical avatar catalog When building actor selectors Then catalog-backed Avatar identity wins", () => {
+		const directory = buildActorDirectory({
+			sessions: [
+				createSessionEntry({
+					id: "session-backend",
+					name: "session-backend",
+					avatar: "backend",
+					avatarPrincipalId: "0x1111111111111111111111111111111111111111",
+				}),
+			],
+			authActors: [],
+			profileIconUrl: () => null,
+			sessionIconUrl: (sessionId) => `https://profiles.test/media/sessions/${sessionId}/icon`,
+			avatarIdentity: {
+				resolveAvatarIconUrl: (principalId) => `https://profiles.test/media/avatars/${principalId}/icon`,
+				resolveAvatarCatalogEntry: (avatarNickname) =>
+					avatarNickname === "backend"
+						? {
+								avatarPrincipalId: "0x2222222222222222222222222222222222222222",
+								iconUrl: "https://profiles.test/media/avatars/0x2222222222222222222222222222222222222222/icon",
+							}
+						: null,
+			},
+		});
+		const directoryMap = buildActorDirectoryMap(directory);
+
+		expect(directoryMap.get("0x1111111111111111111111111111111111111111")).toBeUndefined();
+		expect(directoryMap.get("0x2222222222222222222222222222222222222222")).toMatchObject({
+			label: "backend",
+			iconUrl: "https://profiles.test/media/avatars/0x2222222222222222222222222222222222222222/icon",
+			sessionId: "session-backend",
+		});
+	});
+
 	test("Scenario: Given an active running session without an avatar label When building the actor directory Then the runtime name remains the primary label", () => {
 		const directory = buildActorDirectory({
 			sessions: [

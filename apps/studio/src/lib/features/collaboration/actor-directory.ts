@@ -1,3 +1,5 @@
+import type { AvatarSessionIdentityResolverInput } from "$lib/features/avatars/avatar-session-identity";
+import { resolveAvatarSessionIdentity } from "$lib/features/avatars/avatar-session-identity";
 import type { AuthActorCatalogEntry, RuntimeClientState } from "@agenter/client-sdk";
 
 export interface ActorDirectoryEntry {
@@ -51,6 +53,7 @@ export const buildActorDirectory = (input: {
   authActors: AuthActorCatalogEntry[];
   profileIconUrl: (reference: string | null | undefined) => string | null;
   sessionIconUrl: (sessionId: string | null | undefined) => string | null;
+  avatarIdentity?: AvatarSessionIdentityResolverInput;
 }): ActorDirectoryEntry[] => {
   const entries: ActorDirectoryEntry[] = [];
   const seen = new Set<string>();
@@ -73,7 +76,8 @@ export const buildActorDirectory = (input: {
     if (session.storageState !== "active") {
       continue;
     }
-    const actorId = session.avatarPrincipalId?.trim() || `session:${session.id}`;
+    const identity = input.avatarIdentity ? resolveAvatarSessionIdentity(session, input.avatarIdentity) : null;
+    const actorId = identity?.avatarPrincipalId?.trim() || session.avatarPrincipalId?.trim() || `session:${session.id}`;
     const preferredSessionLabel = session.avatar?.trim() || session.name?.trim() || session.id;
     if (seen.has(actorId)) {
       continue;
@@ -84,7 +88,7 @@ export const buildActorDirectory = (input: {
       actorKind: "session",
       label: preferredSessionLabel,
       subtitle: resolveSessionActorSubtitle(session),
-      iconUrl: input.sessionIconUrl(session.id),
+      iconUrl: identity?.iconUrl ?? input.sessionIconUrl(session.id),
       sessionId: session.id,
     });
   }

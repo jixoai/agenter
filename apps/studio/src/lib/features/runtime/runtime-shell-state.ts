@@ -1,11 +1,10 @@
+import type { AvatarSessionIdentityResolverInput } from "$lib/features/avatars/avatar-session-identity";
+import { resolveAvatarSessionIdentity } from "$lib/features/avatars/avatar-session-identity";
 import type { WorkbenchPageTabBadgeTone } from "$lib/features/navigation/workbench-page-tabs.types";
 import { describeCompactWorkspace } from "$lib/features/workspaces/workspace-sorting";
-import type {
-  GlobalAvatarCatalogEntry,
-  RuntimeChatCycle,
-  RuntimeClientState,
-  SessionEntry,
-} from "@agenter/client-sdk";
+import type { RuntimeChatCycle, RuntimeClientState, SessionEntry } from "@agenter/client-sdk";
+
+export { resolveAvatarSessionIdentity } from "$lib/features/avatars/avatar-session-identity";
 
 export type RuntimeTabId = "heartbeat" | "attention" | "settings";
 
@@ -126,39 +125,13 @@ export const buildRuntimeTabs = (input: {
   ];
 };
 
-export const resolveAvatarSessionIdentity = (
-  session: Pick<SessionEntry, "avatar" | "avatarPrincipalId">,
-  input: {
-    resolveAvatarIconUrl: (principalId: string) => string | null;
-    resolveAvatarCatalogEntry?: (
-      avatarNickname: string,
-    ) => Pick<GlobalAvatarCatalogEntry, "avatarPrincipalId" | "iconUrl"> | null;
-  },
-): { avatarPrincipalId: string | null; iconUrl: string | null } => {
-  const catalogEntry = input.resolveAvatarCatalogEntry?.(session.avatar) ?? null;
-  const avatarPrincipalId = catalogEntry?.avatarPrincipalId ?? session.avatarPrincipalId ?? null;
-  const directIconUrl = session.avatarPrincipalId ? input.resolveAvatarIconUrl(session.avatarPrincipalId) : null;
-  const catalogIconUrl =
-    catalogEntry?.iconUrl ??
-    (catalogEntry?.avatarPrincipalId ? input.resolveAvatarIconUrl(catalogEntry.avatarPrincipalId) : null);
-
-  return {
-    avatarPrincipalId,
-    iconUrl: catalogIconUrl ?? directIconUrl ?? null,
-  };
-};
-
 export const buildAvatarSessionRailItems = (
   state: RuntimeClientState,
   input: {
     activeSessionId: string | null;
     openedSessionIds?: readonly string[];
     pinnedSessionIds?: readonly string[];
-    resolveAvatarIconUrl: (principalId: string) => string | null;
-    resolveAvatarCatalogEntry?: (
-      avatarNickname: string,
-    ) => Pick<GlobalAvatarCatalogEntry, "avatarPrincipalId" | "iconUrl"> | null;
-  },
+  } & AvatarSessionIdentityResolverInput,
 ): AvatarSessionRailItem[] => {
   const openedSessionIds = new Set((input.openedSessionIds ?? []).filter((sessionId) => sessionId.length > 0));
   const pinnedSessionIds = new Set((input.pinnedSessionIds ?? []).filter((sessionId) => sessionId.length > 0));
