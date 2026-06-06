@@ -1,5 +1,5 @@
 <script lang="ts">
-	import NotesRoute from '$lib/features/notes/notes-route.svelte';
+	import NotesOverviewRoute from '$lib/features/notes/notes-overview-route.svelte';
 </script>
 
-<NotesRoute />
+<NotesOverviewRoute />

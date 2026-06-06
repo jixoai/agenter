@@ -31,8 +31,12 @@
 
 	$effect(() => {
 		const href = page.url.href;
-		if (lastNavigationHref && lastNavigationHref !== href && sidebar.usesMobileSheet) {
-			sidebar.setOpenMobile(false);
+		if (lastNavigationHref && lastNavigationHref !== href) {
+			if (sidebar.usesMobileSheet) {
+				sidebar.setOpenMobile(false);
+			} else if (sidebar.isMobile && mobileMode === "docked") {
+				sidebar.setOpen(false);
+			}
 		}
 		lastNavigationHref = href;
 	});

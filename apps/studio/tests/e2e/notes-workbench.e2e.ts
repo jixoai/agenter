@@ -35,6 +35,25 @@ const navigateToNotes = async (page: Page): Promise<void> => {
   await expect(page).toHaveURL(/\/notes(?:\?.*)?$/, { timeout: 15_000 });
 };
 
+const closeNotesToolbarDetails = async (page: Page): Promise<void> => {
+  const toolbarDetailsButton = page.getByRole("button", { name: "Open Notes toolbar details" });
+  if (!(await toolbarDetailsButton.isVisible().catch(() => false))) {
+    return;
+  }
+  const expanded = await toolbarDetailsButton.getAttribute("aria-expanded").catch(() => null);
+  if (expanded === "true") {
+    await clickStable(toolbarDetailsButton);
+  }
+  await expect(toolbarDetailsButton).toHaveAttribute("aria-expanded", "false", { timeout: 5_000 });
+};
+
+const clickNotesModeTab = async (page: Page, value: string): Promise<void> => {
+  const notesModeTabs = page.getByRole("navigation", { name: "Notes modes" });
+  await expect(notesModeTabs).toBeVisible({ timeout: 15_000 });
+  await closeNotesToolbarDetails(page);
+  await notesModeTabs.locator(`[data-workbench-page-tab="${value}"]`).first().click({ timeout: 15_000 });
+};
+
 test.describe("Feature: Notes workbench route smoke", () => {
   test("Scenario: Given seeded NoteSystem pages When opening Notes through app navigation Then desktop and iPhone layouts expose metadata tags references and read-only SQL", async ({
     page,
@@ -85,13 +104,16 @@ test.describe("Feature: Notes workbench route smoke", () => {
 
       await navigateToNotes(page);
       await expect(page.getByTestId("notes-workbench")).toBeVisible({ timeout: 30_000 });
+      await expect(page.getByTestId("notes-overview")).toBeVisible({ timeout: 30_000 });
+      await expect(page.getByLabel("Notes avatar")).toHaveCount(0);
 
-      const avatarSelect = page.getByLabel("Notes avatar");
-      await expect(avatarSelect).toBeVisible({ timeout: 15_000 });
-      await expect
-        .poll(async () => await avatarSelect.locator('option[value="architect"]').count(), { timeout: 15_000 })
-        .toBe(1);
-      await avatarSelect.selectOption("architect");
+      const architectRow = page.getByRole("button", { name: /architect/i }).first();
+      await expect(architectRow).toBeVisible({ timeout: 30_000 });
+      await clickStable(architectRow);
+      await clickStable(page.getByRole("button", { name: /Open tab/i }).first());
+      await expect(page).toHaveURL(/\/notes\/avatar\/architect$/, { timeout: 15_000 });
+      await expect(page.getByTestId("notes-avatar-route")).toBeVisible({ timeout: 30_000 });
+      await expect(page.getByLabel("Notes avatar")).toHaveCount(0);
 
       const sourceButton = page.getByRole("button", { name: new RegExp(sourcePage) }).first();
       await expect(sourceButton).toBeVisible({ timeout: 30_000 });
@@ -103,9 +125,20 @@ test.describe("Feature: Notes workbench route smoke", () => {
       await expect(detail).toContainText("MIME: text/markdown", { timeout: 15_000 });
       await expect(detail).toContainText("References", { timeout: 15_000 });
       await expect(detail).toContainText(targetPage, { timeout: 15_000 });
+
+      const closeDetailButton = page.getByRole("button", { name: "Close detail" });
+      if (await closeDetailButton.isVisible().catch(() => false)) {
+        await clickStable(closeDetailButton);
+      }
+
+      await clickNotesModeTab(page, "search");
+      await expect(page).toHaveURL(/\/notes\/avatar\/architect\/search$/, { timeout: 15_000 });
+      await expect(page.getByTestId("notes-search-mode")).toBeVisible({ timeout: 15_000 });
       await expect(page.getByRole("button", { name: /playwright/i }).first()).toBeVisible({ timeout: 15_000 });
 
-      await clickStable(page.getByRole("button", { name: /Query/i }).first());
+      await clickNotesModeTab(page, "query");
+      await expect(page).toHaveURL(/\/notes\/avatar\/architect\/query$/, { timeout: 15_000 });
+      await expect(page.getByTestId("notes-query-mode")).toBeVisible({ timeout: 15_000 });
       const sqlRows = page.locator("pre").filter({ hasText: sourcePage }).first();
       const clickedQuery = await expect(sqlRows)
         .toBeVisible({ timeout: 3_000 })
