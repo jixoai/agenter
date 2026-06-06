@@ -5,12 +5,14 @@
 Studio SHALL expose an app-shell navigation item named `MCP` that opens `/mcp` as an independent workbench destination. The MCP workbench SHALL consume runtime/client-sdk contracts and SHALL NOT import `app-server` or `mcp-system` implementation internals.
 
 #### Scenario: MCP route is reachable from app shell
+
 - **WHEN** the operator opens Studio navigation
 - **THEN** the primary Systems navigation includes `MCP`
 - **AND** activating it opens `/mcp`
 - **AND** the active navigation state follows `/mcp` and nested MCP routes
 
 #### Scenario: MCP route stays inside Studio app boundary
+
 - **WHEN** reviewers inspect the MCP route and feature source
 - **THEN** it imports MCP data through Studio app controller and client runtime-store facades
 - **AND** it does not import `packages/app-server/src/mcp-system/*`, runtime internals, or cli-shell modules
@@ -20,12 +22,14 @@ Studio SHALL expose an app-shell navigation item named `MCP` that opens `/mcp` a
 The MCP workbench SHALL make the selected AvatarRuntime authority explicit before reading or mutating MCP state. If no runtime is selected or available, the workbench SHALL render a stable empty state and SHALL NOT invent a local MCP registry.
 
 #### Scenario: No runtime selected
+
 - **WHEN** the operator opens `/mcp` without a selectable runtime authority
 - **THEN** the workbench renders an explicit no-runtime state
 - **AND** add, enable, lifecycle, and call actions are disabled
 - **AND** no Studio-local MCP database is created
 
 #### Scenario: Runtime selection controls MCP facts
+
 - **WHEN** the operator selects runtime `runtime:a`
 - **THEN** MCP list, query, lifecycle, and mutation actions target `runtime:a`
 - **AND** switching to runtime `runtime:b` refreshes MCP projections from `runtime:b`
@@ -35,13 +39,23 @@ The MCP workbench SHALL make the selected AvatarRuntime authority explicit befor
 
 The MCP workbench SHALL show global MCP configs separately from exact-project enablement. A project path filter SHALL project installed globals for that exact path, including default-disabled rows, enabled rows, lifecycle state, project-local snapshots, and latest errors.
 
+#### Scenario: MCP home separates list and new config work
+
+- **WHEN** the operator opens `/mcp`
+- **THEN** the page toolbar exposes `List` and `New` tabs
+- **AND** `List` shows installed global configs with the selected exact-project projection
+- **AND** `New` creates an inert global config first, with any project enablement shown as a separate explicit step
+- **AND** the default page does not merge global creation into the project lifecycle/detail surface
+
 #### Scenario: Global-only list shows installed configs
+
 - **WHEN** the operator opens `/mcp` without a project path filter
 - **THEN** the list shows installed global MCP configs
 - **AND** it does not imply any project is enabled
 - **AND** it does not start any MCP server
 
 #### Scenario: Project filter shows default-disabled globals
+
 - **GIVEN** global MCP `fs` exists
 - **AND** project `/repo/app` has not enabled `fs`
 - **WHEN** the operator filters the workbench to exact project path `/repo/app`
@@ -50,6 +64,7 @@ The MCP workbench SHALL show global MCP configs separately from exact-project en
 - **AND** no live MCP session is started by viewing the row
 
 #### Scenario: Project filter shows enabled project snapshot
+
 - **GIVEN** global MCP `fs` is enabled for project `/repo/app`
 - **AND** `fs` has a latest project-local snapshot for `/repo/app`
 - **WHEN** the operator selects project path `/repo/app`
@@ -62,12 +77,14 @@ The MCP workbench SHALL show global MCP configs separately from exact-project en
 The MCP detail pane SHALL expose global config summary/edit actions, exact-project enable/disable, project-scoped start/stop/restart, and blocked-remove confirmation while preserving existing MCP defaults.
 
 #### Scenario: Global add remains inert
+
 - **WHEN** the operator adds a global MCP config from the workbench
 - **THEN** the global config is persisted through the runtime MCP facade
 - **AND** no project is enabled
 - **AND** no MCP server is started
 
 #### Scenario: Enablement gates lifecycle controls
+
 - **GIVEN** global MCP `fs` exists
 - **AND** project `/repo/app` has not enabled `fs`
 - **WHEN** the operator views `fs` under project `/repo/app`
@@ -75,6 +92,7 @@ The MCP detail pane SHALL expose global config summary/edit actions, exact-proje
 - **AND** an explicit enable action is available
 
 #### Scenario: Remove blocked by running project requires explicit stop confirmation
+
 - **GIVEN** global MCP `fs` has a running instance in project `/repo/app`
 - **WHEN** the operator removes global MCP `fs` without choosing to stop running instances
 - **THEN** the workbench shows the blocked project path returned by the runtime
@@ -86,27 +104,55 @@ The MCP detail pane SHALL expose global config summary/edit actions, exact-proje
 The MCP workbench SHALL render tool/resource/prompt snapshots, tool argument schemas, call results, latest errors, and action facts through reusable structured-data presentation components rather than raw unbounded text dumps.
 
 #### Scenario: Snapshot detail uses structured presentation
+
 - **WHEN** a project-local snapshot contains MCP tools, resources, prompts, schemas, or metadata
 - **THEN** the detail pane renders the data in bounded structured sections
 - **AND** long JSON values are scrollable or collapsible inside the detail surface
 - **AND** the snapshot remains labeled with its exact project path and snapshot timestamp
 
 #### Scenario: Tool test call keeps auto-enable explicit
+
 - **GIVEN** global MCP `fs` is installed but disabled for project `/repo/app`
 - **WHEN** the operator opens the test-call dialog for `fs`
 - **THEN** the dialog does not default to `autoEnable: true`
 - **AND** any auto-enable option is visibly explicit before submission
+
+### Requirement: MCP workbench SHALL preserve a low-noise operator surface
+
+The MCP workbench SHALL be designed for expert operators who repeatedly use Studio. Primary page space SHALL show actionable MCP state, controls, and inspection facts rather than persistent introductory prose. Explanatory context, caveats, and low-frequency recovery guidance SHALL be collapsed into contextual help such as `HelpHint`, title/aria help, dialogs, or focused empty/error states. The page SHALL avoid nested card stacks and repeated borders when the existing Studio shell, split-detail surface, spacing, or a lightweight divider can express the same structure.
+
+#### Scenario: Primary surface avoids tutorial copy
+
+- **WHEN** the operator opens `/mcp` with runtime data available
+- **THEN** the toolbar, list, and detail surfaces prioritize runtime, project, server, lifecycle, snapshot, and action facts
+- **AND** the page does not render persistent introductory paragraphs explaining what MCP is or how every control works
+- **AND** low-frequency conceptual help is available through contextual help affordances instead
+
+#### Scenario: Detail surface avoids nested card stacks
+
+- **WHEN** the MCP detail surface renders global config, project enablement, snapshots, latest errors, and action facts
+- **THEN** those sections use the shared drawer/split-detail surface, compact section headings, spacing, and lightweight dividers
+- **AND** they do not wrap each subsection in separate nested cards unless the subsection owns an independent interaction state such as a dialog, repeated row, or structured value frame
+- **AND** border usage remains tied to actual ownership boundaries or clickable affordances
+
+#### Scenario: HelpHint carries repeated explanation
+
+- **WHEN** the UI needs to explain global-vs-project law, auto-start/auto-enable defaults, blocked removal, or stale stopped snapshots
+- **THEN** the explanation is reachable from `HelpHint`, tooltip, or focused dialog text
+- **AND** the same explanation is not repeated as permanent body copy on every normal page render
 
 ### Requirement: MCP workbench SHALL have responsive BDD coverage
 
 The MCP workbench SHALL include BDD-style tests that cover app-shell navigation, runtime scoping, project projection, lifecycle gating, blocked removal, snapshot rendering, and responsive desktop/mobile layout behavior.
 
 #### Scenario: Storybook DOM covers project projection states
+
 - **WHEN** the MCP workbench Storybook DOM tests run
 - **THEN** stories cover global-only, default-disabled project, enabled stopped project, running project, failed project, and blocked-remove states
 - **AND** those stories assert visible behavior rather than private component state
 
 #### Scenario: Route smoke covers desktop and mobile
+
 - **WHEN** route-level MCP smoke acceptance runs
 - **THEN** `/mcp` is reachable on desktop
 - **AND** `/mcp` is reachable through the compact navigation path on the iPhone 14 viewport

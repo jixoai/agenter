@@ -40,6 +40,14 @@
 - Keep primary actions singular per surface.
 - Keep global navigation and local navigation separate.
 
+## Operator Noise Discipline
+
+- Design Studio pages for expert operators who use the app for long sessions.
+- Do not spend primary page space teaching facts an operator can infer from labels, state, and affordances.
+- Put explanations, caveats, and recovery notes behind `HelpHint`, tooltips, or focused empty/error states instead of persistent body copy.
+- Avoid nested cards and repeated borders; use the app shell, split-detail primitives, spacing, and lightweight dividers as the main structure.
+- If a line of text only explains the UI instead of changing a decision, state, or next action, remove it or collapse it into contextual help.
+
 ## Typography / Icon / Affordance Rules
 
 - Fonts are token-driven from global CSS variables; do not scatter `font-family`.

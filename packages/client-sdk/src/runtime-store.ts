@@ -45,6 +45,26 @@ import type {
   MessageChannelEntry,
   MessageChannelGrantEntry,
   MessageSendSuccessOutput,
+  McpAddInput,
+  McpAddOutput,
+  McpCallInput,
+  McpCallOutput,
+  McpDisableInput,
+  McpDisableOutput,
+  McpEnableInput,
+  McpEnableOutput,
+  McpListInput,
+  McpListOutput,
+  McpQueryInput,
+  McpQueryOutput,
+  McpRemoveInput,
+  McpRemoveOutput,
+  McpRestartInput,
+  McpRestartOutput,
+  McpStartInput,
+  McpStartOutput,
+  McpStopInput,
+  McpStopOutput,
   ModelCallItem,
   NoteCatalogOutput,
   NotePageOutput,
@@ -4179,6 +4199,46 @@ export class RuntimeStore {
     maxBytes?: number;
   }): Promise<SkillAvatarPreviewOutput> {
     return await this.client.trpc.skill.avatarPreview.query(input);
+  }
+
+  async addMcpGlobal(input: McpAddInput): Promise<McpAddOutput> {
+    return await this.client.trpc.mcp.add.mutate(input);
+  }
+
+  async removeMcpGlobal(input: McpRemoveInput): Promise<McpRemoveOutput> {
+    return await this.client.trpc.mcp.remove.mutate(input);
+  }
+
+  async enableMcpProject(input: McpEnableInput): Promise<McpEnableOutput> {
+    return await this.client.trpc.mcp.enable.mutate(input);
+  }
+
+  async disableMcpProject(input: McpDisableInput): Promise<McpDisableOutput> {
+    return await this.client.trpc.mcp.disable.mutate(input);
+  }
+
+  async listMcpProject(input: McpListInput): Promise<McpListOutput> {
+    return await this.client.trpc.mcp.list.query(input);
+  }
+
+  async queryMcp(input: McpQueryInput): Promise<McpQueryOutput> {
+    return await this.client.trpc.mcp.query.query(input);
+  }
+
+  async startMcpProject(input: McpStartInput): Promise<McpStartOutput> {
+    return await this.client.trpc.mcp.start.mutate(input);
+  }
+
+  async stopMcpProject(input: McpStopInput): Promise<McpStopOutput> {
+    return await this.client.trpc.mcp.stop.mutate(input);
+  }
+
+  async restartMcpProject(input: McpRestartInput): Promise<McpRestartOutput> {
+    return await this.client.trpc.mcp.restart.mutate(input);
+  }
+
+  async callMcpTool(input: McpCallInput): Promise<McpCallOutput> {
+    return await this.client.trpc.mcp.invoke.mutate(input);
   }
 
   async listNoteCatalog(input: { avatarNickname?: string; limit?: number } = {}): Promise<NoteCatalogOutput> {

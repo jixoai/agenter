@@ -11,6 +11,13 @@ import type {
   GlobalTerminalGrantEntry,
   HeartbeatGroupItem,
   HeartbeatPartItem,
+  McpAddOutput,
+  McpCallOutput,
+  McpDisableOutput,
+  McpEnableOutput,
+  McpListOutput,
+  McpRestartOutput,
+  McpStopOutput,
   ModelCallItem,
   RuntimeAttentionDeliveryState,
   RuntimeAttentionState,
@@ -523,6 +530,16 @@ const createMockClient = (input: {
     path: string;
     maxBytes?: number;
   }) => Promise<unknown>;
+  mcpAddMutation?: (input: unknown) => Promise<unknown>;
+  mcpRemoveMutation?: (input: unknown) => Promise<unknown>;
+  mcpEnableMutation?: (input: unknown) => Promise<unknown>;
+  mcpDisableMutation?: (input: unknown) => Promise<unknown>;
+  mcpListQuery?: (input: unknown) => Promise<unknown>;
+  mcpQueryQuery?: (input: unknown) => Promise<unknown>;
+  mcpStartMutation?: (input: unknown) => Promise<unknown>;
+  mcpStopMutation?: (input: unknown) => Promise<unknown>;
+  mcpRestartMutation?: (input: unknown) => Promise<unknown>;
+  mcpCallMutation?: (input: unknown) => Promise<unknown>;
   noteCatalogQuery?: (input: { avatarNickname?: string; limit?: number }) => Promise<unknown>;
   notePageQuery?: (input: {
     avatarNickname?: string;
@@ -2223,6 +2240,112 @@ const createMockClient = (input: {
                   mediaDataUrl: null,
                   truncated: false,
                   note: null,
+                },
+        },
+      },
+      mcp: {
+        add: {
+          mutate: async (payload: unknown) =>
+            input.mcpAddMutation
+              ? await input.mcpAddMutation(payload)
+              : {
+                  name: "memory",
+                  transport: { kind: "stdio", command: "memory-mcp" },
+                  createdAt: "2026-06-07T00:00:00.000Z",
+                  updatedAt: "2026-06-07T00:00:00.000Z",
+                },
+        },
+        remove: {
+          mutate: async (payload: unknown) =>
+            input.mcpRemoveMutation ? await input.mcpRemoveMutation(payload) : { removed: true, blockedProjects: [] },
+        },
+        enable: {
+          mutate: async (payload: unknown) =>
+            input.mcpEnableMutation
+              ? await input.mcpEnableMutation(payload)
+              : {
+                  name: "memory",
+                  projectPath: "/repo/app",
+                  enabled: true,
+                  createdAt: "2026-06-07T00:00:00.000Z",
+                  updatedAt: "2026-06-07T00:00:00.000Z",
+                  enabledAt: "2026-06-07T00:00:00.000Z",
+                },
+        },
+        disable: {
+          mutate: async (payload: unknown) =>
+            input.mcpDisableMutation
+              ? await input.mcpDisableMutation(payload)
+              : {
+                  name: "memory",
+                  projectPath: "/repo/app",
+                  enabled: false,
+                  createdAt: "2026-06-07T00:00:00.000Z",
+                  updatedAt: "2026-06-07T00:00:00.000Z",
+                  disabledAt: "2026-06-07T00:00:00.000Z",
+                },
+        },
+        list: {
+          query: async (payload: unknown) => (input.mcpListQuery ? await input.mcpListQuery(payload) : []),
+        },
+        query: {
+          query: async (payload: unknown) => (input.mcpQueryQuery ? await input.mcpQueryQuery(payload) : { rows: [] }),
+        },
+        start: {
+          mutate: async (payload: unknown) =>
+            input.mcpStartMutation
+              ? await input.mcpStartMutation(payload)
+              : {
+                  instance: {
+                    name: "memory",
+                    projectPath: "/repo/app",
+                    lifecycle: "running",
+                    createdAt: "2026-06-07T00:00:00.000Z",
+                    updatedAt: "2026-06-07T00:00:00.000Z",
+                  },
+                },
+        },
+        stop: {
+          mutate: async (payload: unknown) =>
+            input.mcpStopMutation
+              ? await input.mcpStopMutation(payload)
+              : {
+                  instance: {
+                    name: "memory",
+                    projectPath: "/repo/app",
+                    lifecycle: "stopped",
+                    createdAt: "2026-06-07T00:00:00.000Z",
+                    updatedAt: "2026-06-07T00:00:00.000Z",
+                  },
+                },
+        },
+        restart: {
+          mutate: async (payload: unknown) =>
+            input.mcpRestartMutation
+              ? await input.mcpRestartMutation(payload)
+              : {
+                  instance: {
+                    name: "memory",
+                    projectPath: "/repo/app",
+                    lifecycle: "running",
+                    createdAt: "2026-06-07T00:00:00.000Z",
+                    updatedAt: "2026-06-07T00:00:00.000Z",
+                  },
+                },
+        },
+        invoke: {
+          mutate: async (payload: unknown) =>
+            input.mcpCallMutation
+              ? await input.mcpCallMutation(payload)
+              : {
+                  result: { content: [] },
+                  instance: {
+                    name: "memory",
+                    projectPath: "/repo/app",
+                    lifecycle: "running",
+                    createdAt: "2026-06-07T00:00:00.000Z",
+                    updatedAt: "2026-06-07T00:00:00.000Z",
+                  },
                 },
         },
       },
@@ -11159,6 +11282,198 @@ describe("Feature: runtime store synchronization", () => {
           }),
         ],
       }),
+    ]);
+  });
+
+  test("Scenario: Given MCP TRPC outcomes When runtime store MCP facades are called Then defaults and structured results stay observable", async () => {
+    const calls: Array<[string, unknown]> = [];
+    const globalConfig = {
+      name: "memory",
+      title: "Memory",
+      description: "Project memory tools",
+      transport: { kind: "stdio", command: "memory-mcp", args: ["--stdio"] },
+      createdAt: "2026-06-07T00:00:00.000Z",
+      updatedAt: "2026-06-07T00:00:00.000Z",
+    } satisfies McpAddOutput;
+    const projectEnablement = {
+      name: "memory",
+      projectPath: "/repo/app",
+      enabled: true,
+      createdAt: "2026-06-07T00:00:00.000Z",
+      updatedAt: "2026-06-07T00:00:00.000Z",
+      enabledAt: "2026-06-07T00:00:00.000Z",
+    } satisfies McpEnableOutput;
+    const stoppedEnablement = {
+      ...projectEnablement,
+      enabled: false,
+      disabledAt: "2026-06-07T00:01:00.000Z",
+    } satisfies McpDisableOutput;
+    const runningInstance = {
+      name: "memory",
+      projectPath: "/repo/app",
+      lifecycle: "running",
+      createdAt: "2026-06-07T00:00:00.000Z",
+      updatedAt: "2026-06-07T00:01:00.000Z",
+      lastStartedAt: "2026-06-07T00:01:00.000Z",
+    } satisfies McpCallOutput["instance"];
+    const stoppedInstance = {
+      ...runningInstance,
+      lifecycle: "stopped",
+      lastStoppedAt: "2026-06-07T00:02:00.000Z",
+    } satisfies McpStopOutput["instance"];
+    const snapshot = {
+      name: "memory",
+      projectPath: "/repo/app",
+      serverName: "memory-server",
+      serverVersion: "1.0.0",
+      protocolVersion: "2025-06-18",
+      tools: [{ name: "read_memory" }],
+      resources: [],
+      prompts: [],
+      snapshot: { tools: [{ name: "read_memory" }] },
+      snapshotAt: "2026-06-07T00:01:00.000Z",
+    } satisfies McpRestartOutput["snapshot"];
+    const rows = [
+      {
+        name: "memory",
+        project_path: "/repo/app",
+        enabled: 0,
+        enabled_source: "default",
+        title: "Memory",
+        description: "Project memory tools",
+        transport_kind: "stdio",
+        lifecycle: null,
+        last_error: null,
+        server_name: null,
+        server_version: null,
+        protocol_version: null,
+        snapshot_at: null,
+        tools_json: null,
+        resources_json: null,
+        prompts_json: null,
+        snapshot_json: null,
+        created_at: "2026-06-07T00:00:00.000Z",
+        updated_at: "2026-06-07T00:00:00.000Z",
+        last_used_at: null,
+      },
+    ] satisfies McpListOutput;
+    const store = new RuntimeStore(
+      createMockClient({
+        snapshotQuery: async () => createSnapshot(0),
+        mcpAddMutation: async (input) => {
+          calls.push(["add", input]);
+          return globalConfig;
+        },
+        mcpRemoveMutation: async (input) => {
+          calls.push(["remove", input]);
+          return { removed: false, blockedProjects: ["/repo/app"] };
+        },
+        mcpEnableMutation: async (input) => {
+          calls.push(["enable", input]);
+          return projectEnablement;
+        },
+        mcpDisableMutation: async (input) => {
+          calls.push(["disable", input]);
+          return stoppedEnablement;
+        },
+        mcpListQuery: async (input) => {
+          calls.push(["list", input]);
+          return rows;
+        },
+        mcpQueryQuery: async (input) => {
+          calls.push(["query", input]);
+          return { rows: [{ name: "memory", enabled: 0, lifecycle: null }] };
+        },
+        mcpStartMutation: async (input) => {
+          calls.push(["start", input]);
+          throw new Error("stdio launch failed");
+        },
+        mcpStopMutation: async (input) => {
+          calls.push(["stop", input]);
+          return { instance: stoppedInstance };
+        },
+        mcpRestartMutation: async (input) => {
+          calls.push(["restart", input]);
+          return { instance: runningInstance, snapshot };
+        },
+        mcpCallMutation: async (input) => {
+          calls.push(["call", input]);
+          return {
+            result: {
+              content: [{ type: "text", text: "ok" }],
+              structuredContent: { ok: true },
+            },
+            instance: runningInstance,
+          };
+        },
+      }),
+    );
+
+    await expect(
+      store.addMcpGlobal({
+        sessionId: "s-1",
+        name: "memory",
+        title: "Memory",
+        description: "Project memory tools",
+        transport: { kind: "stdio", command: "memory-mcp", args: ["--stdio"] },
+      }),
+    ).resolves.toEqual(globalConfig);
+    await expect(store.removeMcpGlobal({ sessionId: "s-1", name: "memory" })).resolves.toEqual({
+      removed: false,
+      blockedProjects: ["/repo/app"],
+    });
+    await expect(store.enableMcpProject({ sessionId: "s-1", name: "memory", projectPath: "/repo/app" })).resolves.toEqual(
+      projectEnablement,
+    );
+    await expect(
+      store.disableMcpProject({ sessionId: "s-1", name: "memory", projectPath: "/repo/app" }),
+    ).resolves.toEqual(stoppedEnablement);
+    await expect(
+      store.listMcpProject({ sessionId: "s-1", projectPath: "/repo/app", includeSnapshots: true }),
+    ).resolves.toEqual(rows);
+    await expect(
+      store.queryMcp({
+        sessionId: "s-1",
+        projectPath: "/repo/app",
+        sql: "select name, enabled, lifecycle from mcp_enabled order by name",
+      }),
+    ).resolves.toEqual({ rows: [{ name: "memory", enabled: 0, lifecycle: null }] });
+    await expect(store.startMcpProject({ sessionId: "s-1", name: "memory", projectPath: "/repo/app" })).rejects.toThrow(
+      "stdio launch failed",
+    );
+    await expect(store.stopMcpProject({ sessionId: "s-1", name: "memory", projectPath: "/repo/app" })).resolves.toEqual({
+      instance: stoppedInstance,
+    });
+    await expect(
+      store.restartMcpProject({ sessionId: "s-1", name: "memory", projectPath: "/repo/app" }),
+    ).resolves.toEqual({ instance: runningInstance, snapshot });
+    await expect(
+      store.callMcpTool({
+        sessionId: "s-1",
+        name: "memory",
+        projectPath: "/repo/app",
+        toolName: "read_memory",
+        arguments: { key: "scope" },
+      }),
+    ).resolves.toEqual({
+      result: {
+        content: [{ type: "text", text: "ok" }],
+        structuredContent: { ok: true },
+      },
+      instance: runningInstance,
+    });
+
+    expect(calls).toContainEqual(["remove", { sessionId: "s-1", name: "memory" }]);
+    expect(calls).toContainEqual(["disable", { sessionId: "s-1", name: "memory", projectPath: "/repo/app" }]);
+    expect(calls).toContainEqual([
+      "call",
+      {
+        sessionId: "s-1",
+        name: "memory",
+        projectPath: "/repo/app",
+        toolName: "read_memory",
+        arguments: { key: "scope" },
+      },
     ]);
   });
 

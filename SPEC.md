@@ -108,7 +108,7 @@ Agenter 是一个 attention-first 的 Agent runtime platform。
 
 ## 5. 产品表面长期法则
 
-- 一级导航固定为 `Avatars`、`Skills`、`Notes`、`Messages`、`Workspaces`、`Terminals`。
+- 一级导航固定为 `Avatars`、`Skills`、`Notes`、`MCP`、`Messages`、`Workspaces`、`Terminals`。
 - 一级系统 workbench 统一渲染为共享 browser-style workbench window：上层是 tabs，下层是响应式 toolbar，body 也属于同一窗口外轮廓。页面级标题、metadata、局部 actions 与 body 边界都必须挂载到这套共享 chrome 中，而不是在 route 内再手搓第二层 header 或独立外壳。
 - 进入这套 window 之后，route 根 surface 只能使用共享的 integrated `page/pane` 法则：`page` 负责窗口内整页，`pane` 负责次级面板。禁止在 primary workbench route 内再包一层 detached outer card。
 - 共享 workbench window body 负责页面级滚动；如果 route 内还需要独立 stage/pane 滚动，必须显式声明次级 `ScrollView`，而不是靠 route 根容器的固定高度或隐藏裁剪去“碰巧可用”。
@@ -120,6 +120,7 @@ Agenter 是一个 attention-first 的 Agent runtime platform。
 - `Skills` 的 durable truth 永远来自 objective skill roots，而不是前端自行拼接 sibling path：`SKILLS_HOME / built-in` 一律是 skill-list-first 的 accordion list-detail browser，并显示产出该 visible skill 的 source env/path；`avatars` 一律是 avatar-list-first overview，detail 只预览 workspace-grouped avatar-private skill roots，真正的文件树浏览放进 dedicated avatar tab。
 - `Skills` preview law 固定为一层 preview shell：所有 selected file 都走隔离的 `filePreviewer` iframe entry；`filePreviewer` 内部再按 kind 与 projection 选择 renderer，其中 text-like files 默认使用 CodeMirror source preview，内容型调用方可显式请求 Markdown document projection，`pdf / image / audio / video` 使用对应成熟 renderer，不支持的类型也必须在同一 preview shell 中显式进入 unsupported 状态。
 - `Notes` 是 NoteSystem 的 inspection workbench：它通过 client-sdk/runtime-store typed facades 读取 catalog/page/search/tags/read-only-SQL projection，显式展示 `AVATAR_HOME` capability state，并按 notebook -> section -> page 组织 raw note facts、stable IDs、MIME、tags 与 references；Studio 不得直接 import `@agenter/note-system` implementation internals、app-server host internals 或读取本地文件系统。
+- `MCP` 是 mcpSystem 的 inspection/control workbench：它通过 client-sdk/runtime-store typed MCP facade 读取 runtime-owned global registry 与 exact-project projection，并以 `List / New` page-toolbar tabs 分离已安装 global 列表和新增 inert global config；Studio 不得 import `app-server` MCP internals、不得把 global config 创建合并成 project enablement、也不得用持续教程文案或嵌套卡片替代 runtime/project/lifecycle/snapshot/action facts。
 - `Workspaces` 是独立的全局 WorkspaceSystem workbench；每个 workspace 只对应一个目录根，并通过共享 page-toolbar 暴露 `View as` avatar lens 与 `Explorer / Rules / Private / CLI` 四个 peer modes，content header 只保留 workspace root 与 surface facts。
 - Workspace CLI discovery 只展示 app/runtime truth：包含 `just-bash` builtins、descriptor-backed root runtime CLI、以及当前 workspace/avatar 的 public/private tool commands；不把任意 PATH binary 伪装成 workspace capability。
 - Workspace shell dialog 只是 browser helpcenter 对 backend shell truth 的控制投影：catalog row 必须提供 `suggestedCommand`，必要时显式声明 `root-workspace | public-workspace` 执行面；browser 不得再本地实现第二套 shell，且 `root-workspace` shell dialog 在 runtime 未激活时必须直接报错而不是隐式拉起 authority。

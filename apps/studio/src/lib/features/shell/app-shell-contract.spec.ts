@@ -50,6 +50,11 @@ describe("Feature: App shell collapsed sidebar chrome", () => {
     expect(appShellSource).not.toContain("const avatarsActive = $derived(activeItem?.href === '/avatars');");
   });
 
+  test("Scenario: Given the MCP system entry When reading the app shell source Then MCP is a primary Studio workbench destination", () => {
+    expect(appShellSource).toContain("import NetworkIcon from '@lucide/svelte/icons/network';");
+    expect(appShellSource).toContain("{ href: '/mcp', label: 'MCP', icon: NetworkIcon }");
+  });
+
   test("Scenario: Given a compact viewport When reading the app shell source Then the shell opts into a docked mobile rail instead of a hidden drawer", () => {
     expect(appShellSource).toContain("import { IsMobile } from '$lib/hooks/is-mobile.svelte';");
     expect(appShellSource).toContain('const compactViewport = new IsMobile();');

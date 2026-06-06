@@ -246,6 +246,62 @@ const noteSqlQueryInputSchema = noteAvatarInputSchema.extend({
   sql: z.string().trim().min(1),
   limit: z.number().int().positive().max(200).optional(),
 });
+const mcpSessionInputSchema = z.object({
+  sessionId: z.string().min(1),
+});
+const mcpStringRecordSchema = z.record(z.string(), z.string());
+const mcpJsonObjectSchema = z.record(z.string(), z.unknown());
+const mcpTransportSchema = z.discriminatedUnion("kind", [
+  z.object({
+    kind: z.literal("stdio"),
+    command: z.string().trim().min(1),
+    args: z.array(z.string()).optional(),
+    env: mcpStringRecordSchema.optional(),
+  }),
+  z.object({
+    kind: z.literal("streamable-http"),
+    url: z.string().trim().min(1),
+    headers: mcpStringRecordSchema.optional(),
+  }),
+  z.object({
+    kind: z.literal("sse"),
+    url: z.string().trim().min(1),
+    headers: mcpStringRecordSchema.optional(),
+  }),
+]);
+const mcpAddInputSchema = mcpSessionInputSchema.extend({
+  name: z.string().trim().min(1),
+  transport: mcpTransportSchema,
+  title: z.string().trim().min(1).optional(),
+  description: z.string().trim().min(1).optional(),
+  env: mcpStringRecordSchema.optional(),
+});
+const mcpRemoveInputSchema = mcpSessionInputSchema.extend({
+  name: z.string().trim().min(1),
+  stop: z.boolean().optional(),
+});
+const mcpProjectInputSchema = mcpSessionInputSchema.extend({
+  name: z.string().trim().min(1),
+  projectPath: z.string().trim().min(1),
+});
+const mcpDisableInputSchema = mcpProjectInputSchema.extend({
+  stop: z.boolean().optional(),
+});
+const mcpListInputSchema = mcpSessionInputSchema.extend({
+  projectPath: z.string().trim().min(1),
+  includeSnapshots: z.boolean().optional(),
+});
+const mcpQueryInputSchema = mcpSessionInputSchema.extend({
+  sql: z.string().trim().min(1),
+  params: z.record(z.string(), z.union([z.string(), z.number(), z.boolean(), z.null()])).optional(),
+  projectPath: z.string().trim().min(1).optional(),
+});
+const mcpCallInputSchema = mcpProjectInputSchema.extend({
+  toolName: z.string().trim().min(1),
+  arguments: mcpJsonObjectSchema.optional(),
+  autoStart: z.boolean().optional(),
+  autoEnable: z.boolean().optional(),
+});
 const noteReferenceInputSchema = z.union([
   z.string().trim().min(1),
   z
@@ -629,6 +685,32 @@ export const appRouter = t.router({
     write: superadminProcedure
       .input(noteWriteInputSchema)
       .mutation(async ({ ctx, input }) => await ctx.kernel.writeNoteCatalogPage(input)),
+  }),
+  mcp: t.router({
+    add: superadminProcedure.input(mcpAddInputSchema).mutation(async ({ ctx, input }) => await ctx.kernel.mcpAdd(input)),
+    remove: superadminProcedure
+      .input(mcpRemoveInputSchema)
+      .mutation(async ({ ctx, input }) => await ctx.kernel.mcpRemove(input)),
+    enable: superadminProcedure
+      .input(mcpProjectInputSchema)
+      .mutation(async ({ ctx, input }) => ctx.kernel.mcpEnable(input)),
+    disable: superadminProcedure
+      .input(mcpDisableInputSchema)
+      .mutation(async ({ ctx, input }) => await ctx.kernel.mcpDisable(input)),
+    list: superadminProcedure.input(mcpListInputSchema).query(async ({ ctx, input }) => ctx.kernel.mcpList(input)),
+    query: superadminProcedure.input(mcpQueryInputSchema).query(async ({ ctx, input }) => ctx.kernel.mcpQuery(input)),
+    start: superadminProcedure
+      .input(mcpProjectInputSchema)
+      .mutation(async ({ ctx, input }) => await ctx.kernel.mcpStart(input)),
+    stop: superadminProcedure
+      .input(mcpProjectInputSchema)
+      .mutation(async ({ ctx, input }) => await ctx.kernel.mcpStop(input)),
+    restart: superadminProcedure
+      .input(mcpProjectInputSchema)
+      .mutation(async ({ ctx, input }) => await ctx.kernel.mcpRestart(input)),
+    invoke: superadminProcedure
+      .input(mcpCallInputSchema)
+      .mutation(async ({ ctx, input }) => await ctx.kernel.mcpCall(input)),
   }),
   session: t.router({
     list: superadminProcedure.query(({ ctx }) => ({ sessions: ctx.kernel.listSessions() })),

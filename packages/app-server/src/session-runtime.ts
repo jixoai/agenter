@@ -181,6 +181,15 @@ import {
 } from "./loopbus-plugin-runtime";
 import { type ManagedTerminalSnapshot, type TerminalRuntime } from "./managed-terminal";
 import { McpSystem } from "./mcp-system/system";
+import type {
+  McpAddInput,
+  McpCallInput,
+  McpDisableInput,
+  McpListInput,
+  McpProjectInput,
+  McpQueryInput,
+  McpRemoveInput,
+} from "./mcp-system/types";
 import { summarizeMessageChannelPresence } from "./message-channel-presence";
 import { resolveModelCapabilities } from "./model-capabilities";
 import {
@@ -2398,16 +2407,57 @@ export class SessionRuntime {
     this.mcpSystem = new McpSystem({
       dbPath: join(this.options.sessionRoot, "mcp-system", "mcp-system.sqlite"),
       rootWorkspacePath: this.getRootWorkspacePath(),
-      runtimeEnv: buildRootWorkspaceShellEnvironment({
+      runtimeEnvProvider: () => buildRootWorkspaceShellEnvironment({
         rootWorkspacePath: this.getRootWorkspacePath(),
         homeDir: this.getHomeDir(),
         apiBaseUrl: this.runtimeLocalApi?.baseUrl ?? "",
         managedSeatAuthorityUrl: this.options.managedSeatAuthorityUrl,
         privateKey: this.options.avatarPrivateKey ?? "",
         principalId: this.options.avatarPrincipalId,
+        env: this.getRootWorkspaceCapabilityEnv(),
       }),
     });
     return this.mcpSystem;
+  }
+
+  mcpAdd(input: McpAddInput): ReturnType<McpSystem["add"]> {
+    return this.ensureMcpSystem().add(input);
+  }
+
+  async mcpRemove(input: McpRemoveInput): Promise<Awaited<ReturnType<McpSystem["remove"]>>> {
+    return await this.ensureMcpSystem().remove(input);
+  }
+
+  mcpEnable(input: McpProjectInput): ReturnType<McpSystem["enable"]> {
+    return this.ensureMcpSystem().enable(input);
+  }
+
+  async mcpDisable(input: McpDisableInput): Promise<Awaited<ReturnType<McpSystem["disable"]>>> {
+    return await this.ensureMcpSystem().disable(input);
+  }
+
+  mcpList(input: McpListInput): ReturnType<McpSystem["list"]> {
+    return this.ensureMcpSystem().list(input);
+  }
+
+  mcpQuery(input: McpQueryInput): ReturnType<McpSystem["query"]> {
+    return this.ensureMcpSystem().query(input);
+  }
+
+  async mcpStart(input: McpProjectInput): Promise<Awaited<ReturnType<McpSystem["start"]>>> {
+    return await this.ensureMcpSystem().start(input);
+  }
+
+  async mcpStop(input: McpProjectInput): Promise<Awaited<ReturnType<McpSystem["stop"]>>> {
+    return await this.ensureMcpSystem().stop(input);
+  }
+
+  async mcpRestart(input: McpProjectInput): Promise<Awaited<ReturnType<McpSystem["restart"]>>> {
+    return await this.ensureMcpSystem().restart(input);
+  }
+
+  async mcpCall(input: McpCallInput, options: { signal?: AbortSignal } = {}): Promise<Awaited<ReturnType<McpSystem["call"]>>> {
+    return await this.ensureMcpSystem().call(input, options);
   }
 
   private getAttentionContextMatch(contextId: string): AttentionActiveContextMatch | null {

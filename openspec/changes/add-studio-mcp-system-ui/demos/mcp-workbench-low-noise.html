@@ -1,0 +1,621 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>MCP Workbench Low-Noise Prototype</title>
+    <style>
+      :root {
+        color-scheme: light;
+        --bg: #f6f7f8;
+        --panel: #ffffff;
+        --ink: #17181c;
+        --muted: #6b7280;
+        --line: color-mix(in srgb, #101827 12%, transparent);
+        --line-soft: color-mix(in srgb, #101827 7%, transparent);
+        --accent: #2563eb;
+        --good: #15803d;
+        --warn: #b45309;
+        --bad: #b91c1c;
+        font-family:
+          Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        background: var(--bg);
+        color: var(--ink);
+      }
+
+      .shell {
+        display: grid;
+        min-height: 100vh;
+        grid-template-columns: 68px minmax(0, 1fr);
+      }
+
+      .sidebar {
+        display: grid;
+        align-content: start;
+        gap: 8px;
+        border-right: 1px solid var(--line);
+        padding: 12px 10px;
+        background: #fbfbfc;
+      }
+
+      .nav {
+        display: grid;
+        place-items: center;
+        width: 44px;
+        height: 36px;
+        border-radius: 8px;
+        color: var(--muted);
+        font-size: 11px;
+        font-weight: 650;
+      }
+
+      .nav.active {
+        background: #eef4ff;
+        color: var(--accent);
+      }
+
+      .window {
+        display: grid;
+        min-width: 0;
+        grid-template-rows: auto auto minmax(0, 1fr);
+        margin: 14px;
+        overflow: hidden;
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        background: var(--panel);
+      }
+
+      .tabs {
+        display: flex;
+        gap: 2px;
+        border-bottom: 1px solid var(--line-soft);
+        padding: 8px 10px 0;
+        background: #fafafa;
+      }
+
+      .tab {
+        display: inline-flex;
+        min-width: 118px;
+        align-items: center;
+        gap: 8px;
+        border: 1px solid transparent;
+        border-bottom: 0;
+        border-radius: 8px 8px 0 0;
+        padding: 8px 10px;
+        color: var(--muted);
+        font-size: 13px;
+        font-weight: 650;
+      }
+
+      .tab.active {
+        border-color: var(--line-soft);
+        background: var(--panel);
+        color: var(--ink);
+      }
+
+      .toolbar {
+        display: grid;
+        grid-template-columns: minmax(180px, auto) minmax(0, 1fr) auto;
+        gap: 12px;
+        align-items: center;
+        border-bottom: 1px solid var(--line);
+        padding: 10px 14px;
+      }
+
+      .identity {
+        display: flex;
+        min-width: 0;
+        align-items: center;
+        gap: 10px;
+      }
+
+      .glyph {
+        display: grid;
+        place-items: center;
+        width: 30px;
+        height: 30px;
+        border-radius: 8px;
+        background: #eef4ff;
+        color: var(--accent);
+        font-weight: 800;
+      }
+
+      .title {
+        display: grid;
+        gap: 1px;
+        min-width: 0;
+      }
+
+      .title strong {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        font-size: 14px;
+      }
+
+      .title span {
+        overflow: hidden;
+        color: var(--muted);
+        font-size: 11px;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .controls,
+      .actions {
+        display: flex;
+        min-width: 0;
+        align-items: center;
+        justify-content: flex-end;
+        gap: 8px;
+      }
+
+      .field,
+      .button,
+      .icon-button {
+        height: 32px;
+        border: 1px solid var(--line-soft);
+        border-radius: 8px;
+        background: #fff;
+        color: var(--ink);
+        font: inherit;
+        font-size: 12px;
+      }
+
+      .field {
+        min-width: 180px;
+        padding: 0 10px;
+      }
+
+      .button {
+        display: inline-flex;
+        align-items: center;
+        gap: 7px;
+        padding: 0 10px;
+        font-weight: 650;
+      }
+
+      .icon-button {
+        width: 32px;
+      }
+
+      .workbench {
+        display: grid;
+        min-height: 0;
+        grid-template-columns: minmax(320px, 0.9fr) minmax(430px, 1.1fr);
+      }
+
+      .list {
+        display: grid;
+        min-width: 0;
+        min-height: 0;
+        grid-template-rows: auto minmax(0, 1fr);
+        border-right: 1px solid var(--line);
+      }
+
+      .list-head,
+      .detail-head {
+        display: flex;
+        min-width: 0;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        border-bottom: 1px solid var(--line-soft);
+        padding: 10px 14px;
+      }
+
+      .compact-title {
+        display: flex;
+        min-width: 0;
+        align-items: center;
+        gap: 8px;
+        font-size: 12px;
+        font-weight: 700;
+      }
+
+      .hint {
+        position: relative;
+        display: inline-grid;
+        place-items: center;
+        width: 18px;
+        height: 18px;
+        border: 1px solid var(--line-soft);
+        border-radius: 999px;
+        color: var(--muted);
+        font-size: 11px;
+        cursor: help;
+      }
+
+      .hint::after {
+        position: absolute;
+        z-index: 2;
+        top: 24px;
+        left: 0;
+        display: none;
+        width: 270px;
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        background: #111827;
+        color: #f8fafc;
+        content: attr(data-help);
+        font-size: 12px;
+        font-weight: 500;
+        line-height: 1.45;
+        padding: 10px;
+      }
+
+      .hint:hover::after,
+      .hint:focus-visible::after {
+        display: block;
+      }
+
+      .rows {
+        min-height: 0;
+        overflow: auto;
+      }
+
+      .row {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        gap: 12px;
+        border-bottom: 1px solid var(--line-soft);
+        padding: 12px 14px;
+      }
+
+      .row.active {
+        background: #f4f7ff;
+      }
+
+      .row-main {
+        display: grid;
+        min-width: 0;
+        gap: 5px;
+      }
+
+      .row-title {
+        display: flex;
+        min-width: 0;
+        align-items: center;
+        gap: 8px;
+      }
+
+      .row-title strong {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        font-size: 13px;
+      }
+
+      .meta {
+        display: flex;
+        min-width: 0;
+        flex-wrap: wrap;
+        gap: 6px;
+      }
+
+      .chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        border-radius: 999px;
+        background: #f2f4f7;
+        color: var(--muted);
+        font-size: 11px;
+        font-weight: 650;
+        line-height: 1;
+        padding: 5px 7px;
+      }
+
+      .chip.good {
+        background: #eaf7ee;
+        color: var(--good);
+      }
+
+      .chip.warn {
+        background: #fff6e8;
+        color: var(--warn);
+      }
+
+      .chip.bad {
+        background: #fff1f2;
+        color: var(--bad);
+      }
+
+      .detail {
+        display: grid;
+        min-width: 0;
+        min-height: 0;
+        grid-template-rows: auto minmax(0, 1fr) auto;
+      }
+
+      .detail-body {
+        min-height: 0;
+        overflow: auto;
+        padding: 2px 0;
+      }
+
+      .section {
+        display: grid;
+        gap: 10px;
+        border-bottom: 1px solid var(--line-soft);
+        padding: 14px;
+      }
+
+      .section h3 {
+        margin: 0;
+        font-size: 12px;
+        letter-spacing: 0;
+      }
+
+      .facts {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 8px 18px;
+      }
+
+      .fact {
+        display: grid;
+        gap: 2px;
+        min-width: 0;
+      }
+
+      .fact span {
+        color: var(--muted);
+        font-size: 10px;
+        font-weight: 700;
+        text-transform: uppercase;
+      }
+
+      .fact strong {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        font-size: 12px;
+      }
+
+      .tool-row {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        gap: 10px;
+        padding: 8px 0;
+      }
+
+      .tool-row + .tool-row {
+        border-top: 1px solid var(--line-soft);
+      }
+
+      .code {
+        overflow: auto;
+        border-radius: 8px;
+        background: #0f172a;
+        color: #dbeafe;
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+        font-size: 11px;
+        line-height: 1.5;
+        padding: 10px;
+      }
+
+      .detail-foot {
+        display: flex;
+        justify-content: space-between;
+        gap: 10px;
+        border-top: 1px solid var(--line);
+        padding: 10px 14px;
+      }
+
+      @media (max-width: 860px) {
+        .shell {
+          grid-template-columns: 1fr;
+        }
+
+        .sidebar {
+          display: none;
+        }
+
+        .window {
+          min-height: 100vh;
+          margin: 0;
+          border: 0;
+          border-radius: 0;
+        }
+
+        .toolbar {
+          grid-template-columns: 1fr;
+        }
+
+        .controls,
+        .actions {
+          justify-content: flex-start;
+        }
+
+        .workbench {
+          grid-template-columns: 1fr;
+        }
+
+        .detail {
+          display: none;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="shell">
+      <aside class="sidebar" aria-label="Studio navigation">
+        <div class="nav">Msg</div>
+        <div class="nav">Term</div>
+        <div class="nav">Skill</div>
+        <div class="nav active">MCP</div>
+      </aside>
+
+      <section class="window" aria-label="Studio window">
+        <div class="tabs">
+          <div class="tab active">MCP</div>
+        </div>
+
+        <header class="toolbar">
+          <div class="identity">
+            <div class="glyph">M</div>
+            <div class="title">
+              <strong>MCP</strong>
+              <span>default runtime · /Users/kzf/Dev/GitHub/jixoai-labs/agenter</span>
+            </div>
+          </div>
+
+          <div class="controls">
+            <input class="field" value="default runtime" aria-label="Runtime" />
+            <input class="field" value="/repo/app" aria-label="Exact project path" />
+            <input class="field" placeholder="Filter servers" aria-label="Filter MCP servers" />
+          </div>
+
+          <div class="actions">
+            <button class="icon-button" aria-label="Refresh">↻</button>
+            <button class="button">+ Add</button>
+          </div>
+        </header>
+
+        <div class="workbench">
+          <section class="list" aria-label="MCP server list">
+            <div class="list-head">
+              <div class="compact-title">
+                Project projection
+                <span
+                  class="hint"
+                  tabindex="0"
+                  data-help="Globals are reusable configs. Project rows are exact-path enablement and lifecycle projections; viewing a row never starts a server."
+                  >?</span
+                >
+              </div>
+              <span class="chip">4 installed</span>
+            </div>
+
+            <div class="rows">
+              <article class="row active">
+                <div class="row-main">
+                  <div class="row-title"><strong>filesystem</strong><span class="chip">stdio</span></div>
+                  <div class="meta">
+                    <span class="chip good">enabled</span>
+                    <span class="chip good">running</span>
+                    <span class="chip">12 tools</span>
+                    <span class="chip">snapshot 2m</span>
+                  </div>
+                </div>
+                <button class="icon-button" aria-label="Open filesystem detail">›</button>
+              </article>
+
+              <article class="row">
+                <div class="row-main">
+                  <div class="row-title"><strong>github</strong><span class="chip">streamable-http</span></div>
+                  <div class="meta">
+                    <span class="chip warn">default disabled</span>
+                    <span class="chip">global only</span>
+                  </div>
+                </div>
+                <button class="icon-button" aria-label="Open github detail">›</button>
+              </article>
+
+              <article class="row">
+                <div class="row-main">
+                  <div class="row-title"><strong>sequential-thinking</strong><span class="chip">stdio</span></div>
+                  <div class="meta">
+                    <span class="chip good">enabled</span>
+                    <span class="chip">stopped</span>
+                    <span class="chip">1 tool</span>
+                    <span class="chip">snapshot 1h</span>
+                  </div>
+                </div>
+                <button class="icon-button" aria-label="Open sequential-thinking detail">›</button>
+              </article>
+
+              <article class="row">
+                <div class="row-main">
+                  <div class="row-title"><strong>linear</strong><span class="chip">sse</span></div>
+                  <div class="meta">
+                    <span class="chip good">enabled</span>
+                    <span class="chip bad">failed</span>
+                    <span class="chip bad">401</span>
+                  </div>
+                </div>
+                <button class="icon-button" aria-label="Open linear detail">›</button>
+              </article>
+            </div>
+          </section>
+
+          <section class="detail" aria-label="MCP detail">
+            <div class="detail-head">
+              <div class="compact-title">
+                filesystem
+                <span class="chip good">running</span>
+              </div>
+              <div class="actions">
+                <button class="button">Restart</button>
+                <button class="button">Stop</button>
+              </div>
+            </div>
+
+            <div class="detail-body">
+              <section class="section">
+                <h3>Runtime facts</h3>
+                <div class="facts">
+                  <div class="fact"><span>Global</span><strong>filesystem</strong></div>
+                  <div class="fact"><span>Transport</span><strong>stdio · npx</strong></div>
+                  <div class="fact"><span>Project</span><strong>/repo/app</strong></div>
+                  <div class="fact"><span>Snapshot</span><strong>2026-06-07 10:18</strong></div>
+                </div>
+              </section>
+
+              <section class="section">
+                <h3>Project actions</h3>
+                <div class="meta">
+                  <span class="chip good">enabled</span>
+                  <span class="chip good">auto-start available</span>
+                  <span
+                    class="hint"
+                    tabindex="0"
+                    data-help="Tool calls auto-start enabled stopped servers by default. They do not auto-enable disabled projects unless explicitly requested."
+                    >?</span
+                  >
+                </div>
+              </section>
+
+              <section class="section">
+                <h3>Tools</h3>
+                <div class="tool-row">
+                  <div class="fact"><strong>read_file</strong><span>Read one file from the exact project scope</span></div>
+                  <button class="button">Test</button>
+                </div>
+                <div class="tool-row">
+                  <div class="fact"><strong>list_directory</strong><span>Return entries under a project path</span></div>
+                  <button class="button">Test</button>
+                </div>
+              </section>
+
+              <section class="section">
+                <h3>Latest action</h3>
+                <pre class="code">{
+  "operation": "call",
+  "toolName": "read_file",
+  "ok": true,
+  "durationMs": 44
+}</pre>
+              </section>
+            </div>
+
+            <footer class="detail-foot">
+              <button class="button">Edit global</button>
+              <button class="button">Remove</button>
+            </footer>
+          </section>
+        </div>
+      </section>
+    </main>
+  </body>
+</html>

@@ -41,6 +41,69 @@ The active SvelteKit operator app SHALL be published and resolved as `agenter-ap
 - **THEN** Studio consumes runtime through daemon/client-sdk contracts
 - **AND** it does not import `@agenter/app-server` runtime internals, session runtime modules, or core CLI static-root helpers
 
+### Requirement: Studio SHALL expose MCP as a primary workbench destination
+
+Studio SHALL expose an app-shell navigation item named `MCP` that opens `/mcp` as an independent system workbench destination. The MCP workbench SHALL consume client-runtime-store MCP contracts and SHALL NOT import `app-server`, `mcp-system`, or root-workspace CLI implementation internals.
+
+#### Scenario: MCP route is reachable from app shell
+
+- **WHEN** the operator opens Studio navigation
+- **THEN** the primary systems navigation includes `MCP`
+- **AND** activating it opens `/mcp`
+- **AND** the active navigation state follows `/mcp` and nested MCP routes
+
+#### Scenario: MCP route stays inside Studio app boundary
+
+- **WHEN** reviewers inspect the MCP route and feature source
+- **THEN** it imports MCP data through Studio app controller and client-runtime-store facades
+- **AND** it does not import `packages/app-server/src/mcp-system/*`, runtime internals, or cli-shell modules
+
+### Requirement: MCP workbench SHALL expose global registry and exact-project projection separately
+
+The MCP workbench SHALL make the selected AvatarRuntime authority explicit before reading or mutating MCP state. It SHALL present global MCP configs separately from exact-project enablement, lifecycle, project-local snapshots, and action outcomes. Viewing or creating a global config SHALL NOT imply project enablement or start any MCP server.
+
+#### Scenario: MCP home separates list and new config work
+
+- **WHEN** the operator opens `/mcp`
+- **THEN** the page toolbar exposes `List` and `New` tabs
+- **AND** `List` shows installed global configs with the selected exact-project projection
+- **AND** `New` creates an inert global config first, with any project enablement shown as a separate explicit step
+- **AND** the default page does not merge global creation into the project lifecycle/detail surface
+
+#### Scenario: No runtime selected
+
+- **WHEN** the operator opens `/mcp` without a selectable runtime authority
+- **THEN** the workbench renders an explicit no-runtime state
+- **AND** add, enable, lifecycle, and call actions are disabled
+- **AND** no Studio-local MCP database is created
+
+#### Scenario: Project filter shows default-disabled globals
+
+- **GIVEN** global MCP `fs` exists
+- **AND** project `/repo/app` has not enabled `fs`
+- **WHEN** the operator filters the workbench to exact project path `/repo/app`
+- **THEN** the row for `fs` is visible as disabled by default
+- **AND** lifecycle controls for `fs` are disabled until project enablement is explicit
+- **AND** no live MCP session is started by viewing the row
+
+### Requirement: MCP workbench SHALL preserve a low-noise operator surface
+
+The MCP workbench SHALL be designed for expert operators who repeatedly use Studio. Primary page space SHALL show actionable MCP state, controls, and inspection facts rather than persistent introductory prose. Explanatory context, caveats, and low-frequency recovery guidance SHALL be collapsed into contextual help such as `HelpHint`, title or aria help, dialogs, or focused empty/error states.
+
+#### Scenario: Primary surface avoids tutorial copy
+
+- **WHEN** the operator opens `/mcp` with runtime data available
+- **THEN** the toolbar, list, and detail surfaces prioritize runtime, project, server, lifecycle, snapshot, and action facts
+- **AND** the page does not render persistent introductory paragraphs explaining what MCP is or how every control works
+- **AND** low-frequency conceptual help is available through contextual help affordances instead
+
+#### Scenario: Detail surface avoids nested card stacks
+
+- **WHEN** the MCP detail surface renders global config, project enablement, snapshots, latest errors, and action facts
+- **THEN** those sections use shared workbench, split-detail, compact section, spacing, and lightweight divider primitives
+- **AND** they do not wrap each subsection in separate nested cards unless the subsection owns an independent interaction state
+- **AND** border usage remains tied to actual ownership boundaries or clickable affordances
+
 ### Requirement: Studio SHALL own static and dev serving
 
 `agenter-app-studio` SHALL serve its own built static assets in normal mode and SHALL start its own Vite dev server in dev mode. Static and dev serving are app lifecycle responsibilities, not core launcher responsibilities.

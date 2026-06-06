@@ -7,6 +7,7 @@ import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 
+import { McpSystemStore } from "../src/mcp-system/store";
 import { McpSystem } from "../src/mcp-system/system";
 import type { McpTransportStartContext } from "../src/mcp-system/types";
 
@@ -20,16 +21,20 @@ afterEach(() => {
 
 const createSystem = (input: {
   transportFactory: (context: McpTransportStartContext) => InMemoryTransport;
+  dbPath?: string;
+  rootWorkspacePath?: string;
+  runtimeEnvProvider?: () => Record<string, string>;
 }): McpSystem => {
   const root = mkdtempSync(join(tmpdir(), "agenter-mcp-system-lifecycle-"));
   tempRoots.push(root);
   return new McpSystem({
-    dbPath: join(root, "mcp-system.sqlite"),
-    rootWorkspacePath: join(root, "root-workspace"),
+    dbPath: input.dbPath ?? join(root, "mcp-system.sqlite"),
+    rootWorkspacePath: input.rootWorkspacePath ?? join(root, "root-workspace"),
     runtimeEnv: {
       ROOT_ONLY: "root-env",
       TOKEN: "root-token",
     },
+    runtimeEnvProvider: input.runtimeEnvProvider,
     transportFactory: input.transportFactory,
   });
 };
@@ -215,6 +220,84 @@ describe("Feature: mcpSystem lifecycle", () => {
       expect(stopped.instance.lifecycle).toBe("stopped");
       expect(restarted.instance.lifecycle).toBe("running");
       expect(fixture.starts).toHaveLength(2);
+    } finally {
+      system.close();
+      await Promise.all(fixture.servers.map((server) => server.close().catch(() => undefined)));
+    }
+  });
+
+  test("Scenario: Given previous runtime left live lifecycle facts When mcpSystem opens Then they recover as stopped with snapshots intact", () => {
+    const root = mkdtempSync(join(tmpdir(), "agenter-mcp-system-lifecycle-"));
+    tempRoots.push(root);
+    const dbPath = join(root, "mcp-system.sqlite");
+    const seed = new McpSystemStore(dbPath);
+    try {
+      seed.addGlobal({
+        name: "memory",
+        transport: { kind: "stdio", command: "fixture" },
+      });
+      seed.enableProject({ name: "memory", projectPath: "/repo/app" });
+      seed.updateInstance({
+        name: "memory",
+        projectPath: "/repo/app",
+        lifecycle: "running",
+        lastStartedAt: "2026-05-17T00:00:00.000Z",
+      });
+      seed.saveSnapshot({
+        name: "memory",
+        projectPath: "/repo/app",
+        serverName: "fixture-memory",
+        tools: [{ name: "echo" }],
+        resources: [],
+        prompts: [],
+        snapshot: { source: "previous-runtime" },
+        snapshotAt: "2026-05-17T00:00:01.000Z",
+      });
+    } finally {
+      seed.close();
+    }
+
+    const fixture = createFixtureTransportFactory();
+    const system = createSystem({
+      dbPath,
+      rootWorkspacePath: join(root, "root-workspace"),
+      transportFactory: fixture.factory,
+    });
+    try {
+      const rows = system.query({
+        projectPath: "/repo/app",
+        sql: "select lifecycle, server_name, tools_json from mcp_enabled where name = $name",
+        params: { name: "memory" },
+      }).rows;
+
+      expect(rows[0]?.lifecycle).toBe("stopped");
+      expect(rows[0]?.server_name).toBe("fixture-memory");
+      expect(String(rows[0]?.tools_json)).toContain("echo");
+    } finally {
+      system.close();
+    }
+  });
+
+  test("Scenario: Given runtime env changes after construction When an MCP starts Then it uses the latest env provider values", async () => {
+    const fixture = createFixtureTransportFactory();
+    let apiBaseUrl = "http://127.0.0.1:4100";
+    const system = createSystem({
+      transportFactory: fixture.factory,
+      runtimeEnvProvider: () => ({
+        AGENTER_ATTENTION_API_BASE_URL: apiBaseUrl,
+      }),
+    });
+    try {
+      addMemoryGlobal(system);
+      system.enable({ name: "memory", projectPath: "/repo/app" });
+
+      await system.start({ name: "memory", projectPath: "/repo/app" });
+      await system.stop({ name: "memory", projectPath: "/repo/app" });
+      apiBaseUrl = "http://127.0.0.1:4200";
+      await system.start({ name: "memory", projectPath: "/repo/app" });
+
+      expect(fixture.starts[0]?.env.AGENTER_ATTENTION_API_BASE_URL).toBe("http://127.0.0.1:4100");
+      expect(fixture.starts[1]?.env.AGENTER_ATTENTION_API_BASE_URL).toBe("http://127.0.0.1:4200");
     } finally {
       system.close();
       await Promise.all(fixture.servers.map((server) => server.close().catch(() => undefined)));

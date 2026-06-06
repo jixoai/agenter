@@ -130,6 +130,20 @@ export class McpSystemStore {
     this.db.close();
   }
 
+  recoverLiveInstancesAsStopped(input: { stoppedAt?: string } = {}): number {
+    const stoppedAt = input.stoppedAt ?? nowIso();
+    const result = this.db
+      .query(
+        `update mcp_instances
+         set lifecycle = 'stopped',
+             updated_at = ?,
+             last_stopped_at = coalesce(last_stopped_at, ?)
+         where lifecycle in ('starting', 'running')`,
+      )
+      .run(stoppedAt, stoppedAt);
+    return result.changes;
+  }
+
   addGlobal(input: {
     name: string;
     title?: string;

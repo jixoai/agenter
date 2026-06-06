@@ -30,6 +30,7 @@ export interface McpSystemOptions {
   dbPath: string;
   rootWorkspacePath: string;
   runtimeEnv?: Record<string, string>;
+  runtimeEnvProvider?: () => Record<string, string>;
   clientName?: string;
   clientVersion?: string;
   transportFactory?: (context: McpTransportStartContext) => Transport;
@@ -112,24 +113,41 @@ export class McpSystem {
 
   private readonly rootWorkspacePath: string;
   private readonly runtimeEnv: Record<string, string>;
+  private readonly runtimeEnvProvider?: () => Record<string, string>;
   private readonly clientName: string;
   private readonly clientVersion: string;
   private readonly transportFactory: (context: McpTransportStartContext) => Transport;
   private readonly sessions = new Map<string, McpLiveSession>();
   private readonly locks = new Map<string, Promise<unknown>>();
+  private closed = false;
 
   constructor(options: McpSystemOptions) {
     this.rootWorkspacePath = resolve(options.rootWorkspacePath);
     mkdirSync(this.rootWorkspacePath, { recursive: true });
     this.runtimeEnv = cloneStringRecord(options.runtimeEnv);
+    this.runtimeEnvProvider = options.runtimeEnvProvider;
     this.clientName = options.clientName ?? "agenter-mcp-system";
     this.clientVersion = options.clientVersion ?? "0.0.0";
     this.transportFactory = options.transportFactory ?? createMcpSystemTransport;
     this.store = new McpSystemStore(options.dbPath);
+    this.store.recoverLiveInstancesAsStopped();
   }
 
   close(): void {
+    if (this.closed) {
+      return;
+    }
+    this.closed = true;
+    const stoppedAt = new Date().toISOString();
     for (const session of this.sessions.values()) {
+      this.store.updateInstance({
+        name: session.instance.name,
+        projectPath: session.instance.projectPath,
+        lifecycle: "stopped",
+        lastError: null,
+        lastStoppedAt: stoppedAt,
+        updatedAt: stoppedAt,
+      });
       void session.client.close().catch(() => undefined);
     }
     this.sessions.clear();
@@ -382,6 +400,7 @@ export class McpSystem {
       ...process.env,
       HOME: this.rootWorkspacePath,
       ...this.runtimeEnv,
+      ...(this.runtimeEnvProvider?.() ?? {}),
       ...(global.env ?? {}),
     };
   }

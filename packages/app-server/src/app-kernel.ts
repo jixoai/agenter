@@ -178,6 +178,15 @@ import { pageHeartbeatGroupsFromDb } from "./heartbeat-groups-page";
 import { HEARTBEAT_INSPECTION_SCOPES, HEARTBEAT_MESSAGE_PART_SCOPE } from "./heartbeat-message-parts";
 import { materializeBuiltinPromptDocs } from "./i18n";
 import { readLocalEnvValue, resolveLocalEnvPath, writeLocalEnvValue } from "./local-env";
+import type {
+  McpAddInput,
+  McpCallInput,
+  McpDisableInput,
+  McpListInput,
+  McpProjectInput,
+  McpQueryInput,
+  McpRemoveInput,
+} from "./mcp-system/types";
 import { resolveModelCapabilities } from "./model-capabilities";
 import {
   settingsKindSchema,
@@ -6058,6 +6067,66 @@ export class AppKernel {
     return await editor.save(kind, input.content, input.baseMtimeMs);
   }
 
+  mcpAdd(input: { sessionId: string } & McpAddInput): ReturnType<SessionRuntime["mcpAdd"]> {
+    const { sessionId, ...mcpInput } = input;
+    return this.getRunningRuntimeOrThrow(sessionId).mcpAdd(mcpInput);
+  }
+
+  async mcpRemove(
+    input: { sessionId: string } & McpRemoveInput,
+  ): Promise<Awaited<ReturnType<SessionRuntime["mcpRemove"]>>> {
+    const { sessionId, ...mcpInput } = input;
+    return await this.getRunningRuntimeOrThrow(sessionId).mcpRemove(mcpInput);
+  }
+
+  mcpEnable(input: { sessionId: string } & McpProjectInput): ReturnType<SessionRuntime["mcpEnable"]> {
+    const { sessionId, ...mcpInput } = input;
+    return this.getRunningRuntimeOrThrow(sessionId).mcpEnable(mcpInput);
+  }
+
+  async mcpDisable(
+    input: { sessionId: string } & McpDisableInput,
+  ): Promise<Awaited<ReturnType<SessionRuntime["mcpDisable"]>>> {
+    const { sessionId, ...mcpInput } = input;
+    return await this.getRunningRuntimeOrThrow(sessionId).mcpDisable(mcpInput);
+  }
+
+  mcpList(input: { sessionId: string } & McpListInput): ReturnType<SessionRuntime["mcpList"]> {
+    const { sessionId, ...mcpInput } = input;
+    return this.getRunningRuntimeOrThrow(sessionId).mcpList(mcpInput);
+  }
+
+  mcpQuery(input: { sessionId: string } & McpQueryInput): ReturnType<SessionRuntime["mcpQuery"]> {
+    const { sessionId, ...mcpInput } = input;
+    return this.getRunningRuntimeOrThrow(sessionId).mcpQuery(mcpInput);
+  }
+
+  async mcpStart(
+    input: { sessionId: string } & McpProjectInput,
+  ): Promise<Awaited<ReturnType<SessionRuntime["mcpStart"]>>> {
+    const { sessionId, ...mcpInput } = input;
+    return await this.getRunningRuntimeOrThrow(sessionId).mcpStart(mcpInput);
+  }
+
+  async mcpStop(
+    input: { sessionId: string } & McpProjectInput,
+  ): Promise<Awaited<ReturnType<SessionRuntime["mcpStop"]>>> {
+    const { sessionId, ...mcpInput } = input;
+    return await this.getRunningRuntimeOrThrow(sessionId).mcpStop(mcpInput);
+  }
+
+  async mcpRestart(
+    input: { sessionId: string } & McpProjectInput,
+  ): Promise<Awaited<ReturnType<SessionRuntime["mcpRestart"]>>> {
+    const { sessionId, ...mcpInput } = input;
+    return await this.getRunningRuntimeOrThrow(sessionId).mcpRestart(mcpInput);
+  }
+
+  async mcpCall(input: { sessionId: string } & McpCallInput): Promise<Awaited<ReturnType<SessionRuntime["mcpCall"]>>> {
+    const { sessionId, ...mcpInput } = input;
+    return await this.getRunningRuntimeOrThrow(sessionId).mcpCall(mcpInput);
+  }
+
   private async refreshRuntimesForWorkspaceSettingsSave(input: {
     workspacePath: string;
     avatar?: string;
@@ -6081,6 +6150,15 @@ export class AppKernel {
       }
       await runtime.reloadSettingsFromDisk({ persistPendingConfigFact: true });
     }
+  }
+
+  private getRunningRuntimeOrThrow(sessionId: string): SessionRuntime {
+    this.getSessionMetaOrThrow(sessionId);
+    const runtime = this.runtimes.get(sessionId);
+    if (!runtime?.isStarted()) {
+      throw new Error(`runtime is not running: ${sessionId}`);
+    }
+    return runtime;
   }
 
   private async ensureRuntime(sessionId: string): Promise<SessionRuntime> {
