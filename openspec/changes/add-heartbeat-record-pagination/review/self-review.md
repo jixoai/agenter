@@ -12,6 +12,7 @@
 - The standalone example owns the dedicated Framework7 route `/heartbeat/:runtimeId/records/:recordId`.
 - `HeartbeatView` emits `callbacks.onOpenRecordDetail` when present and only uses inline detail as package fallback.
 - Compact cards no longer fall back to prototype sample ratios when before/after usage payloads are absent.
+- Config changed-control cards preserve non-numeric and non-standard boolean values such as `adaptive` and `auto` instead of coercing them to `0` or `off`.
 - `HeartbeatExampleState` now preserves `mode`, `silentConnect`, `wsUrl`, and non-default `pageSize` across list, detail, and Avatar-directory URLs.
 - The example connection adapter forwards `recordPageSize` into `loadHeartbeatRecords` for latest and fixed anchors.
 - Example BDD coverage now asserts that record-row click opens the dedicated record route and preserves `pageSize=2`.

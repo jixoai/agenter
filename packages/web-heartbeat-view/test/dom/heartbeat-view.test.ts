@@ -825,7 +825,7 @@ describe("Feature: HeartbeatView DOM capability contract", () => {
                       partType: "config",
                       payload: {
                         oldConfig: { thinking: false, maxToken: 2000 },
-                        newConfig: { thinking: true, maxToken: 4000 },
+                        newConfig: { thinking: "auto", maxToken: "adaptive" },
                       },
                     }),
                   ],
@@ -849,6 +849,9 @@ describe("Feature: HeartbeatView DOM capability contract", () => {
     expect(document.querySelectorAll('[data-object-kind="config"]').length).toBeGreaterThanOrEqual(2);
     expect(document.querySelector(".ag-heartbeat-record-config__field--thinking")).not.toBeNull();
     expect(document.querySelector(".ag-heartbeat-record-config__field--maxtoken")).not.toBeNull();
+    expect(document.body.textContent).toContain("auto");
+    expect(document.body.textContent).toContain("adaptive");
+    expect(document.body.textContent).not.toContain("0t");
     expect(document.querySelector(".ag-heartbeat-record-config__field--topk")).toBeNull();
     expect(document.querySelector(".ag-heartbeat-record-config__field--budget")).toBeNull();
     expect(document.body.textContent).toContain("old:");
@@ -857,7 +860,7 @@ describe("Feature: HeartbeatView DOM capability contract", () => {
       button.textContent?.includes("New Config"),
     );
     newTab?.click();
-    await waitForDocumentText("thinking: true");
+    await waitForDocumentText("thinking: auto");
     const oldTab = Array.from(document.querySelectorAll<HTMLButtonElement>("button")).find((button) =>
       button.textContent?.includes("Old Config"),
     );

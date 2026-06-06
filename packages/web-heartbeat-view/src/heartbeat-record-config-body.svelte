@@ -61,15 +61,20 @@
   });
   const configPanelId = "ag-heartbeat-record-config-panel";
 
-  const readNumber = (value: unknown, fallback: number): number => {
+  const formatControlScalar = (value: unknown): string => formatHeartbeatRecordPayload(value).replaceAll(/\s+/gu, " ").trim();
+
+  const readNumber = (value: unknown): number | null => {
     if (typeof value === "number" && Number.isFinite(value)) {
       return value;
     }
-    return fallback;
+    return null;
   };
 
-  const formatControlNumber = (value: unknown, fallback: number, suffix = ""): string => {
-    const numberValue = readNumber(value, fallback);
+  const formatControlNumber = (value: unknown, suffix = ""): string => {
+    const numberValue = readNumber(value);
+    if (numberValue === null) {
+      return formatControlScalar(value);
+    }
     const rounded = Number.isInteger(numberValue)
       ? Math.round(numberValue).toLocaleString()
       : numberValue.toFixed(1);
@@ -81,9 +86,16 @@
       return value ? "on" : "off";
     }
     if (typeof value === "string") {
-      return ["on", "true", "1", "yes"].includes(value.toLowerCase()) ? "on" : "off";
+      const normalized = value.toLowerCase();
+      if (["on", "true", "1", "yes"].includes(normalized)) {
+        return "on";
+      }
+      if (["off", "false", "0", "no"].includes(normalized)) {
+        return "off";
+      }
+      return formatControlScalar(value);
     }
-    return "off";
+    return formatControlScalar(value);
   };
 
   const formatPromptValue = (value: unknown): string => {
@@ -99,7 +111,7 @@
       keys: ["temperature"],
       icon: "temperature",
       className: "temperature",
-      format: (value) => formatControlNumber(value, 0),
+      format: (value) => formatControlNumber(value),
     },
     {
       key: "topK",
@@ -108,7 +120,7 @@
       keys: ["topk", "topK"],
       icon: "topK",
       className: "topk",
-      format: (value) => formatControlNumber(value, 0),
+      format: (value) => formatControlNumber(value),
     },
     {
       key: "maxToken",
@@ -117,7 +129,7 @@
       keys: ["maxtoken", "maxToken", "maxTokens"],
       icon: "maxToken",
       className: "maxtoken",
-      format: (value) => formatControlNumber(value, 0, "t"),
+      format: (value) => formatControlNumber(value, "t"),
     },
     {
       key: "thinking",
@@ -135,7 +147,7 @@
       keys: ["thinking-budget", "thinkingBudget", "thinkingBudgetTokens"],
       icon: "budget",
       className: "budget",
-      format: (value) => formatControlNumber(value, 0, "t"),
+      format: (value) => formatControlNumber(value, "t"),
     },
     {
       key: "systemPrompt",
