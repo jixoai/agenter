@@ -242,7 +242,6 @@
             id="inspectCard"
             sample="tool-loop"
             open-latest
-            support-text="The hidden middle span collapses into one combo chip. Tail-first expansion is computed from width budget, not hardcoded states."
           ></x-model-run-card>
         </div>
         <div class="inspect-meta">
@@ -264,28 +263,21 @@
         <h2>Math And Semantics</h2>
         <div class="legend">
           <div>
-            <h3>Chip Types</h3>
+            <h3>Keep</h3>
             <ul>
-              <li>`inputChip`: a mixed `userMessageChip`; excludes `toolCallResult`.</li>
-              <li>`text`: icon + estimated token count via `Intl.Segmenter`.</li>
-              <li>`image` / `file`: icon + bytes.</li>
-              <li>`video`: icon + duration.</li>
-              <li>`thinking`: icon + time span.</li>
-              <li>`refusal`: icon only.</li>
-              <li>`error`: icon only; terminal failed fact.</li>
-              <li>`tool`: icon + count only when count &gt; 1.</li>
-              <li>`pending`: appended only when `latest pending` is enabled.</li>
-              <li>`combo`: a bounded folded middle span with aggregate metrics.</li>
+              <li>`input`: one primary user-message fact.</li>
+              <li>`combo`: one folded middle summary.</li>
+              <li>`tail`: only the explicit stations worth reading.</li>
+              <li>`pending` / `error`: state, not extra structure.</li>
             </ul>
           </div>
           <div>
-            <h3>Line Law</h3>
+            <h3>Omit</h3>
             <ul>
-              <li>`inputChip -> line1 -> chip`: `line1 = [inputChip, chip]`.</li>
-              <li>`chipA -> line2 -> chipB`: `line2 = (chipA, chipB]`.</li>
-              <li>All line durations add up to the card total duration.</li>
-              <li>Tool results are merged back into the source tool call chip.</li>
-              <li>When width is insufficient, a contiguous hidden middle span becomes one combo chip.</li>
+              <li>Repeated metrics already implied by the header or line.</li>
+              <li>Single tool counts and single-part evidence.</li>
+              <li>Full payloads that belong in detail.</li>
+              <li>Any chip that only restates a visible sentence.</li>
             </ul>
           </div>
         </div>

@@ -1,0 +1,12 @@
+{
+  "change": "add-web-heartbeat-view",
+  "iteration": 3,
+  "maxIterations": 3,
+  "recurringIssues": {
+    "user-review-2026-06-01-f7-auth-heartbeat": 1,
+    "user-review-2026-06-02-connection-sheet-header": 1,
+    "user-review-2026-06-02-connection-service-states": 1
+  },
+  "updatedAt": "2026-06-01T18:30:17.722Z",
+  "exitCondition": "Connection Sheet follows Framework7 sheet chrome, supports visible connecting/success states, rounded fill Connect button, and silent service-driven connection that only opens the Sheet on failure."
+}

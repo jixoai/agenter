@@ -59,6 +59,24 @@
   const showCompactSpecialPrelude = $derived(
     presentation === "compact-special" && compactSpecialPreludeBlocks.length > 0 && localLayoutMode === "detailed",
   );
+  const compactCheckpointText = $derived.by(() => {
+    const firstBlock = section.blocks[0]?.content;
+    if (!firstBlock || section.blocks.length !== 1 || firstBlock.kind !== "part" || firstBlock.part.partType !== "compact") {
+      return null;
+    }
+    return readHeartbeatPartText(firstBlock.part)?.trim() ?? summary;
+  });
+  const showLayoutModeSwitch = $derived.by(() => {
+    if (presentation === "compact-special" && compactSpecialPreludeBlocks.length > 0) {
+      return true;
+    }
+    return section.blocks.some((block) => {
+      if (block.content.kind === "tool") {
+        return true;
+      }
+      return block.content.part.partType === "thinking";
+    });
+  });
   const hasRunningEntries = $derived(section.entries.some((entry) => !entry.isComplete));
   const timeMeta = $derived(getHeartbeatSectionTimeMeta(section, nowMs));
   const headerTimeLabel = $derived.by(() => {
@@ -113,10 +131,6 @@
     </button>
   </header>
 
-  {#if localLayoutMode === "compact" && summary}
-    <p class="ag-heartbeat-entry__summary">{summary}</p>
-  {/if}
-
   <div class="ag-heartbeat-entry__body">
     {#if presentation === "compact-special" && compactSpecialPreludeBlocks.length > 0}
       <section class="ag-heartbeat-compact-prelude">
@@ -137,6 +151,8 @@
 
     {#if presentation === "compact-special" && compactSpecialResponseText}
       <div class="ag-heartbeat-checkpoint">{compactSpecialResponseText}</div>
+    {:else if compactCheckpointText}
+      <div class="ag-heartbeat-checkpoint">{compactCheckpointText}</div>
     {:else}
       {#each presentation === "compact-special" ? compactSpecialResponseBlocks : section.blocks as block (block.key)}
         {#if block.content.kind === "tool"}
@@ -145,22 +161,32 @@
           <HeartbeatPartContent part={block.content.part} layoutMode={localLayoutMode} />
         {/if}
       {/each}
+      {#if section.blocks.length === 0 && summary}
+        <div class="ag-heartbeat-muted">{summary}</div>
+      {/if}
     {/if}
   </div>
 
-  <footer class="ag-heartbeat-entry__footer">
-    <div class="ag-heartbeat-segmented" role="group" aria-label="Heartbeat row layout">
-      <button type="button" class:active={localLayoutMode === "compact"} onclick={() => setLayoutMode("compact")}>Compact</button>
-      <button type="button" class:active={localLayoutMode === "detailed"} onclick={() => setLayoutMode("detailed")}>Detailed</button>
-    </div>
-    <ChevronDown size={15} aria-hidden="true" />
-  </footer>
+  {#if showLayoutModeSwitch}
+    <footer class="ag-heartbeat-entry__footer">
+      <div class="ag-heartbeat-segmented" role="group" aria-label="Heartbeat row layout">
+        <button type="button" class:active={localLayoutMode === "compact"} onclick={() => setLayoutMode("compact")}>Compact</button>
+        <button type="button" class:active={localLayoutMode === "detailed"} onclick={() => setLayoutMode("detailed")}>Detailed</button>
+      </div>
+      <ChevronDown size={15} aria-hidden="true" />
+    </footer>
+  {/if}
 </section>
 
 <style>
   .ag-heartbeat-entry {
     display: grid;
+    box-sizing: border-box;
+    grid-template-columns: minmax(0, 1fr);
+    inline-size: 100%;
+    max-inline-size: 100%;
     min-width: 0;
+    overflow: hidden;
     gap: 0.65rem;
     border: 1px solid color-mix(in srgb, currentColor, transparent 86%);
     border-radius: 14px;
@@ -172,32 +198,42 @@
   .ag-heartbeat-entry__header,
   .ag-heartbeat-entry__footer {
     display: flex;
+    box-sizing: border-box;
+    inline-size: 100%;
+    max-inline-size: 100%;
     min-width: 0;
     align-items: center;
     gap: 0.45rem;
   }
 
   .ag-heartbeat-entry__header time {
+    min-inline-size: 0;
+    overflow: hidden;
     color: color-mix(in srgb, currentColor, transparent 40%);
+    text-overflow: ellipsis;
+    white-space: nowrap;
     font: 0.72rem/1.2 system-ui, sans-serif;
-  }
-
-  .ag-heartbeat-entry__summary {
-    margin: 0;
-    color: color-mix(in srgb, currentColor, transparent 30%);
-    font: 0.82rem/1.45 system-ui, sans-serif;
   }
 
   .ag-heartbeat-entry__body {
     display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    inline-size: 100%;
+    max-inline-size: 100%;
     min-width: 0;
+    overflow: hidden;
     gap: 0.55rem;
   }
 
   .ag-heartbeat-badge {
+    min-inline-size: 0;
+    max-inline-size: 100%;
+    overflow: hidden;
     border: 1px solid color-mix(in srgb, currentColor, transparent 82%);
     border-radius: 999px;
     padding: 0.12rem 0.48rem;
+    text-overflow: ellipsis;
+    white-space: nowrap;
     font: 600 0.68rem/1.25 system-ui, sans-serif;
   }
 
@@ -216,6 +252,7 @@
   .ag-heartbeat-segmented {
     display: inline-grid;
     grid-auto-flow: column;
+    max-inline-size: 100%;
     gap: 0.15rem;
     border: 1px solid color-mix(in srgb, currentColor, transparent 84%);
     border-radius: 999px;
@@ -238,6 +275,12 @@
   .ag-heartbeat-compact-prelude,
   .ag-heartbeat-checkpoint {
     display: grid;
+    box-sizing: border-box;
+    grid-template-columns: minmax(0, 1fr);
+    inline-size: 100%;
+    max-inline-size: 100%;
+    min-inline-size: 0;
+    overflow-wrap: anywhere;
     gap: 0.5rem;
     border: 1px dashed color-mix(in srgb, currentColor, transparent 78%);
     border-radius: 10px;

@@ -59,17 +59,27 @@
 <style>
   .ag-heartbeat-part {
     display: grid;
+    box-sizing: border-box;
+    grid-template-columns: minmax(0, 1fr);
+    inline-size: 100%;
+    max-inline-size: 100%;
     min-width: 0;
+    overflow: hidden;
     gap: 0.4rem;
   }
 
   .ag-heartbeat-part__meta {
     display: flex;
     flex-wrap: wrap;
+    min-inline-size: 0;
+    max-inline-size: 100%;
     gap: 0.35rem;
   }
 
   .ag-heartbeat-part__meta span {
+    min-inline-size: 0;
+    max-inline-size: 100%;
+    overflow-wrap: anywhere;
     border: 1px solid color-mix(in srgb, currentColor, transparent 82%);
     border-radius: 999px;
     padding: 0.05rem 0.42rem;
@@ -78,6 +88,9 @@
   }
 
   .ag-heartbeat-reasoning {
+    min-inline-size: 0;
+    max-inline-size: 100%;
+    overflow: hidden;
     border-radius: 10px;
     background: color-mix(in srgb, Canvas, currentColor 4%);
     padding: 0.55rem;

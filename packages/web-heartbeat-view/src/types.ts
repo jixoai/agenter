@@ -14,11 +14,21 @@ export interface CachedResourceState<T> {
 export type RuntimeConnectionStatus = "connecting" | "connected" | "reconnecting" | "offline";
 
 export type SessionStatus = "starting" | "running" | "paused" | "error" | "stopped" | (string & {});
+export type HeartbeatLivePushStatus = "active" | "inactive" | "unknown";
 
 export interface SessionEntry {
   id: string;
   status: SessionStatus;
+  avatar?: string | null;
+  avatarPrincipalId?: string | null;
+  cwd?: string | null;
   createdAt?: string;
+}
+
+export interface AvatarRuntimeStatus {
+  sessionId: string | null;
+  status: SessionStatus | "unknown";
+  livePushStatus: HeartbeatLivePushStatus;
 }
 
 export type HeartbeatGroupKind = "before-call" | "call" | "compact" | "before-call-pending" | (string & {});
@@ -68,6 +78,95 @@ export interface HeartbeatGroupItem {
   items: HeartbeatPartItem[];
 }
 
+export type HeartbeatRecordKind = "model_call" | "compact" | "config" | (string & {});
+export type HeartbeatRecordStatus =
+  | "running"
+  | "completed"
+  | "error"
+  | "blocked"
+  | "cancelled"
+  | (string & {});
+
+export type HeartbeatRecordSourceRef =
+  | { kind: "ai_call"; id: number; role: "primary" | "related" | (string & {}) }
+  | {
+      kind: "message_part";
+      messageId: string;
+      partId: string;
+      role: "input" | "output" | "tool_call" | "tool_result" | "config" | "compact" | (string & {});
+    }
+  | { kind: "effect"; id: string; role: "compact" | "config" | "other" | (string & {}) };
+
+export interface HeartbeatRecordPartSummary {
+  messageId: string;
+  partId: string;
+  role: HeartbeatPartRole;
+  type: string;
+  mimeType: string | null;
+  aiCallId: number | null;
+  startedAt: number;
+  completedAt: number | null;
+  label: string;
+  isComplete: boolean;
+}
+
+export interface HeartbeatRecordSummary {
+  provider: string | null;
+  model: string | null;
+  parts: HeartbeatRecordPartSummary[];
+  counts: {
+    parts: number;
+    toolCalls: number;
+    toolResults: number;
+    errors: number;
+  };
+  firstFrameMs: number | null;
+  thinkingDurationMs: number;
+}
+
+export interface HeartbeatRecordItem {
+  id: number;
+  recordKey: string;
+  kind: HeartbeatRecordKind;
+  status: HeartbeatRecordStatus;
+  primaryAiCallId: number | null;
+  aiCallIds: number[];
+  sourceRefs: HeartbeatRecordSourceRef[];
+  featureFlags: Record<string, boolean>;
+  summary: HeartbeatRecordSummary;
+  previewText: string | null;
+  startedAt: number;
+  updatedAt: number;
+  completedAt: number | null;
+  isComplete: boolean;
+}
+
+export type HeartbeatRecordPageAnchor =
+  | { kind: "latest" }
+  | { kind: "fixed"; pageIndex: number; latestRecordId?: number | null };
+
+export interface HeartbeatRecordPage {
+  records: HeartbeatRecordItem[];
+  pageIndex: number;
+  pageSize: number;
+  totalRecords: number;
+  totalPages: number;
+  windowTotalRecords: number;
+  windowTotalPages: number;
+  latestRecordId: number | null;
+  anchor: HeartbeatRecordPageAnchor;
+  hasOlder: boolean;
+  hasNewer: boolean;
+  newRecordsAvailable: boolean;
+}
+
+export interface HeartbeatRecordDetail {
+  record: HeartbeatRecordItem;
+  aiCalls: ModelCallItem[];
+  messages: HeartbeatPartItem[];
+  sourceRefs: HeartbeatRecordSourceRef[];
+}
+
 export interface ModelCallItem {
   id: number;
   kind: string;
@@ -111,6 +210,7 @@ export interface RuntimeSnapshotEntry {
 }
 
 export interface GlobalAvatarCatalogEntry {
+  avatarPrincipalId?: string | null;
   runtimeId: string;
   nickname: string;
   globalPath: string;
@@ -187,10 +287,21 @@ export interface HeartbeatConfigActions {
   onSaveConfig?: (draft: HeartbeatConfigDraft) => boolean | Promise<boolean>;
 }
 
+export type HeartbeatRuntimeActionIntent = "start" | "stop";
+
+export interface HeartbeatRuntimeActions {
+  start?: HeartbeatCapabilityAction;
+  stop?: HeartbeatCapabilityAction;
+  onStartRuntime?: () => void | Promise<void>;
+  onStopRuntime?: () => void | Promise<void>;
+}
+
 export interface HeartbeatViewState {
   sessionStatus: SessionStatus;
   schedulerState?: RuntimeSchedulerState | null;
   groupsState: CachedResourceState<HeartbeatGroupItem[]>;
+  recordsState?: CachedResourceState<HeartbeatRecordPage | null>;
+  recordDetailsState?: Record<number, CachedResourceState<HeartbeatRecordDetail | null>>;
   modelCalls?: ModelCallItem[];
   attention?: RuntimeAttentionState | null;
   attentionDelivery?: RuntimeAttentionDeliveryState | null;
@@ -200,12 +311,13 @@ export interface HeartbeatViewState {
   configLoading?: boolean;
   configSaving?: boolean;
   configError?: string | null;
-  livePushStatus?: "active" | "inactive" | "unknown";
+  livePushStatus?: HeartbeatLivePushStatus;
   runtime?: RuntimeSnapshotEntry | null;
 }
 
 export interface HeartbeatTargetIdentity {
   avatar: string;
+  avatarPrincipalId?: string | null;
   runtimeId: string;
   sessionId: string;
   cwd?: string | null;
@@ -215,13 +327,17 @@ export interface HeartbeatTargetIdentity {
 
 export interface HeartbeatViewCallbacks {
   onLoadOlder?: () => Promise<{ items: number; hasMore: boolean }>;
+  onLoadRecordPage?: (anchor: HeartbeatRecordPageAnchor) => Promise<void>;
+  onLoadRecordDetail?: (recordId: number) => Promise<void>;
   actions?: HeartbeatConfigActions;
+  runtimeActions?: HeartbeatRuntimeActions;
 }
 
 export interface AgenterHeartbeatConnectionState {
   connectionStatus: RuntimeConnectionStatus;
   connected: boolean;
   avatars: CachedResourceState<GlobalAvatarCatalogEntry[]>;
+  avatarStatuses: Record<string, AvatarRuntimeStatus>;
   selectedTarget: HeartbeatTargetIdentity | null;
   selectedHeartbeat: HeartbeatViewState | null;
   error: string | null;
@@ -236,6 +352,10 @@ export interface AgenterHeartbeatConnection {
   openAvatar(input: { avatar: GlobalAvatarCatalogEntry; autoStart?: boolean }): Promise<HeartbeatTargetIdentity>;
   refreshHeartbeat(target: HeartbeatTargetIdentity): Promise<void>;
   loadOlderHeartbeat(target: HeartbeatTargetIdentity): Promise<{ items: number; hasMore: boolean }>;
+  loadHeartbeatRecordPage?(target: HeartbeatTargetIdentity, anchor: HeartbeatRecordPageAnchor): Promise<void>;
+  loadHeartbeatRecordDetail?(target: HeartbeatTargetIdentity, recordId: number): Promise<void>;
+  startRuntime?(target: HeartbeatTargetIdentity): Promise<void>;
+  stopRuntime?(target: HeartbeatTargetIdentity): Promise<void>;
   requestCompact?(target: HeartbeatTargetIdentity): Promise<void>;
   saveConfig?(target: HeartbeatTargetIdentity, draft: HeartbeatConfigDraft): Promise<boolean>;
 }

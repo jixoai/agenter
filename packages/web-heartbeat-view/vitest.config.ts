@@ -14,6 +14,7 @@ const createConfig = (): UserConfig & { test: InlineConfig } =>
   ({
     plugins: [svelte()],
     optimizeDeps: {
+      include: ["framework7/lite-bundle"],
       exclude: [
         "@agenter/web-heartbeat-view",
         "@agenter/svelte-components",

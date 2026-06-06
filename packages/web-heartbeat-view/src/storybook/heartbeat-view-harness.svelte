@@ -1,11 +1,14 @@
 <script lang="ts">
   import HeartbeatView from "../HeartbeatView.svelte";
   import { createCachedResourceState } from "../cached-resource-state";
+  import { ensureFramework7Svelte } from "../framework7-bootstrap";
+  import { App } from "../framework7-components";
   import type {
     HeartbeatCapabilityMode,
     HeartbeatConfigBinding,
-    HeartbeatGroupItem,
     HeartbeatPartItem,
+    HeartbeatRecordItem,
+    HeartbeatRecordPage,
     HeartbeatViewCallbacks,
     HeartbeatViewState,
   } from "../types";
@@ -19,6 +22,8 @@
     height?: number;
     mode?: HeartbeatCapabilityMode;
   } = $props();
+
+  ensureFramework7Svelte();
 
   const part = (input: {
     partId: number;
@@ -64,21 +69,6 @@
     text: "",
   });
 
-  const group = (input: {
-    id: number;
-    kind: HeartbeatGroupItem["kind"];
-    items: HeartbeatPartItem[];
-  }): HeartbeatGroupItem => ({
-    id: input.id,
-    groupId: `story:${input.kind}:${input.id}`,
-    kind: input.kind,
-    aiCallId: 7,
-    createdAt: Math.min(...input.items.map((item) => item.createdAt)),
-    updatedAt: Math.max(...input.items.map((item) => item.updatedAt)),
-    isComplete: input.items.every((item) => item.isComplete),
-    items: input.items,
-  });
-
   const configBinding: HeartbeatConfigBinding = {
     editableLayerId: "story:avatar",
     editableLayerSource: "story:avatar",
@@ -101,65 +91,133 @@
   };
 
   const groupsState = {
-    ...createCachedResourceState([
-      group({
-        id: 1,
-        kind: "before-call",
-        items: [
-          entry({
-            id: 1,
-            role: "system",
-            scope: "request_aux",
-            parts: [
-              part({
-                partId: 1,
-                role: "system",
-                partType: "systemPrompt",
-                payload: { text: "Keep the LoopBus objective and bounded." },
-              }),
-            ],
-          }),
-        ],
-      }),
-      group({
-        id: 2,
-        kind: "call",
-        items: [
-          entry({
-            id: 2,
-            parts: [
-              part({ partId: 2, partType: "thinking", payload: { text: "Trace scheduler debt before answering." } }),
-              part({ partId: 3, partType: "text", payload: { text: "LoopBus observed a bounded heartbeat cycle." } }),
-              part({
-                partId: 4,
-                partType: "tool_call",
-                isComplete: false,
-                payload: {
-                  invocationId: "tool_1",
-                  tool: "shell.exec",
-                  input: { command: "bun test" },
-                  startedAt: 1_780_000_000_004,
-                },
-              }),
-            ],
-            isComplete: false,
-          }),
-        ],
-      }),
-      group({
-        id: 3,
-        kind: "compact",
-        items: [
-          entry({
-            id: 3,
-            role: "assistant",
-            parts: [part({ partId: 5, partType: "compact", payload: { text: "Compacted LoopBus context." } })],
-          }),
-        ],
-      }),
-    ]),
+    ...createCachedResourceState([]),
     loaded: true,
     refreshedAt: 1_780_000_001_000,
+  };
+
+  const storyRecordParts: HeartbeatRecordItem["summary"]["parts"] = [
+    {
+      messageId: "story-input",
+      partId: "1",
+      role: "user",
+      type: "text",
+      mimeType: null,
+      aiCallId: 7,
+      startedAt: 1_780_000_000_000,
+      completedAt: 1_780_000_000_060,
+      label: "Inspect LoopBus facts",
+      isComplete: true,
+    },
+    {
+      messageId: "story-thinking",
+      partId: "2",
+      role: "assistant",
+      type: "thinking",
+      mimeType: null,
+      aiCallId: 7,
+      startedAt: 1_780_000_000_060,
+      completedAt: 1_780_000_000_860,
+      label: "Trace scheduler debt before answering.",
+      isComplete: true,
+    },
+    {
+      messageId: "story-tool",
+      partId: "3",
+      role: "assistant",
+      type: "tool_call",
+      mimeType: null,
+      aiCallId: 7,
+      startedAt: 1_780_000_000_860,
+      completedAt: 1_780_000_001_120,
+      label: "shell.exec",
+      isComplete: true,
+    },
+    {
+      messageId: "story-text",
+      partId: "4",
+      role: "assistant",
+      type: "text",
+      mimeType: null,
+      aiCallId: 7,
+      startedAt: 1_780_000_001_120,
+      completedAt: 1_780_000_001_240,
+      label: "LoopBus observed a bounded heartbeat cycle.",
+      isComplete: true,
+    },
+  ];
+
+  const storyRecords: HeartbeatRecordItem[] = [
+    {
+      id: 7,
+      recordKey: "story:model-run:7",
+      kind: "model_call",
+      status: "running",
+      primaryAiCallId: 7,
+      aiCallIds: [7],
+      sourceRefs: [],
+      featureFlags: {},
+      summary: {
+        provider: "openai",
+        model: "gpt-story",
+        parts: storyRecordParts,
+        counts: {
+          parts: storyRecordParts.length,
+          toolCalls: 1,
+          toolResults: 0,
+          errors: 0,
+        },
+        firstFrameMs: 60,
+        thinkingDurationMs: 800,
+      },
+      previewText: "LoopBus observed a bounded heartbeat cycle.",
+      startedAt: 1_780_000_000_000,
+      updatedAt: 1_780_000_001_500,
+      completedAt: null,
+      isComplete: false,
+    },
+    {
+      id: 8,
+      recordKey: "story:compact:8",
+      kind: "compact",
+      status: "completed",
+      primaryAiCallId: null,
+      aiCallIds: [],
+      sourceRefs: [],
+      featureFlags: {},
+      summary: {
+        provider: null,
+        model: null,
+        parts: [],
+        counts: { parts: 3, toolCalls: 0, toolResults: 0, errors: 0 },
+        firstFrameMs: null,
+        thinkingDurationMs: 0,
+      },
+      previewText: null,
+      startedAt: 1_780_000_002_000,
+      updatedAt: 1_780_000_002_200,
+      completedAt: 1_780_000_002_200,
+      isComplete: true,
+    },
+  ];
+
+  const recordsState = {
+    ...createCachedResourceState<HeartbeatRecordPage>({
+      records: storyRecords,
+      pageIndex: 0,
+      pageSize: 20,
+      totalRecords: storyRecords.length,
+      totalPages: 1,
+      windowTotalRecords: storyRecords.length,
+      windowTotalPages: 1,
+      latestRecordId: storyRecords[0]?.id ?? null,
+      anchor: { kind: "latest" },
+      hasOlder: false,
+      hasNewer: false,
+      newRecordsAvailable: false,
+    }),
+    loaded: true,
+    refreshedAt: 1_780_000_002_500,
   };
 
   const state: HeartbeatViewState = {
@@ -169,11 +227,13 @@
       waitingReason: null,
     },
     groupsState,
+    recordsState,
+    recordDetailsState: {},
     modelCalls: [
       {
         id: 7,
         kind: "chat",
-        status: "completed",
+        status: "done",
         provider: "openai",
         model: "gpt-story",
         roundIndex: 1,
@@ -181,8 +241,8 @@
         updatedAt: 1_780_000_002_000,
         isComplete: true,
         providerSnapshot: null,
-        request: { usage: { input_tokens: 420, output_tokens: 80 } },
-        response: null,
+        request: null,
+        response: { usage: { outputTokens: 80 } },
       },
     ],
     attention: { snapshot: { contexts: [{ focusState: "focused" }] } },
@@ -204,9 +264,11 @@
   });
 </script>
 
-<div class="heartbeat-story-frame" style={`inline-size: ${width}px; block-size: ${height}px;`}>
-  <HeartbeatView {state} {mode} avatarLabel="Ada" callbacks={callbacks} />
-</div>
+<App name="web-heartbeat-view-story" theme="ios">
+  <div class="heartbeat-story-frame" style={`inline-size: ${width}px; block-size: ${height}px;`}>
+    <HeartbeatView {state} {mode} avatarLabel="Ada" callbacks={callbacks} />
+  </div>
+</App>
 
 <style>
   .heartbeat-story-frame {

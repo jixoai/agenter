@@ -2,6 +2,9 @@ import type {
   CachedResourceState,
   GlobalAvatarCatalogEntry,
   HeartbeatGroupItem,
+  HeartbeatRecordDetail,
+  HeartbeatRecordPage,
+  HeartbeatRecordPageAnchor,
   ModelCallItem,
   RuntimeAttentionDeliveryState,
   RuntimeAttentionState,
@@ -29,6 +32,8 @@ export interface RuntimeClientState {
   runtimes: Record<string, RuntimeSnapshotEntry | undefined>;
   globalAvatarCatalog: CachedResourceState<GlobalAvatarCatalogEntry[]>;
   heartbeatGroupsBySession: Record<string, CachedResourceState<HeartbeatGroupItem[]> | undefined>;
+  heartbeatRecordsBySession: Record<string, CachedResourceState<HeartbeatRecordPage | null> | undefined>;
+  heartbeatRecordDetailsBySession: Record<string, Record<number, CachedResourceState<HeartbeatRecordDetail | null>> | undefined>;
   modelCallsBySession: Record<string, ModelCallItem[] | undefined>;
   attentionBySession?: Record<string, RuntimeAttentionState | undefined>;
   attentionDeliveryBySession?: Record<string, RuntimeAttentionDeliveryState | undefined>;
@@ -68,6 +73,8 @@ export interface RuntimeStore {
   ): Promise<void>;
   loadHeartbeatGroups(sessionId: string): Promise<void>;
   loadMoreHeartbeatGroups(sessionId: string): Promise<{ items: number; hasMore: boolean }>;
+  loadHeartbeatRecords(sessionId: string, input?: { pageSize?: number; anchor?: HeartbeatRecordPageAnchor | null }): Promise<void>;
+  loadHeartbeatRecordDetail(sessionId: string, recordId: number): Promise<void>;
   requestRuntimeCompact(sessionId: string): Promise<{ ok: boolean }>;
   listRuntimeSettingsScope(sessionId: string): Promise<ScopedSettingsOutput>;
   readRuntimeSettingsLayer(

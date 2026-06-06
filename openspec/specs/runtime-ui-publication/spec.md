@@ -95,28 +95,22 @@ Runtime-facing UI publication SHALL keep objective attention facts, scheduler si
 - **THEN** both layouts still expose room facts, terminal facts, skill-index churn, watch reminders, and explicit effect evidence
 - **AND** layout density changes do not collapse those facts back into hidden heuristics or missing actions
 
-### Requirement: Runtime clients SHALL publish one Heartbeat message-parts slice
+### Requirement: Runtime clients SHALL publish one Heartbeat record resource family
 
-The runtime client SHALL hydrate, merge, and republish one session-local Heartbeat slice backed by the runtime Heartbeat inspection API and realtime events. The Heartbeat surface SHALL no longer depend on assembling separate chat, request-aux, and model-call slices in the browser, and the inspection API SHALL include every durable ingress scope needed by the Heartbeat panel.
+The runtime client SHALL hydrate, merge, and republish one session-local Heartbeat record resource family backed by the Heartbeat record projection and realtime invalidation. That family SHALL include exact count/page facts for the list surface, page-anchor state, and separately addressable record detail. The Heartbeat surface SHALL no longer depend on browser-side regrouping of raw `heartbeat`, `heartbeat_part`, `request_aux`, chat, or model-call histories just to construct the list view.
 
-#### Scenario: Cold hydration loads one unified Heartbeat slice
+#### Scenario: Cold hydration loads count and latest record page together
 
 - **WHEN** the operator opens a runtime route from a cold browser state
-- **THEN** the runtime client hydrates the session's Heartbeat from one paged Heartbeat inspection API
-- **AND** that API includes the persisted rows needed by the Heartbeat panel across legacy `heartbeat`, structured `heartbeat_part`, and `request_aux`
-- **AND** the selected Heartbeat surface receives one ordered slice instead of three independently fetched inspection slices
+- **THEN** the runtime client hydrates the session's Heartbeat count, the latest record page window, and anchor state from the Heartbeat record contract
+- **AND** the selected Heartbeat surface receives record rows rather than three independently merged history slices
 
-#### Scenario: Live Heartbeat ingress rows merge into the existing session slice
+#### Scenario: Live record updates merge by record identity or invalidate fixed history honestly
 
-- **WHEN** the runtime durably records a new or updated Heartbeat ingress row for an already hydrated session
-- **THEN** the runtime publishes a realtime Heartbeat event for that row whenever the row does not already have a richer structured twin
-- **AND** the client merges that row into the existing Heartbeat slice by durable message identity
-
-#### Scenario: Loading older Heartbeat history preserves stream order
-
-- **WHEN** the operator asks Heartbeat to load older history
-- **THEN** the client requests older rows from the same Heartbeat inspection API
-- **AND** the merged session-local Heartbeat slice remains ordered from oldest to newest after the older rows are inserted
+- **WHEN** the runtime durably records a new or updated Heartbeat source fact for an already hydrated session
+- **THEN** the runtime publishes a realtime invalidation or patch scoped to the affected record identity
+- **AND** the latest anchored page can merge that update in place
+- **AND** a fixed historical page remains pinned and instead receives `newRecordsAvailable` state when newer records landed elsewhere
 
 ### Requirement: Runtime clients SHALL surface running tool params from durable invocation rows
 
@@ -152,52 +146,22 @@ The runtime Heartbeat ledger SHALL persist assistant `thinking` and `text` spans
 - **THEN** the durable Heartbeat ledger preserves those assistant spans as separate chronological response segments
 - **AND** later inspection can reconstruct the objective order without guessing from the latest aggregate assistant body
 
-### Requirement: Runtime clients SHALL project Heartbeat into grouped inspection pages
+### Requirement: Runtime clients SHALL publish Heartbeat record pages and detail separately
 
-Runtime inspection consumers SHALL read Heartbeat as grouped pages instead of directly rendering paged raw parts. The grouped page contract SHALL be served from bounded storage reads and SHALL NOT require full-session reconstruction before returning the recent page.
+Runtime inspection consumers SHALL read Heartbeat through bounded record pages plus separate record detail instead of one grouped-stream payload that must serve both list and full inspection. The recent record page SHALL be served from bounded `heartbeat_record` reads, while detail SHALL resolve from record source refs or a detail projection derived from those refs. Historical page queries SHALL not rebuild the entire session grouping graph for every pagination request.
 
-#### Scenario: Heartbeat pages render one shared header per grouped fact cluster
+#### Scenario: Recent record pages are served from bounded record reads
 
-- **WHEN** durable Heartbeat/request-aux facts for one AI call are queried for inspection
-- **THEN** the runtime projects them into `before-call`, `call`, or `compact` groups
-- **AND** the UI renders one shared header per group instead of repeating call-level chrome on every row
+- **WHEN** the operator opens Heartbeat for a session with deep history
+- **THEN** the backend reads only the `heartbeat_record` window needed for the requested page plus minimal count metadata
+- **AND** it does not regroup the full session before returning the recent page
 
-#### Scenario: Heartbeat shows pending pre-call facts even without a following model call
+#### Scenario: Detail resolves separately from source-backed evidence
 
-- **WHEN** request-side configuration or loose Heartbeat facts change but no next AI call has started yet
-- **THEN** the grouped Heartbeat query returns a `before-call-pending` group
-- **AND** the operator can inspect those facts before the next model invocation exists
-
-#### Scenario: Realtime Heartbeat changes refresh the grouped projection
-
-- **WHEN** a realtime `runtime.heartbeatPart` event arrives
-- **THEN** the client treats it as an invalidation signal for grouped Heartbeat data
-- **AND** the visible Heartbeat stream is reloaded from the grouped query path instead of merging raw parts locally
-
-#### Scenario: Heartbeat recent page is served from bounded history
-
-- **WHEN** the operator opens Heartbeat for a session with deep `ai_call`, `heartbeat_part`, and `request_aux` history
-- **THEN** the backend reads only the storage window needed for the requested grouped page plus any minimal comparison baseline needed to preserve grouping truth
-- **AND** it does not materialize the full session inspection history before returning the recent grouped page
-- **AND** the returned groups still preserve `before-call`, `call`, `compact`, and `before-call-pending` semantics
-
-#### Scenario: Loading older Heartbeat history expands by page instead of replaying all history
-
-- **WHEN** the operator asks Heartbeat to load older grouped history
-- **THEN** the backend expands the grouped query window only enough to satisfy that older page
-- **AND** it does not rebuild the entire Heartbeat grouping for every pagination request
-
-#### Scenario: Deep grouped Heartbeat history still settles route hydration
-
-- **WHEN** the browser hydrates Heartbeat for a session with long inspection history
-- **THEN** the grouped Heartbeat request resolves with data or an explicit error
-- **AND** the operator does not remain indefinitely on `Loading Heartbeat…` because the backend is rebuilding full history in memory
-
-#### Scenario: Heartbeat route hydrates only route-owned history
-
-- **WHEN** the browser opens the Heartbeat route for a session with large persisted history
-- **THEN** the route fetches grouped Heartbeat data plus the minimal model-call context needed by the Heartbeat status surface
-- **AND** it does not piggyback `chat.list`, scheduler logs, observability traces, request-aux timelines, or API-call timelines onto the same cold start
+- **WHEN** the operator selects one record for deeper inspection
+- **THEN** the runtime fetches detail by record identity
+- **AND** that detail resolves full structured content from source refs or a dedicated detail projection
+- **AND** the list page payload does not need to inline the same long bodies
 
 ### Requirement: Grouped Heartbeat projection SHALL compare auxiliary facts by payload truth
 
@@ -215,21 +179,21 @@ Grouped Heartbeat publication SHALL deduplicate ordinary request-side auxiliary 
 - **THEN** the grouped Heartbeat projection keeps those compact prompt facts attached to the compact call
 - **AND** the operator does not need to read a separate ordinary `before-call` card to understand that compact event
 
-### Requirement: Runtime clients SHALL publish grouped Heartbeat resource state explicitly
+### Requirement: Runtime clients SHALL publish Heartbeat record resource state explicitly
 
-The runtime client SHALL expose grouped Heartbeat inspection data as a cached resource with explicit `loaded`, `loading`, `refreshing`, `error`, and `data` facts. Grouped Heartbeat consumers SHALL no longer infer load state from whether the current page array happens to be empty.
+The runtime client SHALL expose Heartbeat record publication as explicit cached resources for count/page, anchor state, and selected detail, each with explicit `loading`, `loaded`, `refreshing`, `error`, and `data` facts as appropriate. Heartbeat consumers SHALL no longer infer load truth from whether the current row array happens to be empty or whether a detail panel happens to be closed.
 
-#### Scenario: Cold grouped Heartbeat hydration carries explicit load state
+#### Scenario: Cold list load is distinct from loaded empty
 
 - **WHEN** a session runtime is hydrated from a cold browser state
-- **THEN** the grouped Heartbeat slice starts in an unloaded/loading state
-- **AND** it transitions to loaded-empty, loaded-with-data, or error explicitly after the grouped page request settles
+- **THEN** the Heartbeat record page resource starts in an unloaded/loading state
+- **AND** it transitions to loaded-empty, loaded-with-data, or error explicitly after the page request settles
 
-#### Scenario: Realtime invalidation refreshes the grouped resource without dropping warm data
+#### Scenario: Warm page refresh and detail refresh stay independent
 
-- **WHEN** a realtime Heartbeat invalidation refreshes an already loaded grouped slice
-- **THEN** the runtime client marks the grouped Heartbeat resource as refreshing
-- **AND** it preserves the currently loaded grouped rows until fresher grouped data arrives or the refresh fails
+- **WHEN** a realtime invalidation refreshes an already loaded page while one detail panel is open
+- **THEN** the runtime client can mark the page resource or detail resource as refreshing independently
+- **AND** it preserves the warm page rows and current detail until fresher data or an error arrives
 
 ### Requirement: Runtime publication SHALL expose a manual compact action path
 
@@ -241,32 +205,30 @@ Runtime UI consumers SHALL be able to request a manual compact cycle through the
 - **THEN** the runtime transport accepts that request through a formal control mutation
 - **AND** the session runtime queues a manual compact cycle without requiring a chat-authored `/compact` message
 
-### Requirement: Runtime clients SHALL expose next-call config edits as grouped Heartbeat facts
+### Requirement: Runtime clients SHALL expose next-call config edits as Heartbeat config records
 
-Heartbeat operators SHALL be able to change next-call model knobs from the Heartbeat surface without rewriting the current streaming call.
+Heartbeat operators SHALL be able to change next-call model knobs from the Heartbeat surface without rewriting the current streaming call, and the resulting durable fact SHALL publish as a `config` record rather than as a transient browser-only pending row.
 
-#### Scenario: Saving config shows a pending grouped fact immediately
+#### Scenario: Saving config emits a config record immediately
 
-- **WHEN** the operator saves new `temperature`, `top-k`, `max tokens`, or `thinking` settings from the Heartbeat surface
+- **WHEN** the operator saves new `temperature`, `top-k`, `max tokens`, `thinking`, prompt-source, or similar next-call settings from the Heartbeat surface
 - **AND** the active runtime is scoped to avatar-level durable settings
 - **THEN** the save lands in the avatar settings layer instead of mutating `ai.providers.*`
-- **AND** runtime knobs persist under top-level `ai.temperature`, `ai.topK`, `ai.maxToken`, and `ai.thinking`
-- **THEN** the grouped Heartbeat query exposes a trailing `before-call-pending` group immediately
-- **AND** that group contains the durable `request_aux:config:*` fact that was just written
+- **AND** the Heartbeat record publication emits or refreshes a trailing `config` record immediately
 - **AND** the currently streaming call, if any, keeps rendering with its original config snapshot
 
-### Requirement: Runtime clients SHALL keep older-page loading attached to the top of the Heartbeat stream
+### Requirement: Runtime clients SHALL publish Heartbeat page-window anchor state explicitly
 
-Grouped Heartbeat pagination SHALL be exposed from the scroll surface itself instead of the footer.
+The Heartbeat publication contract SHALL expose page-window anchor state explicitly, including at least whether the current view is `latest` or `fixed`, the exact current page window, whether older or newer windows are reachable, and whether newer records arrived while the operator stayed on a fixed historical page.
 
-#### Scenario: Top-of-stream paging affordance shows availability objectively
+#### Scenario: Latest anchor state stays objective
 
-- **WHEN** the operator scrolls to the top of the grouped Heartbeat stream and older grouped pages exist
-- **THEN** the UI shows a centered `Load older` affordance near the top edge of the stream
-- **AND** after the final older page is loaded, that same affordance region shows `No older messages`
+- **WHEN** the operator is viewing the latest record page
+- **THEN** the runtime publication identifies that page as `latest`
+- **AND** newer record inserts advance that window instead of creating an ambiguous stale state
 
-#### Scenario: Top-of-stream paging affordance shows active loading state objectively
+#### Scenario: Fixed anchor state reports reachable newer data
 
-- **WHEN** the operator requests older grouped Heartbeat history from that top affordance
-- **THEN** the same top affordance region switches into a disabled loading indicator while the request is in flight
-- **AND** the already visible grouped Heartbeat rows stay mounted below that loading region
+- **WHEN** the operator pins a historical page window and newer records are later materialized
+- **THEN** the runtime publication keeps the current window marked as `fixed`
+- **AND** it reports `newRecordsAvailable` without silently moving the operator to another page

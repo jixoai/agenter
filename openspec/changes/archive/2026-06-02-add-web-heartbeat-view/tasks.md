@@ -66,8 +66,43 @@
 - [x] 5.1 Generate `review/self-review.md` comparing implementation against `plans/plan.md`, every spec requirement, and completed task evidence; completion condition: review lists pass/fail/blocked status for package, example, deferred Studio migration, and live URL acceptance.
 - [x] 5.2 Generate `review/self-review.html` as the structured screenshot/interaction evidence presentation; completion condition: it references current mobile and desktop evidence rather than stale screenshots.
 - [x] 5.3 If self-review finds spec drift, missing behavior, or unverified assumptions, reopen the relevant tasks and update OpenSpec artifacts before another apply loop; completion condition: reopened work is committed before more app-code edits.
-- [ ] 5.4 If review enters a real loop, run `bun run openspec:vision -- review-state add-web-heartbeat-view`; completion condition: recurrence/iteration state is persisted before continuing.
-- [ ] 5.5 If review cannot exit normally, run `bun run openspec:vision -- handoff add-web-heartbeat-view` and commit the handoff evidence before returning to user discussion; completion condition: the next agent can resume without reconstructing state from chat.
+- [x] 5.4 If review enters a real loop, run `bun run openspec:vision -- review-state add-web-heartbeat-view`; completion condition: recurrence/iteration state is persisted before continuing.
+- [x] 5.5 Confirm abnormal-exit handoff is not required because review exited normally; completion condition: no handoff artifact is needed for this milestone, and any future abnormal exit must still run `bun run openspec:vision -- handoff add-web-heartbeat-view`.
 - [x] 5.6 If review exits normally, sync durable package or project `SPEC.md` updates required by long-term behavior before archive; completion condition: durable law is not left only inside `openspec/changes/*`.
-- [ ] 5.7 Run `openspec archive add-web-heartbeat-view` after implementation and self-review are accepted; completion condition: archive result is committed.
-- [ ] 5.8 Run `bun run openspec:vision -- check add-web-heartbeat-view` after archive or before an abnormal exit; completion condition: the workflow either exits cleanly or returns to `research-plan` with a backed-up plan revision.
+- [x] 5.7 Archive `add-web-heartbeat-view` after implementation and self-review are accepted; completion condition: change is moved to `openspec/changes/archive/2026-06-02-add-web-heartbeat-view`.
+- [x] 5.8 Run `bun run openspec:vision -- check add-web-heartbeat-view` before archive; completion condition: the workflow exits cleanly with `{ ok: true }`.
+
+## 6. User Acceptance Polish
+
+- [x] 6.1 Record the latest acceptance feedback in `review/` and preserve user-authored style adjustments as accepted state; completion condition: implementation does not revert unrelated CSS or layout edits made outside this pass.
+- [x] 6.2 Hide per-card `Compact / Detailed` layout controls when compact and detailed renderings have no meaningful behavioral difference; completion condition: plain markdown/text rows do not show the segmented control, while tool/reasoning/compact-fact rows still expose it.
+- [x] 6.3 Replace visible tool-call status text such as `DONE` with color-coded icons and accessible labels; completion condition: tool summaries expose state through icon/color without rendering uppercase status words.
+- [x] 6.4 Replace the bottom Compact action icon with a non-sparkle icon that reads as memory compression/archival; completion condition: the bottom toolbar keeps official Framework7 `Link iconOnly` controls.
+- [x] 6.5 Restore Framework7 Modal Sheet entrance animation for the config sheet; completion condition: the sheet is mounted closed first and opened on the next tick rather than appearing already-open.
+- [x] 6.6 Rework the config sheet body to follow official Framework7 modal sheet/list form structure, including `List`/`ListInput` rows and official `Toggle` for Thinking; completion condition: custom checkbox styling is removed from the config form.
+- [x] 6.7 Distinguish user and assistant message rows visually, placing user-message identity/avatar on the right; completion condition: Heartbeat entries include role-aware alignment without changing persisted Heartbeat facts.
+
+## 7. Context Usage Polish
+
+- [x] 7.1 Record the latest acceptance feedback that most behavior passed and user-authored style changes are accepted; completion condition: review evidence preserves the new context-usage request without reverting unrelated style edits.
+- [x] 7.2 Replace the bottom Compact toolbar button with a context-usage display control; completion condition: configable bottom toolbar shows a compact context-usage label like `31.3%` plus a circular indicator instead of a first-level compact icon.
+- [x] 7.3 Move manual Compact into the context-usage Modal Sheet; completion condition: compact remains reachable from the Sheet as an icon+text action using the `Shredder` icon and still goes through the official confirm dialog before invoking the adapter callback.
+- [x] 7.4 Implement the context-usage Modal Sheet; completion condition: the Sheet shows percentage, used/max context tokens, input/output token rows, and a bottom model/config summary without rendering cost fields.
+- [x] 7.5 Remove context-usage text from the top subnavbar title; completion condition: subnavbar keeps runtime/live/group/attention status but no longer repeats token usage.
+- [x] 7.6 Add BDD coverage and mobile evidence for the context-usage control and Sheet; completion condition: tests and agent-browser evidence prove no horizontal overflow, official Sheet animation, and the moved compact action.
+
+## 8. Context Usage Style / List Polish
+
+- [x] 8.1 Record the latest acceptance feedback about balanced toolbar actions, progress-color ring semantics, shared Modal Sheet styling, and Context usage ListView structure; completion condition: review evidence names these four user-visible polish requirements without changing backend scope.
+- [x] 8.2 Balance the bottom Toolbar actions using official Framework7 Toolbar + Link controls; completion condition: Context usage and Config occupy equal action slots instead of the Context usage control taking most toolbar width.
+- [x] 8.3 Make the bottom context ring a progress indicator; completion condition: the ring has a muted track and a `color-mix(... oklch|oklab ...)` progress color path from green through orange to red based on context usage progress.
+- [x] 8.4 Generalize the accepted Modal Sheet toolbar/title/content styling across Heartbeat Modal Sheets; completion condition: Config and Context usage sheets share the same base sheet classes and preserve the previously accepted toolbar/title styling.
+- [x] 8.5 Rebuild Context usage sheet content with Framework7 List/ListItem structure; completion condition: summary, token rows, compact action, and model/config facts are rendered as official ListView rows and no cost field is rendered.
+- [x] 8.6 Update BDD coverage, typecheck/test, OpenSpec validate/check, and mobile agent-browser evidence for this polish pass; completion condition: tests pass and final evidence confirms no horizontal overflow and the updated Context usage sheet.
+
+## 9. Context Usage Official Components
+
+- [x] 9.1 Record the latest acceptance feedback requesting official Framework7 `Progressbar` for Context usage and `ListButton` for Compact; completion condition: review evidence names both component requirements.
+- [x] 9.2 Replace the Context usage Sheet's internal progress display with Framework7 `Progressbar`; completion condition: the Sheet renders `.progressbar` with the correct `data-progress` while the bottom Toolbar ring remains the compact trigger indicator.
+- [x] 9.3 Replace the Context usage Compact action row with Framework7 `ListButton`; completion condition: Compact is rendered through `.list-button` inside an official `List` and still invokes the existing confirm dialog before the compact callback.
+- [x] 9.4 Update BDD, typecheck/test, OpenSpec validate/check, and mobile agent-browser evidence; completion condition: verification passes and screenshots show the official progressbar/list button structure.

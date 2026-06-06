@@ -52,6 +52,10 @@
 <style>
   .ag-heartbeat-group {
     display: grid;
+    box-sizing: border-box;
+    grid-template-columns: minmax(0, 1fr);
+    inline-size: 100%;
+    max-inline-size: 100%;
     min-width: 0;
     gap: 0.75rem;
   }
@@ -59,6 +63,9 @@
   .ag-heartbeat-section {
     display: grid;
     grid-template-columns: auto minmax(0, 1fr);
+    box-sizing: border-box;
+    inline-size: 100%;
+    max-inline-size: 100%;
     align-items: start;
     gap: 0.65rem;
     min-width: 0;
@@ -82,15 +89,22 @@
     object-fit: cover;
   }
 
+  .ag-heartbeat-section[data-role="user"] {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .ag-heartbeat-section[data-role="user"] .ag-heartbeat-avatar {
+    grid-column: 2;
+    grid-row: 1;
+  }
+
   @media (min-width: 760px) {
-    .ag-heartbeat-section[data-role="user"],
     .ag-heartbeat-section[data-role="system"],
     .ag-heartbeat-section[data-role="config"],
     .ag-heartbeat-section[data-role="tool"] {
       grid-template-columns: minmax(0, 1fr) auto;
     }
 
-    .ag-heartbeat-section[data-role="user"] .ag-heartbeat-avatar,
     .ag-heartbeat-section[data-role="system"] .ag-heartbeat-avatar,
     .ag-heartbeat-section[data-role="config"] .ag-heartbeat-avatar,
     .ag-heartbeat-section[data-role="tool"] .ag-heartbeat-avatar {

@@ -21,6 +21,10 @@ const CHIP_ICON = Object.freeze({
   error: "circle-alert",
   unknown: "circle-help",
   combo: "combine",
+  compact: "shredder",
+  config: "sliders-horizontal",
+  diff: "diff",
+  archive: "archive",
 });
 
 const LUCIDE_ATTRS = Object.freeze({
@@ -183,6 +187,186 @@ const hydrateIcons = (root) => {
   });
 };
 
+define(
+  "x-record-chip",
+  class extends HTMLElement {
+    connectedCallback() {
+      this.render();
+    }
+
+    static get observedAttributes() {
+      return ["active", "kind", "label", "open", "title"];
+    }
+
+    attributeChangedCallback(_name, oldValue, newValue) {
+      if (oldValue === newValue) {
+        return;
+      }
+      this.render();
+    }
+
+    render() {
+      if (!this.shadowRoot) {
+        this.attachShadow({ mode: "open" });
+      }
+      const kind = this.getAttribute("kind") ?? "unknown";
+      const label = this.getAttribute("label") ?? "";
+      const title = this.getAttribute("title") ?? `${kind} record chip.`;
+      const icon = CHIP_ICON[kind] ?? CHIP_ICON.unknown;
+      const classes = ["chip", `chip--${kind}`];
+      if (this.hasAttribute("open") || kind === "pending") {
+        classes.push("chip--open");
+      }
+      if (this.hasAttribute("active")) {
+        classes.push("chip--active");
+      }
+      this.shadowRoot.innerHTML = `
+        <style>
+          :host {
+            display: inline-flex;
+            min-inline-size: 0;
+          }
+
+          .chip {
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+            min-inline-size: 0;
+            border: 1px solid var(--chip-border, var(--tone-border, #d9e1ea));
+            border-radius: 999px;
+            background: var(--chip-bg, var(--tone-surface, #fff));
+            padding: 4px 7px;
+            color: var(--chip-ink, var(--tone-ink-soft, #344054));
+            font-size: 10.75px;
+            font-weight: 720;
+            line-height: 1;
+            white-space: nowrap;
+          }
+
+          .chip--open {
+            border-style: dashed;
+            border-color: color-mix(in oklab, var(--kind-pending, #b45309), white 45%);
+            background: color-mix(in oklab, var(--kind-pending, #b45309), white 90%);
+            color: color-mix(in oklab, var(--kind-pending, #b45309), black 20%);
+          }
+
+          .chip--active {
+            border-color: color-mix(in oklab, var(--tone-accent, #2563eb), white 42%);
+            box-shadow: 0 0 0 3px color-mix(in oklab, var(--tone-accent, #2563eb), transparent 86%);
+          }
+
+          .label {
+            overflow: hidden;
+            text-overflow: ellipsis;
+          }
+
+          .icon-svg {
+            inline-size: 14px;
+            block-size: 14px;
+            flex: 0 0 auto;
+          }
+
+          .chip--input {
+            --chip-bg: color-mix(in oklab, var(--kind-input, #0369a1), white 91%);
+            --chip-border: color-mix(in oklab, var(--kind-input, #0369a1), white 62%);
+            --chip-ink: color-mix(in oklab, var(--kind-input, #0369a1), black 18%);
+          }
+
+          .chip--combo {
+            --chip-bg: color-mix(in oklab, var(--kind-combo, #475569), white 90%);
+            --chip-border: color-mix(in oklab, var(--kind-combo, #475569), white 64%);
+            --chip-ink: color-mix(in oklab, var(--kind-combo, #475569), black 18%);
+          }
+
+          .chip--compact {
+            --chip-bg: color-mix(in oklab, var(--kind-combo, #475569), white 90%);
+            --chip-border: color-mix(in oklab, var(--kind-combo, #475569), white 64%);
+            --chip-ink: color-mix(in oklab, var(--kind-combo, #475569), black 18%);
+          }
+
+          .chip--thinking {
+            --chip-bg: color-mix(in oklab, var(--kind-thinking, #0f766e), white 91%);
+            --chip-border: color-mix(in oklab, var(--kind-thinking, #0f766e), white 64%);
+            --chip-ink: color-mix(in oklab, var(--kind-thinking, #0f766e), black 18%);
+          }
+
+          .chip--text {
+            --chip-bg: color-mix(in oklab, var(--kind-text, #2563eb), white 92%);
+            --chip-border: color-mix(in oklab, var(--kind-text, #2563eb), white 65%);
+            --chip-ink: color-mix(in oklab, var(--kind-text, #2563eb), black 16%);
+          }
+
+          .chip--tool {
+            --chip-bg: color-mix(in oklab, var(--kind-tool, #b45309), white 91%);
+            --chip-border: color-mix(in oklab, var(--kind-tool, #b45309), white 62%);
+            --chip-ink: color-mix(in oklab, var(--kind-tool, #b45309), black 18%);
+          }
+
+          .chip--config {
+            --chip-bg: color-mix(in oklab, var(--kind-tool, #b45309), white 92%);
+            --chip-border: color-mix(in oklab, var(--kind-tool, #b45309), white 66%);
+            --chip-ink: color-mix(in oklab, var(--kind-tool, #b45309), black 16%);
+          }
+
+          .chip--diff {
+            --chip-bg: color-mix(in oklab, var(--kind-text, #2563eb), white 92%);
+            --chip-border: color-mix(in oklab, var(--kind-text, #2563eb), white 66%);
+            --chip-ink: color-mix(in oklab, var(--kind-text, #2563eb), black 16%);
+          }
+
+          .chip--image {
+            --chip-bg: color-mix(in oklab, var(--kind-image, #0f766e), white 92%);
+            --chip-border: color-mix(in oklab, var(--kind-image, #0f766e), white 66%);
+            --chip-ink: color-mix(in oklab, var(--kind-image, #0f766e), black 16%);
+          }
+
+          .chip--file {
+            --chip-bg: color-mix(in oklab, var(--kind-file, #475569), white 92%);
+            --chip-border: color-mix(in oklab, var(--kind-file, #475569), white 68%);
+            --chip-ink: color-mix(in oklab, var(--kind-file, #475569), black 16%);
+          }
+
+          .chip--archive {
+            --chip-bg: color-mix(in oklab, var(--kind-file, #475569), white 92%);
+            --chip-border: color-mix(in oklab, var(--kind-file, #475569), white 68%);
+            --chip-ink: color-mix(in oklab, var(--kind-file, #475569), black 16%);
+          }
+
+          .chip--video {
+            --chip-bg: color-mix(in oklab, var(--kind-video, #4f46e5), white 92%);
+            --chip-border: color-mix(in oklab, var(--kind-video, #4f46e5), white 68%);
+            --chip-ink: color-mix(in oklab, var(--kind-video, #4f46e5), black 14%);
+          }
+
+          .chip--refusal,
+          .chip--error {
+            --chip-bg: color-mix(in oklab, var(--kind-error, #dc2626), white 90%);
+            --chip-border: color-mix(in oklab, var(--kind-error, #dc2626), white 55%);
+            --chip-ink: color-mix(in oklab, var(--kind-error, #dc2626), black 10%);
+          }
+
+          .chip--pending {
+            --chip-bg: color-mix(in oklab, var(--kind-pending, #b45309), white 90%);
+            --chip-border: color-mix(in oklab, var(--kind-pending, #b45309), white 45%);
+            --chip-ink: color-mix(in oklab, var(--kind-pending, #b45309), black 20%);
+          }
+
+          .chip--unknown {
+            --chip-bg: color-mix(in oklab, var(--kind-unknown, #64748b), white 92%);
+            --chip-border: color-mix(in oklab, var(--kind-unknown, #64748b), white 68%);
+            --chip-ink: color-mix(in oklab, var(--kind-unknown, #64748b), black 15%);
+          }
+        </style>
+        <span class="${classes.join(" ")}" title="${escapeHtml(title)}">
+          ${renderIcon(icon)}
+          ${label ? `<span class="label">${escapeHtml(label)}</span>` : ""}
+        </span>
+      `;
+      hydrateIcons(this.shadowRoot);
+    }
+  },
+);
+
 const aggregatePartMetrics = (parts) => {
   const metrics = {
     textTokens: 0,
@@ -300,23 +484,17 @@ const inputMetrics = (parts) => {
   const result = [];
   if (metrics.textTokens > 0) {
     result.push(metricEntry("text", `${metrics.textTokens}t`));
-  }
-  if (metrics.imageBytes > 0) {
+  } else if (metrics.imageBytes > 0) {
     result.push(metricEntry("image", formatBytes(metrics.imageBytes)));
-  }
-  if (metrics.videoMs > 0) {
-    result.push(metricEntry("video", formatDuration(metrics.videoMs)));
-  }
-  if (metrics.fileBytes > 0) {
+  } else if (metrics.fileBytes > 0) {
     result.push(metricEntry("file", formatBytes(metrics.fileBytes)));
-  }
-  if (metrics.refusalCount > 0) {
+  } else if (metrics.videoMs > 0) {
+    result.push(metricEntry("video", formatDuration(metrics.videoMs)));
+  } else if (metrics.refusalCount > 0) {
     result.push(metricEntry("refusal", ""));
-  }
-  if (metrics.errorCount > 0) {
+  } else if (metrics.errorCount > 0) {
     result.push(metricEntry("error", ""));
-  }
-  if (metrics.unknownCount > 0) {
+  } else if (metrics.unknownCount > 0) {
     result.push(metricEntry("unknown", String(metrics.unknownCount)));
   }
   return result;
@@ -560,7 +738,7 @@ const buildComboChip = (chips) => {
     kind: "combo",
     startedAt: chips[0].startedAt,
     endedAt: chips.at(-1).endedAt,
-    metrics: metrics.slice(0, 2),
+    metrics: metrics.slice(0, 1),
     title: `Combo chip folding ${chips.length} hidden chips into one bounded display token.`,
   };
 };

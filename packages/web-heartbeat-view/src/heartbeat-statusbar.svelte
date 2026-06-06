@@ -1,320 +1,361 @@
 <script lang="ts">
-  import LoaderCircle from "@lucide/svelte/icons/loader-circle";
   import Settings2 from "@lucide/svelte/icons/settings-2";
-  import Sparkles from "@lucide/svelte/icons/sparkles";
+  import { tick } from "svelte";
 
-  import type { HeartbeatAttentionFocusSummary, HeartbeatContextState, HeartbeatStatusState } from "./heartbeat-statusbar-state";
-  import type { HeartbeatCapabilityMode, HeartbeatConfigActions, HeartbeatConfigBinding, HeartbeatConfigDraft } from "./types";
+  import { Block, BlockTitle, Button, Link, List, ListInput, ListItem, PageContent, Sheet, Toolbar, Toggle } from "./framework7-components";
+  import HeartbeatContextUsageSheet from "./heartbeat-context-usage-sheet.svelte";
+  import {
+    buildHeartbeatContextState,
+    formatHeartbeatContextPercentLabel,
+    resolveHeartbeatConfiguredContextLimit,
+    type HeartbeatContextState,
+  } from "./heartbeat-statusbar-state";
+  import type {
+    HeartbeatCapabilityMode,
+    HeartbeatConfigActions,
+    HeartbeatConfigBinding,
+    HeartbeatConfigDraft,
+    ModelCallItem,
+  } from "./types";
 
   let {
     mode,
-    statusState,
-    contextState,
-    attentionSummary,
-    groupCount,
-    groupCountVisible = true,
     compactPending = false,
     configBinding = null,
     configLoading = false,
     configSaving = false,
     configError = null,
+    modelCalls = [],
+    contextState = null,
     actions = {},
   }: {
     mode: HeartbeatCapabilityMode;
-    statusState: HeartbeatStatusState;
-    contextState: HeartbeatContextState;
-    attentionSummary: HeartbeatAttentionFocusSummary;
-    groupCount: number;
-    groupCountVisible?: boolean;
     compactPending?: boolean;
     configBinding?: HeartbeatConfigBinding | null;
     configLoading?: boolean;
     configSaving?: boolean;
     configError?: string | null;
+    modelCalls?: ModelCallItem[];
+    contextState?: HeartbeatContextState | null;
     actions?: HeartbeatConfigActions;
   } = $props();
 
   let configOpen = $state(false);
+  let contextUsageMounted = $state(false);
+  let contextUsageOpen = $state(false);
   let draft = $state<HeartbeatConfigDraft | null>(null);
+  let temperatureInput = $state("");
+  let topKInput = $state("");
+  let maxTokenInput = $state("");
+  let thinkingEnabledInput = $state(false);
 
-  // Write affordances are mode-gated UI capabilities; transport auth remains host-owned.
-  const compactAvailable = $derived(mode === "configable" && actions.compact?.available === true && actions.onRequestCompact);
-  const configAvailable = $derived(mode === "configable" && actions.config?.available === true && actions.onSaveConfig && configBinding);
-  const contextLabel = $derived.by(() => {
-    if (contextState.kind === "absent") {
-      return "No model call";
+  const compactVisible = $derived(mode === "configable");
+  const configVisible = $derived(mode === "configable");
+  const configEnabled = $derived(
+    actions.config?.available === true && typeof actions.onSaveConfig === "function" && Boolean(configBinding),
+  );
+  const resolvedContextState = $derived(
+    contextState ?? buildHeartbeatContextState(modelCalls, resolveHeartbeatConfiguredContextLimit(configBinding)),
+  );
+  const contextUsageLabel = $derived(formatHeartbeatContextPercentLabel(resolvedContextState));
+  const contextProgressRatio = $derived(
+    resolvedContextState.kind === "available" && resolvedContextState.progress !== null
+      ? Math.max(0, Math.min(1, resolvedContextState.progress))
+      : 0,
+  );
+  const contextSafeMixPercent = $derived(`${Math.min(contextProgressRatio * 2, 1) * 100}%`);
+  const contextRiskMixPercent = $derived(`${Math.max(0, Math.min((contextProgressRatio - 0.5) * 2, 1)) * 100}%`);
+  const contextProgressStyle = $derived(
+    [
+      `--ag-heartbeat-context-progress:${contextProgressRatio}`,
+      `--ag-heartbeat-context-safe-mix:${contextSafeMixPercent}`,
+      `--ag-heartbeat-context-risk-mix:${contextRiskMixPercent}`,
+    ].join(";"),
+  );
+  const configInteractive = $derived(configEnabled && !configLoading && !configSaving);
+  const configTitle = $derived.by(() => {
+    if (configSaving) {
+      return "Saving config";
     }
-    if (contextState.kind === "unavailable") {
-      return contextState.providerLabel ? `${contextState.providerLabel} · usage unavailable` : "Usage unavailable";
+    if (configLoading) {
+      return "Loading config";
     }
-    const max = contextState.maxContextTokens ? ` / ${contextState.maxContextTokens}` : "";
-    return `${contextState.usedTokens}${max} tokens`;
+    if (configInteractive) {
+      return "Configure next call";
+    }
+    return actions.config?.reason ?? "Config action is unavailable for this target";
   });
-  const attentionLabel = $derived(
-    attentionSummary.total > 0 ? attentionSummary.labelParts.join(" · ") : "No attention contexts",
+  const toolbarActionClass = (enabled: boolean): string => (enabled ? "" : "disabled");
+  const configActionClass = $derived(
+    [
+      "ag-heartbeat-toolbar__action",
+      "ag-heartbeat-toolbar__action--icon",
+      toolbarActionClass(configInteractive),
+    ]
+      .filter((value) => value.length > 0)
+      .join(" "),
   );
 
+  const parseDraftNumber = (value: string): number | null => {
+    const trimmed = value.trim();
+    return trimmed.length > 0 ? Number(trimmed) : null;
+  };
+
+  const syncDraftInputs = (nextDraft: HeartbeatConfigDraft): void => {
+    temperatureInput = nextDraft.temperature === null ? "" : String(nextDraft.temperature);
+    topKInput = nextDraft.topK === null ? "" : String(nextDraft.topK);
+    maxTokenInput = nextDraft.maxToken === null ? "" : String(nextDraft.maxToken);
+    thinkingEnabledInput = nextDraft.thinkingEnabled;
+  };
+
+  const readDraftInputs = (): HeartbeatConfigDraft | null =>
+    draft
+      ? {
+          ...draft,
+          temperature: parseDraftNumber(temperatureInput),
+          topK: parseDraftNumber(topKInput),
+          maxToken: parseDraftNumber(maxTokenInput),
+          thinkingEnabled: thinkingEnabledInput,
+        }
+      : null;
+
+  const openContextUsage = (): void => {
+    contextUsageOpen = false;
+    contextUsageMounted = true;
+    void tick().then(() => {
+      if (contextUsageMounted) {
+        contextUsageOpen = true;
+      }
+    });
+  };
+
+  const setThinkingEnabled = (event: Event): void => {
+    if (event.currentTarget instanceof HTMLInputElement) {
+      thinkingEnabledInput = event.currentTarget.checked;
+    }
+  };
+
   const openConfig = (): void => {
-    if (!configBinding) {
+    if (!configInteractive || !configBinding) {
       return;
     }
+    configOpen = false;
     draft = { ...configBinding.draft };
-    configOpen = true;
+    syncDraftInputs(configBinding.draft);
+    void tick().then(() => {
+      if (draft) {
+        configOpen = true;
+      }
+    });
   };
 
   const saveConfig = async (): Promise<void> => {
-    if (!draft || !actions.onSaveConfig) {
+    const nextDraft = readDraftInputs();
+    if (!nextDraft || !actions.onSaveConfig) {
       return;
     }
-    const ok = await actions.onSaveConfig(draft);
+    draft = nextDraft;
+    const ok = await actions.onSaveConfig(nextDraft);
     if (ok) {
       configOpen = false;
     }
   };
 </script>
 
-<footer class="ag-heartbeat-statusbar" data-testid="heartbeat-statusbar">
-  <div class="ag-heartbeat-status" data-tone={statusState.tone}>
-    <span class:active={statusState.animated}></span>
-    <strong>{statusState.label}</strong>
-    {#if statusState.detail}
-      <small>{statusState.detail}</small>
+{#if mode === "configable"}
+  <Toolbar
+    bottom
+    position="bottom"
+    class="ag-heartbeat-toolbar"
+    role="toolbar"
+    aria-label="Heartbeat actions"
+    data-testid="heartbeat-statusbar"
+  >
+    {#if compactVisible}
+      <Link
+        class="ag-heartbeat-toolbar__action ag-heartbeat-context-trigger"
+        title="Context usage"
+        aria-label={`Context usage ${contextUsageLabel}`}
+        style={contextProgressStyle}
+        onClick={openContextUsage}
+      >
+        <span>{contextUsageLabel}</span>
+        <span class="ag-heartbeat-context-trigger__ring" aria-hidden="true"></span>
+      </Link>
     {/if}
-  </div>
+    {#if configVisible}
+      <Link
+        iconOnly
+        class={configActionClass}
+        title={configTitle}
+        aria-label={configTitle}
+        aria-disabled={configInteractive ? "false" : "true"}
+        tabindex={configInteractive ? 0 : -1}
+        onClick={openConfig}
+      >
+        <Settings2 size={20} aria-hidden="true" />
+      </Link>
+    {/if}
+  </Toolbar>
 
-  <div class="ag-heartbeat-statusbar__middle">
-    <span>{contextLabel}</span>
-    <span>{attentionLabel}</span>
-  </div>
+  {#if contextUsageMounted}
+    <HeartbeatContextUsageSheet
+      opened={contextUsageOpen}
+      contextState={resolvedContextState}
+      {configBinding}
+      {compactPending}
+      compactAction={actions.compact}
+      onRequestCompact={actions.onRequestCompact}
+      onClose={() => {
+        contextUsageOpen = false;
+        contextUsageMounted = false;
+      }}
+    />
+  {/if}
+{/if}
 
-  <div class="ag-heartbeat-statusbar__actions">
-    {#if groupCountVisible}
-      <span class="ag-heartbeat-pill">{groupCount} groups</span>
-    {/if}
-    {#if compactAvailable}
-      <button type="button" disabled={compactPending} onclick={() => void actions.onRequestCompact?.()} title="Request compact">
-        {#if compactPending}
-          <span class="ag-heartbeat-spin">
-            <LoaderCircle size={15} />
-          </span>
-        {:else}
-          <Sparkles size={15} />
-        {/if}
-        <span>{compactPending ? "Compacting" : "Compact"}</span>
-      </button>
-    {/if}
-    {#if configAvailable}
-      <button type="button" disabled={configLoading || configSaving} onclick={openConfig} title="Configure next call">
-        <Settings2 size={15} />
-        <span>Config</span>
-      </button>
-    {/if}
-  </div>
-</footer>
-
-{#if configOpen && draft}
-  <div class="ag-heartbeat-config-sheet" data-testid="heartbeat-config-sheet">
-    <div class="ag-heartbeat-config-sheet__panel">
-      <header>
-        <strong>Next call config</strong>
-        <button type="button" onclick={() => (configOpen = false)}>Close</button>
-      </header>
-      {#if configError}
-        <p class="ag-heartbeat-config-error">{configError}</p>
-      {/if}
-      <label>
-        Temperature
-        <input
-          type="number"
-          step="0.1"
-          value={draft.temperature ?? ""}
-          oninput={(event) => {
-            const value = event.currentTarget.value.trim();
-            draft = { ...draft!, temperature: value.length > 0 ? Number(value) : null };
-          }}
-        />
-      </label>
-      <label>
-        Top K
-        <input
-          type="number"
-          step="1"
-          value={draft.topK ?? ""}
-          oninput={(event) => {
-            const value = event.currentTarget.value.trim();
-            draft = { ...draft!, topK: value.length > 0 ? Number(value) : null };
-          }}
-        />
-      </label>
-      <label>
-        Max tokens
-        <input
-          type="number"
-          step="1"
-          value={draft.maxToken ?? ""}
-          oninput={(event) => {
-            const value = event.currentTarget.value.trim();
-            draft = { ...draft!, maxToken: value.length > 0 ? Number(value) : null };
-          }}
-        />
-      </label>
-      <label class="ag-heartbeat-checkbox">
-        <input
-          type="checkbox"
-          checked={draft.thinkingEnabled}
-          onchange={(event) => {
-            draft = { ...draft!, thinkingEnabled: event.currentTarget.checked };
-          }}
-        />
-        Thinking
-      </label>
-      <div class="ag-heartbeat-config-sheet__actions">
-        <button type="button" onclick={() => void actions.onRefreshConfig?.()} disabled={configLoading}>Refresh</button>
-        <button type="button" onclick={() => void saveConfig()} disabled={configSaving}>Save</button>
+{#if mode === "configable" && draft}
+  <Sheet
+    class="ag-heartbeat-modal-sheet ag-heartbeat-config-sheet"
+    data-testid="heartbeat-config-sheet"
+    opened={configOpen}
+    backdrop
+    push
+    style="height: auto; max-height: min(92vh, 560px)"
+    onSheetClosed={() => {
+      configOpen = false;
+      draft = null;
+    }}
+  >
+    <Toolbar class="ag-heartbeat-modal-sheet__toolbar ag-heartbeat-config-sheet__toolbar">
+      <div class="left">
+        <span class="ag-heartbeat-modal-sheet__title ag-heartbeat-config-sheet__title">Next call config</span>
       </div>
-    </div>
-  </div>
+      <div class="right">
+        <Link sheetClose iconOnly iconF7="xmark" aria-label="Close config" tooltip="Close" />
+      </div>
+    </Toolbar>
+
+    {#if draft}
+      <PageContent class="ag-heartbeat-modal-sheet__content ag-heartbeat-config-sheet__content">
+        <BlockTitle>Provider call parameters</BlockTitle>
+        {#if configError}
+          <Block strong class="ag-heartbeat-config-error">{configError}</Block>
+        {/if}
+        <List strongIos insetIos dividersIos>
+          <ListInput label="Temperature" type="number" step="0.1" bind:value={temperatureInput} />
+          <ListInput label="Top K" type="number" step="1" bind:value={topKInput} />
+          <ListInput label="Max tokens" type="number" step="1" bind:value={maxTokenInput} />
+          <ListItem title="Thinking">
+            {#snippet after()}
+              <Toggle
+                checked={thinkingEnabledInput}
+                onChange={setThinkingEnabled}
+              />
+            {/snippet}
+          </ListItem>
+        </List>
+        <Block class="ag-heartbeat-config-sheet__actions">
+          <Button outline disabled={configLoading} onClick={() => void actions.onRefreshConfig?.()}>Refresh</Button>
+          <Button fill disabled={configSaving} onClick={() => void saveConfig()}>Save</Button>
+        </Block>
+      </PageContent>
+    {/if}
+  </Sheet>
 {/if}
 
 <style>
-  .ag-heartbeat-statusbar {
-    display: grid;
-    gap: 0.55rem;
-    border-block-start: 1px solid color-mix(in srgb, currentColor, transparent 86%);
-    background: color-mix(in srgb, Canvas, currentColor 2%);
-    padding: 0.55rem max(0.75rem, env(safe-area-inset-left)) max(0.55rem, env(safe-area-inset-bottom)) max(0.75rem, env(safe-area-inset-right));
-  }
-
-  .ag-heartbeat-status,
-  .ag-heartbeat-statusbar__middle,
-  .ag-heartbeat-statusbar__actions {
+  :global(.ag-heartbeat-toolbar .toolbar-inner) {
     display: flex;
-    min-width: 0;
-    align-items: center;
-    gap: 0.45rem;
+    gap: 0.5rem;
+    padding-inline: max(0.75rem, env(safe-area-inset-left)) max(0.75rem, env(safe-area-inset-right));
   }
 
-  .ag-heartbeat-status span {
-    inline-size: 0.52rem;
-    block-size: 0.52rem;
-    border-radius: 999px;
-    background: currentColor;
-    opacity: 0.45;
+  :global(.ag-heartbeat-toolbar .toolbar-inner > .ag-heartbeat-toolbar__action) {
+    flex: 1 1 0 !important;
+    inline-size: 0 !important;
+    min-inline-size: 0 !important;
+    padding-inline: 12px !important;
+    justify-content: center;
   }
 
-  .ag-heartbeat-status span.active {
-    opacity: 1;
-    animation: ag-heartbeat-pulse 1.4s ease-in-out infinite;
+  :global(.ag-heartbeat-toolbar .toolbar-inner > .ag-heartbeat-toolbar__action--icon) {
+    inline-size: 0 !important;
+    min-inline-size: 0 !important;
+    width: 0 !important;
   }
 
-  .ag-heartbeat-status small,
-  .ag-heartbeat-statusbar__middle {
-    color: color-mix(in srgb, currentColor, transparent 42%);
-    font: 0.74rem/1.25 system-ui, sans-serif;
-  }
-
-  .ag-heartbeat-statusbar__middle {
-    flex-wrap: wrap;
-  }
-
-  .ag-heartbeat-statusbar__middle span + span::before {
-    content: "· ";
-  }
-
-  .ag-heartbeat-statusbar__actions {
-    justify-content: space-between;
-  }
-
-  .ag-heartbeat-pill,
-  .ag-heartbeat-statusbar__actions button {
-    border: 1px solid color-mix(in srgb, currentColor, transparent 84%);
-    border-radius: 999px;
-    background: transparent;
-    color: inherit;
-    padding: 0.28rem 0.58rem;
-    font: 600 0.75rem/1.1 system-ui, sans-serif;
-  }
-
-  .ag-heartbeat-statusbar__actions button {
+  :global(.ag-heartbeat-context-trigger) {
     display: inline-flex;
     align-items: center;
+    justify-content: center;
     gap: 0.35rem;
+    border: 0;
+    background: transparent;
+    color: inherit;
+    min-inline-size: 0;
+    padding: 0;
+    font: 700 0.82rem/1 system-ui, sans-serif;
   }
 
-  .ag-heartbeat-config-sheet {
-    position: fixed;
-    inset: 0;
-    z-index: 1000;
+  .ag-heartbeat-context-trigger__ring {
+    display: inline-block;
+    box-sizing: border-box;
+    border-radius: 999px;
+    inline-size: 0.82rem;
+    block-size: 0.82rem;
+    --ag-heartbeat-context-track: color-mix(in oklab, currentColor 14%, transparent);
+    --ag-heartbeat-context-mid: color-mix(
+      in oklch,
+      #1f9d55 calc(100% - var(--ag-heartbeat-context-safe-mix, 0%)),
+      #f59e0b var(--ag-heartbeat-context-safe-mix, 0%)
+    );
+    --ag-heartbeat-context-progress-color: color-mix(
+      in oklch,
+      var(--ag-heartbeat-context-mid) calc(100% - var(--ag-heartbeat-context-risk-mix, 0%)),
+      #d93025 var(--ag-heartbeat-context-risk-mix, 0%)
+    );
+    background: conic-gradient(
+      var(--ag-heartbeat-context-progress-color) calc(var(--ag-heartbeat-context-progress, 0) * 1turn),
+      var(--ag-heartbeat-context-track) 0
+    );
+    -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 2px), #000 0);
+    mask: radial-gradient(farthest-side, transparent calc(100% - 2px), #000 0);
+  }
+
+  :global(.ag-heartbeat-toolbar .link.disabled) {
+    pointer-events: none;
+    opacity: 0.48;
+  }
+
+  :global(.ag-heartbeat-modal-sheet__toolbar) {
+    backdrop-filter: none !important;
+    &::before, &::after{
+        content: none!important;
+    }
+  }
+
+  .ag-heartbeat-modal-sheet__title {
+    min-inline-size: 0;
+    overflow: hidden;
+    padding-inline: 16px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font: 700 0.95rem/1.2 system-ui, sans-serif;
+  }
+
+  :global(.ag-heartbeat-modal-sheet__content) {
+    padding-block-end: max(12px, env(safe-area-inset-bottom));
+  }
+
+  :global(.ag-heartbeat-config-sheet__actions) {
     display: grid;
-    align-items: end;
-    background: color-mix(in srgb, CanvasText, transparent 72%);
+    grid-template-columns: 1fr 1fr;
+    gap: 0.65rem;
   }
 
-  .ag-heartbeat-config-sheet__panel {
-    display: grid;
-    gap: 0.75rem;
-    border-radius: 18px 18px 0 0;
-    background: Canvas;
-    padding: 1rem max(1rem, env(safe-area-inset-right)) max(1rem, env(safe-area-inset-bottom)) max(1rem, env(safe-area-inset-left));
-  }
-
-  .ag-heartbeat-config-sheet__panel header,
-  .ag-heartbeat-config-sheet__actions {
-    display: flex;
-    justify-content: space-between;
-    gap: 0.6rem;
-  }
-
-  .ag-heartbeat-config-sheet label {
-    display: grid;
-    gap: 0.25rem;
-    font: 600 0.78rem/1.3 system-ui, sans-serif;
-  }
-
-  .ag-heartbeat-config-sheet input[type="number"] {
-    border: 1px solid color-mix(in srgb, currentColor, transparent 82%);
-    border-radius: 10px;
-    padding: 0.55rem;
-    font: inherit;
-  }
-
-  .ag-heartbeat-checkbox {
-    grid-template-columns: auto 1fr;
-    align-items: center;
-  }
-
-  .ag-heartbeat-config-error {
-    margin: 0;
+  :global(.ag-heartbeat-config-error) {
     color: #a11;
-    font: 0.78rem/1.4 system-ui, sans-serif;
   }
 
-  .ag-heartbeat-spin {
-    display: inline-grid;
-    place-items: center;
-    animation: ag-heartbeat-spin 1s linear infinite;
-  }
-
-  @keyframes ag-heartbeat-spin {
-    to {
-      transform: rotate(360deg);
-    }
-  }
-
-  @keyframes ag-heartbeat-pulse {
-    50% {
-      opacity: 0.35;
-    }
-  }
-
-  @media (min-width: 760px) {
-    .ag-heartbeat-statusbar {
-      grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
-      align-items: center;
-    }
-
-    .ag-heartbeat-statusbar__actions {
-      justify-content: end;
-    }
-  }
 </style>

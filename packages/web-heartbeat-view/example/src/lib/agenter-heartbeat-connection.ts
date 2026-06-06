@@ -6,12 +6,15 @@ import {
   writeHeartbeatConfigLayer,
   type AgenterHeartbeatConnection,
   type AgenterHeartbeatConnectionState,
+  type AvatarRuntimeStatus,
   type HeartbeatConfigBinding,
   type GlobalAvatarCatalogEntry,
   type HeartbeatConfigDraft,
   type HeartbeatConfigLayerFile,
+  type HeartbeatRecordPageAnchor,
   type HeartbeatTargetIdentity,
   type HeartbeatViewState,
+  type SessionEntry,
 } from "@agenter/web-heartbeat-view";
 
 type ConnectionOptions = {
@@ -21,6 +24,13 @@ type ConnectionOptions = {
 
 type HeartbeatConfigLayerSnapshot = HeartbeatConfigLayerFile & {
   mtimeMs: number;
+};
+
+type RuntimeStoreBase = ReturnType<typeof createRuntimeStore>;
+
+type RuntimeLifecycleStore = RuntimeStoreBase & {
+  startSession(sessionId: string): Promise<void>;
+  stopSession(sessionId: string): Promise<void>;
 };
 
 const toErrorMessage = (error: unknown): string => (error instanceof Error ? error.message : String(error));
@@ -37,14 +47,23 @@ const createInitialState = (): AgenterHeartbeatConnectionState => ({
   connectionStatus: "connecting",
   connected: false,
   avatars: createCachedResourceState<GlobalAvatarCatalogEntry[]>([]),
+  avatarStatuses: {},
   selectedTarget: null,
   selectedHeartbeat: null,
   error: null,
 });
 
+const hasRuntimeLifecycle = (store: RuntimeStoreBase): store is RuntimeLifecycleStore => {
+  const candidate = store as {
+    startSession?: unknown;
+    stopSession?: unknown;
+  };
+  return typeof candidate.startSession === "function" && typeof candidate.stopSession === "function";
+};
+
 export class ClientSdkAgenterHeartbeatConnection implements AgenterHeartbeatConnection {
   private readonly listeners = new Set<(state: AgenterHeartbeatConnectionState) => void>();
-  private readonly store: ReturnType<typeof createRuntimeStore>;
+  private readonly store: RuntimeLifecycleStore;
   private readonly configBindingsBySession = new Map<string, HeartbeatConfigBinding>();
   private readonly configLayerBySession = new Map<string, HeartbeatConfigLayerSnapshot>();
   private readonly configErrorsBySession = new Map<string, string>();
@@ -58,7 +77,11 @@ export class ClientSdkAgenterHeartbeatConnection implements AgenterHeartbeatConn
       wsUrl: normalizeWsUrl(options.wsUrl),
       initialAuthToken: options.authToken,
     });
-    this.store = createRuntimeStore(client);
+    const store = createRuntimeStore(client);
+    if (!hasRuntimeLifecycle(store)) {
+      throw new Error("The connected Agenter client-sdk does not expose runtime lifecycle controls.");
+    }
+    this.store = store;
     this.unsubscribeStore = this.store.subscribe(() => {
       this.syncFromRuntimeStore();
     });
@@ -135,13 +158,15 @@ export class ClientSdkAgenterHeartbeatConnection implements AgenterHeartbeatConn
       avatar: input.avatar.nickname,
       autoStart: input.autoStart ?? false,
     });
+    const avatarPrincipalId = input.avatar.avatarPrincipalId ?? null;
     const target: HeartbeatTargetIdentity = {
       avatar: input.avatar.nickname,
+      avatarPrincipalId,
       displayName: input.avatar.displayName,
       runtimeId: input.avatar.runtimeId,
       sessionId: session.id,
       cwd: input.avatar.globalPath,
-      iconUrl: input.avatar.iconUrl,
+      iconUrl: input.avatar.iconUrl ?? null,
     };
     this.state = {
       ...this.state,
@@ -160,7 +185,11 @@ export class ClientSdkAgenterHeartbeatConnection implements AgenterHeartbeatConn
       includeChatHistory: false,
       observabilityMode: "heartbeat",
     });
-    await Promise.all([this.store.loadHeartbeatGroups(target.sessionId), this.refreshConfigBinding(target)]);
+    await Promise.all([
+      this.store.loadHeartbeatGroups(target.sessionId),
+      this.store.loadHeartbeatRecords(target.sessionId, { anchor: { kind: "latest" } }),
+      this.refreshConfigBinding(target),
+    ]);
     this.state = {
       ...this.state,
       selectedTarget: target,
@@ -174,6 +203,26 @@ export class ClientSdkAgenterHeartbeatConnection implements AgenterHeartbeatConn
     const result = await this.store.loadMoreHeartbeatGroups(target.sessionId);
     this.syncFromRuntimeStore();
     return result;
+  }
+
+  async loadHeartbeatRecordPage(target: HeartbeatTargetIdentity, anchor: HeartbeatRecordPageAnchor): Promise<void> {
+    await this.store.loadHeartbeatRecords(target.sessionId, { anchor });
+    this.syncFromRuntimeStore();
+  }
+
+  async loadHeartbeatRecordDetail(target: HeartbeatTargetIdentity, recordId: number): Promise<void> {
+    await this.store.loadHeartbeatRecordDetail(target.sessionId, recordId);
+    this.syncFromRuntimeStore();
+  }
+
+  async startRuntime(target: HeartbeatTargetIdentity): Promise<void> {
+    await this.store.startSession(target.sessionId);
+    await this.refreshHeartbeat(target);
+  }
+
+  async stopRuntime(target: HeartbeatTargetIdentity): Promise<void> {
+    await this.store.stopSession(target.sessionId);
+    await this.refreshHeartbeat(target);
   }
 
   async requestCompact(target: HeartbeatTargetIdentity): Promise<void> {
@@ -244,6 +293,8 @@ export class ClientSdkAgenterHeartbeatConnection implements AgenterHeartbeatConn
       sessionStatus: session?.status ?? "stopped",
       schedulerState: runtime?.schedulerState ?? null,
       groupsState: runtimeState.heartbeatGroupsBySession[target.sessionId] ?? createCachedResourceState([]),
+      recordsState: runtimeState.heartbeatRecordsBySession[target.sessionId],
+      recordDetailsState: runtimeState.heartbeatRecordDetailsBySession[target.sessionId],
       modelCalls: runtimeState.modelCallsBySession[target.sessionId] ?? [],
       attention: runtimeState.attentionBySession?.[target.sessionId] ?? runtime?.attention ?? null,
       attentionDelivery: runtimeState.attentionDeliveryBySession?.[target.sessionId] ?? runtime?.attentionDelivery ?? null,
@@ -263,6 +314,37 @@ export class ClientSdkAgenterHeartbeatConnection implements AgenterHeartbeatConn
       livePushStatus: runtime && session?.status === "running" ? "active" : "inactive",
       runtime,
     };
+  }
+
+  private findAvatarSession(avatar: GlobalAvatarCatalogEntry, sessions: ReadonlyArray<SessionEntry>): SessionEntry | null {
+    const matches = sessions.filter((session) => {
+      if (avatar.avatarPrincipalId && session.avatarPrincipalId === avatar.avatarPrincipalId) {
+        return true;
+      }
+      if (session.id === avatar.runtimeId) {
+        return true;
+      }
+      if (session.avatar === avatar.nickname && session.cwd === avatar.globalPath) {
+        return true;
+      }
+      return false;
+    });
+    return matches.find((session) => session.status === "running") ?? matches[matches.length - 1] ?? null;
+  }
+
+  private buildAvatarStatuses(): Record<string, AvatarRuntimeStatus> {
+    const runtimeState = this.store.getState();
+    const statuses: Record<string, AvatarRuntimeStatus> = {};
+    for (const avatar of runtimeState.globalAvatarCatalog.data) {
+      const session = this.findAvatarSession(avatar, runtimeState.sessions);
+      const runtime = session ? (runtimeState.runtimes[session.id] ?? null) : null;
+      statuses[avatar.runtimeId] = {
+        sessionId: session?.id ?? null,
+        status: session?.status ?? "unknown",
+        livePushStatus: session && runtime && session.status === "running" ? "active" : session ? "inactive" : "unknown",
+      };
+    }
+    return statuses;
   }
 
   private async refreshConfigBinding(target: HeartbeatTargetIdentity): Promise<void> {
@@ -311,6 +393,7 @@ export class ClientSdkAgenterHeartbeatConnection implements AgenterHeartbeatConn
       connectionStatus: runtimeState.connectionStatus,
       connected: runtimeState.connected,
       avatars: runtimeState.globalAvatarCatalog,
+      avatarStatuses: this.buildAvatarStatuses(),
       selectedHeartbeat: selectedTarget ? this.buildHeartbeatState(selectedTarget) : this.state.selectedHeartbeat,
       error: null,
     };

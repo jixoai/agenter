@@ -1,6 +1,8 @@
 import type {
   CachedResourceState,
+  HeartbeatConfigBinding,
   HeartbeatGroupItem,
+  HeartbeatLivePushStatus,
   ModelCallItem,
   RuntimeAttentionState,
   RuntimeSchedulerState,
@@ -44,6 +46,11 @@ export interface HeartbeatStatusState {
   detail: string | null;
   animated: boolean;
   tone: "default" | "warning" | "destructive";
+}
+
+export interface HeartbeatModelConfigSummary {
+  modelLabel: string;
+  configLabel: string;
 }
 
 const asRecord = (value: unknown): Record<string, unknown> | null => {
@@ -139,6 +146,116 @@ const buildResourceHint = (resource: CachedResourceState<HeartbeatGroupItem[]>):
     return "Heartbeat refresh failed";
   }
   return null;
+};
+
+export const formatHeartbeatContextLabel = (contextState: HeartbeatContextState): string => {
+  if (contextState.kind === "absent") {
+    return "No model call";
+  }
+  if (contextState.kind === "unavailable") {
+    return contextState.providerLabel ? `${contextState.providerLabel} · usage unavailable` : "Usage unavailable";
+  }
+  const max = contextState.maxContextTokens ? ` / ${contextState.maxContextTokens}` : "";
+  return `${contextState.usedTokens}${max} tokens`;
+};
+
+export const formatHeartbeatTokenCount = (value: number): string => {
+  if (value >= 1_000_000) {
+    const millions = value / 1_000_000;
+    return `${Number.isInteger(millions) ? millions.toFixed(0) : millions.toFixed(1)}M`;
+  }
+  if (value >= 1_000) {
+    const thousands = value / 1_000;
+    return `${Number.isInteger(thousands) ? thousands.toFixed(0) : thousands.toFixed(1)}K`;
+  }
+  return value.toLocaleString("en-US");
+};
+
+export const formatHeartbeatContextPercentLabel = (contextState: HeartbeatContextState): string => {
+  if (contextState.kind !== "available" || contextState.progress === null) {
+    return "Usage";
+  }
+  return `${(contextState.progress * 100).toFixed(1)}%`;
+};
+
+export const formatHeartbeatContextUsedLimitLabel = (contextState: HeartbeatContextState): string => {
+  if (contextState.kind === "absent") {
+    return "No model call";
+  }
+  if (contextState.kind === "unavailable") {
+    return contextState.maxContextTokens
+      ? `Usage unavailable / ${formatHeartbeatTokenCount(contextState.maxContextTokens)}`
+      : "Usage unavailable";
+  }
+  if (contextState.maxContextTokens) {
+    return `${formatHeartbeatTokenCount(contextState.usedTokens)} / ${formatHeartbeatTokenCount(contextState.maxContextTokens)}`;
+  }
+  return `${formatHeartbeatTokenCount(contextState.usedTokens)} used`;
+};
+
+export const resolveHeartbeatConfiguredContextLimit = (configBinding: HeartbeatConfigBinding | null | undefined): number | null =>
+  configBinding?.providerMetadata?.maxContextTokens ?? configBinding?.draft.maxToken ?? null;
+
+export const buildHeartbeatModelConfigSummary = (
+  configBinding: HeartbeatConfigBinding | null | undefined,
+  contextState: HeartbeatContextState,
+): HeartbeatModelConfigSummary => {
+  const modelLabel =
+    configBinding?.providerLabel ??
+    (contextState.kind !== "absent" && contextState.providerLabel ? contextState.providerLabel : "Model unavailable");
+  const draft = configBinding?.draft;
+  const configParts = draft
+    ? [
+        draft.temperature !== null ? `temperature:${draft.temperature}` : null,
+        draft.topK !== null ? `topK:${draft.topK}` : null,
+        draft.maxToken !== null ? `max:${draft.maxToken}` : null,
+        `thinking:${draft.thinkingEnabled ? "true" : "false"}`,
+        draft.thinkingBudgetTokens !== null ? `thinkingBudget:${draft.thinkingBudgetTokens}` : null,
+      ].filter((value): value is string => value !== null)
+    : [];
+  return {
+    modelLabel,
+    configLabel: configParts.length > 0 ? configParts.join(" · ") : "No config facts available",
+  };
+};
+
+export const formatHeartbeatAttentionLabel = (attentionSummary: HeartbeatAttentionFocusSummary): string =>
+  attentionSummary.total > 0 ? attentionSummary.labelParts.join(" · ") : "No attention contexts";
+
+const formatLivePushLabel = (livePushStatus: HeartbeatLivePushStatus | undefined): string => {
+  switch (livePushStatus) {
+    case "active":
+      return "Live push active";
+    case "inactive":
+      return "No live push";
+    default:
+      return "Live push unknown";
+  }
+};
+
+export const buildHeartbeatSubnavbarTitle = (input: {
+  statusState: HeartbeatStatusState;
+  contextState: HeartbeatContextState;
+  attentionSummary: HeartbeatAttentionFocusSummary;
+  recordCount: number;
+  recordCountVisible: boolean;
+  livePushStatus?: HeartbeatLivePushStatus;
+}): string => {
+  const statusLabel = input.statusState.detail
+    ? `${input.statusState.label}: ${input.statusState.detail}`
+    : input.statusState.label;
+  const recordLabel = input.recordCountVisible
+    ? `${input.recordCount} ${input.recordCount === 1 ? "record" : "records"}`
+    : null;
+  const attentionLabel = input.attentionSummary.total > 0 ? formatHeartbeatAttentionLabel(input.attentionSummary) : null;
+  return [
+    statusLabel,
+    formatLivePushLabel(input.livePushStatus),
+    recordLabel,
+    attentionLabel,
+  ]
+    .filter((value): value is string => typeof value === "string" && value.length > 0)
+    .join(" · ");
 };
 
 export const buildHeartbeatContextState = (

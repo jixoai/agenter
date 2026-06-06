@@ -1,8 +1,8 @@
 <script lang="ts">
   import ChevronDown from "@lucide/svelte/icons/chevron-down";
   import CircleAlert from "@lucide/svelte/icons/circle-alert";
+  import CircleCheck from "@lucide/svelte/icons/circle-check";
   import LoaderCircle from "@lucide/svelte/icons/loader-circle";
-  import Wrench from "@lucide/svelte/icons/wrench";
 
   import type { HeartbeatDisplayBlock } from "./heartbeat-parts";
   import { getHeartbeatToolPreview } from "./heartbeat-parts";
@@ -30,23 +30,23 @@
           ? "streaming"
           : "running",
   );
+  const stateAriaLabel = $derived(`Tool ${stateLabel}`);
 </script>
 
 <details class="ag-heartbeat-tool" open={shouldOpen} data-tool-state={block.state}>
   <summary class="ag-heartbeat-tool__summary">
-    <span class="ag-heartbeat-tool__icon" aria-hidden="true">
+    <span class="ag-heartbeat-tool__state-icon" aria-label={stateAriaLabel} title={stateAriaLabel}>
       {#if block.state === "output-error"}
-        <CircleAlert size={15} />
+        <CircleAlert size={16} aria-hidden="true" />
       {:else if isRunning}
         <span class="ag-heartbeat-spin">
-          <LoaderCircle size={15} />
+          <LoaderCircle size={16} aria-hidden="true" />
         </span>
       {:else}
-        <Wrench size={15} />
+        <CircleCheck size={16} aria-hidden="true" />
       {/if}
     </span>
     <span class="ag-heartbeat-tool__title">{block.tool}</span>
-    <span class="ag-heartbeat-tool__state">{stateLabel}</span>
     {#if preview}
       <span class="ag-heartbeat-tool__preview">{preview}</span>
     {/if}
@@ -73,7 +73,11 @@
 
 <style>
   .ag-heartbeat-tool {
+    box-sizing: border-box;
+    inline-size: 100%;
+    max-inline-size: 100%;
     min-width: 0;
+    overflow: hidden;
     border: 1px solid color-mix(in srgb, currentColor, transparent 84%);
     border-radius: 10px;
     background: color-mix(in srgb, Canvas, currentColor 3%);
@@ -81,7 +85,10 @@
 
   .ag-heartbeat-tool__summary {
     display: grid;
-    grid-template-columns: auto auto auto minmax(0, 1fr) auto;
+    grid-template-columns: auto auto minmax(0, 1fr) auto;
+    box-sizing: border-box;
+    inline-size: 100%;
+    max-inline-size: 100%;
     align-items: center;
     gap: 0.4rem;
     min-width: 0;
@@ -95,7 +102,6 @@
   }
 
   .ag-heartbeat-tool__title,
-  .ag-heartbeat-tool__state,
   .ag-heartbeat-tool__preview {
     min-width: 0;
     overflow: hidden;
@@ -107,12 +113,23 @@
     font: 600 0.78rem/1.2 system-ui, sans-serif;
   }
 
-  .ag-heartbeat-tool__state {
-    border-radius: 999px;
-    padding: 0.08rem 0.4rem;
-    background: color-mix(in srgb, currentColor, transparent 90%);
-    font: 500 0.67rem/1.35 system-ui, sans-serif;
-    text-transform: uppercase;
+  .ag-heartbeat-tool__state-icon {
+    display: inline-grid;
+    place-items: center;
+    color: color-mix(in srgb, currentColor, transparent 22%);
+  }
+
+  .ag-heartbeat-tool[data-tool-state="output-available"] .ag-heartbeat-tool__state-icon {
+    color: #188038;
+  }
+
+  .ag-heartbeat-tool[data-tool-state="output-error"] .ag-heartbeat-tool__state-icon {
+    color: #b00020;
+  }
+
+  .ag-heartbeat-tool[data-tool-state="input-streaming"] .ag-heartbeat-tool__state-icon,
+  .ag-heartbeat-tool[data-tool-state="input-available"] .ag-heartbeat-tool__state-icon {
+    color: #b45309;
   }
 
   .ag-heartbeat-tool__preview {
@@ -133,8 +150,19 @@
 
   .ag-heartbeat-tool__body {
     display: grid;
+    box-sizing: border-box;
+    grid-template-columns: minmax(0, 1fr);
+    inline-size: 100%;
+    max-inline-size: 100%;
+    min-inline-size: 0;
+    overflow: hidden;
     gap: 0.6rem;
     padding: 0 0.65rem 0.65rem;
+  }
+
+  .ag-heartbeat-tool__body section {
+    min-inline-size: 0;
+    max-inline-size: 100%;
   }
 
   .ag-heartbeat-tool__label {

@@ -31,8 +31,9 @@ export const ReadonlyMobile = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
     await expect(canvas.getByTestId("heartbeat-view")).toHaveAttribute("data-mode", "readonly");
-    await expect(canvas.getByText("Call #7")).toBeInTheDocument();
-    await expect(canvas.getByText("shell.exec")).toBeInTheDocument();
+    await expect(canvas.getByText("Model run")).toBeInTheDocument();
+    await expect(canvasElement.querySelector('[data-chip-kind="input"]')).toBeInTheDocument();
+    await expect(canvasElement.querySelector('[data-chip-kind="tool"]')).toBeInTheDocument();
     await expect(canvas.queryByTitle("Request compact")).not.toBeInTheDocument();
     await expect(canvas.queryByTitle("Configure next call")).not.toBeInTheDocument();
   },
@@ -47,7 +48,9 @@ export const ConfigableMobile = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
     await expect(canvas.getByTestId("heartbeat-view")).toHaveAttribute("data-mode", "configable");
-    await expect(canvas.getByTitle("Request compact")).toBeInTheDocument();
+    const toolbar = canvasElement.querySelector('[role="toolbar"][data-testid="heartbeat-statusbar"]');
+    await expect(toolbar?.querySelector('[title="Context usage"]')).toBeInTheDocument();
+    await expect(toolbar?.querySelector('[title="Request compact"]')).not.toBeInTheDocument();
     await expect(canvas.getByTitle("Configure next call")).toBeInTheDocument();
   },
 } satisfies Story;

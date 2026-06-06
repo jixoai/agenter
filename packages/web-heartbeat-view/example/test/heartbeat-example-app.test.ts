@@ -6,6 +6,9 @@ import type {
   GlobalAvatarCatalogEntry,
   HeartbeatGroupItem,
   HeartbeatPartItem,
+  HeartbeatRecordDetail,
+  HeartbeatRecordItem,
+  HeartbeatRecordPage,
   ModelCallItem,
   RuntimeConnectionStatus,
   RuntimeSnapshotEntry,
@@ -28,6 +31,8 @@ const mockSdk = vi.hoisted(() => {
     runtimes: Record<string, RuntimeSnapshotEntry | undefined>;
     globalAvatarCatalog: CachedResourceState<GlobalAvatarCatalogEntry[]>;
     heartbeatGroupsBySession: Record<string, CachedResourceState<HeartbeatGroupItem[]> | undefined>;
+    heartbeatRecordsBySession: Record<string, CachedResourceState<HeartbeatRecordPage | null> | undefined>;
+    heartbeatRecordDetailsBySession: Record<string, Record<number, CachedResourceState<HeartbeatRecordDetail | null>> | undefined>;
     modelCallsBySession: Record<string, ModelCallItem[] | undefined>;
     attentionBySession: Record<string, RuntimeSnapshotEntry["attention"] | undefined>;
     attentionDeliveryBySession: Record<string, RuntimeSnapshotEntry["attentionDelivery"] | undefined>;
@@ -84,11 +89,12 @@ const mockSdk = vi.hoisted(() => {
   });
 
   const avatar: GlobalAvatarCatalogEntry = {
+    avatarPrincipalId: "avatar-ada",
     runtimeId: "runtime-ada",
     nickname: "ada",
     displayName: "Ada",
     globalPath: "/avatars/ada",
-    iconUrl: null,
+    iconUrl: "http://127.0.0.1:4591/media/avatars/avatar-ada/icon",
     defaultAvatar: true,
   };
 
@@ -103,6 +109,103 @@ const mockSdk = vi.hoisted(() => {
     items: [heartbeatPart("LoopBus heartbeat row")],
   };
 
+  const recordFromGroup = (item: HeartbeatGroupItem): HeartbeatRecordItem => ({
+    id: item.id,
+    recordKey: `mock-record:${item.groupId}`,
+    kind: item.kind === "compact" ? "compact" : "model_call",
+    status: item.isComplete ? "completed" : "running",
+    primaryAiCallId: item.aiCallId,
+    aiCallIds: item.aiCallId === null ? [] : [item.aiCallId],
+    sourceRefs: [],
+    featureFlags: {},
+    summary: {
+      provider: item.aiCallId === null ? null : "openai",
+      model: item.aiCallId === null ? null : "gpt-test",
+      parts: item.items.flatMap((message) =>
+        message.parts.map((part) => ({
+          messageId: part.messageId,
+          partId: String(part.partId),
+          role: part.role,
+          type: part.partType,
+          mimeType: part.mimeType,
+          aiCallId: part.aiCallId,
+          startedAt: part.createdAt,
+          completedAt: part.isComplete ? part.updatedAt : null,
+          label: message.text || part.partType,
+          isComplete: part.isComplete,
+        })),
+      ),
+      counts: {
+        parts: item.items.reduce((sum, message) => sum + message.parts.length, 0),
+        toolCalls: item.items.reduce(
+          (sum, message) => sum + message.parts.filter((part) => part.partType === "tool_call").length,
+          0,
+        ),
+        toolResults: item.items.reduce(
+          (sum, message) => sum + message.parts.filter((part) => part.partType === "tool_result").length,
+          0,
+        ),
+        errors: 0,
+      },
+      firstFrameMs: null,
+      thinkingDurationMs: 0,
+    },
+    previewText: item.items.map((message) => message.text).find((text) => text.length > 0) ?? null,
+    startedAt: item.createdAt,
+    updatedAt: item.updatedAt,
+    completedAt: item.isComplete ? item.updatedAt : null,
+    isComplete: item.isComplete,
+  });
+
+  const recordsPageFromGroups = (items: HeartbeatGroupItem[]): HeartbeatRecordPage => {
+    const records = items.map(recordFromGroup);
+    return {
+      records,
+      pageIndex: 0,
+      pageSize: 20,
+      totalRecords: records.length,
+      totalPages: records.length > 0 ? 1 : 0,
+      windowTotalRecords: records.length,
+      windowTotalPages: records.length > 0 ? 1 : 0,
+      latestRecordId: records[0]?.id ?? null,
+      anchor: { kind: "latest" },
+      hasOlder: false,
+      hasNewer: false,
+      newRecordsAvailable: false,
+    };
+  };
+
+  const modelCalls: ModelCallItem[] = [
+    {
+      id: 10,
+      kind: "chat",
+      status: "done",
+      provider: "openai",
+      model: "gpt-test",
+      roundIndex: 1,
+      createdAt: 1_000,
+      updatedAt: 1_100,
+      isComplete: true,
+      providerSnapshot: null,
+      request: null,
+      response: { usage: { outputTokens: 32_000 } },
+    },
+    {
+      id: 11,
+      kind: "chat",
+      status: "done",
+      provider: "openai",
+      model: "gpt-test",
+      roundIndex: 2,
+      createdAt: 1_200,
+      updatedAt: 1_300,
+      isComplete: true,
+      providerSnapshot: null,
+      request: null,
+      response: { usage: { outputTokens: 8_000 } },
+    },
+  ];
+
   const createInitialState = (): MockState => ({
     connected: false,
     connectionStatus: "connecting",
@@ -110,17 +213,22 @@ const mockSdk = vi.hoisted(() => {
     runtimes: {},
     globalAvatarCatalog: coldResource<GlobalAvatarCatalogEntry[]>([]),
     heartbeatGroupsBySession: {},
+    heartbeatRecordsBySession: {},
+    heartbeatRecordDetailsBySession: {},
     modelCallsBySession: {},
     attentionBySession: {},
     attentionDeliveryBySession: {},
   });
 
   let compactRequests = 0;
+  let startRequests = 0;
+  let stopRequests = 0;
   let savedConfigContent = "";
   let avatarCatalogFailure: string | null = null;
   let heartbeatGroups: HeartbeatGroupItem[] = [group];
   let sessionStatus: SessionEntry["status"] = "stopped";
   let authToken: string | null = null;
+  let connectDelayMs = 0;
   let state = createInitialState();
   let listeners = new Set<Listener>();
 
@@ -132,11 +240,14 @@ const mockSdk = vi.hoisted(() => {
 
   const reset = (): void => {
     compactRequests = 0;
+    startRequests = 0;
+    stopRequests = 0;
     savedConfigContent = "";
     avatarCatalogFailure = null;
     heartbeatGroups = [group];
     sessionStatus = "stopped";
     authToken = null;
+    connectDelayMs = 0;
     state = createInitialState();
     listeners = new Set<Listener>();
   };
@@ -167,13 +278,39 @@ const mockSdk = vi.hoisted(() => {
       } as const;
     },
     async connect() {
+      if (connectDelayMs > 0) {
+        await new Promise((resolve) => window.setTimeout(resolve, connectDelayMs));
+      }
       if (!authToken) {
         throw new Error("auth token missing");
       }
+      const connectedSessions: SessionEntry[] =
+        sessionStatus === "running"
+          ? [
+              {
+                id: avatar.runtimeId,
+                status: sessionStatus,
+                avatar: avatar.nickname,
+                avatarPrincipalId: avatar.avatarPrincipalId,
+                cwd: avatar.globalPath,
+              },
+            ]
+          : [];
       state = {
         ...state,
         connected: true,
         connectionStatus: "connected",
+        sessions: connectedSessions,
+        runtimes:
+          sessionStatus === "running"
+            ? {
+                [avatar.runtimeId]: {
+                  schedulerState: { runtimeStatus: "running" },
+                  attention: { snapshot: { contexts: [] } },
+                  attentionDelivery: null,
+                },
+              }
+            : state.runtimes,
       };
       emit();
     },
@@ -199,6 +336,9 @@ const mockSdk = vi.hoisted(() => {
       const session: SessionEntry = {
         id: avatar.runtimeId,
         status: sessionStatus,
+        avatar: avatar.nickname,
+        avatarPrincipalId: avatar.avatarPrincipalId,
+        cwd: avatar.globalPath,
       };
       state = {
         ...state,
@@ -206,6 +346,47 @@ const mockSdk = vi.hoisted(() => {
       };
       emit();
       return session;
+    },
+    async startSession(sessionId: string) {
+      startRequests += 1;
+      sessionStatus = "running";
+      const session: SessionEntry = {
+        id: sessionId,
+        status: "running",
+        avatar: avatar.nickname,
+        avatarPrincipalId: avatar.avatarPrincipalId,
+        cwd: avatar.globalPath,
+      };
+      state = {
+        ...state,
+        sessions: [session],
+        runtimes: {
+          ...state.runtimes,
+          [sessionId]: {
+            schedulerState: { runtimeStatus: "running" },
+            attention: { snapshot: { contexts: [] } },
+            attentionDelivery: null,
+          },
+        },
+      };
+      emit();
+    },
+    async stopSession(sessionId: string) {
+      stopRequests += 1;
+      sessionStatus = "stopped";
+      const session: SessionEntry = {
+        id: sessionId,
+        status: "stopped",
+        avatar: avatar.nickname,
+        avatarPrincipalId: avatar.avatarPrincipalId,
+        cwd: avatar.globalPath,
+      };
+      state = {
+        ...state,
+        sessions: [session],
+        runtimes: {},
+      };
+      emit();
     },
     async hydrateSessionArtifacts() {
       state = {
@@ -227,11 +408,48 @@ const mockSdk = vi.hoisted(() => {
           ...state.heartbeatGroupsBySession,
           [sessionId]: loadedResource(heartbeatGroups),
         },
+        modelCallsBySession: {
+          ...state.modelCallsBySession,
+          [sessionId]: modelCalls,
+        },
       };
       emit();
     },
     async loadMoreHeartbeatGroups() {
       return { items: 0, hasMore: false };
+    },
+    async loadHeartbeatRecords(sessionId: string) {
+      state = {
+        ...state,
+        heartbeatRecordsBySession: {
+          ...state.heartbeatRecordsBySession,
+          [sessionId]: loadedResource(recordsPageFromGroups(heartbeatGroups)),
+        },
+      };
+      emit();
+    },
+    async loadHeartbeatRecordDetail(sessionId: string, recordId: number) {
+      const record = recordsPageFromGroups(heartbeatGroups).records.find((item) => item.id === recordId) ?? null;
+      state = {
+        ...state,
+        heartbeatRecordDetailsBySession: {
+          ...state.heartbeatRecordDetailsBySession,
+          [sessionId]: {
+            ...(state.heartbeatRecordDetailsBySession[sessionId] ?? {}),
+            [recordId]: loadedResource(
+              record
+                ? {
+                    record,
+                    aiCalls: modelCalls,
+                    messages: heartbeatGroups.flatMap((item) => item.items),
+                    sourceRefs: record.sourceRefs,
+                  }
+                : null,
+            ),
+          },
+        },
+      };
+      emit();
     },
     async requestRuntimeCompact() {
       compactRequests += 1;
@@ -248,7 +466,7 @@ const mockSdk = vi.hoisted(() => {
               providers: {
                 openai: {
                   model: "gpt-test",
-                  maxContextTokens: 2000,
+                  maxContextTokens: 128000,
                 },
               },
               activeProvider: "openai",
@@ -309,8 +527,17 @@ const mockSdk = vi.hoisted(() => {
     useRunningSession() {
       sessionStatus = "running";
     },
+    delayConnect(ms: number) {
+      connectDelayMs = ms;
+    },
     get compactRequests() {
       return compactRequests;
+    },
+    get startRequests() {
+      return startRequests;
+    },
+    get stopRequests() {
+      return stopRequests;
     },
     get savedConfigContent() {
       return savedConfigContent;
@@ -327,14 +554,28 @@ import HeartbeatExampleApp from "../src/lib/HeartbeatExampleApp.svelte";
 
 const flush = (): Promise<void> => new Promise((resolve) => window.setTimeout(resolve, 0));
 
+const documentTextIncludingShadow = (): string => {
+  const chunks = [document.body.textContent ?? ""];
+  const collectShadowText = (root: ParentNode): void => {
+    for (const element of Array.from(root.querySelectorAll("*"))) {
+      if (element.shadowRoot) {
+        chunks.push(element.shadowRoot.textContent ?? "");
+        collectShadowText(element.shadowRoot);
+      }
+    }
+  };
+  collectShadowText(document.body);
+  return chunks.join(" ");
+};
+
 const waitForText = async (text: string): Promise<void> => {
   for (let attempt = 0; attempt < 20; attempt += 1) {
-    if (document.body.textContent?.includes(text)) {
+    if (documentTextIncludingShadow().includes(text)) {
       return;
     }
     await flush();
   }
-  throw new Error(`Timed out waiting for text: ${text}\nBody: ${document.body.textContent ?? ""}`);
+  throw new Error(`Timed out waiting for text: ${text}\nBody: ${documentTextIncludingShadow()}`);
 };
 
 const clickFirstAvatar = (): void => {
@@ -344,6 +585,42 @@ const clickFirstAvatar = (): void => {
   if (!target) {
     throw new Error(`Avatar link not found\nBody: ${document.body.innerHTML}`);
   }
+  target.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+};
+
+const connectionSheet = (): HTMLElement | null => {
+  const elements = Array.from(document.querySelectorAll<HTMLElement>("[data-connection-phase]"));
+  return elements.at(-1) ?? null;
+};
+
+const findConnectionButton = (): HTMLElement | undefined =>
+  Array.from(document.querySelectorAll<HTMLElement>("button, a.button")).find((button) =>
+    button.textContent?.includes("Connect"),
+  );
+
+const waitForConnectionButton = async (): Promise<HTMLElement> => {
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    const target = findConnectionButton();
+    if (target) {
+      return target;
+    }
+    await flush();
+  }
+  throw new Error(`Connection button not found\nBody: ${document.body.innerHTML}`);
+};
+
+const waitForConnectionPhase = async (phase: string): Promise<void> => {
+  for (let attempt = 0; attempt < 50; attempt += 1) {
+    if (connectionSheet()?.dataset.connectionPhase === phase) {
+      return;
+    }
+    await flush();
+  }
+  throw new Error(`Timed out waiting for connection phase: ${phase}\nBody: ${document.body.innerHTML}`);
+};
+
+const clickConnectionButton = async (): Promise<void> => {
+  const target = await waitForConnectionButton();
   target.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
 };
 
@@ -377,7 +654,8 @@ describe("Feature: Web heartbeat view example route flow", () => {
     document.body.innerHTML = "";
   });
 
-  test("Scenario: Given a mobile directory When an Avatar is tapped Then HeartbeatPage renders LoopBus rows", async () => {
+  test("Scenario: Given visible connection mode When Connect succeeds Then connecting and success states appear before Avatars are usable", async () => {
+    mockSdk.delayConnect(24);
     component = mount(HeartbeatExampleApp, {
       target: document.body,
       props: {
@@ -385,13 +663,51 @@ describe("Feature: Web heartbeat view example route flow", () => {
       },
     });
 
+    await waitForConnectionButton();
+    await clickConnectionButton();
+    await waitForConnectionPhase("connecting");
+    await waitForConnectionPhase("success");
     await waitForText("Ada");
+  });
+
+  test("Scenario: Given a mobile directory When an Avatar is tapped Then HeartbeatPage renders LoopBus rows", async () => {
+    component = mount(HeartbeatExampleApp, {
+      target: document.body,
+      props: {
+        initialSilentConnect: true,
+        initialWsUrl: "ws://127.0.0.1:3000/trpc",
+      },
+    });
+
+    await waitForText("Ada");
+    expect(document.body.textContent).toContain("Not running");
+    expect(document.querySelector<HTMLImageElement>('img[alt="Ada"]')?.src).toContain(
+      "/media/avatars/avatar-ada/icon",
+    );
     clickFirstAvatar();
     await waitForText("LoopBus heartbeat row");
 
-    expect(location.pathname).toBe("/heartbeat/runtime-ada");
-    expect(document.body.textContent).toContain("No live push is active");
+    expect(document.querySelector('.page[data-name="heartbeat"]')).not.toBeNull();
+    expect(document.body.textContent).toContain("Stopped");
+    expect(document.body.textContent).toContain("No live push");
     expect(document.querySelector('[title="Request compact"]')).toBeNull();
+  });
+
+  test("Scenario: Given a running Avatar When the directory and detail render Then Avatar startup state is visible", async () => {
+    mockSdk.useRunningSession();
+    component = mount(HeartbeatExampleApp, {
+      target: document.body,
+      props: {
+        initialSilentConnect: true,
+        initialWsUrl: "ws://127.0.0.1:3000/trpc",
+      },
+    });
+
+    await waitForText("Ada");
+    expect(document.body.textContent).toContain("Running");
+    clickFirstAvatar();
+    await waitForText("LoopBus heartbeat row");
+    expect(document.body.textContent).toContain("Live push active");
   });
 
   test("Scenario: Given a connection failure When the example opens Then the target error is explicit", async () => {
@@ -399,11 +715,14 @@ describe("Feature: Web heartbeat view example route flow", () => {
     component = mount(HeartbeatExampleApp, {
       target: document.body,
       props: {
+        initialSilentConnect: true,
         initialWsUrl: "ws://127.0.0.1:3000/trpc",
       },
     });
 
     await waitForText("catalog offline");
+    expect(connectionSheet()?.dataset.connectionOpen).toBe("true");
+    expect(connectionSheet()?.dataset.connectionPhase).toBe("failed");
     expect(document.body.textContent).toContain("offline");
   });
 
@@ -412,15 +731,16 @@ describe("Feature: Web heartbeat view example route flow", () => {
     component = mount(HeartbeatExampleApp, {
       target: document.body,
       props: {
+        initialSilentConnect: true,
         initialWsUrl: "ws://127.0.0.1:3000/trpc",
       },
     });
 
     await waitForText("Ada");
     clickFirstAvatar();
-    await waitForText("No Heartbeat rows yet");
+    await waitForText("No Heartbeat records yet");
     expect(document.body.textContent).toContain("valid Heartbeat target");
-    expect(document.body.textContent).toContain("No live push is active");
+    expect(document.body.textContent).toContain("No live push");
   });
 
   test("Scenario: Given a direct Heartbeat URL for an unavailable target When connection hydrates Then the route shows an explicit unavailable target state", async () => {
@@ -428,6 +748,7 @@ describe("Feature: Web heartbeat view example route flow", () => {
       target: document.body,
       props: {
         initialRuntimeId: "runtime-missing",
+        initialSilentConnect: true,
         initialWsUrl: "ws://127.0.0.1:3000/trpc",
       },
     });
@@ -435,11 +756,12 @@ describe("Feature: Web heartbeat view example route flow", () => {
     await waitForText("Heartbeat target runtime-missing was not returned by this Agenter target.");
   });
 
-  test("Scenario: Given configable launch mode When an Avatar opens Then compact uses the adapter action", async () => {
+  test("Scenario: Given configable launch mode When an Avatar opens Then context usage Sheet owns compact and config remains reachable", async () => {
     component = mount(HeartbeatExampleApp, {
       target: document.body,
       props: {
         initialMode: "configable",
+        initialSilentConnect: true,
         initialWsUrl: "ws://127.0.0.1:3000/trpc",
       },
     });
@@ -447,17 +769,52 @@ describe("Feature: Web heartbeat view example route flow", () => {
     await waitForText("Ada");
     clickFirstAvatar();
     await waitForText("LoopBus heartbeat row");
-    const compactButton = document.querySelector<HTMLButtonElement>('[title="Request compact"]');
+    const contextUsageButton = document.querySelector<HTMLButtonElement>('[title="Context usage"]');
     const configButton = document.querySelector<HTMLButtonElement>('[title="Configure next call"]');
+    const statusTitle = document.querySelector<HTMLElement>(".heartbeat-example-status-subnavbar");
 
-    expect(compactButton).not.toBeNull();
+    expect(contextUsageButton).not.toBeNull();
     expect(configButton).not.toBeNull();
+    expect(document.querySelector('[role="toolbar"][data-testid="heartbeat-statusbar"]')).not.toBeNull();
+    expect(document.querySelectorAll(".ag-heartbeat-toolbar__action")).toHaveLength(2);
+    expect(
+      contextUsageButton?.style.getPropertyValue("--ag-heartbeat-context-progress"),
+    ).toBe("0.3125");
+    expect(statusTitle?.textContent).not.toContain("tokens");
+    contextUsageButton?.click();
+    await waitForText("Context usage");
+    expect(document.body.textContent).toContain("31.3%");
+    expect(document.body.textContent).toContain("40K / 128K");
+    expect(document.body.textContent).not.toContain("Cost");
+    const contextSheet = document.querySelector<HTMLElement>('[data-testid="heartbeat-context-usage-sheet"]');
+    expect(contextSheet?.classList.contains("ag-heartbeat-modal-sheet")).toBe(true);
+    expect(contextSheet?.querySelectorAll(".list").length).toBeGreaterThanOrEqual(2);
+    expect(contextSheet?.querySelectorAll(".item-content").length).toBeGreaterThanOrEqual(5);
+    expect(contextSheet?.querySelector(".ag-heartbeat-context-meter")).toBeNull();
+    expect(contextSheet?.querySelector(".ag-heartbeat-context-progressbar.progressbar")).not.toBeNull();
+    expect(contextSheet?.querySelector(".ag-heartbeat-context-sheet__ring")).toBeNull();
+    expect(contextSheet?.querySelector(".ag-heartbeat-context-compact .list-button")).not.toBeNull();
+    const compactButton = Array.from(document.querySelectorAll<HTMLElement>("button, a")).find((element) =>
+      element.textContent?.includes("Request compact"),
+    );
+    expect(compactButton).not.toBeNull();
     compactButton?.click();
+    await waitForText("Compact Heartbeat");
+    const confirmButton = Array.from(document.querySelectorAll<HTMLElement>(".dialog-button")).find((button) =>
+      button.textContent?.includes("OK"),
+    );
+    expect(confirmButton).not.toBeNull();
+    confirmButton?.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
     await flush();
     expect(mockSdk.compactRequests).toBe(1);
+    document
+      .querySelector<HTMLElement>('[aria-label="Close context usage"]')
+      ?.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+    await flush();
     configButton?.click();
     await waitForText("Next call config");
-    const saveButton = Array.from(document.querySelectorAll<HTMLButtonElement>("button")).find((button) =>
+    expect(document.querySelector(".ag-heartbeat-config-sheet .toggle")).not.toBeNull();
+    const saveButton = Array.from(document.querySelectorAll<HTMLElement>("button, a.button")).find((button) =>
       button.textContent?.includes("Save"),
     );
     expect(saveButton).not.toBeNull();
@@ -466,11 +823,93 @@ describe("Feature: Web heartbeat view example route flow", () => {
     expect(mockSdk.savedConfigContent).toContain('"temperature": 0.7');
   });
 
+  test("Scenario: Given configable launch mode When runtime controls are used Then Start and Stop call the adapter lifecycle actions", async () => {
+    component = mount(HeartbeatExampleApp, {
+      target: document.body,
+      props: {
+        initialMode: "configable",
+        initialSilentConnect: true,
+        initialWsUrl: "ws://127.0.0.1:3000/trpc",
+      },
+    });
+
+    await waitForText("Ada");
+    clickFirstAvatar();
+    await waitForText("LoopBus heartbeat row");
+
+    const startButton = document.querySelector<HTMLElement>('[title="Start runtime"]');
+    expect(startButton).not.toBeNull();
+    startButton?.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+    await waitForText("Live push active");
+    expect(mockSdk.startRequests).toBe(1);
+
+    const stopButton = document.querySelector<HTMLElement>('[title="Stop runtime"]');
+    expect(stopButton).not.toBeNull();
+    stopButton?.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+    await waitForText("No live push");
+    expect(mockSdk.stopRequests).toBe(1);
+  });
+
+  test("Scenario: Given a long Heartbeat page When Scroll to bottom is tapped Then PageContent owns the scroll action", async () => {
+    component = mount(HeartbeatExampleApp, {
+      target: document.body,
+      props: {
+        initialMode: "configable",
+        initialSilentConnect: true,
+        initialWsUrl: "ws://127.0.0.1:3000/trpc",
+      },
+    });
+
+    await waitForText("Ada");
+    clickFirstAvatar();
+    await waitForText("LoopBus heartbeat row");
+
+    const pageContent = document.querySelector<HTMLElement>(".heartbeat-example-heartbeat-content");
+    const toolbar = document.querySelector<HTMLElement>('[role="toolbar"][data-testid="heartbeat-statusbar"]');
+    expect(pageContent).not.toBeNull();
+    expect(toolbar).not.toBeNull();
+    expect(
+      toolbar && pageContent
+        ? Boolean(toolbar.compareDocumentPosition(pageContent) & Node.DOCUMENT_POSITION_FOLLOWING)
+        : false,
+    ).toBe(true);
+    const scrollTo = vi.fn();
+    if (pageContent) {
+      Object.defineProperty(pageContent, "scrollHeight", {
+        configurable: true,
+        value: 2048,
+      });
+      Object.defineProperty(pageContent, "clientHeight", {
+        configurable: true,
+        value: 640,
+      });
+      Object.defineProperty(pageContent, "scrollTo", {
+        configurable: true,
+        value: scrollTo,
+      });
+      pageContent.dispatchEvent(new Event("scroll"));
+    }
+    await flush();
+
+    const scrollFab = document.querySelector<HTMLElement>(".ag-heartbeat-scroll-fab");
+    const scrollFabLink = scrollFab?.querySelector<HTMLElement>("a") ?? scrollFab;
+    expect(scrollFab).not.toBeNull();
+    expect(scrollFab?.textContent).toContain("Scroll to bottom");
+    scrollFabLink?.click();
+    await flush();
+
+    expect(scrollTo).toHaveBeenCalledWith({
+      top: 2048,
+      behavior: "smooth",
+    });
+  });
+
   test("Scenario: Given a direct Heartbeat URL When connection hydrates Then the selected Avatar page opens", async () => {
     component = mount(HeartbeatExampleApp, {
       target: document.body,
       props: {
         initialRuntimeId: "runtime-ada",
+        initialSilentConnect: true,
         initialWsUrl: "ws://127.0.0.1:3000/trpc",
       },
     });
@@ -478,4 +917,19 @@ describe("Feature: Web heartbeat view example route flow", () => {
     await waitForText("LoopBus heartbeat row");
     expect(document.body.textContent).toContain("Ada Heartbeat");
   });
+
+  test("Scenario: Given silent connect is enabled When config exists Then Avatars load without opening the Connection Sheet", async () => {
+    component = mount(HeartbeatExampleApp, {
+      target: document.body,
+      props: {
+        initialSilentConnect: true,
+        initialWsUrl: "ws://127.0.0.1:3000/trpc",
+      },
+    });
+
+    await waitForText("Ada");
+    expect(connectionSheet()?.dataset.connectionOpen).toBe("false");
+    expect(connectionSheet()?.dataset.connectionPhase).toBe("success");
+  });
+
 });

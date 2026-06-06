@@ -2,7 +2,7 @@
 
 ### Requirement: Web heartbeat view SHALL encode kind-specific record card grammars
 
-The package SHALL expose distinct visual grammars for each Heartbeat record kind instead of forcing every record through the same middle graphic. `model_call` rows SHALL use an adaptive metro-style timeline whose middle combo chip stays centered while width reveals more explicit stations with tail-first priority. `compact` rows SHALL use a compression-channel object, and `config` rows SHALL use a changed-controls strip. These card grammars SHALL remain bounded inside the list row, SHALL use chip- or surface-level `title` attributes for richer descriptions, and SHALL suppress preview text entirely when no durable assistant preview exists. Running rows SHALL apply restrained motion to the time/status surfaces without changing layout geometry, while error rows SHALL remain visually stable and explicitly marked.
+The package SHALL expose distinct visual grammars for each Heartbeat record kind instead of forcing every record through the same middle graphic. List rows SHALL be composed from shared `BasicRecordCard` shells, `x-model-run-card` instances, and kind-specific card-body primitives rather than bespoke row chrome. `model_call` rows SHALL use an adaptive metro-style timeline whose middle combo chip stays centered while width reveals more explicit stations with tail-first priority. `compact` rows SHALL use a compression-channel object, and `config` rows SHALL use a changed-controls strip. These card grammars SHALL remain bounded inside the list row, SHALL use chip- or surface-level `title` attributes for richer descriptions, SHALL omit facts that are already inferable from the header, line timing, or summary line, and SHALL suppress preview text entirely when no durable assistant preview exists. Running rows SHALL apply restrained motion to the time/status surfaces without changing layout geometry, while error rows SHALL remain visually stable and explicitly marked.
 
 #### Scenario: Model-call card adapts without overflow
 
@@ -10,6 +10,13 @@ The package SHALL expose distinct visual grammars for each Heartbeat record kind
 - **THEN** the card keeps a bounded row footprint
 - **AND** the middle combo chip stays centered
 - **AND** tail detail is revealed before earlier stations as width grows
+
+#### Scenario: List rows reuse shared record cards
+
+- **WHEN** the package renders the record list
+- **THEN** `model_call` rows use `x-model-run-card`
+- **AND** `compact` rows use `x-basic-record-card` with `x-compact-body`
+- **AND** `config` rows use `x-basic-record-card` with `x-config-body`
 
 #### Scenario: Compact and config do not reuse the metro grammar
 
@@ -31,9 +38,15 @@ The package SHALL expose distinct visual grammars for each Heartbeat record kind
 - **THEN** the list row omits the preview line entirely
 - **AND** the package does not render placeholder prose such as `No summary`
 
+#### Scenario: Redundant chip facts stay omitted
+
+- **WHEN** the header, the line label, or the summary line already carries the operator-visible fact
+- **THEN** the list row does not repeat that fact inside a chip
+- **AND** the row prefers omission over a duplicate metric badge or duplicate content preview
+
 ### Requirement: Web heartbeat view SHALL render kind-specific record detail surfaces
 
-The package SHALL render selected record detail as a separate surface from the paginated list row. `model_call` detail SHALL expand the row's horizontal metro grammar into a vertical step inspection surface with sticky chips on the left and full per-step content on the right. `compact` detail SHALL use tabs named `New Context` and `Old Context`, defaulting to `New Context`, and SHALL render streaming, empty, and error states inside the tab content. `config` detail SHALL use tabs named `Diff Config`, `New Config`, and `Old Config`, defaulting to a YAML diff view while rendering new and old configs as YAML source views. Opening or refreshing detail SHALL NOT expand neighboring list rows or change current page-window membership.
+The package SHALL render selected record detail as a separate surface from the paginated list row. Detail SHALL reuse the same `BasicRecordCard`, `RecordChip`, and kind-specific card-body semantics used by list rows, treating the list card as the compressed density and detail as the expanded density. Detail navigation SHALL be built from `RecordChip` chips plus line intervals, so the selected record reads like a chips-line page instead of a bespoke side list. `model_call` detail SHALL expand the row's horizontal metro grammar into a vertical step inspection surface with sticky chips on the left and full per-step content on the right. `compact` detail SHALL keep the same compression object visible before tabs named `New Context` and `Old Context`, defaulting to `New Context`, and SHALL render streaming, empty, and error states inside the tab content. `config` detail SHALL keep the same changed-controls object visible before tabs named `Diff Config`, `New Config`, and `Old Config`, defaulting to a YAML diff view while rendering new and old configs as YAML source views. Opening or refreshing detail SHALL NOT expand neighboring list rows or change current page-window membership.
 
 #### Scenario: Model-run detail expands metro into vertical steps
 
@@ -41,6 +54,18 @@ The package SHALL render selected record detail as a separate surface from the p
 - **THEN** the detail surface shows a vertical step rail derived from the same input/thinking/tool/text/error/pending chip semantics as the list card
 - **AND** the left step chips remain sticky while the right content area scrolls through full step details
 - **AND** running or pending latest steps use bounded motion without changing layout geometry
+
+#### Scenario: Detail reuses list primitives
+
+- **WHEN** the operator opens detail for `model_call`, `compact`, or `config`
+- **THEN** the detail surface reuses the same record chip taxonomy, body object, color semantics, and status language as the list row
+- **AND** detail expands those primitives instead of introducing unrelated mini chips, duplicate body widgets, or a second visual grammar
+
+#### Scenario: Detail navigation is chips-line based
+
+- **WHEN** the operator opens selected record detail
+- **THEN** the navigation rail is composed from `RecordChip` chips plus line intervals
+- **AND** the rail stays sticky on desktop and collapses into a compact horizontal chips line on mobile
 
 #### Scenario: Compact detail focuses the new context
 

@@ -29,6 +29,20 @@
   $effect(() => {
     syncProps();
   });
+
+  const hostClass = $derived(["ag-heartbeat-json-viewer", className].filter(Boolean).join(" "));
 </script>
 
-<svelte:element this={JSON_VIEWER_TAG} bind:this={element} class={className}></svelte:element>
+<svelte:element this={JSON_VIEWER_TAG} bind:this={element} class={hostClass}></svelte:element>
+
+<style>
+  :global(.ag-heartbeat-json-viewer) {
+    display: block;
+    box-sizing: border-box;
+    inline-size: 100%;
+    max-inline-size: 100%;
+    min-inline-size: 0;
+    contain: inline-size;
+    overflow: auto;
+  }
+</style>

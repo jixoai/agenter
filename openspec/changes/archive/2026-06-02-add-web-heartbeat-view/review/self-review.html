@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>web-heartbeat-view self review</title>
+    <style>
+      body {
+        margin: 0;
+        font-family: system-ui, sans-serif;
+        color: #172033;
+        background: #f6f7f9;
+      }
+      main {
+        max-width: 1080px;
+        margin: 0 auto;
+        padding: 24px;
+      }
+      h1,
+      h2 {
+        margin: 0 0 12px;
+      }
+      section {
+        margin-block: 24px;
+      }
+      ul {
+        line-height: 1.6;
+      }
+      .grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+        gap: 16px;
+      }
+      figure {
+        margin: 0;
+        border: 1px solid rgba(22, 28, 45, 0.14);
+        border-radius: 8px;
+        background: white;
+        padding: 12px;
+      }
+      img {
+        display: block;
+        max-width: 100%;
+        border-radius: 6px;
+      }
+      figcaption {
+        margin-top: 8px;
+        color: #647085;
+        font-size: 13px;
+      }
+      code {
+        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>web-heartbeat-view Self Review</h1>
+      <section>
+        <h2>Verification</h2>
+        <ul>
+          <li><code>@agenter/web-heartbeat-view</code> typecheck passed with 0 warnings.</li>
+          <li><code>@agenter/web-heartbeat-view</code> unit, Storybook browser, and DOM browser tests passed.</li>
+          <li><code>@agenter/web-heartbeat-view-example</code> typecheck and 11 route tests passed.</li>
+          <li>Agent-browser mobile polish removed Heartbeat detail horizontal overflow and verified scroll-to-bottom.</li>
+          <li>Framework7 toolbar offset was verified as a sibling CSS rule; the bottom toolbar now precedes PageContent.</li>
+          <li>Markdown preview content stays in the web component shadow DOM without raw markdown duplication in cards.</li>
+          <li>Acceptance polish hides redundant row toggles, uses icon/color tool state, and rebuilds config through official List/Toggle controls.</li>
+          <li>Context usage polish replaces the first-level Compact action, moves Compact into a Modal Sheet, removes token usage from the top subnavbar, and keeps cost fields out.</li>
+          <li>Context usage style/list polish balances the two bottom Toolbar links, renders a color-mixed progress ring, reuses shared Modal Sheet classes, and rebuilds the content as Framework7 List/ListItem rows.</li>
+          <li>Context usage official component polish replaces the Sheet progress display with Framework7 Progressbar and the Compact row with Framework7 ListButton.</li>
+          <li>No backend or Studio code was changed in first phase.</li>
+        </ul>
+      </section>
+      <section>
+        <h2>Route Evidence</h2>
+        <div class="grid">
+          <figure>
+            <img src="../../../../.screenshot/web-heartbeat-view/mobile-directory-latest.png" alt="Mobile Avatar directory" />
+            <figcaption>Mobile Avatar directory</figcaption>
+          </figure>
+          <figure>
+            <img src="../../../../.screenshot/web-heartbeat-view/mobile-heartbeat-latest.png" alt="Mobile readonly Heartbeat" />
+            <figcaption>Mobile readonly Heartbeat</figcaption>
+          </figure>
+          <figure>
+            <img src="../../../../.screenshot/web-heartbeat-view/mobile-configable-latest.png" alt="Mobile configable Heartbeat" />
+            <figcaption>Mobile configable Heartbeat</figcaption>
+          </figure>
+          <figure>
+            <img src="../../../../.screenshot/web-heartbeat-view/agent-mobile-heartbeat-after-polish-clean.png" alt="Mobile Heartbeat polish" />
+            <figcaption>Mobile Heartbeat polish: no horizontal overflow, compact subnavbar controls</figcaption>
+          </figure>
+          <figure>
+            <img src="../../../../.screenshot/web-heartbeat-view/agent-mobile-f7-offset-fab-before.png" alt="Mobile Framework7 offset and FAB" />
+            <figcaption>Toolbar offset applied through Framework7 sibling order; FAB visible above bottom toolbar</figcaption>
+          </figure>
+          <figure>
+            <img src="../../../../.screenshot/web-heartbeat-view/agent-mobile-f7-offset-fab-after-bottom.png" alt="Mobile FAB after scroll to bottom" />
+            <figcaption>FAB scroll-to-bottom reached PageContent max scroll and disappeared</figcaption>
+          </figure>
+          <figure>
+            <img src="../../../../.screenshot/web-heartbeat-view/agent-mobile-f7-config-sheet-offset-pass.png" alt="Mobile config sheet after offset pass" />
+            <figcaption>Config remains an official Framework7 Sheet with Toolbar and PageContent</figcaption>
+          </figure>
+          <figure>
+            <img src="../../../../.screenshot/web-heartbeat-view/agent-mobile-acceptance-polish-config-sheet.png" alt="Mobile acceptance polish config sheet" />
+            <figcaption>Acceptance polish: official list/toggle config form inside animated Modal Sheet</figcaption>
+          </figure>
+          <figure>
+            <img src="../../../../.screenshot/web-heartbeat-view/agent-mobile-context-usage-sheet-final.png" alt="Mobile context usage sheet" />
+            <figcaption>Context usage Sheet: token rows, model/config summary, no cost fields, compact moved inside</figcaption>
+          </figure>
+          <figure>
+            <img src="../../../../.screenshot/web-heartbeat-view/agent-mobile-context-usage-style-list-final.png" alt="Mobile context usage style and list polish" />
+            <figcaption>Context usage style/list polish: balanced bottom actions, progress ring, shared Modal Sheet style, List/ListItem rows</figcaption>
+          </figure>
+          <figure>
+            <img src="../../../../.screenshot/web-heartbeat-view/agent-mobile-context-usage-progressbar-listbutton-final.png" alt="Mobile context usage official Progressbar and ListButton polish" />
+            <figcaption>Context usage official components: Framework7 Progressbar and ListButton inside the Modal Sheet</figcaption>
+          </figure>
+          <figure>
+            <img src="../../../../.screenshot/web-heartbeat-view/desktop-directory-latest.png" alt="Desktop Avatar directory" />
+            <figcaption>Desktop Avatar directory</figcaption>
+          </figure>
+          <figure>
+            <img src="../../../../.screenshot/web-heartbeat-view/desktop-heartbeat-latest.png" alt="Desktop Heartbeat" />
+            <figcaption>Desktop Heartbeat</figcaption>
+          </figure>
+        </div>
+      </section>
+    </main>
+  </body>
+</html>
