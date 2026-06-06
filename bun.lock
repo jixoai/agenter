@@ -138,7 +138,7 @@
     },
     "packages/agenter": {
       "name": "agenter",
-      "version": "0.0.10",
+      "version": "0.0.13",
       "bin": {
         "agenter": "./bin/agenter.exe",
       },
@@ -160,35 +160,35 @@
     },
     "packages/agenter-cli-darwin-arm64": {
       "name": "@jixoai/cli-darwin-arm64",
-      "version": "0.0.10",
+      "version": "0.0.13",
     },
     "packages/agenter-cli-darwin-x64": {
       "name": "@jixoai/cli-darwin-x64",
-      "version": "0.0.10",
+      "version": "0.0.13",
     },
     "packages/agenter-cli-linux-arm64-gnu": {
       "name": "@jixoai/cli-linux-arm64-gnu",
-      "version": "0.0.10",
+      "version": "0.0.13",
     },
     "packages/agenter-cli-linux-arm64-musl": {
       "name": "@jixoai/cli-linux-arm64-musl",
-      "version": "0.0.10",
+      "version": "0.0.13",
     },
     "packages/agenter-cli-linux-x64-gnu": {
       "name": "@jixoai/cli-linux-x64-gnu",
-      "version": "0.0.10",
+      "version": "0.0.13",
     },
     "packages/agenter-cli-linux-x64-musl": {
       "name": "@jixoai/cli-linux-x64-musl",
-      "version": "0.0.10",
+      "version": "0.0.13",
     },
     "packages/agenter-cli-win32-arm64": {
       "name": "@jixoai/cli-win32-arm64",
-      "version": "0.0.10",
+      "version": "0.0.13",
     },
     "packages/agenter-cli-win32-x64": {
       "name": "@jixoai/cli-win32-x64",
-      "version": "0.0.10",
+      "version": "0.0.13",
     },
     "packages/app-runtime": {
       "name": "@agenter/app-runtime",
@@ -766,6 +766,63 @@
         "vitest": "^3.2.4",
       },
     },
+    "packages/web-heartbeat-view": {
+      "name": "@agenter/web-heartbeat-view",
+      "version": "0.0.0",
+      "dependencies": {
+        "@agenter/svelte-components": "workspace:*",
+        "@agenter/web-components": "workspace:*",
+        "@lucide/svelte": "^1.7.0",
+        "clsx": "^2.1.1",
+        "framework7": "^9.0.4",
+        "framework7-svelte": "^9.0.4",
+        "tailwind-merge": "^3.3.1",
+        "yaml": "^2.8.2",
+      },
+      "devDependencies": {
+        "@storybook/addon-docs": "^10.3.5",
+        "@storybook/addon-svelte-csf": "^5.1.2",
+        "@storybook/addon-vitest": "^10.3.5",
+        "@storybook/svelte-vite": "^10.3.5",
+        "@sveltejs/vite-plugin-svelte": "^7.0.0",
+        "@types/bun": "latest",
+        "@vitest/browser-playwright": "^4.1.0",
+        "jsdom": "^26.1.0",
+        "playwright": "^1.59.0",
+        "storybook": "^10.3.5",
+        "svelte": "^5.55.2",
+        "svelte-check": "^4.4.2",
+        "typescript": "latest",
+        "vitest": "^4.1.2",
+      },
+    },
+    "packages/web-heartbeat-view/example": {
+      "name": "@agenter/web-heartbeat-view-example",
+      "version": "0.0.0",
+      "dependencies": {
+        "@agenter/client-sdk": "workspace:*",
+        "@agenter/web-heartbeat-view": "workspace:*",
+        "@lucide/svelte": "^1.7.0",
+        "dom7": "^4.0.6",
+        "framework7": "^9.0.4",
+        "framework7-icons": "^5.0.5",
+        "framework7-svelte": "^9.0.4",
+        "idb-keyval": "^6.2.2",
+      },
+      "devDependencies": {
+        "@sveltejs/adapter-auto": "^7.0.1",
+        "@sveltejs/kit": "^2.57.0",
+        "@sveltejs/vite-plugin-svelte": "^7.0.0",
+        "@tailwindcss/vite": "^4.2.2",
+        "@types/bun": "latest",
+        "@types/node": "^24",
+        "svelte": "^5.55.2",
+        "svelte-check": "^4.4.6",
+        "typescript": "latest",
+        "vite": "^8.0.7",
+        "vitest": "^4.1.2",
+      },
+    },
   },
   "patchedDependencies": {
     "@termless/xtermjs@0.3.1": "patches/@termless+xtermjs@0.3.1.patch",
@@ -855,6 +912,10 @@
     "@agenter/web-chat-view-example": ["@agenter/web-chat-view-example@workspace:packages/web-chat-view/example"],
 
     "@agenter/web-components": ["@agenter/web-components@workspace:packages/web-components"],
+
+    "@agenter/web-heartbeat-view": ["@agenter/web-heartbeat-view@workspace:packages/web-heartbeat-view"],
+
+    "@agenter/web-heartbeat-view-example": ["@agenter/web-heartbeat-view-example@workspace:packages/web-heartbeat-view/example"],
 
     "@anthropic-ai/sdk": ["@anthropic-ai/sdk@0.71.2", "", { "dependencies": { "json-schema-to-ts": "^3.1.1" }, "peerDependencies": { "zod": "^3.25.0 || ^4.0.0" }, "optionalPeers": ["zod"], "bin": { "anthropic-ai-sdk": "bin/cli" } }, "sha512-TGNDEUuEstk/DKu0/TflXAEt+p+p/WhTlFzEnoosvbaDU2LTjm42igSdlL0VijrKpWejtOKxX0b8A7uc+XiSAQ=="],
 

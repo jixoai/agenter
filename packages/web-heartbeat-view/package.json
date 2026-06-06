@@ -1,0 +1,50 @@
+{
+  "name": "@agenter/web-heartbeat-view",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "example": "bun run ./example/scripts/start-example.ts",
+    "storybook": "storybook dev --ci --no-open --port 6107",
+    "storybook:build": "storybook build",
+    "test:unit": "vitest run --config vitest.config.ts --project unit",
+    "test:storybook": "vitest run --config vitest.config.ts --project storybook",
+    "test:dom": "vitest run --config vitest.config.ts --project dom",
+    "test": "bun run test:unit && bun run test:storybook && bun run test:dom",
+    "typecheck": "svelte-check --tsconfig ./tsconfig.json"
+  },
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "svelte": "./src/index.ts",
+      "default": "./src/index.ts"
+    }
+  },
+  "svelte": "./src/index.ts",
+  "dependencies": {
+    "@agenter/svelte-components": "workspace:*",
+    "@agenter/web-components": "workspace:*",
+    "@lucide/svelte": "^1.7.0",
+    "clsx": "^2.1.1",
+    "framework7": "^9.0.4",
+    "framework7-svelte": "^9.0.4",
+    "tailwind-merge": "^3.3.1",
+    "yaml": "^2.8.2"
+  },
+  "devDependencies": {
+    "@storybook/addon-docs": "^10.3.5",
+    "@storybook/addon-svelte-csf": "^5.1.2",
+    "@storybook/addon-vitest": "^10.3.5",
+    "@storybook/svelte-vite": "^10.3.5",
+    "@sveltejs/vite-plugin-svelte": "^7.0.0",
+    "@types/bun": "latest",
+    "@vitest/browser-playwright": "^4.1.0",
+    "playwright": "^1.59.0",
+    "storybook": "^10.3.5",
+    "jsdom": "^26.1.0",
+    "svelte": "^5.55.2",
+    "svelte-check": "^4.4.2",
+    "typescript": "latest",
+    "vitest": "^4.1.2"
+  }
+}

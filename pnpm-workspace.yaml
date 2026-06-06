@@ -52,6 +52,8 @@ packages:
   - packages/tmux-client
   - packages/web-chat-view
   - packages/web-chat-view/example
+  - packages/web-heartbeat-view
+  - packages/web-heartbeat-view/example
   - packages/web-components
 
 patchedDependencies:

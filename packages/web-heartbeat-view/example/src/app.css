@@ -1,0 +1,173 @@
+@import "framework7/css/bundle";
+@import "framework7-icons";
+
+:root {
+  color-scheme: light dark;
+  font-family:
+    Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+html,
+body,
+body > div {
+  block-size: 100%;
+  margin: 0;
+}
+
+.heartbeat-example-status-block {
+  color: color-mix(in srgb, currentColor, transparent 36%);
+  font: 12px/1.35 system-ui, sans-serif;
+}
+
+.heartbeat-example-navbar-title {
+  display: inline-flex;
+  min-inline-size: 0;
+  max-inline-size: min(100%, 13rem);
+  align-items: center;
+  gap: 6px;
+  vertical-align: middle;
+}
+
+.heartbeat-example-navbar-title > span:last-child {
+  min-inline-size: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.heartbeat-example-navbar-title .heartbeat-avatar-media {
+  inline-size: 24px;
+  block-size: 24px;
+  border-radius: 8px;
+  font-size: 10px;
+}
+
+.heartbeat-avatar-media {
+  display: inline-grid;
+  inline-size: 40px;
+  block-size: 40px;
+  place-items: center;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, currentColor, transparent 84%);
+  border-radius: 12px;
+  background: color-mix(in srgb, currentColor, transparent 94%);
+  color: color-mix(in srgb, currentColor, transparent 22%);
+  font: 700 13px/1 system-ui, sans-serif;
+}
+
+.heartbeat-avatar-media--large {
+  inline-size: 52px;
+  block-size: 52px;
+  border-radius: 15px;
+}
+
+.heartbeat-avatar-media img {
+  inline-size: 100%;
+  block-size: 100%;
+  object-fit: cover;
+}
+
+.heartbeat-example-heartbeat-content {
+  box-sizing: border-box;
+  overflow-x: clip;
+}
+
+.heartbeat-example-db-evidence {
+  margin-block: 0 8px;
+}
+
+.heartbeat-example-heartbeat-content .ag-heartbeat-view {
+  min-block-size: 100%;
+}
+
+.heartbeat-example-status-subnavbar {
+  --f7-subnavbar-height: 34px;
+}
+
+.heartbeat-connection-sheet {
+  --f7-sheet-bg-color: var(--f7-page-bg-color);
+}
+
+.heartbeat-connection-sheet__toolbar {
+  --f7-toolbar-height: 48px;
+}
+
+.heartbeat-connection-sheet__toolbar .toolbar-inner {
+  display: flex;
+  justify-content: space-between;
+}
+
+.heartbeat-connection-sheet__title {
+  display: inline-flex;
+  min-inline-size: 0;
+  align-items: center;
+  padding-inline-start: max(16px, env(safe-area-inset-left));
+  font: 700 16px/1.2 system-ui, sans-serif;
+}
+
+.heartbeat-connection-sheet__content {
+  position: relative;
+  block-size: auto;
+  max-block-size: calc(min(92vh, 640px) - var(--f7-toolbar-height));
+  padding-block-end: max(12px, env(safe-area-inset-bottom));
+}
+
+.heartbeat-connection-sheet__state {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  color: color-mix(in srgb, currentColor, transparent 20%);
+}
+
+.heartbeat-connection-sheet__state-icon {
+  display: inline-grid;
+  inline-size: 28px;
+  block-size: 28px;
+  place-items: center;
+  border: 2px solid var(--f7-theme-color);
+  border-radius: 999px;
+}
+
+.heartbeat-connection-sheet__state--connecting .heartbeat-connection-sheet__state-icon {
+  border-inline-start-color: color-mix(in srgb, var(--f7-theme-color), transparent 78%);
+  animation: heartbeat-connection-spin 0.8s linear infinite;
+}
+
+.heartbeat-connection-sheet__state--success {
+  color: #188038;
+}
+
+.heartbeat-connection-sheet__state--success .heartbeat-connection-sheet__state-icon {
+  border-color: #188038;
+  animation: heartbeat-connection-success 0.42s ease-out both;
+}
+
+.heartbeat-connection-sheet__state--success .heartbeat-connection-sheet__state-icon > span {
+  inline-size: 12px;
+  block-size: 7px;
+  border-block-end: 2px solid #188038;
+  border-inline-start: 2px solid #188038;
+  transform: translateY(-1px) rotate(-45deg);
+}
+
+.heartbeat-connection-sheet__error {
+  color: #b00020;
+}
+
+@keyframes heartbeat-connection-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes heartbeat-connection-success {
+  0% {
+    transform: scale(0.82);
+    opacity: 0.55;
+  }
+
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
