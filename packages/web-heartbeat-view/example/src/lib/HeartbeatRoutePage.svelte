@@ -25,10 +25,13 @@
         runtimeId?: string;
       };
     };
+    f7router?: {
+      navigate: (url: string, options?: { animate?: boolean }) => void;
+    };
     runtimeId?: string;
   };
 
-  let { runtimeId: runtimeIdProp, f7route }: Framework7RouteProps = $props();
+  let { runtimeId: runtimeIdProp, f7route, f7router }: Framework7RouteProps = $props();
 
   const state = useHeartbeatExampleState();
   const readRuntimeIdFromLocation = (): string | null => {
@@ -38,6 +41,16 @@
   const runtimeId = $derived(
     runtimeIdProp ?? f7route?.params?.runtimeId ?? readRuntimeIdFromLocation() ?? state.initialRuntimeId ?? "",
   );
+  const heartbeatSearch = $derived(state.buildHeartbeatSearch());
+  const avatarsHref = $derived(heartbeatSearch ? `/?${heartbeatSearch}` : "/");
+  const openRecordDetail = (recordId: number): void => {
+    const href = state.buildHeartbeatRecordHref(runtimeId, recordId);
+    if (f7router) {
+      f7router.navigate(href, { animate: false });
+      return;
+    }
+    window.location.assign(href);
+  };
 
   const activeHeartbeat = $derived.by<HeartbeatViewState | null>(() => {
     const heartbeat = state.connectionState.selectedHeartbeat;
@@ -52,6 +65,7 @@
       onLoadOlder: () => state.loadOlderSelectedHeartbeat(),
       onLoadRecordPage: (anchor) => state.loadSelectedHeartbeatRecordPage(anchor),
       onLoadRecordDetail: (recordId) => state.loadSelectedHeartbeatRecordDetail(recordId),
+      onOpenRecordDetail: openRecordDetail,
       actions: {
         compact: {
           available: state.mode === "configable" && typeof state.connection?.requestCompact === "function",
@@ -139,7 +153,9 @@
 
 <Page name="heartbeat" pageContent={false} withSubnavbar={true}>
   <Navbar>
-    <NavLeft backLink={true} backLinkShowText={false} backLinkUrl="/" />
+    <NavLeft>
+      <Link iconOnly iconF7="chevron_left_ios" href={avatarsHref} aria-label="Back to Avatars" />
+    </NavLeft>
     <NavTitle>
       <span class="heartbeat-example-navbar-title">
         {#if state.selectedTarget}

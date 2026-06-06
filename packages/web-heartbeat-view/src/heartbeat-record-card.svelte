@@ -9,11 +9,11 @@
   let {
     record,
     selected = false,
-    onSelect,
+    selectRecord,
   }: {
     record: HeartbeatRecordItem;
     selected?: boolean;
-    onSelect?: (recordId: number) => void;
+    selectRecord?: (recordId: number) => void;
   } = $props();
 
   const meta = $derived(getHeartbeatRecordCardMeta(record));
@@ -26,7 +26,7 @@
   data-kind={record.kind}
   data-status={record.status}
   aria-pressed={selected}
-  onclick={() => onSelect?.(record.id)}
+  onclick={() => selectRecord?.(record.id)}
   title={meta.title}
 >
   <HeartbeatRecordBasicCard {record} {selected}>

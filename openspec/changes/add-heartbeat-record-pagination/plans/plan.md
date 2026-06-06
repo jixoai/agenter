@@ -16,6 +16,7 @@
 - Compact detail correction: use `New Context | Old Context` tabs, default to `New Context`, and show streaming, empty, and error states inside that tab content.
 - Compact detail copy correction: compact detail should show the compression object and context bodies directly. Streaming, error, and empty states are compact factual rows, not explanatory cards.
 - Config detail correction: use `Diff Config | New Config | Old Config` tabs, with YAML diff as the first view and YAML source views for new/old configs.
+- Navigation correction: record-list click opens a dedicated detail route/page. Inline expansion is only a host fallback when no route-opening callback exists; the standalone Framework7 example must use a real `/heartbeat/:runtimeId/records/:recordId` page.
 - Accessibility correction: verbose `title` content belongs on the chip or surface, not on the inner icon node.
 - Component-continuity correction: list and detail must share the same `BasicRecordCard`, `RecordChip`, and kind-specific `CardBody` primitives. The card body is a compressed form; detail expands the same body language instead of reimplementing a separate detail UI.
 - Detail-rail correction: the selected-detail rail must read as `navigation + overview + time`, but the station chip itself owns navigation plus the icon/metric overview; the outer SVG line owns time, and the inner connector owns chip-border continuity.
@@ -296,7 +297,7 @@ Changes from the first prototype:
   - `New records available`
 - Upgrades ListDetail to an explicit surface split:
   - list rows are page-index records and must not expand into unbounded content;
-  - selecting a record keeps page membership stable and swaps the independent detail surface;
+  - selecting a record keeps page membership stable and opens/swaps the independent detail surface; in the standalone mobile-first example this is a routed detail page, not an inline list expansion;
   - latest/fixed/new-record anchor state stays visible above the list/detail split.
 - Upgrades Model Run detail from a horizontal row graph into a vertical step inspection surface:
   - left rail: sticky station chips for input, thinking, tool, text/error/pending, where each chip carries the visible metric label;

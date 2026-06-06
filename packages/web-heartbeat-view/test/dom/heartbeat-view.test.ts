@@ -121,7 +121,10 @@ const recordsPage = (records: HeartbeatRecordItem[]): HeartbeatRecordPage => ({
   newRecordsAvailable: false,
 });
 
-const recordDetail = (record: HeartbeatRecordItem, messages: HeartbeatRecordDetail["messages"]): HeartbeatRecordDetail => ({
+const recordDetail = (
+  record: HeartbeatRecordItem,
+  messages: HeartbeatRecordDetail["messages"],
+): HeartbeatRecordDetail => ({
   record,
   aiCalls: [],
   messages,
@@ -327,9 +330,9 @@ describe("Feature: HeartbeatView DOM capability contract", () => {
     expect(toolbarActions).toHaveLength(2);
     expect(toolbarActions.every((action) => action.classList.contains("link"))).toBe(true);
     expect(
-      toolbar?.querySelector<HTMLElement>(".ag-heartbeat-context-trigger")?.style.getPropertyValue(
-        "--ag-heartbeat-context-progress",
-      ),
+      toolbar
+        ?.querySelector<HTMLElement>(".ag-heartbeat-context-trigger")
+        ?.style.getPropertyValue("--ag-heartbeat-context-progress"),
     ).toBe("0.3125");
     expect(toolbar?.querySelector(".ag-heartbeat-context-trigger__ring")).not.toBeNull();
     expect(toolbar?.querySelector('[title="Request compact"]')).toBeNull();
@@ -414,7 +417,8 @@ describe("Feature: HeartbeatView DOM capability contract", () => {
     expect(compactRequests).toBe(1);
   });
 
-  test("Scenario: Given configable mode When authority is missing Then bottom toolbar keeps disabled action affordances", () => {
+  test("Scenario: Given configable mode When authority is missing Then bottom toolbar keeps disabled action affordances", async () => {
+    let compactRequests = 0;
     const component = mount(HeartbeatViewFramework7Harness, {
       target: document.body,
       props: {
@@ -424,6 +428,18 @@ describe("Feature: HeartbeatView DOM capability contract", () => {
           sessionStatus: "stopped",
           groupsState: loadedGroups,
         },
+        callbacks: {
+          actions: {
+            compact: { available: false, reason: "No compact authority" },
+            config: { available: false, reason: "No config authority" },
+            onRequestCompact: () => {
+              compactRequests += 1;
+            },
+            onSaveConfig: () => {
+              throw new Error("disabled config must not save");
+            },
+          },
+        },
       },
     });
     trackMountedComponent(component);
@@ -432,7 +448,22 @@ describe("Feature: HeartbeatView DOM capability contract", () => {
     expect(toolbar).not.toBeNull();
     expect(toolbar?.querySelector('[title="Context usage"]')).not.toBeNull();
     expect(toolbar?.querySelector('[title="Compact action is unavailable for this target"]')).toBeNull();
-    expect(toolbar?.querySelector('[title="Config action is unavailable for this target"]')).not.toBeNull();
+    const configAction = toolbar?.querySelector<HTMLElement>('[title="No config authority"]');
+    expect(configAction).not.toBeNull();
+    expect(configAction?.getAttribute("aria-disabled")).toBe("true");
+    configAction?.click();
+    await wait();
+    expect(document.querySelector('[data-testid="heartbeat-config-sheet"]')).toBeNull();
+
+    toolbar?.querySelector<HTMLElement>('[title="Context usage"]')?.click();
+    await waitForDocumentText("Context usage");
+    const compactAction = Array.from(document.querySelectorAll<HTMLElement>("a, button")).find((element) =>
+      element.textContent?.includes("Request compact"),
+    );
+    expect(document.querySelector(".ag-heartbeat-context-compact.disabled")).not.toBeNull();
+    compactAction?.click();
+    await wait();
+    expect(compactRequests).toBe(0);
   });
 
   test("Scenario: Given loaded empty data When rendered Then empty state is honest and not a connection failure", () => {
@@ -561,7 +592,7 @@ describe("Feature: HeartbeatView DOM capability contract", () => {
     expect(document.body.textContent).not.toContain("No summary");
     expect(document.querySelector('[data-testid="heartbeat-group-101"]')).toBeNull();
     expect(document.querySelector('[data-chip-kind="input"]')).not.toBeNull();
-    expect(document.querySelector('[data-chip-kind="tool"]')).not.toBeNull();
+    expect(document.querySelector('[data-chip-kind="tool"], [data-chip-kind="combo"]')).not.toBeNull();
     expect(document.querySelector('[data-chip-kind="text"]')).not.toBeNull();
     const card = document.querySelector<HTMLElement>('[data-testid="heartbeat-record-101"]');
     expect(card).not.toBeNull();
@@ -570,12 +601,82 @@ describe("Feature: HeartbeatView DOM capability contract", () => {
     card?.click();
     await waitForDocumentText("Model run detail");
     expect(detailLoads).toBe(1);
-    expect(document.querySelector('[data-testid="heartbeat-record-detail"]')?.getAttribute("data-kind")).toBe("model_call");
+    expect(document.querySelector('[data-testid="heartbeat-record-detail"]')?.getAttribute("data-kind")).toBe(
+      "model_call",
+    );
     expect(document.body.textContent).toContain("Trace the source refs.");
     expect(document.body.textContent).toContain("shell.exec");
-    expect(getComputedStyle(document.querySelector<HTMLElement>(".ag-heartbeat-record-detail__step-chip")!).position).toBe(
-      "sticky",
-    );
+    expect(document.querySelector(".ag-heartbeat-record-detail__time-label")).not.toBeNull();
+    expect(document.querySelector(".ag-heartbeat-record-detail__time-crossline")).not.toBeNull();
+    expect(
+      document.querySelector(".ag-heartbeat-record-detail__time-bridge .ag-heartbeat-record-detail__time-svg-main"),
+    ).not.toBeNull();
+    expect(document.querySelector(".ag-heartbeat-record-detail__chip-link-vertical")).not.toBeNull();
+    expect(
+      getComputedStyle(document.querySelector<HTMLElement>(".ag-heartbeat-record-detail__step-chip")!).position,
+    ).toBe("sticky");
+  });
+
+  test("Scenario: Given a host route adapter When a record row is selected Then detail opens through host navigation instead of inline expansion", async () => {
+    const modelRecord = heartbeatRecord({
+      id: 104,
+      kind: "model_call",
+      previewText: "Route detail row",
+      parts: [
+        recordPart({
+          messageId: "record-user-104",
+          partId: "1",
+          role: "user",
+          type: "text",
+          startedAt: 1_780_000_000_000,
+          completedAt: 1_780_000_000_050,
+          label: "Open the route detail.",
+        }),
+        recordPart({
+          messageId: "record-text-104",
+          partId: "2",
+          role: "assistant",
+          type: "text",
+          startedAt: 1_780_000_000_050,
+          completedAt: 1_780_000_000_150,
+          label: "Route detail is host owned.",
+        }),
+      ],
+    });
+    const openedRecordIds: number[] = [];
+    let inlineDetailLoads = 0;
+    const component = mount(HeartbeatView, {
+      target: document.body,
+      props: {
+        mode: "readonly",
+        avatarLabel: "Ada",
+        state: {
+          sessionStatus: "running",
+          groupsState: completeLoadedState([]),
+          recordsState: completeLoadedResource(recordsPage([modelRecord])),
+          recordDetailsState: {
+            [modelRecord.id]: completeLoadedResource(recordDetail(modelRecord, [])),
+          },
+        },
+        callbacks: {
+          onOpenRecordDetail: (recordId) => {
+            openedRecordIds.push(recordId);
+          },
+          onLoadRecordDetail: async () => {
+            inlineDetailLoads += 1;
+          },
+        },
+      },
+    });
+    trackMountedComponent(component);
+
+    await waitForDocumentText("Route detail row");
+    document.querySelector<HTMLElement>('[data-testid="heartbeat-record-104"]')?.click();
+    await wait();
+
+    expect(openedRecordIds).toEqual([104]);
+    expect(inlineDetailLoads).toBe(0);
+    expect(document.querySelector('[data-testid="heartbeat-record-detail"]')).toBeNull();
   });
 
   test("Scenario: Given compact record detail When tabs change Then new context stays primary and streaming/error facts stay inside detail", async () => {
@@ -634,6 +735,11 @@ describe("Feature: HeartbeatView DOM capability contract", () => {
     await waitForDocumentText("Compact");
     document.querySelector<HTMLElement>('[data-testid="heartbeat-record-102"]')?.click();
     await waitForDocumentText("New compact context is streaming.");
+    expect(document.querySelector(".ag-heartbeat-record-compact-detail__tabs.segmented")).not.toBeNull();
+    expect(document.querySelectorAll(".ag-heartbeat-record-compact-detail__tabs .button")).toHaveLength(2);
+    expect(document.querySelector(".ag-heartbeat-record-compact-detail__tabs .button-active")?.textContent).toContain(
+      "New Context",
+    );
     expect(document.querySelectorAll('[data-object-kind="compact"]').length).toBeGreaterThanOrEqual(2);
     expect(document.body.textContent).toContain("streaming");
     expect(document.body.textContent).toContain("Partial compact warning");
@@ -699,7 +805,16 @@ describe("Feature: HeartbeatView DOM capability contract", () => {
     await waitForDocumentText("Config");
     document.querySelector<HTMLElement>('[data-testid="heartbeat-record-103"]')?.click();
     await waitForDocumentText("Diff Config");
+    expect(document.querySelector(".ag-heartbeat-record-config-detail__tabs.segmented")).not.toBeNull();
+    expect(document.querySelectorAll(".ag-heartbeat-record-config-detail__tabs .button")).toHaveLength(3);
+    expect(document.querySelector(".ag-heartbeat-record-config-detail__tabs .button-active")?.textContent).toContain(
+      "Diff Config",
+    );
     expect(document.querySelectorAll('[data-object-kind="config"]').length).toBeGreaterThanOrEqual(2);
+    expect(document.querySelector(".ag-heartbeat-record-config__field--thinking")).not.toBeNull();
+    expect(document.querySelector(".ag-heartbeat-record-config__field--maxtoken")).not.toBeNull();
+    expect(document.querySelector(".ag-heartbeat-record-config__field--topk")).toBeNull();
+    expect(document.querySelector(".ag-heartbeat-record-config__field--budget")).toBeNull();
     expect(document.body.textContent).toContain("old:");
     expect(document.body.textContent).toContain("new:");
     const newTab = Array.from(document.querySelectorAll<HTMLButtonElement>("button")).find((button) =>

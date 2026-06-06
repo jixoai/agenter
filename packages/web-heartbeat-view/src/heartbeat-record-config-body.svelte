@@ -1,6 +1,18 @@
 <script lang="ts">
-  import HeartbeatRecordIcon from "./heartbeat-record-icon.svelte";
-  import { formatHeartbeatRecordPayload, indentHeartbeatYaml, readHeartbeatRecordPayloadValue } from "./heartbeat-record-detail-model";
+  import Binary from "@lucide/svelte/icons/binary";
+  import Brain from "@lucide/svelte/icons/brain";
+  import FileText from "@lucide/svelte/icons/file-text";
+  import Hourglass from "@lucide/svelte/icons/hourglass";
+  import SlidersHorizontal from "@lucide/svelte/icons/sliders-horizontal";
+  import Thermometer from "@lucide/svelte/icons/thermometer";
+
+  import { Button, Segmented } from "./framework7-components";
+  import {
+    formatHeartbeatRecordPayload,
+    indentHeartbeatYaml,
+    isHeartbeatRecordPayload,
+    readHeartbeatRecordPayloadValue,
+  } from "./heartbeat-record-detail-model";
   import type { HeartbeatRecordItem } from "./types";
 
   let {
@@ -16,6 +28,30 @@
   } = $props();
 
   type ConfigTab = "diff" | "new" | "old";
+  type ConfigControlIcon = "temperature" | "topK" | "maxToken" | "thinking" | "budget" | "systemPrompt";
+  type ConfigControlEntry = {
+    key: string;
+    label: string;
+    title: string;
+    value: string;
+    icon: ConfigControlIcon;
+    className: string;
+  };
+  type ConfigControlDefinition = {
+    key: string;
+    label: string;
+    title: string;
+    keys: readonly string[];
+    icon: ConfigControlIcon;
+    className: string;
+    format: (value: unknown) => string;
+  };
+  type ConfigSyntaxLine = {
+    kind: "meta" | "remove" | "add" | "context";
+    raw: string;
+    key: string | null;
+    value: string | null;
+  };
 
   let configTab = $state<ConfigTab>("diff");
   const configTabIds = Object.freeze({
@@ -32,11 +68,103 @@
     return fallback;
   };
 
+  const formatControlNumber = (value: unknown, fallback: number, suffix = ""): string => {
+    const numberValue = readNumber(value, fallback);
+    const rounded = Number.isInteger(numberValue)
+      ? Math.round(numberValue).toLocaleString()
+      : numberValue.toFixed(1);
+    return `${rounded}${suffix}`;
+  };
+
+  const formatControlBoolean = (value: unknown): string => {
+    if (typeof value === "boolean") {
+      return value ? "on" : "off";
+    }
+    if (typeof value === "string") {
+      return ["on", "true", "1", "yes"].includes(value.toLowerCase()) ? "on" : "off";
+    }
+    return "off";
+  };
+
+  const formatPromptValue = (value: unknown): string => {
+    const source = formatHeartbeatRecordPayload(value);
+    return `${source.length.toLocaleString()}ch`;
+  };
+
+  const configControlDefinitions: readonly ConfigControlDefinition[] = [
+    {
+      key: "temperature",
+      label: "temperature",
+      title: "Next-call temperature",
+      keys: ["temperature"],
+      icon: "temperature",
+      className: "temperature",
+      format: (value) => formatControlNumber(value, 0),
+    },
+    {
+      key: "topK",
+      label: "top-k",
+      title: "Next-call top-k",
+      keys: ["topk", "topK"],
+      icon: "topK",
+      className: "topk",
+      format: (value) => formatControlNumber(value, 0),
+    },
+    {
+      key: "maxToken",
+      label: "max tokens",
+      title: "Next-call max token budget",
+      keys: ["maxtoken", "maxToken", "maxTokens"],
+      icon: "maxToken",
+      className: "maxtoken",
+      format: (value) => formatControlNumber(value, 0, "t"),
+    },
+    {
+      key: "thinking",
+      label: "thinking",
+      title: "Thinking mode",
+      keys: ["thinking", "thinkingEnabled"],
+      icon: "thinking",
+      className: "thinking",
+      format: formatControlBoolean,
+    },
+    {
+      key: "thinkingBudget",
+      label: "budget",
+      title: "Thinking budget tokens",
+      keys: ["thinking-budget", "thinkingBudget", "thinkingBudgetTokens"],
+      icon: "budget",
+      className: "budget",
+      format: (value) => formatControlNumber(value, 0, "t"),
+    },
+    {
+      key: "systemPrompt",
+      label: "system prompt",
+      title: "System prompt content length",
+      keys: ["systemPrompt", "system"],
+      icon: "systemPrompt",
+      className: "system-prompt",
+      format: formatPromptValue,
+    },
+  ];
+
+  const readConfigValue = (source: unknown, keys: readonly string[]): unknown => {
+    if (!isHeartbeatRecordPayload(source)) {
+      return undefined;
+    }
+    return readHeartbeatRecordPayloadValue(source, keys);
+  };
+
+  const hasConfigValue = (value: unknown): boolean => value !== undefined && value !== null;
+  const compareConfigValue = (value: unknown): string => formatHeartbeatRecordPayload(value);
+
   const providerLabel = $derived.by(() => {
     const provider = readHeartbeatRecordPayloadValue(payload, ["provider", "modelProvider", "providerLabel"]);
     const model = readHeartbeatRecordPayloadValue(payload, ["model", "modelName", "modelId"]);
-    const rendered = [provider, model].filter((value): value is string => typeof value === "string" && value.trim().length > 0).join(" · ");
-    return rendered.length > 0 ? rendered : "openai · gpt-5.1";
+    const rendered = [provider, model]
+      .filter((value): value is string => typeof value === "string" && value.trim().length > 0)
+      .join(" · ");
+    return rendered.length > 0 ? rendered : "next-call config";
   });
   const scopeLabel = $derived.by(() => {
     const scope = readHeartbeatRecordPayloadValue(payload, ["scope", "layer", "binding", "target"]);
@@ -48,23 +176,36 @@
   const stateLabel = $derived(
     record.status === "error" ? "error" : record.status === "running" ? "saving" : "applied",
   );
-  const temperature = $derived(readNumber(readHeartbeatRecordPayloadValue(payload, ["temperature"]), 0.4));
-  const topK = $derived(readNumber(readHeartbeatRecordPayloadValue(payload, ["topk", "topK"]), 32));
-  const maxToken = $derived(readNumber(readHeartbeatRecordPayloadValue(payload, ["maxtoken", "maxToken"]), 8192));
-  const thinkingEnabled = $derived.by(() => {
-    const value = readHeartbeatRecordPayloadValue(payload, ["thinking", "thinkingEnabled"]);
-    if (typeof value === "boolean") {
-      return value;
-    }
-    if (typeof value === "string") {
-      return ["on", "true", "1", "yes"].includes(value.toLowerCase());
-    }
-    return true;
-  });
-  const thinkingBudget = $derived(readNumber(readHeartbeatRecordPayloadValue(payload, ["thinking-budget", "thinkingBudget"]), 2048));
-  const oldConfig = $derived(readHeartbeatRecordPayloadValue(payload, ["oldConfig", "old", "before", "previousConfig"]) ?? null);
-  const newConfig = $derived(readHeartbeatRecordPayloadValue(payload, ["newConfig", "new", "after", "config", "value"]) ?? payload);
+  const oldConfig = $derived(
+    readHeartbeatRecordPayloadValue(payload, ["oldConfig", "old", "before", "previousConfig"]) ?? null,
+  );
+  const newConfig = $derived(
+    readHeartbeatRecordPayloadValue(payload, ["newConfig", "new", "after", "config", "value"]) ?? payload,
+  );
   const diffConfig = $derived(readHeartbeatRecordPayloadValue(payload, ["diff", "changes"]) ?? null);
+  const configControls = $derived.by<ConfigControlEntry[]>(() =>
+    configControlDefinitions.flatMap((definition) => {
+      const directValue = readConfigValue(payload, definition.keys);
+      const newValue = hasConfigValue(directValue) ? directValue : readConfigValue(newConfig, definition.keys);
+      const oldValue = readConfigValue(oldConfig, definition.keys);
+      if (!hasConfigValue(newValue)) {
+        return [];
+      }
+      if (hasConfigValue(oldValue) && compareConfigValue(oldValue) === compareConfigValue(newValue)) {
+        return [];
+      }
+      return [
+        {
+          key: definition.key,
+          label: definition.label,
+          title: definition.title,
+          value: definition.format(newValue),
+          icon: definition.icon,
+          className: definition.className,
+        },
+      ];
+    }),
+  );
   const configSource = $derived.by(() => {
     if (configTab === "new") {
       return formatHeartbeatRecordPayload(newConfig);
@@ -82,99 +223,129 @@
       indentHeartbeatYaml(formatHeartbeatRecordPayload(newConfig)),
     ].join("\n");
   });
+  const configSyntaxLines = $derived.by<ConfigSyntaxLine[]>(() =>
+    configSource.split("\n").map((line) => {
+      const kind =
+        configTab === "diff" && line.startsWith("@@")
+          ? "meta"
+          : configTab === "diff" && line.startsWith("-")
+            ? "remove"
+            : configTab === "diff" && line.startsWith("+")
+              ? "add"
+              : "context";
+      const yamlKeyMatch = configTab === "diff" ? null : /^(\s*[-\w.]+:)(.*)$/u.exec(line);
+      return {
+        kind,
+        raw: line,
+        key: yamlKeyMatch?.[1] ?? null,
+        value: yamlKeyMatch?.[2] ?? null,
+      };
+    }),
+  );
 </script>
 
+{#snippet configControlField(control: ConfigControlEntry)}
+  <span
+    class={`ag-heartbeat-record-config__field ag-heartbeat-record-config__field--${control.className}`}
+    title={control.title}
+  >
+    <span class="ag-heartbeat-record-config__field-label">
+      {#if control.icon === "temperature"}
+        <Thermometer size={14} aria-hidden="true" />
+      {:else if control.icon === "topK"}
+        <SlidersHorizontal size={14} aria-hidden="true" />
+      {:else if control.icon === "maxToken"}
+        <Binary size={14} aria-hidden="true" />
+      {:else if control.icon === "thinking"}
+        <Brain size={14} aria-hidden="true" />
+      {:else if control.icon === "budget"}
+        <Hourglass size={14} aria-hidden="true" />
+      {:else}
+        <FileText size={14} aria-hidden="true" />
+      {/if}
+      <span>{control.label}</span>
+    </span>
+    <span class="ag-heartbeat-record-config__field-value">{control.value}</span>
+  </span>
+{/snippet}
+
 {#if variant === "card"}
-  <div class="ag-heartbeat-record-config" data-state={stateLabel} title={title}>
+  <div class="ag-heartbeat-record-config" data-state={stateLabel} data-object-kind="config" title={title}>
     <div class="ag-heartbeat-record-config__topline">
-      <span class="ag-heartbeat-record-config__provider-pill" title="Active provider and model">
-        <HeartbeatRecordIcon kind="config" size={14} />
+      <span class="ag-heartbeat-record-config__provider-pill" title={`Active provider and model · ${scopeLabel}`}>
+        <SlidersHorizontal size={14} aria-hidden="true" />
         <span>{providerLabel}</span>
       </span>
     </div>
 
-    <div class="ag-heartbeat-record-config__field-grid">
-      <span class="ag-heartbeat-record-config__field ag-heartbeat-record-config__field--temperature" title="Next-call temperature">
-        <span class="ag-heartbeat-record-config__field-label">
-          <HeartbeatRecordIcon kind="tool" size={14} />
-          <span>temperature</span>
-        </span>
-        <span class="ag-heartbeat-record-config__field-value">{temperature.toFixed(1)}</span>
-      </span>
-      <span class="ag-heartbeat-record-config__field ag-heartbeat-record-config__field--topk" title="Next-call top-k">
-        <span class="ag-heartbeat-record-config__field-label">
-          <HeartbeatRecordIcon kind="video" size={14} />
-          <span>top-k</span>
-        </span>
-        <span class="ag-heartbeat-record-config__field-value">{Math.round(topK)}</span>
-      </span>
-      <span class="ag-heartbeat-record-config__field ag-heartbeat-record-config__field--maxtoken" title="Next-call max token budget">
-        <span class="ag-heartbeat-record-config__field-label">
-          <HeartbeatRecordIcon kind="text" size={14} />
-          <span>max tokens</span>
-        </span>
-        <span class="ag-heartbeat-record-config__field-value">{Math.round(maxToken).toLocaleString()}t</span>
-      </span>
-      <span class="ag-heartbeat-record-config__field ag-heartbeat-record-config__field--thinking" title="Thinking mode">
-        <span class="ag-heartbeat-record-config__field-label">
-          <HeartbeatRecordIcon kind="thinking" size={14} />
-          <span>thinking</span>
-        </span>
-        <span class="ag-heartbeat-record-config__field-value">{thinkingEnabled ? "on" : "off"}</span>
-      </span>
-      <span class="ag-heartbeat-record-config__field ag-heartbeat-record-config__field--budget" title="Thinking budget tokens">
-        <span class="ag-heartbeat-record-config__field-label">
-          <HeartbeatRecordIcon kind="pending" size={14} />
-          <span>budget</span>
-        </span>
-        <span class="ag-heartbeat-record-config__field-value">{Math.round(thinkingBudget).toLocaleString()}t</span>
-      </span>
-    </div>
+    {#if configControls.length > 0}
+      <div class="ag-heartbeat-record-config__field-grid">
+        {#each configControls as control (control.key)}
+          {@render configControlField(control)}
+        {/each}
+      </div>
+    {/if}
   </div>
 {:else}
   <div class="ag-heartbeat-record-config-detail" data-record-body="config">
-    <div class="ag-heartbeat-record-config-detail__tabs" role="tablist" aria-label="Config detail tabs">
-      <button
+    <div class="ag-heartbeat-record-config-detail__object" data-object-kind="config" aria-label="Changed config controls">
+      <div class="ag-heartbeat-record-config" data-state={stateLabel}>
+        <div class="ag-heartbeat-record-config__topline">
+          <span class="ag-heartbeat-record-config__provider-pill" title={`Active provider and model · ${scopeLabel}`}>
+            <SlidersHorizontal size={14} aria-hidden="true" />
+            <span>{providerLabel}</span>
+          </span>
+        </div>
+
+        {#if configControls.length > 0}
+          <div class="ag-heartbeat-record-config__field-grid">
+            {#each configControls as control (control.key)}
+              {@render configControlField(control)}
+            {/each}
+          </div>
+        {/if}
+      </div>
+    </div>
+
+    <Segmented strong class="ag-heartbeat-record-config-detail__tabs" role="tablist" aria-label="Config detail tabs">
+      <Button
         id={configTabIds.diff}
         type="button"
         role="tab"
-        class:active={configTab === "diff"}
+        active={configTab === "diff"}
         aria-selected={configTab === "diff"}
         aria-controls={configPanelId}
         tabindex={configTab === "diff" ? 0 : -1}
-        onclick={() => (configTab = "diff")}
-      >
-        Diff Config
-      </button>
-      <button
+        text="Diff Config"
+        onClick={() => (configTab = "diff")}
+      />
+      <Button
         id={configTabIds.new}
         type="button"
         role="tab"
-        class:active={configTab === "new"}
+        active={configTab === "new"}
         aria-selected={configTab === "new"}
         aria-controls={configPanelId}
         tabindex={configTab === "new" ? 0 : -1}
-        onclick={() => (configTab = "new")}
-      >
-        New Config
-      </button>
-      <button
+        text="New Config"
+        onClick={() => (configTab = "new")}
+      />
+      <Button
         id={configTabIds.old}
         type="button"
         role="tab"
-        class:active={configTab === "old"}
+        active={configTab === "old"}
         aria-selected={configTab === "old"}
         aria-controls={configPanelId}
         tabindex={configTab === "old" ? 0 : -1}
-        onclick={() => (configTab = "old")}
-      >
-        Old Config
-      </button>
-    </div>
+        text="Old Config"
+        onClick={() => (configTab = "old")}
+      />
+    </Segmented>
 
     <div id={configPanelId} class="ag-heartbeat-record-config-detail__panel" role="tabpanel" aria-labelledby={configTabIds[configTab]}>
       {#if configSource}
-        <pre class="ag-heartbeat-record-config-detail__source">{configSource}</pre>
+        <pre class="ag-heartbeat-record-config-detail__source" data-language={configTab === "diff" ? "diff" : "yaml"}>{#each configSyntaxLines as line, index (`${index}:${line.raw}`)}<span class={`ag-heartbeat-record-config-detail__syntax-line ag-heartbeat-record-config-detail__syntax-line--${line.kind}`}>{#if line.key !== null}<span class="ag-heartbeat-record-config-detail__syntax-key">{line.key}</span><span class="ag-heartbeat-record-config-detail__syntax-value">{line.value}</span>{:else}{line.raw || " "}{/if}</span>{/each}</pre>
       {:else}
         <div class="ag-heartbeat-record-config-detail__empty">No config snapshot</div>
       {/if}
@@ -280,11 +451,22 @@
     color: color-mix(in oklab, var(--kind-pending, #b45309), black 14%);
   }
 
+  .ag-heartbeat-record-config__field--system-prompt {
+    background: color-mix(in oklab, var(--kind-config, #9333ea), white 94%);
+    border-color: color-mix(in oklab, var(--kind-config, #9333ea), white 74%);
+    color: color-mix(in oklab, var(--kind-config, #9333ea), black 12%);
+  }
+
   .ag-heartbeat-record-config__field-label {
     display: inline-flex;
     align-items: center;
     gap: 5px;
     min-inline-size: 0;
+  }
+
+  .ag-heartbeat-record-config__provider-pill :global(svg),
+  .ag-heartbeat-record-config__field-label :global(svg) {
+    flex: 0 0 auto;
   }
 
   .ag-heartbeat-record-config__field-value {
@@ -300,29 +482,22 @@
     min-inline-size: 0;
   }
 
-  .ag-heartbeat-record-config-detail__tabs {
-    display: grid;
-    grid-auto-flow: column;
-    grid-auto-columns: minmax(0, 1fr);
-    gap: 6px;
+  .ag-heartbeat-record-config-detail__object {
+    min-inline-size: 0;
   }
 
-  .ag-heartbeat-record-config-detail__tabs button {
-    overflow: hidden;
-    border: 1px solid color-mix(in srgb, currentColor, transparent 86%);
-    border-radius: 999px;
-    background: #fbfcfe;
-    color: color-mix(in srgb, currentColor, transparent 34%);
-    padding: 0.35rem 0.5rem;
+  :global(.ag-heartbeat-record-config-detail__tabs) {
+    inline-size: 100%;
+  }
+
+  :global(.ag-heartbeat-record-config-detail__tabs .button) {
+    min-inline-size: 0;
     font: 600 11px/1.1 system-ui, sans-serif;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
 
-  .ag-heartbeat-record-config-detail__tabs button.active,
-  .ag-heartbeat-record-config-detail__tabs button[aria-selected="true"] {
-    border-color: color-mix(in oklab, var(--tone-accent, #2563eb), white 55%);
-    background: color-mix(in oklab, var(--tone-accent, #2563eb), white 92%);
+  :global(.ag-heartbeat-record-config-detail__tabs .button-active) {
     color: color-mix(in oklab, var(--tone-accent, #2563eb), black 15%);
   }
 
@@ -337,8 +512,36 @@
     background: color-mix(in srgb, Canvas, currentColor 3%);
     padding: 10px;
     font: 11.5px/1.55 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-    white-space: pre-wrap;
-    overflow-wrap: anywhere;
+    white-space: pre;
+  }
+
+  .ag-heartbeat-record-config-detail__syntax-line {
+    display: block;
+    min-inline-size: max-content;
+    padding-inline: 2px;
+  }
+
+  .ag-heartbeat-record-config-detail__syntax-line--meta {
+    color: color-mix(in srgb, currentColor, transparent 30%);
+  }
+
+  .ag-heartbeat-record-config-detail__syntax-line--remove {
+    background: color-mix(in oklab, var(--kind-error, #dc2626), white 94%);
+    color: color-mix(in oklab, var(--kind-error, #dc2626), black 4%);
+  }
+
+  .ag-heartbeat-record-config-detail__syntax-line--add {
+    background: color-mix(in oklab, var(--kind-text, #2563eb), white 94%);
+    color: color-mix(in oklab, var(--kind-text, #2563eb), black 12%);
+  }
+
+  .ag-heartbeat-record-config-detail__syntax-key {
+    color: color-mix(in oklab, var(--kind-config, #9333ea), black 6%);
+    font-weight: 760;
+  }
+
+  .ag-heartbeat-record-config-detail__syntax-value {
+    color: #31445d;
   }
 
   .ag-heartbeat-record-config-detail__empty {

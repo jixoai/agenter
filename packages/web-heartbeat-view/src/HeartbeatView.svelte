@@ -34,7 +34,7 @@
   const records = $derived(recordsPage?.records ?? []);
   const hasRecordResource = $derived(Boolean(recordsResource));
   const groups = $derived(buildHeartbeatDisplayGroups(viewState.groupsState.data));
-  const selectedRecord = $derived(records.find((record) => record.id === selectedRecordId) ?? null);
+  const selectedRecord = $derived(callbacks.onOpenRecordDetail ? null : records.find((record) => record.id === selectedRecordId) ?? null);
   const selectedRecordDetail = $derived(
     selectedRecordId === null ? undefined : viewState.recordDetailsState?.[selectedRecordId],
   );
@@ -125,6 +125,11 @@
   };
 
   const selectRecord = async (recordId: number): Promise<void> => {
+    // Detail navigation is host-owned; the package emits intent and only falls back to inline detail without a route adapter.
+    if (callbacks.onOpenRecordDetail) {
+      await callbacks.onOpenRecordDetail(recordId);
+      return;
+    }
     selectedRecordId = selectedRecordId === recordId ? null : recordId;
     if (selectedRecordId !== null) {
       await callbacks.onLoadRecordDetail?.(selectedRecordId);
@@ -169,7 +174,7 @@
             <HeartbeatRecordCard
               {record}
               selected={record.id === selectedRecordId}
-              onSelect={(recordId) => void selectRecord(recordId)}
+              selectRecord={(recordId) => void selectRecord(recordId)}
             />
           {/each}
         </div>

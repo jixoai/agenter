@@ -5,6 +5,7 @@
 
   import HeartbeatAvatarDirectoryPage from "./HeartbeatAvatarDirectoryPage.svelte";
   import HeartbeatConnectionSheet from "./HeartbeatConnectionSheet.svelte";
+  import HeartbeatRecordDetailRoutePage from "./HeartbeatRecordDetailRoutePage.svelte";
   import HeartbeatRoutePage from "./HeartbeatRoutePage.svelte";
   import { ensureFramework7 } from "./framework7";
   import { setHeartbeatExampleState } from "./heartbeat-example-context";
@@ -14,18 +15,28 @@
 
   let {
     initialRuntimeId = null,
+    initialRecordId = null,
     initialMode = null,
+    initialRecordPageSize = null,
     initialWsUrl = null,
     initialSilentConnect = null,
   }: {
     initialRuntimeId?: string | null;
+    initialRecordId?: string | number | null;
     initialMode?: string | null;
+    initialRecordPageSize?: string | number | null;
     initialSilentConnect?: boolean | string | null;
     initialWsUrl?: string | null;
   } = $props();
 
   const createInitialState = (): HeartbeatExampleState =>
-    new HeartbeatExampleState({ initialMode, initialRuntimeId, initialSilentConnect, initialWsUrl });
+    new HeartbeatExampleState({
+      initialMode,
+      initialRecordPageSize,
+      initialRuntimeId,
+      initialSilentConnect,
+      initialWsUrl,
+    });
   const exampleState = createInitialState();
   setHeartbeatExampleState(exampleState);
 
@@ -44,6 +55,10 @@
   let initialRouteApplied = false;
 
   const routes: Framework7Route[] = [
+    {
+      path: "/heartbeat/:runtimeId/records/:recordId",
+      component: HeartbeatRecordDetailRoutePage as Component<Record<string, unknown>>,
+    },
     {
       path: "/heartbeat/:runtimeId",
       component: HeartbeatRoutePage as Component<Record<string, unknown>>,
@@ -65,7 +80,11 @@
     }
     initialRouteApplied = true;
     await tick();
-    mainView.router.navigate(`/heartbeat/${encodeURIComponent(initialRuntimeId)}`, {
+    const recordId = initialRecordId === null || initialRecordId === undefined ? "" : String(initialRecordId);
+    const href = recordId
+      ? `${exampleState.buildHeartbeatRecordHref(initialRuntimeId, recordId)}`
+      : exampleState.buildHeartbeatHref(initialRuntimeId);
+    mainView.router.navigate(href, {
       animate: false,
     });
   };
@@ -84,7 +103,7 @@
     browserHistory={true}
     browserHistoryRoot=""
     browserHistorySeparator=""
-    browserHistoryAnimate={true}
+    browserHistoryAnimate={false}
     onViewInit={(view: Framework7View) => {
       mainView = view;
       void applyInitialRoute();

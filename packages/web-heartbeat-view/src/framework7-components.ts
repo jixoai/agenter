@@ -16,6 +16,7 @@ import {
   Page as Framework7Page,
   PageContent as Framework7PageContent,
   Progressbar as Framework7Progressbar,
+  Segmented as Framework7Segmented,
   Sheet as Framework7Sheet,
   Subnavbar as Framework7Subnavbar,
   Toolbar as Framework7Toolbar,
@@ -45,6 +46,7 @@ export const NavTitle = loosen(Framework7NavTitle);
 export const Page = loosen(Framework7Page);
 export const PageContent = loosen(Framework7PageContent);
 export const Progressbar = loosen(Framework7Progressbar);
+export const Segmented = loosen(Framework7Segmented);
 export const Sheet = loosen(Framework7Sheet);
 export const Subnavbar = loosen(Framework7Subnavbar);
 export const Toolbar = loosen(Framework7Toolbar);

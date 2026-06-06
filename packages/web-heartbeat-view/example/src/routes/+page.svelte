@@ -4,4 +4,9 @@
   let { data } = $props();
 </script>
 
-<HeartbeatExampleApp initialMode={data.mode} initialWsUrl={data.wsUrl} initialSilentConnect={data.silentConnect} />
+<HeartbeatExampleApp
+  initialMode={data.mode}
+  initialRecordPageSize={data.pageSize}
+  initialWsUrl={data.wsUrl}
+  initialSilentConnect={data.silentConnect}
+/>

@@ -64,7 +64,7 @@ export interface HeartbeatRecordTimeline {
   density: ChipDensity;
 }
 
-type ChipDensity = "narrow" | "medium" | "full";
+export type ChipDensity = "narrow" | "medium" | "full";
 
 const kindPriority: Record<HeartbeatRecordChipKind, number> = {
   input: 0,
@@ -237,6 +237,24 @@ const readPayloadNumber = (payload: unknown, keys: readonly string[]): number | 
   return null;
 };
 
+const readPartMetricNumber = (part: HeartbeatRecordPartSummary, keys: readonly string[]): number | null =>
+  readPayloadNumber(part, keys);
+
+const readTextTokenCount = (part: HeartbeatRecordPartSummary): number =>
+  readPartMetricNumber(part, ["tokenCount", "tokens"]) ?? estimateTextTokens(readTextPayload(part.label));
+
+const readPartSizeBytes = (part: HeartbeatRecordPartSummary): number =>
+  readPartMetricNumber(part, ["sizeBytes", "bytes", "size", "fileSize", "byteLength"]) ?? 0;
+
+const readPartDurationMs = (part: HeartbeatRecordPartSummary): number =>
+  readPartMetricNumber(part, ["durationMs", "duration", "videoLengthMs"]) ?? 0;
+
+const isToolResultPart = (part: HeartbeatRecordPartSummary): boolean =>
+  part.type === "tool_result" || part.type === "tool_call_result";
+
+const isToolCallPart = (part: HeartbeatRecordPartSummary): boolean =>
+  resolveHeartbeatRecordPartKind(part) === "tool" && !isToolResultPart(part);
+
 const formatBytes = (bytes: number | null): string => {
   if (bytes === null) {
     return "";
@@ -280,22 +298,22 @@ const aggregateChipMetrics = (parts: readonly HeartbeatRecordPartSummary[]): Hea
     const kind = resolveHeartbeatRecordPartKind(part);
     switch (kind) {
       case "text":
-        metrics.textTokens += estimateTextTokens(readTextPayload(part.label));
+        metrics.textTokens += readTextTokenCount(part);
         break;
       case "image":
-        metrics.imageBytes += readPayloadNumber(part, ["size", "bytes", "fileSize"]) ?? 0;
+        metrics.imageBytes += readPartSizeBytes(part);
         break;
       case "file":
-        metrics.fileBytes += readPayloadNumber(part, ["size", "bytes", "fileSize"]) ?? 0;
+        metrics.fileBytes += readPartSizeBytes(part);
         break;
       case "video":
-        metrics.videoMs += readPayloadNumber(part, ["durationMs", "duration", "videoLengthMs"]) ?? 0;
+        metrics.videoMs += readPartDurationMs(part);
         break;
       case "thinking":
         metrics.thinkingMs += part.completedAt === null ? 0 : Math.max(0, part.completedAt - part.startedAt);
         break;
       case "tool":
-        metrics.toolCount += 1;
+        metrics.toolCount += isToolCallPart(part) ? 1 : 0;
         break;
       case "refusal":
         metrics.refusalCount += 1;
@@ -498,7 +516,7 @@ const chipLabel = (kind: HeartbeatRecordChipKind, parts: readonly HeartbeatRecor
     return labels.length > 0 ? labels.join("+") : "input";
   }
   if (kind === "text") {
-    const tokens = parts.reduce((sum, part) => sum + estimateTextTokens(readTextPayload(part.label)), 0);
+    const tokens = parts.reduce((sum, part) => sum + readTextTokenCount(part), 0);
     return tokens > 0 ? `${tokens} tok` : "text";
   }
   if (kind === "thinking") {
@@ -506,17 +524,15 @@ const chipLabel = (kind: HeartbeatRecordChipKind, parts: readonly HeartbeatRecor
     return formatHeartbeatRecordDuration(duration) || "think";
   }
   if (kind === "tool") {
-    return parts.length > 1 ? String(parts.length) : "";
+    const toolCallCount = parts.filter(isToolCallPart).length;
+    return toolCallCount > 1 ? String(toolCallCount) : "";
   }
   if (kind === "image" || kind === "file") {
-    const bytes = parts.reduce((sum, part) => sum + (readPayloadNumber(part, ["size", "bytes", "fileSize"]) ?? 0), 0);
+    const bytes = parts.reduce((sum, part) => sum + readPartSizeBytes(part), 0);
     return formatBytes(bytes || null) || kind;
   }
   if (kind === "video") {
-    const duration = parts.reduce(
-      (sum, part) => sum + (readPayloadNumber(part, ["durationMs", "duration", "videoLengthMs"]) ?? 0),
-      0,
-    );
+    const duration = parts.reduce((sum, part) => sum + readPartDurationMs(part), 0);
     return formatHeartbeatRecordDuration(duration || null) || "video";
   }
   if (kind === "pending") {
@@ -556,6 +572,7 @@ const createChip = (
     .map((part) => [part.role, part.type, part.label].filter(Boolean).join(" "))
     .filter((value) => value.trim().length > 0);
   const label = chipLabel(kind, parts);
+  const count = kind === "tool" ? Math.max(1, parts.filter(isToolCallPart).length) : Math.max(1, parts.length);
   return {
     id: `${kind}:${parts.map((part) => part.partId).join(",") || startedAt}`,
     kind,
@@ -563,7 +580,7 @@ const createChip = (
     title: labels.length > 0 ? labels.join(" | ") : kind,
     startedAt,
     completedAt,
-    count: Math.max(1, parts.length),
+    count,
     parts: [...parts],
   };
 };
@@ -585,10 +602,7 @@ const groupOutputParts = (parts: readonly HeartbeatRecordPartSummary[]): Heartbe
   };
   for (const part of parts) {
     const kind = resolveHeartbeatRecordPartKind(part);
-    if (kind === "tool" && (part.type === "tool_result" || part.type === "tool_call_result")) {
-      continue;
-    }
-    if (kind !== currentKind || kind === "tool" || kind === "error") {
+    if (kind !== currentKind || kind === "error") {
       flush();
       currentKind = kind;
       currentParts = [part];
@@ -610,10 +624,10 @@ const densityForWidth = (width: number): ChipDensity => {
   return "full";
 };
 
-const estimateLineWidth = (line: HeartbeatRecordLine, density: ChipDensity): number => {
-  const base = density === "narrow" ? 14 : 22;
-  const label = density === "full" ? Math.min(52, line.label.length * 6) : 0;
-  return base + label;
+export const estimateHeartbeatRecordLineWidth = (line: HeartbeatRecordLine, density: ChipDensity): number => {
+  const base = density === "full" ? 20 : density === "medium" ? 16 : 12;
+  const labelUnit = density === "full" ? 3.4 : density === "medium" ? 3.1 : 2.8;
+  return Math.max(base, line.label.length * labelUnit + 4);
 };
 
 const lineBetween = (previous: HeartbeatRecordChip, next: HeartbeatRecordChip, index: number): HeartbeatRecordLine => {
@@ -673,7 +687,7 @@ const timelineFits = (chips: readonly HeartbeatRecordChip[], width: number, dens
     (sum, segment) =>
       sum +
       estimateChipWidth(segment.chip, density) +
-      (segment.lineBefore ? estimateLineWidth(segment.lineBefore, density) : 0),
+      (segment.lineBefore ? estimateHeartbeatRecordLineWidth(segment.lineBefore, density) : 0),
     0,
   );
   return estimate <= Math.max(180, width);

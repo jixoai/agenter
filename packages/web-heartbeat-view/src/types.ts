@@ -108,6 +108,12 @@ export interface HeartbeatRecordPartSummary {
   completedAt: number | null;
   label: string;
   isComplete: boolean;
+  /** Exact or estimated token count for text-like parts, when the record projection can provide it. */
+  tokenCount?: number | null;
+  /** Byte size for image, file, or other binary payload parts, when known. */
+  sizeBytes?: number | null;
+  /** Duration in milliseconds for timed media parts, when known. */
+  durationMs?: number | null;
 }
 
 export interface HeartbeatRecordSummary {
@@ -329,6 +335,7 @@ export interface HeartbeatViewCallbacks {
   onLoadOlder?: () => Promise<{ items: number; hasMore: boolean }>;
   onLoadRecordPage?: (anchor: HeartbeatRecordPageAnchor) => Promise<void>;
   onLoadRecordDetail?: (recordId: number) => Promise<void>;
+  onOpenRecordDetail?: (recordId: number) => void | Promise<void>;
   actions?: HeartbeatConfigActions;
   runtimeActions?: HeartbeatRuntimeActions;
 }

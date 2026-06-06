@@ -23,6 +23,7 @@
     {#each state.connectionState.avatars.data as avatar (avatar.runtimeId)}
       <ListItem
         link={state.buildHeartbeatHref(avatar.runtimeId)}
+        animate={false}
         title={avatar.displayName ?? avatar.nickname}
         subtitle={avatar.nickname}
         text={`${avatar.avatarPrincipalId ?? avatar.runtimeId}${avatar.defaultAvatar ? " · default" : ""}`}

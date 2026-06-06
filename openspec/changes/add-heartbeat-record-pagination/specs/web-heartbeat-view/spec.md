@@ -67,6 +67,13 @@ The package SHALL render selected record detail as a separate surface from the p
 - **THEN** the navigation rail is composed from `RecordChip` chips plus line intervals
 - **AND** the rail stays sticky on desktop and collapses into a compact horizontal chips line on mobile
 
+#### Scenario: Standalone example opens record detail through a route
+
+- **WHEN** the operator taps one record row in the standalone Framework7 example
+- **THEN** the example navigates to a dedicated `/heartbeat/:runtimeId/records/:recordId` detail page
+- **AND** the list page does not inline-expand that record as the primary interaction
+- **AND** the package renderer stays host-neutral by exposing an open-detail callback rather than constructing Framework7 routes internally
+
 #### Scenario: Compact detail focuses the new context
 
 - **WHEN** the operator selects one `compact` record

@@ -20,6 +20,7 @@ import {
 type ConnectionOptions = {
   wsUrl: string;
   authToken?: string | null;
+  recordPageSize?: number;
 };
 
 type HeartbeatConfigLayerSnapshot = HeartbeatConfigLayerFile & {
@@ -187,7 +188,10 @@ export class ClientSdkAgenterHeartbeatConnection implements AgenterHeartbeatConn
     });
     await Promise.all([
       this.store.loadHeartbeatGroups(target.sessionId),
-      this.store.loadHeartbeatRecords(target.sessionId, { anchor: { kind: "latest" } }),
+      this.store.loadHeartbeatRecords(target.sessionId, {
+        pageSize: this.options.recordPageSize,
+        anchor: { kind: "latest" },
+      }),
       this.refreshConfigBinding(target),
     ]);
     this.state = {
@@ -206,7 +210,10 @@ export class ClientSdkAgenterHeartbeatConnection implements AgenterHeartbeatConn
   }
 
   async loadHeartbeatRecordPage(target: HeartbeatTargetIdentity, anchor: HeartbeatRecordPageAnchor): Promise<void> {
-    await this.store.loadHeartbeatRecords(target.sessionId, { anchor });
+    await this.store.loadHeartbeatRecords(target.sessionId, {
+      pageSize: this.options.recordPageSize,
+      anchor,
+    });
     this.syncFromRuntimeStore();
   }
 

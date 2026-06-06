@@ -32,7 +32,10 @@ const mockSdk = vi.hoisted(() => {
     globalAvatarCatalog: CachedResourceState<GlobalAvatarCatalogEntry[]>;
     heartbeatGroupsBySession: Record<string, CachedResourceState<HeartbeatGroupItem[]> | undefined>;
     heartbeatRecordsBySession: Record<string, CachedResourceState<HeartbeatRecordPage | null> | undefined>;
-    heartbeatRecordDetailsBySession: Record<string, Record<number, CachedResourceState<HeartbeatRecordDetail | null>> | undefined>;
+    heartbeatRecordDetailsBySession: Record<
+      string,
+      Record<number, CachedResourceState<HeartbeatRecordDetail | null>> | undefined
+    >;
     modelCallsBySession: Record<string, ModelCallItem[] | undefined>;
     attentionBySession: Record<string, RuntimeSnapshotEntry["attention"] | undefined>;
     attentionDeliveryBySession: Record<string, RuntimeSnapshotEntry["attentionDelivery"] | undefined>;
@@ -157,18 +160,22 @@ const mockSdk = vi.hoisted(() => {
     isComplete: item.isComplete,
   });
 
-  const recordsPageFromGroups = (items: HeartbeatGroupItem[]): HeartbeatRecordPage => {
+  const recordsPageFromGroups = (
+    items: HeartbeatGroupItem[],
+    pageSize = 20,
+    anchor: HeartbeatRecordPage["anchor"] = { kind: "latest" },
+  ): HeartbeatRecordPage => {
     const records = items.map(recordFromGroup);
     return {
       records,
       pageIndex: 0,
-      pageSize: 20,
+      pageSize,
       totalRecords: records.length,
-      totalPages: records.length > 0 ? 1 : 0,
+      totalPages: records.length > 0 ? Math.ceil(records.length / pageSize) : 0,
       windowTotalRecords: records.length,
-      windowTotalPages: records.length > 0 ? 1 : 0,
+      windowTotalPages: records.length > 0 ? Math.ceil(records.length / pageSize) : 0,
       latestRecordId: records[0]?.id ?? null,
-      anchor: { kind: "latest" },
+      anchor,
       hasOlder: false,
       hasNewer: false,
       newRecordsAvailable: false,
@@ -226,6 +233,10 @@ const mockSdk = vi.hoisted(() => {
   let savedConfigContent = "";
   let avatarCatalogFailure: string | null = null;
   let heartbeatGroups: HeartbeatGroupItem[] = [group];
+  let heartbeatRecordPageRequests: Array<{
+    sessionId: string;
+    input?: { pageSize?: number; anchor?: HeartbeatRecordPage["anchor"] | null };
+  }> = [];
   let sessionStatus: SessionEntry["status"] = "stopped";
   let authToken: string | null = null;
   let connectDelayMs = 0;
@@ -245,6 +256,7 @@ const mockSdk = vi.hoisted(() => {
     savedConfigContent = "";
     avatarCatalogFailure = null;
     heartbeatGroups = [group];
+    heartbeatRecordPageRequests = [];
     sessionStatus = "stopped";
     authToken = null;
     connectDelayMs = 0;
@@ -418,12 +430,18 @@ const mockSdk = vi.hoisted(() => {
     async loadMoreHeartbeatGroups() {
       return { items: 0, hasMore: false };
     },
-    async loadHeartbeatRecords(sessionId: string) {
+    async loadHeartbeatRecords(
+      sessionId: string,
+      input?: { pageSize?: number; anchor?: HeartbeatRecordPage["anchor"] | null },
+    ) {
+      heartbeatRecordPageRequests.push({ sessionId, input });
+      const pageSize = input?.pageSize ?? 20;
+      const anchor = input?.anchor ?? { kind: "latest" };
       state = {
         ...state,
         heartbeatRecordsBySession: {
           ...state.heartbeatRecordsBySession,
-          [sessionId]: loadedResource(recordsPageFromGroups(heartbeatGroups)),
+          [sessionId]: loadedResource(recordsPageFromGroups(heartbeatGroups, pageSize, anchor)),
         },
       };
       emit();
@@ -541,6 +559,9 @@ const mockSdk = vi.hoisted(() => {
     },
     get savedConfigContent() {
       return savedConfigContent;
+    },
+    get heartbeatRecordPageRequests() {
+      return heartbeatRecordPageRequests;
     },
   };
 });
@@ -681,9 +702,7 @@ describe("Feature: Web heartbeat view example route flow", () => {
 
     await waitForText("Ada");
     expect(document.body.textContent).toContain("Not running");
-    expect(document.querySelector<HTMLImageElement>('img[alt="Ada"]')?.src).toContain(
-      "/media/avatars/avatar-ada/icon",
-    );
+    expect(document.querySelector<HTMLImageElement>('img[alt="Ada"]')?.src).toContain("/media/avatars/avatar-ada/icon");
     clickFirstAvatar();
     await waitForText("LoopBus heartbeat row");
 
@@ -691,6 +710,51 @@ describe("Feature: Web heartbeat view example route flow", () => {
     expect(document.body.textContent).toContain("Stopped");
     expect(document.body.textContent).toContain("No live push");
     expect(document.querySelector('[title="Request compact"]')).toBeNull();
+  });
+
+  test("Scenario: Given a direct Heartbeat record URL When connection hydrates Then the example opens a dedicated record detail route", async () => {
+    component = mount(HeartbeatExampleApp, {
+      target: document.body,
+      props: {
+        initialRuntimeId: "runtime-ada",
+        initialRecordId: 1,
+        initialRecordPageSize: "2",
+        initialSilentConnect: true,
+        initialWsUrl: "ws://127.0.0.1:3000/trpc",
+      },
+    });
+
+    await waitForText("Record #1");
+    expect(document.querySelector('.page[data-name="heartbeat-record-detail"]')).not.toBeNull();
+    expect(location.pathname).toContain("/heartbeat/runtime-ada/records/1");
+    expect(location.search).toContain("pageSize=2");
+    expect(mockSdk.heartbeatRecordPageRequests.at(-1)?.input?.pageSize).toBe(2);
+  });
+
+  test("Scenario: Given a Heartbeat record list When a record row is tapped Then Framework7 opens the dedicated record detail route", async () => {
+    component = mount(HeartbeatExampleApp, {
+      target: document.body,
+      props: {
+        initialRecordPageSize: 2,
+        initialSilentConnect: true,
+        initialWsUrl: "ws://127.0.0.1:3000/trpc",
+      },
+    });
+
+    await waitForText("Ada");
+    clickFirstAvatar();
+    await waitForText("LoopBus heartbeat row");
+
+    const recordCard = document.querySelector<HTMLElement>('[data-testid="heartbeat-record-1"]');
+    expect(recordCard).not.toBeNull();
+    recordCard?.closest("button")?.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+
+    await waitForText("Record #1");
+    expect(document.querySelector('.page[data-name="heartbeat-record-detail"]')).not.toBeNull();
+    expect(document.querySelector('.page[data-name="heartbeat"] [data-testid="heartbeat-record-detail"]')).toBeNull();
+    expect(location.pathname).toContain("/heartbeat/runtime-ada/records/1");
+    expect(location.search).toContain("pageSize=2");
+    expect(mockSdk.heartbeatRecordPageRequests.at(-1)?.input?.pageSize).toBe(2);
   });
 
   test("Scenario: Given a running Avatar When the directory and detail render Then Avatar startup state is visible", async () => {
@@ -777,9 +841,7 @@ describe("Feature: Web heartbeat view example route flow", () => {
     expect(configButton).not.toBeNull();
     expect(document.querySelector('[role="toolbar"][data-testid="heartbeat-statusbar"]')).not.toBeNull();
     expect(document.querySelectorAll(".ag-heartbeat-toolbar__action")).toHaveLength(2);
-    expect(
-      contextUsageButton?.style.getPropertyValue("--ag-heartbeat-context-progress"),
-    ).toBe("0.3125");
+    expect(contextUsageButton?.style.getPropertyValue("--ag-heartbeat-context-progress")).toBe("0.3125");
     expect(statusTitle?.textContent).not.toContain("tokens");
     contextUsageButton?.click();
     await waitForText("Context usage");
@@ -931,5 +993,4 @@ describe("Feature: Web heartbeat view example route flow", () => {
     expect(connectionSheet()?.dataset.connectionOpen).toBe("false");
     expect(connectionSheet()?.dataset.connectionPhase).toBe("success");
   });
-
 });

@@ -13,3 +13,11 @@ export const normalizeSilentConnect = (value: boolean | string | null | undefine
   const normalized = value?.trim().toLowerCase();
   return normalized === "1" || normalized === "true" || normalized === "yes";
 };
+
+export const normalizeRecordPageSize = (value: string | number | null | undefined): number => {
+  const parsed = typeof value === "number" ? value : Number.parseInt(value ?? "", 10);
+  if (!Number.isFinite(parsed)) {
+    return 20;
+  }
+  return Math.max(1, Math.min(200, parsed));
+};

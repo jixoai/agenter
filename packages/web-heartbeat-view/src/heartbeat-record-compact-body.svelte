@@ -1,5 +1,6 @@
 <script lang="ts">
   import HeartbeatRecordIcon from "./heartbeat-record-icon.svelte";
+  import { Button, Segmented } from "./framework7-components";
   import { formatHeartbeatRecordPayload, readHeartbeatRecordPayloadValue } from "./heartbeat-record-detail-model";
   import type { HeartbeatRecordItem } from "./types";
 
@@ -72,6 +73,7 @@
     class:ag-heartbeat-record-compact--running={compactState === "running"}
     class:ag-heartbeat-record-compact--error={compactState === "error"}
     data-state={compactState}
+    data-object-kind="compact"
     title={title}
   >
     <span class="ag-heartbeat-record-compact__before" style={`width:${beforeValue}%`}></span>
@@ -83,32 +85,47 @@
   </div>
 {:else}
   <div class="ag-heartbeat-record-compact-detail" data-record-body="compact">
-    <div class="ag-heartbeat-record-compact-detail__tabs" role="tablist" aria-label="Compact detail tabs">
-      <button
+    <div class="ag-heartbeat-record-compact-detail__object" data-object-kind="compact" aria-label="Compact context object">
+      <div
+        class="ag-heartbeat-record-compact"
+        class:ag-heartbeat-record-compact--running={compactState === "running"}
+        class:ag-heartbeat-record-compact--error={compactState === "error"}
+        data-state={compactState}
+        title={title}
+      >
+        <span class="ag-heartbeat-record-compact__before" style={`width:${beforeValue}%`}></span>
+        <span class="ag-heartbeat-record-compact__after" style={`width:${afterValue}%`}></span>
+        <span class="ag-heartbeat-record-compact__core">
+          <HeartbeatRecordIcon kind={compactState === "error" ? "error" : compactState === "running" ? "pending" : "compact"} size={15} />
+          <span>{coreText}</span>
+        </span>
+      </div>
+    </div>
+
+    <Segmented strong class="ag-heartbeat-record-compact-detail__tabs" role="tablist" aria-label="Compact detail tabs">
+      <Button
         id={compactTabIds.new}
         type="button"
         role="tab"
-        class:active={compactTab === "new"}
+        active={compactTab === "new"}
         aria-selected={compactTab === "new"}
         aria-controls={compactPanelId}
         tabindex={compactTab === "new" ? 0 : -1}
-        onclick={() => (compactTab = "new")}
-      >
-        New Context
-      </button>
-      <button
+        text="New Context"
+        onClick={() => (compactTab = "new")}
+      />
+      <Button
         id={compactTabIds.old}
         type="button"
         role="tab"
-        class:active={compactTab === "old"}
+        active={compactTab === "old"}
         aria-selected={compactTab === "old"}
         aria-controls={compactPanelId}
         tabindex={compactTab === "old" ? 0 : -1}
-        onclick={() => (compactTab = "old")}
-      >
-        Old Context
-      </button>
-    </div>
+        text="Old Context"
+        onClick={() => (compactTab = "old")}
+      />
+    </Segmented>
 
     <div id={compactPanelId} class="ag-heartbeat-record-compact-detail__panel" role="tabpanel" aria-labelledby={compactTab === "new" ? compactTabIds.new : compactTabIds.old}>
       {#if compactTab === "new" && compactError !== null}
@@ -123,7 +140,7 @@
         <pre class="ag-heartbeat-record-compact-detail__source">{compactSource}</pre>
       {:else}
         <div class="ag-heartbeat-record-compact-detail__empty ag-heartbeat-record-compact-detail__empty--pulse">
-          {compactTab === "new" ? "Waiting for compacted context" : "No old context snapshot"}
+          {compactTab === "new" ? "0 chunks" : "No snapshot"}
         </div>
       {/if}
     </div>
@@ -228,29 +245,22 @@
     min-inline-size: 0;
   }
 
-  .ag-heartbeat-record-compact-detail__tabs {
-    display: grid;
-    grid-auto-flow: column;
-    grid-auto-columns: minmax(0, 1fr);
-    gap: 6px;
+  .ag-heartbeat-record-compact-detail__object {
+    min-inline-size: 0;
   }
 
-  .ag-heartbeat-record-compact-detail__tabs button {
-    overflow: hidden;
-    border: 1px solid color-mix(in srgb, currentColor, transparent 86%);
-    border-radius: 999px;
-    background: #fbfcfe;
-    color: color-mix(in srgb, currentColor, transparent 34%);
-    padding: 0.35rem 0.5rem;
+  :global(.ag-heartbeat-record-compact-detail__tabs) {
+    inline-size: 100%;
+  }
+
+  :global(.ag-heartbeat-record-compact-detail__tabs .button) {
+    min-inline-size: 0;
     font: 600 11px/1.1 system-ui, sans-serif;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
 
-  .ag-heartbeat-record-compact-detail__tabs button.active,
-  .ag-heartbeat-record-compact-detail__tabs button[aria-selected="true"] {
-    border-color: color-mix(in oklab, var(--tone-accent, #2563eb), white 55%);
-    background: color-mix(in oklab, var(--tone-accent, #2563eb), white 92%);
+  :global(.ag-heartbeat-record-compact-detail__tabs .button-active) {
     color: color-mix(in oklab, var(--tone-accent, #2563eb), black 15%);
   }
 

@@ -11,6 +11,10 @@ import type {
   GlobalTerminalGrantEntry,
   HeartbeatGroupItem,
   HeartbeatPartItem,
+  HeartbeatRecordDetailOutput,
+  HeartbeatRecordItem,
+  HeartbeatRecordPageAnchorInput,
+  HeartbeatRecordsPageOutput,
   McpAddOutput,
   McpCallOutput,
   McpDisableOutput,
@@ -138,6 +142,93 @@ const createHeartbeatGroup = (input: {
   updatedAt: input.updatedAt ?? input.createdAt,
   isComplete: input.isComplete ?? true,
   items: input.items,
+});
+
+const createHeartbeatRecord = (input: {
+  id: number;
+  aiCallId?: number | null;
+  kind?: HeartbeatRecordItem["kind"];
+  status?: HeartbeatRecordItem["status"];
+  startedAt: number;
+  updatedAt?: number;
+  completedAt?: number | null;
+  previewText?: string | null;
+}): HeartbeatRecordItem => {
+  const aiCallId = input.aiCallId ?? null;
+  const completedAt = input.completedAt ?? input.updatedAt ?? input.startedAt;
+  const partMessageId = `heartbeat-record-message:${input.id}`;
+  return {
+    id: input.id,
+    recordKey: `heartbeat-record:test:${input.id}`,
+    kind: input.kind ?? "model_call",
+    status: input.status ?? "completed",
+    primaryAiCallId: aiCallId,
+    aiCallIds: aiCallId === null ? [] : [aiCallId],
+    sourceRefs: [
+      ...(aiCallId === null ? [] : [{ kind: "ai_call" as const, id: aiCallId, role: "primary" as const }]),
+      {
+        kind: "message_part",
+        messageId: partMessageId,
+        partId: `${partMessageId}:0`,
+        role: "output",
+      },
+    ],
+    featureFlags: {
+      hasPreview: Boolean(input.previewText),
+      hasToolCalls: false,
+      hasToolResults: false,
+      hasErrors: false,
+    },
+    summary: {
+      provider: aiCallId === null ? null : "openai",
+      model: aiCallId === null ? null : "gpt-5.1",
+      parts: [
+        {
+          messageId: partMessageId,
+          partId: `${partMessageId}:0`,
+          role: "assistant",
+          type: "text",
+          mimeType: null,
+          aiCallId,
+          startedAt: input.startedAt,
+          completedAt,
+          label: "text",
+          isComplete: true,
+        },
+      ],
+      counts: {
+        parts: 1,
+        toolCalls: 0,
+        toolResults: 0,
+        errors: 0,
+      },
+      firstFrameMs: 0,
+      thinkingDurationMs: 0,
+    },
+    previewText: input.previewText ?? null,
+    startedAt: input.startedAt,
+    updatedAt: input.updatedAt ?? input.startedAt,
+    completedAt,
+    isComplete: true,
+  };
+};
+
+const createHeartbeatRecordPage = (
+  records: HeartbeatRecordItem[],
+  input: Partial<Omit<HeartbeatRecordsPageOutput, "records">> = {},
+): HeartbeatRecordsPageOutput => ({
+  records,
+  pageIndex: input.pageIndex ?? 0,
+  pageSize: input.pageSize ?? records.length,
+  totalRecords: input.totalRecords ?? records.length,
+  totalPages: input.totalPages ?? (records.length === 0 ? 0 : 1),
+  windowTotalRecords: input.windowTotalRecords ?? input.totalRecords ?? records.length,
+  windowTotalPages: input.windowTotalPages ?? input.totalPages ?? (records.length === 0 ? 0 : 1),
+  latestRecordId: input.latestRecordId ?? records.at(-1)?.id ?? null,
+  anchor: input.anchor ?? { kind: "latest" },
+  hasOlder: input.hasOlder ?? false,
+  hasNewer: input.hasNewer ?? false,
+  newRecordsAvailable: input.newRecordsAvailable ?? false,
 });
 
 const createSnapshot = (
@@ -1145,6 +1236,12 @@ const createMockClient = (input: {
     before?: { beforeTimeMs: number; beforeId: number };
     limit?: number;
   }) => Promise<ReversePageResult<unknown>>;
+  heartbeatRecordPageQuery?: (input: {
+    sessionId: string;
+    pageSize?: number;
+    anchor?: HeartbeatRecordPageAnchorInput;
+  }) => Promise<HeartbeatRecordsPageOutput>;
+  heartbeatRecordDetailQuery?: (input: { sessionId: string; recordId: number }) => Promise<HeartbeatRecordDetailOutput>;
   requestCompactMutate?: (input: { sessionId: string }) => Promise<{ ok: boolean }>;
   heartbeatPartsPageQuery?: (input: {
     sessionId: string;
@@ -1410,6 +1507,19 @@ const createMockClient = (input: {
             input.heartbeatGroupsPageQuery
               ? await input.heartbeatGroupsPageQuery(payload)
               : { items: [], nextBefore: null, hasMoreBefore: false },
+        },
+        heartbeatRecordPage: {
+          query: async (payload: { sessionId: string; pageSize?: number; anchor?: HeartbeatRecordPageAnchorInput }) =>
+            input.heartbeatRecordPageQuery
+              ? await input.heartbeatRecordPageQuery(payload)
+              : createHeartbeatRecordPage([], {
+                  pageSize: payload.pageSize ?? 20,
+                  anchor: payload.anchor ?? { kind: "latest" },
+                }),
+        },
+        heartbeatRecordDetail: {
+          query: async (payload: { sessionId: string; recordId: number }) =>
+            input.heartbeatRecordDetailQuery ? await input.heartbeatRecordDetailQuery(payload) : null,
         },
         heartbeatPartsPage: {
           query: async (payload: {
@@ -5019,6 +5129,105 @@ describe("Feature: runtime store synchronization", () => {
     expect(modelCallLimits).toEqual([12]);
     expect(store.getState().sessions.some((session) => session.id === "i-1")).toBe(true);
     store.disconnect();
+  });
+
+  test("Scenario: Given Heartbeat record resources When the runtime store loads page and detail Then fixed anchors and detail facts stay explicit", async () => {
+    const record = createHeartbeatRecord({
+      id: 610,
+      aiCallId: 61,
+      startedAt: 1_780_000_000_100,
+      updatedAt: 1_780_000_000_400,
+      previewText: "Record detail remains separate from the bounded list row.",
+    });
+    const fixedAnchor: HeartbeatRecordPageAnchorInput = {
+      kind: "fixed",
+      pageIndex: 2,
+      latestRecordId: 609,
+    };
+    const pageQueries: Array<{
+      sessionId: string;
+      pageSize?: number;
+      anchor?: HeartbeatRecordPageAnchorInput;
+    }> = [];
+    const detailQueries: Array<{ sessionId: string; recordId: number }> = [];
+    const client = createMockClient({
+      snapshotQuery: async () => createSnapshot(790),
+      heartbeatRecordPageQuery: async (input) => {
+        pageQueries.push(input);
+        return createHeartbeatRecordPage([record], {
+          pageIndex: 2,
+          pageSize: input.pageSize ?? 20,
+          totalRecords: 12,
+          totalPages: 3,
+          windowTotalRecords: 10,
+          windowTotalPages: 3,
+          latestRecordId: 612,
+          anchor: input.anchor ?? { kind: "latest" },
+          hasOlder: true,
+          hasNewer: true,
+          newRecordsAvailable: true,
+        });
+      },
+      heartbeatRecordDetailQuery: async (input) => {
+        detailQueries.push(input);
+        return {
+          record,
+          aiCalls: [
+            createModelCallItem({
+              id: 61,
+              cycleId: 6,
+              status: "done",
+              provider: "openai",
+              model: "gpt-5.1",
+              createdAt: 1_780_000_000_100,
+              updatedAt: 1_780_000_000_400,
+              completedAt: 1_780_000_000_400,
+            }),
+          ],
+          messages: [
+            createHeartbeatEntry({
+              id: 610,
+              messageId: "heartbeat-record-message:610",
+              role: "assistant",
+              aiCallId: 61,
+              createdAt: 1_780_000_000_100,
+              updatedAt: 1_780_000_000_400,
+              payload: { type: "text", content: "Full record detail." },
+              text: "Full record detail.",
+            }),
+          ],
+          sourceRefs: record.sourceRefs,
+        };
+      },
+    });
+    const store = new RuntimeStore(client);
+
+    await store.loadHeartbeatRecords("i-1", { pageSize: 4, anchor: fixedAnchor });
+    await store.loadHeartbeatRecordDetail("i-1", record.id);
+
+    expect(pageQueries).toEqual([{ sessionId: "i-1", pageSize: 4, anchor: fixedAnchor }]);
+    expect(detailQueries).toEqual([{ sessionId: "i-1", recordId: record.id }]);
+    expect(store.getState().heartbeatRecordsBySession["i-1"]).toMatchObject({
+      loaded: true,
+      data: {
+        pageIndex: 2,
+        pageSize: 4,
+        latestRecordId: 612,
+        anchor: fixedAnchor,
+        newRecordsAvailable: true,
+      },
+    });
+    expect(store.getState().heartbeatRecordDetailsBySession["i-1"]?.[record.id]).toMatchObject({
+      loaded: true,
+      data: {
+        record: expect.objectContaining({
+          id: record.id,
+          previewText: "Record detail remains separate from the bounded list row.",
+        }),
+        aiCalls: [expect.objectContaining({ id: 61 })],
+        messages: [expect.objectContaining({ messageId: "heartbeat-record-message:610" })],
+      },
+    });
   });
 
   test("Scenario: Given grouped Heartbeat pages and live invalidation events When the store hydrates and reloads Then the Heartbeat groups stay ordered and refresh through the query path", async () => {

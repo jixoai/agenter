@@ -10,7 +10,7 @@ import {
 } from "@agenter/web-heartbeat-view";
 
 import { createClientSdkAgenterHeartbeatConnection, type ClientSdkAgenterHeartbeatConnection } from "./agenter-heartbeat-connection";
-import { defaultWsUrl, normalizeMode, normalizeSilentConnect } from "./defaults";
+import { defaultWsUrl, normalizeMode, normalizeRecordPageSize, normalizeSilentConnect } from "./defaults";
 
 export type HeartbeatConnectionPhase = "idle" | "editing" | "connecting" | "success" | "failed";
 
@@ -19,6 +19,7 @@ type ConnectionAttemptSource = "visible" | "silent";
 type HeartbeatExampleStateInit = {
   initialMode?: string | null;
   initialRuntimeId?: string | null;
+  initialRecordPageSize?: number | string | null;
   initialSilentConnect?: boolean | string | null;
   initialWsUrl?: string | null;
 };
@@ -42,6 +43,7 @@ export class HeartbeatExampleState {
   authToken = $state("");
   mode = $state<HeartbeatCapabilityMode>("readonly");
   initialRuntimeId = $state<string | null>(null);
+  recordPageSize = $state(20);
   silentConnect = $state(false);
   connection = $state<ClientSdkAgenterHeartbeatConnection | null>(null);
   connectionState = $state<AgenterHeartbeatConnectionState>(createInitialConnectionState());
@@ -61,6 +63,7 @@ export class HeartbeatExampleState {
     this.wsUrl = init.initialWsUrl ?? defaultWsUrl;
     this.mode = normalizeMode(init.initialMode);
     this.initialRuntimeId = init.initialRuntimeId ?? null;
+    this.recordPageSize = normalizeRecordPageSize(init.initialRecordPageSize);
     this.pendingRuntimeId = this.initialRuntimeId;
     this.silentConnect = normalizeSilentConnect(init.initialSilentConnect);
     this.startConnectionService();
@@ -239,13 +242,27 @@ export class HeartbeatExampleState {
     return await connection.saveConfig(target, draft);
   }
 
-  buildHeartbeatHref(runtimeId: string): string {
+  buildHeartbeatSearch(): string {
     const query = new URLSearchParams({
       mode: this.mode,
       silentConnect: this.silentConnect ? "true" : "false",
       wsUrl: this.wsUrl,
     });
-    return `/heartbeat/${encodeURIComponent(runtimeId)}?${query.toString()}`;
+    if (this.recordPageSize !== 20) {
+      query.set("pageSize", String(this.recordPageSize));
+    }
+    return query.toString();
+  }
+
+  buildHeartbeatHref(runtimeId: string): string {
+    const search = this.buildHeartbeatSearch();
+    return `/heartbeat/${encodeURIComponent(runtimeId)}${search ? `?${search}` : ""}`;
+  }
+
+  buildHeartbeatRecordHref(runtimeId: string, recordId: string | number): string {
+    const listHref = this.buildHeartbeatHref(runtimeId);
+    const [path, query = ""] = listHref.split("?");
+    return `${path}/records/${encodeURIComponent(String(recordId))}${query ? `?${query}` : ""}`;
   }
 
   avatarStatus(avatar: GlobalAvatarCatalogEntry): AvatarRuntimeStatus {
@@ -341,6 +358,7 @@ export class HeartbeatExampleState {
     const next = createClientSdkAgenterHeartbeatConnection({
       wsUrl: this.wsUrl,
       authToken: this.authToken,
+      recordPageSize: this.recordPageSize,
     });
     this.connection = next;
     this.unsubscribe = next.subscribe((state) => {

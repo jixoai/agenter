@@ -19,6 +19,7 @@
 
   const meta = $derived(getHeartbeatRecordCardMeta(record));
   const recordTime = $derived(formatHeartbeatRecordTime(record.startedAt));
+  const hasSupport = $derived(Boolean(support || meta.supportLabel || record.previewText));
 </script>
 
 <article
@@ -26,6 +27,7 @@
   class:ag-heartbeat-basic-record-card--selected={selected}
   class:ag-heartbeat-basic-record-card--running={isRecordRunning(record.status)}
   class:ag-heartbeat-basic-record-card--error={record.status === "error"}
+  class:ag-heartbeat-basic-record-card--has-support={hasSupport}
   data-card-kind={record.kind}
   data-status={record.status}
   data-testid={`heartbeat-record-${record.id}`}
@@ -80,6 +82,11 @@
     padding: 10px;
     text-align: start;
     contain: layout paint;
+  }
+
+  .ag-heartbeat-basic-record-card--has-support {
+    grid-template-rows: auto minmax(44px, 1fr) auto;
+    min-block-size: 150px;
   }
 
   .ag-heartbeat-basic-record-card--selected {

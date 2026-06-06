@@ -1,0 +1,202 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Self Review · add-heartbeat-record-pagination</title>
+    <style>
+      :root {
+        color-scheme: light;
+        font-family:
+          Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        background: #f6f7fb;
+        color: #172033;
+      }
+
+      body {
+        margin: 0;
+        padding: 32px;
+      }
+
+      main {
+        display: grid;
+        gap: 24px;
+        max-width: 1180px;
+        margin: 0 auto;
+      }
+
+      h1,
+      h2 {
+        margin: 0;
+        letter-spacing: 0;
+      }
+
+      h1 {
+        font-size: 26px;
+        line-height: 1.15;
+      }
+
+      h2 {
+        font-size: 17px;
+        line-height: 1.25;
+      }
+
+      .panel {
+        display: grid;
+        gap: 14px;
+        border: 1px solid color-mix(in oklab, #172033, transparent 88%);
+        border-radius: 14px;
+        background: white;
+        padding: 18px;
+        box-shadow: 0 16px 42px color-mix(in oklab, #172033, transparent 92%);
+      }
+
+      .facts {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+        gap: 10px;
+      }
+
+      .fact {
+        border: 1px solid color-mix(in oklab, #2563eb, transparent 82%);
+        border-radius: 10px;
+        background: color-mix(in oklab, #2563eb, white 94%);
+        padding: 12px;
+        font-size: 13px;
+        line-height: 1.35;
+      }
+
+      .fact strong {
+        display: block;
+        margin-bottom: 4px;
+        font-size: 12px;
+        text-transform: uppercase;
+        color: color-mix(in oklab, #2563eb, black 20%);
+      }
+
+      ul {
+        margin: 0;
+        padding-left: 18px;
+      }
+
+      li {
+        margin: 6px 0;
+      }
+
+      code {
+        border-radius: 5px;
+        background: #edf1f7;
+        padding: 2px 5px;
+      }
+
+      .shots {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+        gap: 14px;
+      }
+
+      figure {
+        display: grid;
+        gap: 8px;
+        margin: 0;
+      }
+
+      figcaption {
+        font-size: 12px;
+        color: #526072;
+      }
+
+      img {
+        display: block;
+        width: 100%;
+        max-height: 640px;
+        object-fit: contain;
+        border: 1px solid color-mix(in oklab, #172033, transparent 86%);
+        border-radius: 10px;
+        background: #f8fafc;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <header class="panel">
+        <h1>add-heartbeat-record-pagination · Self Review</h1>
+        <p>
+          Real example target:
+          <code>http://127.0.0.1:4183/heartbeat/00ca43a6-c45c-5628-b398-6f0e5e1d4a7b?mode=configable&amp;silentConnect=true&amp;pageSize=2</code>
+        </p>
+      </header>
+
+      <section class="panel">
+        <h2>Route And Pagination Evidence</h2>
+        <div class="facts">
+          <div class="fact">
+            <strong>Dedicated Detail Route</strong>
+            Row click opened <code>/heartbeat/:runtimeId/records/107</code>; list page did not inline-expand detail.
+          </div>
+          <div class="fact">
+            <strong>Query Preservation</strong>
+            Detail URL preserved <code>pageSize=2</code>, <code>mode=configable</code>, <code>silentConnect=true</code>, and <code>wsUrl</code>.
+          </div>
+          <div class="fact">
+            <strong>Fixed Anchor</strong>
+            Latest page record ids <code>[107,108]</code>; Older page record ids <code>[106,107]</code>; Latest became enabled.
+          </div>
+          <div class="fact">
+            <strong>Overflow</strong>
+            Mobile and desktop checks reported <code>document.scrollWidth === document.clientWidth</code>.
+          </div>
+        </div>
+      </section>
+
+      <section class="panel">
+        <h2>Detail Surface Evidence</h2>
+        <ul>
+          <li>Model Run detail: <code>data-kind=model_call</code>, 17 station chips, 17 station bodies, 16 time SVGs, 16 vertical chip links.</li>
+          <li>Compact detail: <code>data-kind=compact</code>, compression object present, <code>New Context</code> active by default.</li>
+          <li>Config detail: <code>data-kind=config</code>, changed-controls object present, <code>Diff Config</code> active by default, source language <code>diff</code>.</li>
+        </ul>
+      </section>
+
+      <section class="panel">
+        <h2>Verification Commands</h2>
+        <ul>
+          <li><code>bun run --cwd packages/web-heartbeat-view/example test -- --run heartbeat-example-app.test.ts</code> -> 13 passed.</li>
+          <li><code>bun run --cwd packages/web-heartbeat-view/example typecheck</code> -> 0 errors, 0 warnings.</li>
+          <li><code>bun run --filter '@agenter/web-heartbeat-view' test:unit</code> -> 19 passed.</li>
+          <li><code>bun run --filter '@agenter/web-heartbeat-view' test:dom</code> -> 12 passed.</li>
+          <li><code>bun test packages/client-sdk/test/runtime-store.test.ts --timeout 30000</code> -> 93 passed.</li>
+          <li><code>bun run openspec:vision -- validate add-heartbeat-record-pagination</code> -> valid.</li>
+          <li><code>bun run openspec:vision -- commit-check add-heartbeat-record-pagination --phase self-review</code> -> ok.</li>
+        </ul>
+      </section>
+
+      <section class="panel">
+        <h2>Screenshots</h2>
+        <div class="shots">
+          <figure>
+            <img src="./screenshots/mobile-record-list.png" alt="Mobile record list with two records and pagination controls" />
+            <figcaption>Mobile list, 390x844, pageSize=2.</figcaption>
+          </figure>
+          <figure>
+            <img src="./screenshots/mobile-model-detail.png" alt="Mobile model run detail with vertical step rail" />
+            <figcaption>Mobile Model Run detail, record #2.</figcaption>
+          </figure>
+          <figure>
+            <img src="./screenshots/desktop-model-detail.png" alt="Desktop model run detail with expanded content" />
+            <figcaption>Desktop Model Run detail, record #2.</figcaption>
+          </figure>
+        </div>
+      </section>
+
+      <section class="panel">
+        <h2>Open Items</h2>
+        <ul>
+          <li><code>4.8</code> Studio migration remains explicitly unauthorized.</li>
+          <li><code>4.10</code> stays open until checkbox changes are paired with the intended commit hygiene.</li>
+          <li>Archive stays open until user acceptance and final spec sync/archive.</li>
+        </ul>
+      </section>
+    </main>
+  </body>
+</html>
