@@ -297,5 +297,5 @@ Workspaces
 - **隔离是 preview shell 的默认法则**：所有 file preview 都进入同一个 iframe shell，而不是由主 workbench 自己渲染一部分、再把另一部分外包出去。
 - **隔离入口固定为 `filePreviewer`**：WebUI 的 file preview 统一嵌入 `filePreviewer.html`，主应用只负责选择、metadata、容器和 empty/error framing，不在 route tree 里直接持有 CodeMirror/pdf.js/media player 的清理负担。
 - **允许 preview 子页面风格弱耦合**：`filePreviewer` 优先复用成熟技术库并保持可快速开发，不要求和主应用完全同皮肤；主应用只保证外层容器、toolbar 语义和 preview metadata 的一致性。
-- **渲染器与壳层分离**：`filePreviewer` 是 preview shell，不是某一种 renderer；text-like file 默认用 CodeMirror source preview，pdf 用 pdf.js，image/audio/video 用各自成熟 renderer，unsupported 也在同一 shell 内明确表达。
+- **渲染器与壳层分离**：`filePreviewer` 是 preview shell，不是某一种 renderer；text-like file 默认用 CodeMirror source preview，内容型 Markdown 可以通过显式 projection 进入 document preview，pdf 用 pdf.js，image/audio/video 用各自成熟 renderer，unsupported 也在同一 shell 内明确表达。
 - **状态边界必须清晰**：主 workbench 负责 empty/selection framing 与外层 metadata；`filePreviewer` 负责其内部的 loading/render/error/unsupported state。设计稿应专注于 Port 与 Metadata 的布局关系，而不是把 preview 内部 chrome 再复制到主页面。

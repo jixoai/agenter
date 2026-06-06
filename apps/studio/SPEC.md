@@ -20,4 +20,4 @@
 - Active browser storage、diagnostics 与 docs 使用 `studio` / `agenter:studio` 命名；旧 `webui` key 不需要兼容迁移。
 - Storybook DOM contract、static Storybook build、unit tests、Playwright route smoke 都属于 Studio package 自己的验证面。
 - Skills workbench 的 catalog 默认页表达当前 runtime-visible `SKILLS_HOME` skill source order，而不是旧的 shared/global 分组推断；每个 visible skill 必须显示后端返回的 source env/path。
-- Notes 是 Studio 的一级 system workbench，路由固定为 `/notes`。它只通过 `@agenter/client-sdk` runtime-store 的 NoteSystem facades 读取 catalog/page/search/tags/query projection，显式展示 no-capability、empty、loading、error、search、tags、read-only SQL 和 page-detail 状态；页面 detail 必须展示 stable IDs、MIME、tags 与 references，不在 Studio 中直接读取或编辑 Markdown/frontmatter 文件。
+- Notes 是 Studio 的一级 system workbench，路由固定为 `/notes`。它只通过 `@agenter/client-sdk` runtime-store 的 NoteSystem facades 读取 catalog/page/search/tags/query projection，显式展示 no-capability、empty、loading、error、search、tags、read-only SQL 和 page-detail 状态；页面 detail 必须展示 stable IDs、MIME、tags 与 references，并通过共享 `filePreviewer` 的 document projection 阅读 Markdown 内容，不在 Studio 中直接读取或编辑 Markdown/frontmatter 文件。

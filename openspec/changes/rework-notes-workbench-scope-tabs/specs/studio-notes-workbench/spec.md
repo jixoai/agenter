@@ -113,7 +113,7 @@ The Notes workbench SHALL show whether the selected avatar exposes NoteSystem ca
 
 ### Requirement: Notes workbench SHALL browse notebook section page facts
 
-The Notes workbench SHALL present NoteSystem's notebook -> section -> page hierarchy inside the selected avatar tab with readable page detail. Page detail SHALL show stable IDs, tags, references, MIME metadata, markdown body or MIME-appropriate content preview, and source artifact metadata without requiring raw file access from Studio.
+The Notes workbench SHALL present NoteSystem's notebook -> section -> page hierarchy inside the selected avatar tab with readable page detail. Page detail SHALL show stable IDs, tags, references, MIME metadata, markdown body or MIME-appropriate content preview, and source artifact metadata without requiring raw file access from Studio. Markdown note bodies SHALL reuse the shared `filePreviewer` iframe shell with document projection rather than the Skills-default CodeMirror source projection.
 
 #### Scenario: Notebook and section browsing
 
@@ -162,6 +162,7 @@ The Studio Notes workbench SHALL present NoteSystem's structured metadata withou
 - **WHEN** the operator opens a note page detail inside an avatar tab
 - **THEN** the detail shows notebook, section, page, stable IDs, MIME, tags, references, created time, and updated time
 - **AND** markdown body or content preview is rendered according to MIME capability
+- **AND** Markdown pages request `filePreviewer` document projection while Skills-style text file previews remain source projection by default
 
 #### Scenario: Tag browsing filters pages
 
