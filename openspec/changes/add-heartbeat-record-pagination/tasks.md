@@ -37,7 +37,7 @@
 - [x] 4.7 Integrate the new record/list/detail contract into `@agenter/web-heartbeat-view:example`, including page-window controls and selected-detail behavior.
 - [ ] 4.8 Decide with the user before touching Studio migration; completion condition: Studio files are not rebound to the new record contract unless that work is explicitly authorized.
 - [x] 4.9 Add concise intent comments at critical effect points derived from `plans/plan.md`, especially around record classification, anchor invalidation, and detail reconstruction boundaries.
-- [ ] 4.10 Update only the task checkboxes completed in the current working context, and pair those checkbox updates with matching implementation or BDD evidence commits.
+- [x] 4.10 Update only the task checkboxes completed in the current working context, and pair those checkbox updates with matching implementation or BDD evidence commits.
 
 ## 5. Verification
 
@@ -51,7 +51,7 @@
 
 - [x] 6.1 Generate `review/self-review.md` comparing implementation against `plans/plan.md`, specs, tasks, and browser evidence.
 - [x] 6.2 Generate `review/self-review.html` as the screenshot and interaction evidence pack for mobile list, mobile detail, desktop list/detail, anchor states, and compact/config cards.
-- [ ] 6.3 If self-review changes OpenSpec artifacts or reopens tasks, commit those artifact updates before the next apply loop.
+- [x] 6.3 If self-review changes OpenSpec artifacts or reopens tasks, commit those artifact updates before the next apply loop.
 - [ ] 6.4 If the review enters a real recurrence loop, run `bun run openspec:vision -- review-state add-heartbeat-record-pagination` to persist iteration state.
 - [ ] 6.5 If review cannot exit normally, run `bun run openspec:vision -- handoff add-heartbeat-record-pagination` and commit the handoff evidence before returning to user discussion.
 - [ ] 6.6 Archive only after implementation, verification, and user acceptance; completion condition: archive result is committed in a dedicated final docs/spec commit.
