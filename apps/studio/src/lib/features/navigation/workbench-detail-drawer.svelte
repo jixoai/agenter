@@ -16,6 +16,8 @@
 		'data-testid': testId,
 		children,
 		summary,
+		titleAccessory,
+		titleMeta,
 	}: {
 		title: string;
 		description?: string;
@@ -27,15 +29,21 @@
 		'data-testid'?: string;
 		children?: Snippet;
 		summary?: Snippet;
+		titleAccessory?: Snippet;
+		titleMeta?: Snippet;
 	} = $props();
 </script>
 
 {#snippet header()}
 	<div class="grid gap-1">
-		<h3 class="text-sm font-semibold">{title}</h3>
+		<div class="flex min-w-0 items-center gap-2">
+			<h3 class="truncate text-sm font-semibold">{title}</h3>
+			{@render titleAccessory?.()}
+		</div>
 		{#if description}
 			<p class="text-sm text-muted-foreground">{description}</p>
 		{/if}
+		{@render titleMeta?.()}
 	</div>
 {/snippet}
 

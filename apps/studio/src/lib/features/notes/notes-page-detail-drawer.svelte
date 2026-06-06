@@ -1,5 +1,4 @@
 <script lang="ts">
-	import FileTextIcon from '@lucide/svelte/icons/file-text';
 	import LinkIcon from '@lucide/svelte/icons/link';
 
 	import type { NotePageOutput } from '@agenter/client-sdk';
@@ -9,7 +8,7 @@
 	import NoticeBanner from '$lib/components/ui/notice-banner.svelte';
 	import HelpHint from '$lib/components/web-components/help-hint.svelte';
 	import WorkbenchDetailDrawer from '$lib/features/navigation/workbench-detail-drawer.svelte';
-	import { createNotePageKey, type NotePageIdentity } from './notes-state';
+	import type { NotePageIdentity } from './notes-state';
 
 	let {
 		selectedPage,
@@ -68,9 +67,6 @@
 			return 'Select a note page to inspect its NoteSystem metadata.';
 		}
 		const lines = metadataRows.map((row) => `${row.label}: ${row.value}`);
-		if (selectedPageFact.metadata.tags.length > 0) {
-			lines.push(`Tags: ${selectedPageFact.metadata.tags.join(', ')}`);
-		}
 		if (selectedPageFact.metadata.references.length > 0) {
 			lines.push(
 				`References: ${selectedPageFact.metadata.references
@@ -106,9 +102,56 @@
 	});
 </script>
 
+{#snippet noteMetadataAccessory()}
+	{#if selectedPageFact}
+		<HelpHint ariaLabel="Note metadata" align="start" side="bottom" textContext={metadataHelpText}>
+			<div class="grid max-w-[24rem] gap-2 text-left">
+				<div class="text-sm font-semibold text-foreground">Metadata</div>
+				<div class="grid gap-1.5">
+					{#each metadataRows as row (row.label)}
+						<div class="grid gap-0.5">
+							<div class="text-[0.68rem] font-medium uppercase tracking-wide text-muted-foreground">
+								{row.label}
+							</div>
+							<div class="break-all text-xs text-foreground">{row.value}</div>
+						</div>
+					{/each}
+				</div>
+				{#if selectedPageFact.metadata.references.length > 0}
+					<div class="grid gap-1">
+						<div class="flex items-center gap-1 font-medium text-foreground">
+							<LinkIcon class="size-3.5" />
+							<span>References</span>
+						</div>
+						{#each selectedPageFact.metadata.references as reference (reference.pageId)}
+							<div class="break-all text-xs text-foreground">
+								{reference.notebook} / {reference.section} / {reference.page}
+							</div>
+						{/each}
+					</div>
+				{/if}
+			</div>
+		</HelpHint>
+	{/if}
+{/snippet}
+
+{#snippet noteTitleMeta()}
+	{#if selectedPageFact && selectedPageFact.metadata.tags.length > 0}
+		<div class="flex flex-wrap gap-1 pt-1">
+			{#each selectedPageFact.metadata.tags as tag (tag)}
+				<Badge variant="outline">{tag}</Badge>
+			{/each}
+		</div>
+	{/if}
+{/snippet}
+
 <WorkbenchDetailDrawer
 	title={selectedPage ? selectedPage.page : 'Selected note'}
-	description={selectedPage ? `${selectedPage.notebook} / ${selectedPage.section}` : 'Select a note page.'}
+	description={selectedPage ? undefined : 'Select a note page.'}
+	scrollBody={!selectedPageFact}
+	contentClass={selectedPageFact ? 'h-full min-h-0' : undefined}
+	titleAccessory={noteMetadataAccessory}
+	titleMeta={noteTitleMeta}
 	data-testid="notes-detail"
 >
 	{#if !selectedPage}
@@ -120,58 +163,13 @@
 	{:else if pageOutput && !selectedPageFact}
 		<NoticeBanner tone="warning" message="The selected note page was not found." />
 	{:else if selectedPageFact}
-		<div class="grid gap-3">
-			<div class="grid gap-2 rounded-lg border border-border/60 bg-background/55 p-3 text-xs text-muted-foreground">
-				<div class="flex items-center gap-2 text-sm font-semibold text-foreground">
-					<FileTextIcon class="size-4" />
-					<span class="truncate">{createNotePageKey(selectedPageFact.identity)}</span>
-					<HelpHint
-						ariaLabel="Note metadata"
-						align="start"
-						side="bottom"
-						textContext={metadataHelpText}
-					>
-						<div class="grid max-w-[24rem] gap-2 text-left">
-							<div class="text-sm font-semibold text-foreground">Metadata</div>
-							<div class="grid gap-1.5">
-								{#each metadataRows as row (row.label)}
-									<div class="grid gap-0.5">
-										<div class="text-[0.68rem] font-medium uppercase tracking-wide text-muted-foreground">
-											{row.label}
-										</div>
-										<div class="break-all text-xs text-foreground">{row.value}</div>
-									</div>
-								{/each}
-							</div>
-							{#if selectedPageFact.metadata.tags.length > 0}
-								<div class="flex flex-wrap gap-1">
-									{#each selectedPageFact.metadata.tags as tag (tag)}
-										<Badge variant="outline">{tag}</Badge>
-									{/each}
-								</div>
-							{/if}
-							{#if selectedPageFact.metadata.references.length > 0}
-								<div class="grid gap-1">
-									<div class="flex items-center gap-1 font-medium text-foreground">
-										<LinkIcon class="size-3.5" />
-										<span>References</span>
-									</div>
-									{#each selectedPageFact.metadata.references as reference (reference.pageId)}
-										<div class="break-all text-xs text-foreground">
-											{reference.notebook} / {reference.section} / {reference.page}
-										</div>
-									{/each}
-								</div>
-							{/if}
-						</div>
-					</HelpHint>
-				</div>
-			</div>
-			{#if notePreview}
-				<div class="h-[min(34rem,55dvh)] min-h-[18rem] min-w-0">
-					<FilePreviewFrame preview={notePreview} title={`${selectedPageFact.identity.page} preview`} />
-				</div>
-			{/if}
-		</div>
+		{#if notePreview}
+			<FilePreviewFrame
+				preview={notePreview}
+				title={`${selectedPageFact.identity.page} preview`}
+				class="h-full min-h-0"
+				frameless
+			/>
+		{/if}
 	{/if}
 </WorkbenchDetailDrawer>

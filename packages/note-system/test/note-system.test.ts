@@ -119,7 +119,7 @@ describe("Feature: NoteSystem avatar-private note projection", () => {
     expect(existsSync(join(avatarHome, "escape.md"))).toBeFalse();
   });
 
-  test("Scenario: Given note draft When content is captured Then the draft notebook uses date section and high-precision page", () => {
+  test("Scenario: Given note draft When content is captured Then the draft notebook uses date section and readable time page", () => {
     const avatarHome = createTempRoot();
 
     const result = draftNotePage({
@@ -127,13 +127,35 @@ describe("Feature: NoteSystem avatar-private note projection", () => {
       content: "Fast capture.",
       mime: "text/markdown",
       now: new Date("2026-05-31T15:30:00.123Z"),
-      idSuffix: "abc123",
     });
 
     expect(result.identity.notebook).toBe(NOTE_DRAFT_NOTEBOOK);
     expect(result.identity.section).toBe("2026-05-31");
-    expect(result.identity.page).toBe("153000123-abc123");
-    expect(result.path).toBe(join(avatarHome, "notes", NOTE_DRAFT_NOTEBOOK, "2026-05-31", "153000123-abc123.md"));
+    expect(result.identity.page).toBe("15:30:00");
+    expect(result.path).toBe(join(avatarHome, "notes", NOTE_DRAFT_NOTEBOOK, "2026-05-31", "15:30:00.md"));
+  });
+
+  test("Scenario: Given repeated note drafts in the same second When content is captured Then only collisions receive a short counter tail", () => {
+    const avatarHome = createTempRoot();
+    const now = new Date("2026-05-31T15:30:00.123Z");
+
+    const first = draftNotePage({
+      avatarHome: [avatarHome],
+      content: "First capture.",
+      mime: "text/markdown",
+      now,
+    });
+    const second = draftNotePage({
+      avatarHome: [avatarHome],
+      content: "Second capture.",
+      mime: "text/markdown",
+      now,
+    });
+
+    expect(first.identity.page).toBe("15:30:00");
+    expect(second.identity.page).toBe("15:30:00(1)");
+    expect(readFileSync(first.path, "utf8")).toContain("First capture.");
+    expect(readFileSync(second.path, "utf8")).toContain("Second capture.");
   });
 
   test("Scenario: Given a non-empty page When note write runs without mode Then a conflict error is returned and content is unchanged", () => {

@@ -5,12 +5,19 @@
 		preview,
 		title = `${preview.name} preview`,
 		class: className = '',
+		frameless = false,
 	}: {
 		preview: FilePreviewPayload;
 		title?: string;
 		class?: string;
+		frameless?: boolean;
 	} = $props();
 
+	const frameClass = $derived(
+		['file-preview-frame', frameless ? 'file-preview-frame--frameless' : '', className]
+			.filter((part) => part.length > 0)
+			.join(' '),
+	);
 	const previewPayloadJson = $derived(JSON.stringify(preview));
 	const previewStorageKey = $derived(
 		`agenter:file-previewer:${preview.previewKind}:${preview.path}:${preview.modifiedAtMs}:${preview.sizeBytes}:${preview.source?.url ?? ''}`,
@@ -75,7 +82,7 @@
 	bind:this={iframeRef}
 	{title}
 	src={previewFrameSrc}
-	class={className ? `file-preview-frame ${className}` : 'file-preview-frame'}
+	class={frameClass}
 ></iframe>
 
 <style>
@@ -88,5 +95,11 @@
 		border: 1px solid color-mix(in srgb, var(--border), transparent 18%);
 		border-radius: 0.95rem;
 		background: var(--background);
+	}
+
+	.file-preview-frame--frameless {
+		border: 0;
+		border-radius: 0;
+		background: transparent;
 	}
 </style>

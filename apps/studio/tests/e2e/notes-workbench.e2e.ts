@@ -129,6 +129,8 @@ test.describe("Feature: Notes workbench route smoke", () => {
 
       const detail = page.getByTestId("notes-detail");
       await expect(detail).toBeVisible({ timeout: 15_000 });
+      await expect(detail.getByText("playwright")).toBeVisible({ timeout: 15_000 });
+      await expect(detail.getByText("shell-assistant-book / working-context", { exact: true })).toHaveCount(0);
       const metadataHelp = detail.getByRole("button", { name: "Note metadata" });
       await expect(metadataHelp).toBeVisible({ timeout: 15_000 });
       await clickStable(metadataHelp);

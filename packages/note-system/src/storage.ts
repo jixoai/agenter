@@ -1,4 +1,3 @@
-import { randomUUID } from "node:crypto";
 import {
   copyFileSync,
   existsSync,
@@ -39,6 +38,17 @@ export const NOTE_URI_PREFIX = "note:";
 const SEGMENT_CONTROL_PATTERN = /[\u0000-\u001f\u007f]/u;
 
 const padDatePart = (value: number, width: number): string => value.toString().padStart(width, "0");
+
+const formatDraftPageTime = (date: Date): string =>
+  [date.getUTCHours(), date.getUTCMinutes(), date.getUTCSeconds()].map((part) => padDatePart(part, 2)).join(":");
+
+const formatDraftPageBase = (date: Date, idSuffix?: string): string => {
+  const time = formatDraftPageTime(date);
+  const suffix = idSuffix?.trim().slice(0, 4);
+  return suffix && suffix.length > 0 ? `${time}(${suffix})` : time;
+};
+
+const formatDraftPageCandidate = (base: string, index: number): string => (index === 0 ? base : `${base}(${index})`);
 
 const normalizeAvatarHome = (avatarHome: readonly string[]): string[] =>
   avatarHome.map((path) => resolve(path)).filter((path) => isAbsolute(path));
@@ -678,17 +688,23 @@ export const writeNotePage = (input: NoteWriteInput): NotePage => writeNotePageI
 
 export const draftNotePage = (input: NoteDraftInput): NotePage => {
   const now = input.now ?? new Date();
-  const timePage = [
-    padDatePart(now.getUTCHours(), 2),
-    padDatePart(now.getUTCMinutes(), 2),
-    padDatePart(now.getUTCSeconds(), 2),
-    padDatePart(now.getUTCMilliseconds(), 3),
-  ].join("");
+  const writableHome = resolveWritableAvatarHome(input.avatarHome);
+  const section = now.toISOString().slice(0, 10);
+  const pageBase = formatDraftPageBase(now, input.idSuffix);
+  const page = withIndexedDatabase(writableHome, (db) => {
+    for (let index = 0; index < 1_000; index += 1) {
+      const candidate = formatDraftPageCandidate(pageBase, index);
+      if (!db.getPageRecordByIdentity({ notebook: NOTE_DRAFT_NOTEBOOK, section, page: candidate })) {
+        return candidate;
+      }
+    }
+    throw new Error(`note draft page collision overflow for ${NOTE_DRAFT_NOTEBOOK}/${section}/${pageBase}`);
+  });
   const writeInputBase = {
     avatarHome: input.avatarHome,
     notebook: NOTE_DRAFT_NOTEBOOK,
-    section: now.toISOString().slice(0, 10),
-    page: `${timePage}-${input.idSuffix ?? randomUUID().slice(0, 8)}`,
+    section,
+    page,
     mime: input.mime,
     now,
     sourceWorkspace: input.sourceWorkspace,
