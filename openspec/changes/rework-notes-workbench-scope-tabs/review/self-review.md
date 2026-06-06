@@ -15,12 +15,14 @@ Compared implementation against `plans/plan.md`, `specs/studio-notes-workbench/s
 - Pass: Query remains read-only, scoped to the selected avatar, and uses the client runtime-store NoteSystem facade.
 - Pass: Studio Notes source imports NoteSystem data only through `controller.runtimeStore` / `@agenter/client-sdk` types; no app-server or note-system implementation imports were introduced.
 - Pass: mobile e2e exposed a shared shell issue where docked navigation could keep the sidebar expanded and squeeze the page body. Fixed it in the shared Sidebar so compact docked navigation returns to icon rail on route changes.
+- Pass: follow-up refinement keeps source roots and page metadata inspectable through HelpHint affordances, while Note page content now renders through the shared `filePreviewer` shell via an authenticated HTTP source instead of a Notes-local `<pre>` renderer.
 
 ## Evidence
 
 - `bun run --filter 'agenter-app-studio' typecheck`
 - `bun run --filter 'agenter-app-studio' test:unit -- src/lib/features/notes/notes-state.spec.ts src/lib/features/notes/notes-workbench-location.spec.ts src/lib/features/notes/notes-avatar-tabs-state.spec.ts src/lib/features/notes/notes-route-contract.spec.ts src/lib/components/ui/sidebar/sidebar-contract.spec.ts`
 - `bun run --filter 'agenter-app-studio' e2e -- tests/e2e/notes-workbench.e2e.ts`
+- `bun test packages/cli/test/trpc-server.test.ts --test-name-pattern "NoteSystem page content"`
 - `bun run openspec:vision -- validate rework-notes-workbench-scope-tabs`
 - `git diff --check`
 

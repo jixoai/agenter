@@ -7,25 +7,15 @@
 	import VideoIcon from '@lucide/svelte/icons/video';
 	import { ScrollView } from '@agenter/svelte-components';
 	import { onMount } from 'svelte';
-	import * as pdfjs from 'pdfjs-dist/build/pdf.mjs';
 
-	import type { SkillPreviewRecord } from '$lib/features/skills/skill-browser-state';
+	import { loadHttpFilePreviewPayload } from '$lib/components/file-preview/file-preview-http-source';
+	import { isFilePreviewPayload, type FilePreviewKind, type FilePreviewPayload } from '$lib/components/file-preview/file-preview-state';
 	import SkillTextViewer from '$lib/features/skills/skill-text-viewer.svelte';
+	import { renderPdfPages } from './file-previewer-pdf-renderer';
 
-	pdfjs.GlobalWorkerOptions.workerSrc = new URL('pdfjs-dist/build/pdf.worker.mjs', import.meta.url).toString();
 	const EMPTY_VTT_TRACK = 'data:text/vtt;charset=utf-8,WEBVTT%0A%0A';
 
-	const decodeDataUrlBytes = (dataUrl: string): Uint8Array => {
-		const [, base64 = ''] = dataUrl.split(',', 2);
-		const binary = atob(base64);
-		const bytes = new Uint8Array(binary.length);
-		for (let index = 0; index < binary.length; index += 1) {
-			bytes[index] = binary.charCodeAt(index);
-		}
-		return bytes;
-	};
-
-	const resolveEmptyIcon = (previewKind: SkillPreviewRecord['previewKind']) => {
+	const resolveEmptyIcon = (previewKind: FilePreviewKind) => {
 		if (previewKind === 'image' || previewKind === 'pdf') {
 			return ImageIcon;
 		}
@@ -38,7 +28,7 @@
 		return FileIcon;
 	};
 
-	const readPreviewFromStorage = (): SkillPreviewRecord | null => {
+	const readPreviewFromStorage = (): FilePreviewPayload | null => {
 		if (typeof window === 'undefined') {
 			return null;
 		}
@@ -51,19 +41,36 @@
 			return null;
 		}
 		try {
-			return JSON.parse(rawPreview) as SkillPreviewRecord;
+			const parsedPreview: unknown = JSON.parse(rawPreview);
+			return isFilePreviewPayload(parsedPreview) ? parsedPreview : null;
 		} catch {
 			return null;
 		}
 	};
 
-	let preview = $state<SkillPreviewRecord | null>(null);
+	const isPreviewMessage = (
+		value: unknown,
+	): value is {
+		type: 'agenter:file-previewer:set-preview';
+		preview: FilePreviewPayload;
+	} => {
+		if (!value || typeof value !== 'object' || Array.isArray(value)) {
+			return false;
+		}
+		const record = value as Record<string, unknown>;
+		return record.type === 'agenter:file-previewer:set-preview' && isFilePreviewPayload(record.preview);
+	};
+
+	let sourcePreview = $state<FilePreviewPayload | null>(null);
+	let preview = $state<FilePreviewPayload | null>(null);
+	let previewBusy = $state(false);
 	let pdfBusy = $state(false);
 	let pdfError = $state<string | null>(null);
 	let pdfContainerRef = $state<HTMLDivElement | null>(null);
 	let renderVersion = 0;
+	let fetchVersion = 0;
 
-	const renderPdf = async (nextPreview: SkillPreviewRecord): Promise<void> => {
+	const renderPdf = async (nextPreview: FilePreviewPayload): Promise<void> => {
 		if (!pdfContainerRef || !nextPreview.mediaDataUrl) {
 			return;
 		}
@@ -71,36 +78,13 @@
 		const currentVersion = renderVersion;
 		pdfBusy = true;
 		pdfError = null;
-		pdfContainerRef.replaceChildren();
 
 		try {
-			const loadingTask = pdfjs.getDocument({
-				data: decodeDataUrlBytes(nextPreview.mediaDataUrl),
+			await renderPdfPages({
+				mediaDataUrl: nextPreview.mediaDataUrl,
+				container: pdfContainerRef,
+				isCurrent: () => currentVersion === renderVersion,
 			});
-			const pdfDocument = await loadingTask.promise;
-			for (let pageNumber = 1; pageNumber <= pdfDocument.numPages; pageNumber += 1) {
-				if (currentVersion !== renderVersion) {
-					await pdfDocument.destroy();
-					return;
-				}
-				const page = await pdfDocument.getPage(pageNumber);
-				const viewport = page.getViewport({ scale: 1.25 });
-				const canvas = document.createElement('canvas');
-				const context = canvas.getContext('2d');
-				if (!context) {
-					continue;
-				}
-				canvas.width = viewport.width;
-				canvas.height = viewport.height;
-				canvas.className = 'file-previewer__pdf-page';
-				pdfContainerRef.append(canvas);
-				await page.render({
-					canvas,
-					canvasContext: context,
-					viewport,
-				}).promise;
-			}
-			await pdfDocument.destroy();
 		} catch (error) {
 			pdfError = error instanceof Error ? error.message : 'Failed to render PDF preview.';
 		} finally {
@@ -110,13 +94,43 @@
 		}
 	};
 
-	onMount(() => {
-		preview = readPreviewFromStorage();
-		const handleMessage = (event: MessageEvent): void => {
-			if (event.origin !== window.location.origin || event.data?.type !== 'agenter:file-previewer:set-preview') {
+	const fetchHttpPreview = async (nextPreview: FilePreviewPayload): Promise<void> => {
+		const currentVersion = ++fetchVersion;
+		previewBusy = true;
+		preview = {
+			...nextPreview,
+			note: nextPreview.note ?? 'Loading preview source…',
+		};
+
+		try {
+			const loadedPreview = await loadHttpFilePreviewPayload(nextPreview);
+			if (currentVersion !== fetchVersion) {
 				return;
 			}
-			preview = event.data.preview as SkillPreviewRecord;
+			preview = loadedPreview;
+		} catch (error) {
+			if (currentVersion !== fetchVersion) {
+				return;
+			}
+			const errorMessage = error instanceof Error ? error.message : 'Failed to load preview source.';
+			preview = {
+				...nextPreview,
+				note: errorMessage,
+			};
+		} finally {
+			if (currentVersion === fetchVersion) {
+				previewBusy = false;
+			}
+		}
+	};
+
+	onMount(() => {
+		sourcePreview = readPreviewFromStorage();
+		const handleMessage = (event: MessageEvent): void => {
+			if (event.origin !== window.location.origin || !isPreviewMessage(event.data)) {
+				return;
+			}
+			sourcePreview = event.data.preview;
 		};
 		window.addEventListener('message', handleMessage);
 		window.parent.postMessage({ type: 'agenter:file-previewer:ready' }, window.location.origin);
@@ -126,11 +140,26 @@
 	});
 
 	$effect(() => {
+		if (!sourcePreview) {
+			fetchVersion += 1;
+			preview = null;
+			previewBusy = false;
+			return;
+		}
+		if (sourcePreview.source?.protocol !== 'http') {
+			fetchVersion += 1;
+			preview = sourcePreview;
+			previewBusy = false;
+			return;
+		}
+		void fetchHttpPreview(sourcePreview);
+	});
+
+	$effect(() => {
 		if (preview?.previewKind !== 'pdf') {
 			renderVersion += 1;
 			pdfBusy = false;
 			pdfError = null;
-			pdfContainerRef?.replaceChildren();
 			return;
 		}
 		void renderPdf(preview);
@@ -142,6 +171,11 @@
 		<div class="file-previewer__empty">
 			<FileIcon class="size-5" />
 			<span>Waiting for preview payload…</span>
+		</div>
+	{:else if previewBusy}
+		<div class="file-previewer__empty">
+			<LoaderCircleIcon class="size-5 animate-spin" />
+			<span>Loading preview source…</span>
 		</div>
 	{:else}
 		<ScrollView

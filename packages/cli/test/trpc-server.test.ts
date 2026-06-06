@@ -665,6 +665,48 @@ describe("Feature: cli server contracts", () => {
     expect(await uploadedSessionIconResponse.text()).toContain("profile-service");
   });
 
+  test("Scenario: Given an authenticated browser preview request When NoteSystem page content is fetched over HTTP Then the daemon returns MIME-typed page body", async () => {
+    const { dir } = createWorkspaceRoot();
+    const handle = await startTrpcServer({
+      host: "127.0.0.1",
+      port: 0,
+      globalSessionRoot: join(dir, "sessions"),
+      workspacesPath: join(dir, "workspaces.yaml"),
+      homeDir: join(dir, "home"),
+    });
+    handles.push(handle);
+
+    const { client, authToken } = await createSuperadminClient(handle);
+    const written = await client.trpc.note.write.mutate({
+      avatarNickname: "default",
+      notebook: "ideas",
+      section: "preview",
+      page: "http-source",
+      content: "# HTTP source\n\nRendered by filePreviewer.",
+      mime: "text/markdown",
+      mode: "override",
+    });
+    expect(written.page?.metadata.mime).toBe("text/markdown");
+
+    const url = new URL(`http://${handle.host}:${handle.port}/api/notes/page`);
+    url.searchParams.set("avatarNickname", "default");
+    url.searchParams.set("notebook", "ideas");
+    url.searchParams.set("section", "preview");
+    url.searchParams.set("page", "http-source");
+
+    const denied = await fetch(url);
+    expect(denied.status).toBe(401);
+
+    const response = await fetch(url, {
+      headers: {
+        authorization: `Bearer ${authToken}`,
+      },
+    });
+    expect(response.status).toBe(200);
+    expect(response.headers.get("content-type")).toContain("text/markdown");
+    expect(await response.text()).toContain("Rendered by filePreviewer.");
+  });
+
   test("Scenario: Given an authenticated kv subscription When the actor mutates Studio memory Then websocket replay only delivers that actor's matching keys", async () => {
     const { dir } = createWorkspaceRoot();
     const handle = await startTrpcServer({

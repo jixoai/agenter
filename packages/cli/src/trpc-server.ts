@@ -380,6 +380,15 @@ const terminalWriteBodySchema = z
   })
   .strict();
 
+const notePageHttpQuerySchema = z
+  .object({
+    avatarNickname: z.string().trim().min(1).optional(),
+    notebook: z.string().trim().min(1),
+    section: z.string().trim().min(1),
+    page: z.string().trim().min(1),
+  })
+  .strict();
+
 const readRequestAuthToken = (req: IncomingMessage, url: URL): string | null => {
   const headerToken = readBearerToken(readRequestHeader(req.headers.authorization));
   if (headerToken) {
@@ -426,6 +435,20 @@ const requireBrowserSuperadmin = async (
     return null;
   }
   return auth;
+};
+
+const withUtf8Charset = (mimeType: string): string => {
+  const normalized = mimeType.trim().toLowerCase();
+  if (
+    normalized.startsWith("text/") ||
+    normalized === "application/json" ||
+    normalized === "application/yaml" ||
+    normalized.endsWith("+json") ||
+    normalized.endsWith("+xml")
+  ) {
+    return `${normalized}; charset=utf-8`;
+  }
+  return normalized || "application/octet-stream";
 };
 
 const serveRuntimePublicEnv = (res: ServerResponse, publicEnv: Record<string, string>): void => {
@@ -921,6 +944,37 @@ export const startTrpcServer = async (options: TrpcServerOptions): Promise<TrpcS
           sendJson(res, 200, { ...result });
         } catch (error) {
           sendJson(res, 400, { ok: false, message: error instanceof Error ? error.message : String(error) });
+        }
+      })();
+      return;
+    }
+
+    if (req.method === "GET" && pathname === "/api/notes/page") {
+      setCors(res, allowedOrigin);
+      void (async () => {
+        try {
+          if (!url || !(await requireBrowserSuperadmin(kernel, req, res, url))) {
+            return;
+          }
+          const query = notePageHttpQuerySchema.parse({
+            avatarNickname: url.searchParams.get("avatarNickname") ?? undefined,
+            notebook: url.searchParams.get("notebook") ?? undefined,
+            section: url.searchParams.get("section") ?? undefined,
+            page: url.searchParams.get("page") ?? undefined,
+          });
+          const output = await kernel.readNotePage(query);
+          if (!output.capability.available || !output.page) {
+            sendJson(res, 404, { ok: false, error: "note page not found" });
+            return;
+          }
+          const body = output.page.body;
+          const bytes = Buffer.from(body, "utf8");
+          res.statusCode = 200;
+          res.setHeader("content-type", withUtf8Charset(output.page.metadata.mime));
+          res.setHeader("content-length", String(bytes.byteLength));
+          res.end(bytes);
+        } catch (error) {
+          sendJson(res, 400, { ok: false, error: error instanceof Error ? error.message : String(error) });
         }
       })();
       return;

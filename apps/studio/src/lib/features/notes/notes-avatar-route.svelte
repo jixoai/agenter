@@ -410,6 +410,7 @@
 			{pageOutput}
 			{loadingPage}
 			avatarLabel={avatarLabel}
+			{avatarNickname}
 		/>
 	{/snippet}
 </WorkbenchPageContent>

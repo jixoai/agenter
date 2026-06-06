@@ -5,6 +5,7 @@
 	import type { NoteCatalogOutput } from '@agenter/client-sdk';
 	import { Badge } from '$lib/components/ui/badge/index.js';
 	import NoticeBanner from '$lib/components/ui/notice-banner.svelte';
+	import HelpHint from '$lib/components/web-components/help-hint.svelte';
 	import WorkbenchScaffold from '$lib/features/navigation/workbench-scaffold.svelte';
 	import { cn } from '$lib/utils.js';
 	import { createNotePageKey, type NotePageIdentity } from './notes-state';
@@ -24,10 +25,21 @@
 		selectedPageKey: string;
 		onSelectPage: (identity: NotePageIdentity) => void;
 	} = $props();
+
+	const readableRoots = $derived(catalog?.capability.readableRoots ?? []);
+	const sourceRootHelpText = $derived.by(() => {
+		if (!catalog?.capability.available) {
+			return 'Readable source roots appear after NoteSystem capability is available.';
+		}
+		return [
+			'Workspace/source facts are metadata inside this avatar tab; they do not switch the tab role.',
+			...readableRoots.map((root) => `- ${root}`),
+		].join('\n');
+	});
 </script>
 
 <WorkbenchScaffold tone="page" bodyClass="h-full" data-testid="notes-browse-mode">
-	<div class="grid h-full gap-3 p-3 md:grid-cols-[minmax(13rem,0.72fr)_minmax(0,1fr)] md:p-4">
+	<div class="grid h-full gap-3 p-3 md:p-4">
 		<section class="grid h-full min-w-0 gap-3" aria-label="Note notebooks">
 			{#if error}
 				<NoticeBanner tone="destructive" title="Notes unavailable" message={error} />
@@ -43,7 +55,35 @@
 				<NoticeBanner tone="info" title="No notes yet" message="Use the note CLI to record raw notes first." />
 			{:else}
 				<div class="flex items-center justify-between gap-2 px-1">
-					<div class="text-xs font-medium uppercase tracking-wide text-muted-foreground">Notebooks</div>
+					<div class="inline-flex min-w-0 items-center gap-1.5 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+						<span>Notebooks</span>
+						<HelpHint
+							ariaLabel="Note source roots"
+							align="start"
+							side="bottom"
+							textContext={sourceRootHelpText}
+						>
+							<div class="grid max-w-[22rem] gap-2 text-left normal-case tracking-normal">
+								<div class="text-sm font-semibold text-foreground">Source roots</div>
+								<p class="text-sm text-muted-foreground">
+									Workspace/source facts are metadata inside this avatar tab; they do not switch the tab role.
+								</p>
+								{#if catalog?.capability.available}
+									<div class="grid gap-1">
+										{#each readableRoots as root (root)}
+											<div class="break-all rounded-md border border-border/60 bg-background/75 px-2 py-1 text-xs text-foreground">
+												{root}
+											</div>
+										{/each}
+									</div>
+								{:else}
+									<div class="text-xs text-muted-foreground">
+										Readable source roots appear after NoteSystem capability is available.
+									</div>
+								{/if}
+							</div>
+						</HelpHint>
+					</div>
 					<Badge variant="outline">{catalog?.totalPages ?? 0} pages</Badge>
 				</div>
 			{/if}
@@ -78,26 +118,6 @@
 						{/each}
 					</div>
 				{/each}
-			</ScrollView>
-		</section>
-
-		<section class="grid h-full min-w-0 grid-rows-[auto_minmax(0,1fr)] gap-3" aria-label="Note source roots">
-			<div class="grid gap-1 rounded-lg border border-border/60 bg-background/55 p-3">
-				<div class="text-sm font-semibold">Source roots</div>
-				<p class="text-sm text-muted-foreground">
-					Workspace/source facts are metadata inside this avatar tab; they do not switch the tab's role.
-				</p>
-			</div>
-			<ScrollView class="h-full" contentClass="grid auto-rows-max gap-2 pr-2">
-				{#if catalog?.capability.available}
-					{#each catalog.capability.readableRoots as root (root)}
-						<div class="rounded-lg border border-border/60 bg-background/55 p-3 text-sm">
-							<div class="break-all font-medium">{root}</div>
-						</div>
-					{/each}
-				{:else}
-					<NoticeBanner tone="info" message="Readable source roots appear after NoteSystem capability is available." />
-				{/if}
 			</ScrollView>
 		</section>
 	</div>

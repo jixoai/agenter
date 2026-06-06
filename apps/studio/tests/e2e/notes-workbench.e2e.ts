@@ -115,16 +115,34 @@ test.describe("Feature: Notes workbench route smoke", () => {
       await expect(page.getByTestId("notes-avatar-route")).toBeVisible({ timeout: 30_000 });
       await expect(page.getByLabel("Notes avatar")).toHaveCount(0);
 
+      const sourceRootsHelp = page.getByRole("button", { name: "Note source roots" });
+      await expect(sourceRootsHelp).toBeVisible({ timeout: 15_000 });
+      await clickStable(sourceRootsHelp);
+      const sourceRootsHint = page.locator("agenter-help-hint[open]").first();
+      await expect(sourceRootsHint).toContainText("Source roots", { timeout: 15_000 });
+      await expect(sourceRootsHint).toContainText("Workspace/source facts are metadata", { timeout: 15_000 });
+      await page.keyboard.press("Escape");
+
       const sourceButton = page.getByRole("button", { name: new RegExp(sourcePage) }).first();
       await expect(sourceButton).toBeVisible({ timeout: 30_000 });
       await clickStable(sourceButton);
 
       const detail = page.getByTestId("notes-detail");
       await expect(detail).toBeVisible({ timeout: 15_000 });
-      await expect(detail).toContainText("Book ID:", { timeout: 15_000 });
-      await expect(detail).toContainText("MIME: text/markdown", { timeout: 15_000 });
-      await expect(detail).toContainText("References", { timeout: 15_000 });
-      await expect(detail).toContainText(targetPage, { timeout: 15_000 });
+      const metadataHelp = detail.getByRole("button", { name: "Note metadata" });
+      await expect(metadataHelp).toBeVisible({ timeout: 15_000 });
+      await clickStable(metadataHelp);
+      const metadataHint = detail.locator("agenter-help-hint[open]").first();
+      await expect(metadataHint).toContainText("Book ID", { timeout: 15_000 });
+      await expect(metadataHint).toContainText("MIME", { timeout: 15_000 });
+      await expect(metadataHint).toContainText("text/markdown", { timeout: 15_000 });
+      await expect(metadataHint).toContainText("References", { timeout: 15_000 });
+      await expect(metadataHint).toContainText(targetPage, { timeout: 15_000 });
+      await expect(detail.getByTitle(`${sourcePage} preview`)).toBeVisible({ timeout: 15_000 });
+      await expect(page.frameLocator(`iframe[title="${sourcePage} preview"]`).locator("body")).toContainText(
+        `Notes route smoke for ${suffix}.`,
+        { timeout: 15_000 },
+      );
 
       const closeDetailButton = page.getByRole("button", { name: "Close detail" });
       if (await closeDetailButton.isVisible().catch(() => false)) {
