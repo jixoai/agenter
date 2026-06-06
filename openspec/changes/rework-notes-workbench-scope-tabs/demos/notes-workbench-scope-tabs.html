@@ -1,0 +1,962 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Notes Workbench Scope Tabs Sketch</title>
+    <style>
+      :root {
+        color-scheme: light;
+        --bg: #eef1f5;
+        --surface: #ffffff;
+        --surface-soft: #f7f8fa;
+        --surface-strong: #eef4f8;
+        --ink: #18212f;
+        --muted: #657083;
+        --line: #d8dde5;
+        --line-strong: #b9c4d1;
+        --blue: #1f6feb;
+        --green: #19735a;
+        --rose: #a33a3a;
+        --amber: #8a5a00;
+        --shadow: 0 22px 55px rgba(20, 32, 48, 0.16);
+        font-family:
+          Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html,
+      body {
+        min-height: 100%;
+      }
+
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--ink);
+      }
+
+      h1,
+      h2,
+      h3,
+      p {
+        margin: 0;
+      }
+
+      button,
+      input {
+        font: inherit;
+      }
+
+      .app {
+        display: grid;
+        grid-template-columns: 238px minmax(0, 1fr);
+        gap: 14px;
+        min-height: 100vh;
+        padding: 14px;
+      }
+
+      .sidebar,
+      .workbench {
+        border: 1px solid var(--line);
+        background: color-mix(in srgb, var(--surface), transparent 2%);
+        box-shadow: var(--shadow);
+      }
+
+      .sidebar {
+        display: grid;
+        grid-template-rows: auto minmax(0, 1fr) auto;
+        gap: 14px;
+        min-width: 0;
+        border-radius: 18px;
+        padding: 14px;
+      }
+
+      .brand {
+        display: grid;
+        gap: 4px;
+      }
+
+      .brand h1 {
+        font-size: 17px;
+        line-height: 1.2;
+      }
+
+      .brand p,
+      .hint,
+      .meta,
+      .subtitle,
+      .note-preview,
+      .result-path,
+      .query-foot {
+        color: var(--muted);
+        font-size: 12px;
+        line-height: 1.45;
+      }
+
+      .nav {
+        display: grid;
+        align-content: start;
+        gap: 6px;
+      }
+
+      .nav-item {
+        display: grid;
+        grid-template-columns: 28px minmax(0, 1fr);
+        align-items: center;
+        gap: 8px;
+        min-width: 0;
+        border: 1px solid transparent;
+        border-radius: 8px;
+        background: transparent;
+        padding: 8px;
+        color: inherit;
+        text-align: left;
+      }
+
+      .nav-item.is-active {
+        border-color: color-mix(in srgb, var(--blue), transparent 70%);
+        background: #edf5ff;
+        color: #123b7a;
+      }
+
+      .nav-icon,
+      .avatar {
+        display: grid;
+        place-items: center;
+        border: 1px solid var(--line);
+        background: var(--surface-soft);
+        color: var(--muted);
+        font-weight: 720;
+      }
+
+      .nav-icon {
+        width: 28px;
+        height: 28px;
+        border-radius: 8px;
+        font-size: 12px;
+      }
+
+      .sidebar-footer {
+        border-top: 1px solid var(--line);
+        padding-top: 12px;
+      }
+
+      .workbench {
+        display: grid;
+        grid-template-rows: auto auto minmax(0, 1fr);
+        min-width: 0;
+        overflow: hidden;
+        border-radius: 18px;
+      }
+
+      .workbench-tabs {
+        display: flex;
+        gap: 4px;
+        min-width: 0;
+        overflow-x: auto;
+        border-bottom: 1px solid var(--line);
+        padding: 8px 10px 0;
+      }
+
+      .workbench-tab {
+        display: inline-grid;
+        grid-template-columns: 22px minmax(0, auto) auto;
+        align-items: center;
+        gap: 7px;
+        min-width: 0;
+        max-width: 210px;
+        border: 1px solid transparent;
+        border-bottom: 0;
+        border-radius: 9px 9px 0 0;
+        background: transparent;
+        padding: 8px 10px;
+        color: var(--muted);
+        white-space: nowrap;
+      }
+
+      .workbench-tab.is-active {
+        border-color: var(--line);
+        background: var(--surface);
+        color: var(--ink);
+      }
+
+      .workbench-tab span {
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+
+      .avatar {
+        width: 22px;
+        height: 22px;
+        border-radius: 7px;
+        font-size: 10px;
+      }
+
+      .close {
+        color: var(--muted);
+        font-size: 15px;
+        line-height: 1;
+      }
+
+      .page-toolbar {
+        display: grid;
+        grid-template-columns: minmax(180px, 0.42fr) minmax(300px, 1fr) auto;
+        align-items: center;
+        gap: 12px;
+        min-width: 0;
+        border-bottom: 1px solid var(--line);
+        background: var(--surface);
+        padding: 10px 12px;
+      }
+
+      .identity {
+        display: grid;
+        grid-template-columns: 34px minmax(0, 1fr);
+        align-items: center;
+        gap: 10px;
+        min-width: 0;
+      }
+
+      .identity .avatar {
+        width: 34px;
+        height: 34px;
+        border-radius: 10px;
+        color: #123b7a;
+        background: #e8f1ff;
+      }
+
+      .title {
+        overflow: hidden;
+        font-size: 14px;
+        font-weight: 760;
+        line-height: 1.2;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .subtitle {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .page-tabs {
+        display: inline-flex;
+        min-width: 0;
+        width: max-content;
+        max-width: 100%;
+        border: 1px solid var(--line);
+        border-radius: 9px;
+        background: var(--surface-soft);
+        padding: 3px;
+      }
+
+      .page-tab {
+        border: 0;
+        border-radius: 7px;
+        background: transparent;
+        padding: 7px 12px;
+        color: var(--muted);
+        font-size: 13px;
+        font-weight: 680;
+      }
+
+      .page-tab.is-active {
+        background: var(--surface);
+        color: var(--ink);
+        box-shadow: 0 1px 4px rgba(20, 32, 48, 0.12);
+      }
+
+      .toolbar-actions {
+        display: flex;
+        justify-content: flex-end;
+        gap: 6px;
+        min-width: 0;
+      }
+
+      .chip,
+      .button {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        min-height: 30px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: var(--surface);
+        padding: 5px 9px;
+        color: var(--muted);
+        font-size: 12px;
+        font-weight: 680;
+        white-space: nowrap;
+      }
+
+      .button.primary {
+        border-color: color-mix(in srgb, var(--blue), transparent 45%);
+        background: #edf5ff;
+        color: #123b7a;
+      }
+
+      .body {
+        display: grid;
+        grid-template-columns: 290px minmax(0, 1fr) minmax(320px, 0.86fr);
+        gap: 12px;
+        min-height: 0;
+        padding: 12px;
+        background: #f4f6f8;
+        overflow: hidden;
+      }
+
+      .panel {
+        display: grid;
+        grid-template-rows: auto minmax(0, 1fr);
+        min-width: 0;
+        min-height: 0;
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        background: var(--surface);
+        overflow: hidden;
+      }
+
+      .panel-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        min-width: 0;
+        border-bottom: 1px solid var(--line);
+        padding: 10px;
+      }
+
+      .panel-title {
+        overflow: hidden;
+        font-size: 12px;
+        font-weight: 780;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .scroll {
+        min-height: 0;
+        overflow: auto;
+        padding: 10px;
+      }
+
+      .tree {
+        display: grid;
+        gap: 10px;
+      }
+
+      .notebook {
+        display: grid;
+        gap: 7px;
+      }
+
+      .notebook-title,
+      .section-title {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .notebook-title {
+        font-size: 13px;
+        font-weight: 760;
+      }
+
+      .section-title {
+        padding-inline: 4px;
+        color: var(--muted);
+        font-size: 11px;
+        font-weight: 700;
+      }
+
+      .note-row,
+      .result-row {
+        display: grid;
+        gap: 4px;
+        border: 1px solid transparent;
+        border-radius: 8px;
+        background: transparent;
+        padding: 8px;
+        text-align: left;
+      }
+
+      .note-row.is-active,
+      .result-row.is-active {
+        border-color: color-mix(in srgb, var(--blue), transparent 58%);
+        background: #edf5ff;
+      }
+
+      .note-title,
+      .result-title {
+        overflow: hidden;
+        font-size: 13px;
+        font-weight: 720;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .detail {
+        display: grid;
+        gap: 12px;
+      }
+
+      .detail h2 {
+        font-size: 18px;
+        line-height: 1.25;
+      }
+
+      .metadata {
+        display: grid;
+        gap: 6px;
+        border: 1px solid var(--line);
+        border-radius: 9px;
+        background: var(--surface-soft);
+        padding: 10px;
+      }
+
+      .meta-line {
+        display: grid;
+        grid-template-columns: 92px minmax(0, 1fr);
+        gap: 8px;
+        min-width: 0;
+        font-size: 12px;
+      }
+
+      .meta-line strong {
+        color: var(--muted);
+        font-weight: 680;
+      }
+
+      .meta-line span {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .tags {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 5px;
+      }
+
+      .tag {
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        background: var(--surface);
+        padding: 3px 7px;
+        color: var(--muted);
+        font-size: 11px;
+        font-weight: 680;
+      }
+
+      .markdown {
+        display: grid;
+        gap: 10px;
+        color: #273244;
+        font-size: 14px;
+        line-height: 1.58;
+      }
+
+      .code {
+        overflow: auto;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: #162033;
+        padding: 10px;
+        color: #edf5ff;
+        font-family: "SFMono-Regular", Consolas, monospace;
+        font-size: 12px;
+        line-height: 1.5;
+      }
+
+      .mode-search .body {
+        grid-template-columns: 330px minmax(0, 1fr);
+      }
+
+      .search-form,
+      .query-form {
+        display: grid;
+        gap: 10px;
+      }
+
+      .field {
+        display: grid;
+        gap: 5px;
+      }
+
+      .field label {
+        color: var(--muted);
+        font-size: 11px;
+        font-weight: 740;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+      }
+
+      input {
+        width: 100%;
+        min-width: 0;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: var(--surface);
+        padding: 9px 10px;
+        color: var(--ink);
+      }
+
+      .filter-stack {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+      }
+
+      .filter {
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        background: var(--surface-soft);
+        padding: 5px 8px;
+        color: var(--muted);
+        font-size: 12px;
+      }
+
+      .filter.is-active {
+        border-color: color-mix(in srgb, var(--green), transparent 40%);
+        background: #eaf7f1;
+        color: #145f4b;
+      }
+
+      .results {
+        display: grid;
+        gap: 8px;
+      }
+
+      .score {
+        color: var(--green);
+        font-size: 11px;
+        font-weight: 760;
+      }
+
+      .query-grid {
+        display: grid;
+        gap: 10px;
+      }
+
+      .sql-box {
+        min-height: 98px;
+        border: 1px solid var(--line);
+        border-radius: 9px;
+        background: var(--surface-soft);
+        padding: 10px;
+        color: #273244;
+        font-family: "SFMono-Regular", Consolas, monospace;
+        font-size: 12px;
+        line-height: 1.55;
+        white-space: pre-wrap;
+      }
+
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 12px;
+      }
+
+      th,
+      td {
+        border-bottom: 1px solid var(--line);
+        padding: 9px 8px;
+        text-align: left;
+        vertical-align: top;
+      }
+
+      th {
+        color: var(--muted);
+        font-size: 11px;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+      }
+
+      .mobile-preview {
+        display: none;
+      }
+
+      @media (max-width: 1120px) {
+        .app {
+          grid-template-columns: 1fr;
+        }
+
+        .sidebar {
+          display: none;
+        }
+
+        .body,
+        .mode-search .body {
+          grid-template-columns: 280px minmax(0, 1fr);
+        }
+
+        .panel.detail-panel {
+          display: none;
+        }
+      }
+
+      @media (max-width: 760px) {
+        .app {
+          padding: 8px;
+        }
+
+        .workbench {
+          min-height: calc(100vh - 16px);
+        }
+
+        .page-toolbar {
+          grid-template-columns: 1fr auto;
+          align-items: start;
+        }
+
+        .page-tabs {
+          grid-column: 1 / -1;
+          width: 100%;
+        }
+
+        .page-tab {
+          flex: 1;
+        }
+
+        .toolbar-actions {
+          justify-content: flex-end;
+        }
+
+        .body,
+        .mode-search .body {
+          grid-template-columns: 1fr;
+          overflow: auto;
+        }
+
+        .panel {
+          min-height: 260px;
+        }
+
+        .mobile-preview {
+          display: grid;
+          gap: 8px;
+          border: 1px solid var(--line);
+          border-radius: 10px;
+          background: var(--surface);
+          padding: 10px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="app">
+      <aside class="sidebar" aria-label="Studio navigation">
+        <div class="brand">
+          <h1>Studio</h1>
+          <p>Operator cockpit sketch</p>
+        </div>
+        <nav class="nav">
+          <button class="nav-item"><span class="nav-icon">A</span><span>Avatars</span></button>
+          <button class="nav-item"><span class="nav-icon">S</span><span>Skills</span></button>
+          <button class="nav-item is-active"><span class="nav-icon">N</span><span>Notes</span></button>
+          <button class="nav-item"><span class="nav-icon">W</span><span>Workspaces</span></button>
+        </nav>
+        <div class="sidebar-footer hint">The Notes body no longer owns avatar selection.</div>
+      </aside>
+
+      <section class="workbench mode-browse" aria-label="Notes workbench with avatar tabs">
+        <div class="workbench-tabs" aria-label="Notes avatar workbench tabs">
+          <button class="workbench-tab">
+            <span class="avatar">N</span>
+            <span>Overview</span>
+            <span></span>
+          </button>
+          <button class="workbench-tab is-active">
+            <span class="avatar">D</span>
+            <span>Default</span>
+            <span class="close">x</span>
+          </button>
+          <button class="workbench-tab">
+            <span class="avatar">A</span>
+            <span>Architect</span>
+            <span class="close">x</span>
+          </button>
+          <button class="workbench-tab">
+            <span class="avatar">R</span>
+            <span>Researcher</span>
+            <span class="close">x</span>
+          </button>
+        </div>
+
+        <header class="page-toolbar" aria-label="Notes avatar page toolbar">
+          <div class="identity">
+            <span class="avatar">D</span>
+            <div>
+              <div class="title">@default notes</div>
+              <div class="subtitle">Avatar scope only; sources grouped inside this tab</div>
+            </div>
+          </div>
+
+          <div class="page-tabs" aria-label="Notes page mode tabs">
+            <button class="page-tab is-active">Browse</button>
+            <button class="page-tab">Search</button>
+            <button class="page-tab">Query</button>
+          </div>
+
+          <div class="toolbar-actions">
+            <span class="chip">10 pages</span>
+            <span class="chip">21 tags</span>
+            <button class="button primary">Refresh</button>
+          </div>
+        </header>
+
+        <section class="body" aria-label="Browse mode body">
+          <section class="panel" aria-label="Notebook tree">
+            <div class="panel-head">
+              <div class="panel-title">Browse</div>
+              <span class="meta">notebook / section / page</span>
+            </div>
+            <div class="scroll">
+              <div class="tree">
+                <div class="notebook">
+                  <div class="notebook-title">studio-notes-test</div>
+                  <div class="section-title">design-system</div>
+                  <button class="note-row is-active">
+                    <span class="note-title">color-tokens-refresh</span>
+                    <span class="note-preview">Proposal with JSON token block and migration checklist.</span>
+                  </button>
+                  <button class="note-row">
+                    <span class="note-title">component-inventory</span>
+                    <span class="note-preview">Table of components, status, and variants.</span>
+                  </button>
+                  <div class="section-title">meeting-notes</div>
+                  <button class="note-row">
+                    <span class="note-title">design-crit-tag-interactions</span>
+                    <span class="note-preview">Inline editing, quick tags, keyboard flow.</span>
+                  </button>
+                </div>
+                <div class="notebook">
+                  <div class="notebook-title">_draft</div>
+                  <div class="section-title">2026-06-06</div>
+                  <button class="note-row">
+                    <span class="note-title">115433306-b72a9e30</span>
+                    <span class="note-preview">Studio Notes UX checklist draft.</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <section class="panel detail-panel" aria-label="Selected note detail">
+            <div class="panel-head">
+              <div class="panel-title">Detail</div>
+              <span class="meta">read-only NoteSystem projection</span>
+            </div>
+            <div class="scroll">
+              <article class="detail">
+                <h2>Color Tokens Refresh - Proposal</h2>
+                <div class="metadata">
+                  <div class="meta-line"><strong>Avatar</strong><span>default</span></div>
+                  <div class="meta-line"><strong>Source</strong><span>AVATAR_HOME / notes</span></div>
+                  <div class="meta-line"><strong>MIME</strong><span>text/markdown</span></div>
+                  <div class="meta-line"><strong>Page ID</strong><span>page_296aadb4-08a1-4726-9e82-ab69a7dbf079</span></div>
+                  <div class="tags">
+                    <span class="tag">design</span>
+                    <span class="tag">dark-mode</span>
+                    <span class="tag">tokens</span>
+                  </div>
+                </div>
+                <div class="markdown">
+                  <p>Current semantic tokens lack sufficient contrast for dark mode accessibility.</p>
+                  <pre class="code">{
+  "surface": { "base": "#FFFFFF", "raised": "#F5F5F7" },
+  "accent": { "blue": "#007AFF", "green": "#34C759" }
+}</pre>
+                  <p>Action items stay in the note detail, while search stays in its own mode.</p>
+                </div>
+              </article>
+            </div>
+          </section>
+
+          <section class="mobile-preview" aria-label="Compact detail preview">
+            <div class="panel-title">Compact detail opens as drawer</div>
+            <p class="hint">Mobile keeps the same avatar tab and page-toolbar modes; detail moves to a drawer.</p>
+          </section>
+        </section>
+      </section>
+
+      <section class="workbench mode-search" aria-label="Search mode example" style="margin-top: 14px; grid-column: 2">
+        <div class="workbench-tabs" aria-label="Notes avatar tabs search example">
+          <button class="workbench-tab">
+            <span class="avatar">N</span>
+            <span>Overview</span>
+            <span></span>
+          </button>
+          <button class="workbench-tab is-active">
+            <span class="avatar">D</span>
+            <span>Default</span>
+            <span class="close">x</span>
+          </button>
+        </div>
+
+        <header class="page-toolbar" aria-label="Search page toolbar">
+          <div class="identity">
+            <span class="avatar">D</span>
+            <div>
+              <div class="title">@default notes</div>
+              <div class="subtitle">Search is independent, but avatar scope is unchanged</div>
+            </div>
+          </div>
+          <div class="page-tabs" aria-label="Notes mode tabs">
+            <button class="page-tab">Browse</button>
+            <button class="page-tab is-active">Search</button>
+            <button class="page-tab">Query</button>
+          </div>
+          <div class="toolbar-actions">
+            <button class="button primary">Run search</button>
+          </div>
+        </header>
+
+        <section class="body" aria-label="Search mode body">
+          <section class="panel" aria-label="Search controls">
+            <div class="panel-head">
+              <div class="panel-title">Search</div>
+              <span class="meta">full surface</span>
+            </div>
+            <div class="scroll">
+              <form class="search-form">
+                <div class="field">
+                  <label for="query">Query</label>
+                  <input id="query" value="design tokens" />
+                </div>
+                <div class="field">
+                  <label>Tags</label>
+                  <div class="filter-stack">
+                    <span class="filter is-active">design</span>
+                    <span class="filter">search</span>
+                    <span class="filter">performance</span>
+                    <span class="filter">meeting</span>
+                  </div>
+                </div>
+                <p class="hint">No avatar selector here. To search another role, open or switch to that avatar tab.</p>
+              </form>
+            </div>
+          </section>
+
+          <section class="panel" aria-label="Search results">
+            <div class="panel-head">
+              <div class="panel-title">Results</div>
+              <span class="meta">5 matches</span>
+            </div>
+            <div class="scroll">
+              <div class="results">
+                <button class="result-row is-active">
+                  <span class="result-title">Color Tokens Refresh - Proposal</span>
+                  <span class="result-path">studio-notes-test / design-system / color-tokens-refresh</span>
+                  <span class="note-preview">semantic tokens, contrast, dark mode accessibility...</span>
+                  <span class="score">score 0.92</span>
+                </button>
+                <button class="result-row">
+                  <span class="result-title">Design System Component Inventory</span>
+                  <span class="result-path">studio-notes-test / design-system / component-inventory</span>
+                  <span class="note-preview">NoteCard, TagChip, SectionNav...</span>
+                  <span class="score">score 0.81</span>
+                </button>
+                <button class="result-row">
+                  <span class="result-title">Design Crit: Tag Interactions</span>
+                  <span class="result-path">studio-notes-test / meeting-notes / design-crit-tag-interactions</span>
+                  <span class="note-preview">inline editing and keyboard-first tag creation...</span>
+                  <span class="score">score 0.74</span>
+                </button>
+              </div>
+            </div>
+          </section>
+        </section>
+      </section>
+
+      <section class="workbench" aria-label="Query mode example" style="margin-top: 14px; grid-column: 2">
+        <div class="workbench-tabs" aria-label="Notes avatar tabs query example">
+          <button class="workbench-tab">
+            <span class="avatar">N</span>
+            <span>Overview</span>
+            <span></span>
+          </button>
+          <button class="workbench-tab is-active">
+            <span class="avatar">D</span>
+            <span>Default</span>
+            <span class="close">x</span>
+          </button>
+        </div>
+        <header class="page-toolbar" aria-label="Query page toolbar">
+          <div class="identity">
+            <span class="avatar">D</span>
+            <div>
+              <div class="title">@default notes</div>
+              <div class="subtitle">Advanced read-only projection</div>
+            </div>
+          </div>
+          <div class="page-tabs" aria-label="Notes mode tabs">
+            <button class="page-tab">Browse</button>
+            <button class="page-tab">Search</button>
+            <button class="page-tab is-active">Query</button>
+          </div>
+          <div class="toolbar-actions">
+            <span class="chip" style="color: var(--amber)">read-only</span>
+          </div>
+        </header>
+        <section class="body" style="grid-template-columns: minmax(0, 0.72fr) minmax(0, 1fr)" aria-label="Query mode body">
+          <section class="panel" aria-label="SQL editor">
+            <div class="panel-head">
+              <div class="panel-title">SQL</div>
+              <button class="button primary">Query</button>
+            </div>
+            <div class="scroll query-grid">
+              <div class="sql-box">select notebook, section, page, mime, updatedAt
+from note_pages_view
+where notebook = 'studio-notes-test'
+order by updatedAt desc;</div>
+              <p class="query-foot">Query is a mode under the same avatar tab, not another role/workspace switch.</p>
+            </div>
+          </section>
+          <section class="panel" aria-label="SQL results">
+            <div class="panel-head">
+              <div class="panel-title">Rows</div>
+              <span class="meta">10 rows</span>
+            </div>
+            <div class="scroll">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Section</th>
+                    <th>Page</th>
+                    <th>Mime</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td>design-system</td>
+                    <td>color-tokens-refresh</td>
+                    <td>text/markdown</td>
+                  </tr>
+                  <tr>
+                    <td>technical-notes</td>
+                    <td>database-optimization-log</td>
+                    <td>text/markdown</td>
+                  </tr>
+                  <tr>
+                    <td>meeting-notes</td>
+                    <td>sprint-review-2026-06-05</td>
+                    <td>text/markdown</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </section>
+        </section>
+      </section>
+    </main>
+  </body>
+</html>
