@@ -1,0 +1,322 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Record Cards Canvas</title>
+    <link rel="stylesheet" href="record-color-tokens.css" />
+    <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js"></script>
+    <style>
+      :root {
+        --bg: #f5f6f8;
+        --paper: #fff;
+        --ink: #111827;
+        --muted: #667085;
+        --line: #d9e1ea;
+        --green: #16814a;
+        --shadow: 0 16px 34px rgba(15, 23, 42, 0.09);
+        font-family:
+          Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--ink);
+        overflow-x: clip;
+      }
+
+      h1,
+      h3,
+      p {
+        margin: 0;
+      }
+
+      .page {
+        display: grid;
+        gap: 18px;
+        width: min(1120px, 100%);
+        min-width: 0;
+        padding: 22px;
+      }
+
+      .hero {
+        display: grid;
+        gap: 6px;
+        min-width: 0;
+      }
+
+      .hero h1 {
+        font-size: 18px;
+      }
+
+      .hero p,
+      .panel p {
+        color: var(--muted);
+        font-size: 12px;
+        line-height: 1.45;
+        min-width: 0;
+        overflow-wrap: anywhere;
+        word-break: break-word;
+      }
+
+      .toolbar {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        min-width: 0;
+      }
+
+      .toolbar button {
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        background: #fff;
+        padding: 6px 11px;
+        color: var(--muted);
+        font: inherit;
+        font-size: 11px;
+        font-weight: 760;
+      }
+
+      .toolbar button[aria-pressed="true"] {
+        border-color: var(--ink);
+        background: var(--ink);
+        color: #fff;
+      }
+
+      .grid {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 12px;
+        min-width: 0;
+      }
+
+      .panel {
+        display: grid;
+        gap: 10px;
+        min-width: 0;
+        border: 1px solid var(--line);
+        border-radius: 16px;
+        background: var(--paper);
+        box-shadow: var(--shadow);
+        padding: 12px;
+      }
+
+      .panel h3 {
+        font-size: 13px;
+      }
+
+      .variant {
+        display: none;
+      }
+
+      .variant.active {
+        display: block;
+      }
+
+      @media (max-width: 900px) {
+        .grid {
+          grid-template-columns: 1fr;
+        }
+      }
+
+      @media (max-width: 620px) {
+        .page {
+          padding: 10px;
+          gap: 12px;
+        }
+
+        .panel {
+          padding: 10px;
+        }
+
+        .hero {
+          gap: 4px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="page">
+      <section class="hero">
+        <h1>Record Cards</h1>
+        <p>One shared card shell. Three body objects.</p>
+      </section>
+
+      <div class="toolbar" data-card-mode-tabs>
+        <button type="button" data-card-mode="index" aria-pressed="true">Index</button>
+        <button type="button" data-card-mode="rich" aria-pressed="false">Rich preview</button>
+        <button type="button" data-card-mode="debug" aria-pressed="false">Debug density</button>
+      </div>
+
+      <section class="variant active" data-card-mode-panel="index">
+        <div class="grid">
+          <section class="panel">
+            <h3>Model run</h3>
+            <p>Pure data, no handwritten inner chips.</p>
+            <x-model-run-card sample="tool-loop" open-latest></x-model-run-card>
+          </section>
+
+          <section class="panel">
+            <h3>Compact</h3>
+            <p>Compression object only.</p>
+            <x-basic-record-card has-support>
+              <template shadowrootmode="open">
+                <link rel="stylesheet" href="basic-record-card.css" />
+                <article class="card">
+                  <header class="head">
+                    <div class="stack"><slot name="time"></slot><slot name="duration"></slot></div>
+                    <div class="stack"><slot name="title"></slot><slot name="meta"></slot></div>
+                    <div class="status-wrap"><slot name="status"></slot></div>
+                  </header>
+                  <div class="body"><slot name="body"></slot></div>
+                  <footer class="support"><slot name="support"></slot></footer>
+                </article>
+              </template>
+              <span slot="time">14:18</span>
+              <span slot="duration">3s</span>
+              <span slot="title">Compact</span>
+              <span slot="meta">context reclaimed</span>
+              <span slot="status">completed</span>
+              <x-compact-body slot="body" before="63.4" after="24.1">
+                <template shadowrootmode="open">
+                  <style>
+                    :host {
+                      display: block;
+                    }
+                    .bar {
+                      position: relative;
+                      block-size: 34px;
+                      border-radius: 999px;
+                      background: #eef2f7;
+                      overflow: hidden;
+                    }
+                    .before,
+                    .after {
+                      position: absolute;
+                      inset: 0 auto 0 0;
+                    }
+                    .before {
+                      background: color-mix(in oklab, var(--muted), transparent 78%);
+                    }
+                    .after {
+                      background: color-mix(in oklab, var(--green), white 22%);
+                    }
+                    .core {
+                      position: absolute;
+                      inset: 50% auto auto 50%;
+                      display: inline-flex;
+                      align-items: center;
+                      gap: 6px;
+                      border: 1px solid var(--line);
+                      border-radius: 999px;
+                      background: #fff;
+                      padding: 6px 10px;
+                      color: #344054;
+                      font-size: 11px;
+                      font-weight: 760;
+                      transform: translate(-50%, -50%);
+                      white-space: nowrap;
+                    }
+                    .icon-svg {
+                      inline-size: 16px;
+                      block-size: 16px;
+                      flex: 0 0 auto;
+                    }
+                  </style>
+                  <div class="bar"><span class="before" id="beforeFill"></span><span class="after" id="afterFill"></span><span class="core"><i data-lucide="shrink" class="icon-svg" aria-hidden="true"></i><span id="coreText"></span></span></div>
+                </template>
+              </x-compact-body>
+            </x-basic-record-card>
+          </section>
+
+          <section class="panel">
+            <h3>Config</h3>
+            <p>Only changed controls.</p>
+            <x-basic-record-card>
+              <template shadowrootmode="open">
+                <link rel="stylesheet" href="basic-record-card.css" />
+                <article class="card">
+                  <header class="head">
+                    <div class="stack"><slot name="time"></slot><slot name="duration"></slot></div>
+                    <div class="stack"><slot name="title"></slot><slot name="meta"></slot></div>
+                    <div class="status-wrap"><slot name="status"></slot></div>
+                  </header>
+                  <div class="body"><slot name="body"></slot></div>
+                  <footer class="support"><slot name="support"></slot></footer>
+                </article>
+              </template>
+              <span slot="time">14:21</span>
+              <span slot="duration">next call</span>
+              <span slot="title">Config</span>
+              <span slot="meta">next-call knobs</span>
+              <span slot="status">applied</span>
+              <x-config-body
+                slot="body"
+                provider="openai · gpt-5.1"
+                scope="avatar: user:avatar"
+                state="applied"
+                temperature="0.4"
+                topk="32"
+                maxtoken="8192"
+                thinking="on"
+                thinking-budget="2048"
+              ></x-config-body>
+            </x-basic-record-card>
+          </section>
+        </div>
+      </section>
+
+      <section class="variant" data-card-mode-panel="rich">
+        <div class="grid">
+          <section class="panel">
+            <h3>Model with support</h3>
+            <p>Support is still optional and mode-owned.</p>
+            <x-model-run-card
+              sample="media-heavy"
+              support-text="Latest assistant text preview is optional. The stable list row still comes from one data object, not handwritten inner chips."
+            ></x-model-run-card>
+          </section>
+        </div>
+      </section>
+
+      <section class="variant" data-card-mode-panel="debug">
+        <div class="grid">
+          <section class="panel">
+            <h3>Debug law</h3>
+            <p>Use the dedicated Metro canvas to inspect width-dependent chip collapse.</p>
+            <x-model-run-card
+              sample="refusal"
+              open-latest
+              support-text="This sample shows that refusal can terminate a record without inventing a fake text preview."
+            ></x-model-run-card>
+          </section>
+
+          <section class="panel">
+            <h3>Error state</h3>
+            <p>Error is both a record status and a terminal message-part chip.</p>
+            <x-model-run-card
+              sample="error"
+              support-text="Error stays objective: the row shows where the stream failed without pretending the run completed."
+            ></x-model-run-card>
+          </section>
+        </div>
+      </section>
+    </main>
+
+    <script src="record-components.js"></script>
+    <script>
+      document.querySelectorAll("[data-card-mode]").forEach((button) => {
+        button.addEventListener("click", () => {
+          const mode = button.dataset.cardMode;
+          document.querySelectorAll("[data-card-mode]").forEach((item) => item.setAttribute("aria-pressed", String(item === button)));
+          document.querySelectorAll("[data-card-mode-panel]").forEach((panel) => panel.classList.toggle("active", panel.dataset.cardModePanel === mode));
+        });
+      });
+    </script>
+  </body>
+</html>

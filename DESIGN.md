@@ -132,6 +132,17 @@ Workspaces
 - desktop split 的 resize state 必须以 ratio 持久化，而不是记像素宽度；这样窗口变化时 left/right intent 才能保持稳定。
 - 如果 route 内还需要第二个滚动区，例如 terminal stage、长列表 pane 或 detail inspection surface，必须显式声明那个次级 scroll owner；不要让 shared body scroll 和 route-local stage scroll 互相抢所有权。
 
+### 5.1 Dense Record Surfaces
+
+- 当页面承载大量可生成记录的 surface（例如 transcript、heartbeat、timeline、inspector rows）时，列表层只承担稳定摘要，不承担完整详情。
+- 列表主单元优先使用 `RecordCard` 语义：时间、状态、类型、过程摘要是第一序列；可选叙事、长文本和完整参数应进入 detail。
+- 同类型记录的卡片高度必须稳定；可选字段缺失时，应通过布局补位或收纳保持视觉平衡，而不是靠高度抖动表达差异。
+- 用户面对的主词优先是 `record` / `RecordCard`；`group` 这类词可以保留给数据投影层，不应成为主视觉词。
+- 详情层以 chips-line rail 作为主导航，时间信息分布在线上而不是塞进卡片正文。
+- 当空间宽裕时，导航 rail 可以完整展开为 chip + time + chip；当空间收紧时，优先压缩中段统计，而不是切换成另一套布局语言。
+- 详情层的时间线可以用双线表达：外线承载时间与渐变，内线连接 chip 节点；两条线的职责不要混写。
+- 如果一条信息已经被一层视觉元素清晰表达，就不要在同一行里重复渲染同一种事实。
+
 ## 6) 系统页装配法则
 
 不同系统页面应共享同一套页面物理法则，只改变主体内容语义。

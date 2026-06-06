@@ -1,0 +1,31 @@
+:root {
+  --tone-canvas: #f4f6f8;
+  --tone-surface: #ffffff;
+  --tone-surface-soft: #fbfcfd;
+  --tone-border: #d8e1e8;
+  --tone-border-strong: #c4d0dc;
+  --tone-ink: #0f172a;
+  --tone-ink-soft: #1f2937;
+  --tone-muted: #5f7085;
+  --tone-accent: #2563eb;
+  --tone-accent-soft: color-mix(in oklch, var(--tone-accent), white 88%);
+  --tone-accent-border: color-mix(in oklch, var(--tone-accent), white 62%);
+  --metro-rail: #c6d3df;
+
+  --kind-input: oklch(58% 0.16 230deg);
+  --kind-combo: oklch(58% 0.05 250deg);
+  --kind-compact: oklch(58% 0.04 250deg);
+  --kind-thinking: oklch(58% 0.14 185deg);
+  --kind-text: oklch(58% 0.17 260deg);
+  --kind-tool: oklch(58% 0.16 55deg);
+  --kind-pending: oklch(58% 0.15 85deg);
+  --kind-refusal: oklch(58% 0.18 345deg);
+  --kind-error: oklch(58% 0.18 25deg);
+  --kind-image: oklch(58% 0.15 150deg);
+  --kind-file: oklch(58% 0.04 250deg);
+  --kind-video: oklch(58% 0.18 285deg);
+  --kind-unknown: oklch(58% 0.04 250deg);
+  --kind-config: oklch(58% 0.17 305deg);
+  --kind-diff: oklch(58% 0.14 210deg);
+  --kind-archive: oklch(58% 0.04 250deg);
+}

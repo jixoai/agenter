@@ -1,0 +1,1650 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>List Detail Anchor Canvas</title>
+    <link rel="stylesheet" href="record-color-tokens.css" />
+    <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js"></script>
+    <script src="record-components.js"></script>
+    <style>
+      :root {
+        --bg: var(--tone-canvas, #f5f6f8);
+        --paper: var(--tone-surface, #fff);
+        --ink: var(--tone-ink, #111827);
+        --muted: var(--tone-muted, #667085);
+        --line: var(--tone-border, #d9e1ea);
+        --blue: var(--tone-accent, #2563eb);
+        --shadow: 0 18px 46px rgba(15, 23, 42, 0.12);
+        font-family:
+          Inter,
+          ui-sans-serif,
+          system-ui,
+          -apple-system,
+          BlinkMacSystemFont,
+          "Segoe UI",
+          sans-serif;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        background:
+          radial-gradient(circle at 12% 0%, rgba(37, 99, 235, 0.08), transparent 30%),
+          radial-gradient(circle at 100% 12%, rgba(14, 159, 110, 0.06), transparent 28%), var(--bg);
+        color: var(--ink);
+        overflow-x: clip;
+      }
+
+      h1,
+      h2,
+      h3,
+      p {
+        margin: 0;
+      }
+
+      button {
+        font: inherit;
+      }
+
+      .icon-svg {
+        inline-size: 15px;
+        block-size: 15px;
+        flex: 0 0 auto;
+      }
+
+      .page {
+        display: grid;
+        gap: 14px;
+        min-height: 100vh;
+        min-width: 0;
+        padding: 16px;
+      }
+
+      .hero,
+      .anchor-bar,
+      .panel {
+        border: 1px solid var(--line);
+        border-radius: 18px;
+        background: rgba(255, 255, 255, 0.94);
+        box-shadow: var(--shadow);
+      }
+
+      .hero {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        gap: 12px;
+        align-items: end;
+        min-width: 0;
+        padding: 16px;
+      }
+
+      .hero h1 {
+        font-size: 18px;
+        line-height: 1.18;
+      }
+
+      .hero p,
+      .small,
+      .section-meta,
+      .rail-label {
+        color: var(--muted);
+        font-size: 12px;
+        line-height: 1.45;
+        min-width: 0;
+        overflow-wrap: anywhere;
+        word-break: break-word;
+      }
+
+      .pill-row,
+      .anchor-actions,
+      .status {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        min-width: 0;
+      }
+
+      .pill,
+      .anchor-actions button,
+      .status-chip,
+      .tab {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        min-width: 0;
+        max-inline-size: 100%;
+        min-height: 28px;
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        background: #fbfcfe;
+        padding: 0 10px;
+        color: var(--muted);
+        font-size: 11px;
+        font-weight: 720;
+        white-space: nowrap;
+      }
+
+      .anchor-bar {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        gap: 12px;
+        align-items: center;
+        min-width: 0;
+        padding: 12px 14px;
+      }
+
+      .anchor-actions button {
+        cursor: pointer;
+      }
+
+      .anchor-actions button[aria-selected="true"] {
+        border-color: color-mix(in oklab, var(--blue), white 34%);
+        background: color-mix(in oklab, var(--blue), white 92%);
+        color: color-mix(in oklab, var(--blue), black 15%);
+      }
+
+      .workbench {
+        display: grid;
+        grid-template-columns: minmax(300px, 0.92fr) minmax(420px, 1.28fr);
+        gap: 14px;
+        min-width: 0;
+      }
+
+      .panel {
+        display: grid;
+        grid-template-rows: auto minmax(0, 1fr);
+        min-width: 0;
+        overflow: hidden;
+        padding: 14px;
+      }
+
+      .panel-head {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        gap: 10px;
+        align-items: start;
+        min-width: 0;
+      }
+
+      .panel-head h2 {
+        font-size: 13px;
+      }
+
+      .record-stack {
+        display: grid;
+        gap: 10px;
+        align-content: start;
+        overflow: auto;
+        padding-right: 2px;
+      }
+
+      .record-item {
+        display: block;
+        width: 100%;
+        padding: 0;
+        border: 0;
+        background: none;
+        text-align: left;
+        border-radius: 18px;
+        cursor: pointer;
+      }
+
+      .record-item:focus-visible {
+        outline: none;
+        box-shadow: 0 0 0 3px color-mix(in oklab, var(--blue), transparent 86%);
+      }
+
+      .record-item[aria-selected="true"] {
+        box-shadow: 0 0 0 3px color-mix(in oklab, var(--blue), transparent 86%);
+      }
+
+      .record-item x-model-run-card,
+      .record-item x-basic-record-card {
+        display: block;
+        width: 100%;
+      }
+
+      x-record-detail-surface {
+        display: block;
+        min-width: 0;
+        min-height: 0;
+      }
+
+      @media (max-width: 980px) {
+        .workbench {
+          grid-template-columns: 1fr;
+        }
+
+        .panel {
+          min-height: 320px;
+        }
+      }
+
+      @media (max-width: 620px) {
+        .page {
+          padding: 10px;
+          gap: 12px;
+        }
+
+        .hero,
+        .anchor-bar {
+          grid-template-columns: 1fr;
+        }
+
+        .panel-head {
+          grid-template-columns: 1fr;
+        }
+
+        .pill-row {
+          justify-content: flex-start;
+        }
+
+        .panel {
+          padding: 10px;
+        }
+
+        .hero {
+          gap: 8px;
+          padding: 12px;
+        }
+
+        .anchor-bar {
+          padding: 10px 12px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="page">
+      <section class="hero">
+        <div>
+          <h1>List + Detail</h1>
+        </div>
+        <div class="pill-row" aria-label="Canvas laws">
+          <span class="pill"><i data-lucide="list" class="icon-svg" aria-hidden="true"></i>rows</span>
+          <span class="pill"><i data-lucide="combine" class="icon-svg" aria-hidden="true"></i>cards</span>
+          <span class="pill"><i data-lucide="panel-right" class="icon-svg" aria-hidden="true"></i>detail rail</span>
+        </div>
+      </section>
+
+      <section class="anchor-bar" aria-label="Pagination anchor controls">
+        <div>
+          <strong id="anchorTitle">Latest anchor</strong>
+          <div id="anchorText" class="small">live</div>
+        </div>
+        <div class="anchor-actions">
+          <button type="button" data-anchor="latest" aria-selected="true">Latest</button>
+          <button type="button" data-anchor="fixed" aria-selected="false">Fixed page 16</button>
+          <button type="button" data-anchor="new" aria-selected="false">3 new records</button>
+        </div>
+      </section>
+
+      <section class="workbench">
+        <section class="panel" aria-label="Record list">
+          <div class="panel-head">
+            <div>
+              <h2>Shared Record Cards</h2>
+            </div>
+            <span class="pill"><i data-lucide="rows-3" class="icon-svg" aria-hidden="true"></i>bounded rows</span>
+          </div>
+
+          <div class="record-stack">
+            <button type="button" class="record-item" data-record="model" aria-selected="true">
+              <x-model-run-card sample="tool-loop" open-latest></x-model-run-card>
+            </button>
+
+            <button type="button" class="record-item" data-record="compact" aria-selected="false">
+              <x-basic-record-card data-card-kind="compact">
+                <template shadowrootmode="open">
+                  <link rel="stylesheet" href="basic-record-card.css" />
+                  <article class="card">
+                    <header class="head">
+                      <div class="stack"><slot name="time"></slot><slot name="duration"></slot></div>
+                      <div class="stack"><slot name="title"></slot><slot name="meta"></slot></div>
+                      <div class="status-wrap"><slot name="status"></slot></div>
+                    </header>
+                    <div class="body"><slot name="body"></slot></div>
+                    <footer class="support"><slot name="support"></slot></footer>
+                  </article>
+                </template>
+                <span slot="time">14:23</span>
+                <span slot="duration">2.8s</span>
+                <span slot="title">Compact</span>
+                <span slot="meta">new context focused</span>
+                <span slot="status">running</span>
+                <x-compact-body slot="body" before="71.2" after="38.6" state="running"></x-compact-body>
+                <span slot="support">New Context</span>
+              </x-basic-record-card>
+            </button>
+
+            <button type="button" class="record-item" data-record="config" aria-selected="false">
+              <x-basic-record-card data-card-kind="config">
+                <template shadowrootmode="open">
+                  <link rel="stylesheet" href="basic-record-card.css" />
+                  <article class="card">
+                    <header class="head">
+                      <div class="stack"><slot name="time"></slot><slot name="duration"></slot></div>
+                      <div class="stack"><slot name="title"></slot><slot name="meta"></slot></div>
+                      <div class="status-wrap"><slot name="status"></slot></div>
+                    </header>
+                    <div class="body"><slot name="body"></slot></div>
+                    <footer class="support"><slot name="support"></slot></footer>
+                  </article>
+                </template>
+                <span slot="time">14:21</span>
+                <span slot="duration">next call</span>
+                <span slot="title">Config</span>
+                <span slot="meta">changed controls only</span>
+                <span slot="status">applied</span>
+                <x-config-body
+                  slot="body"
+                  provider="openai · gpt-5.1"
+                  scope="avatar settings"
+                  state="applied"
+                  temperature="0.4"
+                  topk="32"
+                  maxtoken="8192"
+                  thinking="on"
+                  thinking-budget="2048"
+                ></x-config-body>
+                <span slot="support">Diff Config</span>
+              </x-basic-record-card>
+            </button>
+
+            <button type="button" class="record-item" data-record="error" aria-selected="false">
+              <x-model-run-card sample="error"></x-model-run-card>
+            </button>
+          </div>
+        </section>
+
+        <section class="panel" aria-label="Selected detail">
+          <div class="panel-head">
+            <div>
+              <h2>Chips-Line Detail</h2>
+            </div>
+            <span class="pill"><i data-lucide="panel-right" class="icon-svg" aria-hidden="true"></i>detail</span>
+          </div>
+
+          <x-record-detail-surface id="detail" record="model" anchor="latest">
+            <template shadowrootmode="open">
+              <style>
+                :host {
+                  --surface: #fff;
+                  --subtle: #667085;
+                  --border: #d9e1ea;
+                  --accent: #2563eb;
+                  display: block;
+                  color: #111827;
+                }
+
+                * {
+                  box-sizing: border-box;
+                }
+
+                .detail {
+                  display: grid;
+                  grid-template-rows: auto minmax(0, 1fr);
+                  min-height: 100%;
+                  background: var(--surface);
+                }
+
+                .detail-head {
+                  display: grid;
+                  grid-template-columns: minmax(0, 1fr) auto;
+                  gap: 10px;
+                  align-items: start;
+                  border-bottom: 1px solid var(--border);
+                  background: #f8fafc;
+                  padding: 14px;
+                }
+
+                .title {
+                  display: grid;
+                  gap: 4px;
+                  min-width: 0;
+                }
+
+                .title strong {
+                  overflow: hidden;
+                  font-size: 14px;
+                  line-height: 1.18;
+                  text-overflow: ellipsis;
+                  white-space: nowrap;
+                }
+
+                .summary {
+                  color: var(--subtle);
+                  font-size: 12px;
+                  line-height: 1.45;
+                }
+
+                .summary:empty {
+                  display: none;
+                }
+
+                .status {
+                  display: flex;
+                  flex-wrap: wrap;
+                  justify-content: flex-end;
+                  gap: 8px;
+                }
+
+                .status-chip {
+                  display: inline-flex;
+                  align-items: center;
+                  gap: 6px;
+                  min-height: 28px;
+                  border: 1px solid var(--border);
+                  border-radius: 999px;
+                  background: #fbfcfe;
+                  padding: 0 10px;
+                  color: var(--subtle);
+                  font-size: 11px;
+                  font-weight: 720;
+                  white-space: nowrap;
+                }
+
+                .status-chip .icon-svg {
+                  inline-size: 13px;
+                  block-size: 13px;
+                }
+
+                .detail-body {
+                  overflow: auto;
+                  padding: 14px;
+                }
+
+                .detail-grid {
+                  display: grid;
+                  grid-template-columns: 238px minmax(0, 1fr);
+                  gap: 20px;
+                  align-items: start;
+                }
+
+                .detail-track {
+                  --rail-gap-col: 6px;
+                  --chip-axis-x: 14px;
+                  display: grid;
+                  grid-template-columns:
+                    max-content 4px 1px var(--rail-gap-col) minmax(min-content, max-content)
+                    minmax(0, 1fr);
+                  column-gap: 0;
+                  align-items: stretch;
+                  min-width: 0;
+                }
+
+                .time-bridge {
+                  --rail-from: var(--accent);
+                  --rail-to: var(--accent);
+                  --bridge-gap: 1px;
+                  grid-column: 3;
+                  position: relative;
+                  z-index: 0;
+                  min-block-size: 1px;
+                  padding-block-end: var(--bridge-gap);
+                  overflow: visible;
+                  pointer-events: none;
+                }
+
+                .time-bridge-label {
+                  --rail-from: var(--accent);
+                  grid-column: 1;
+                  align-self: center;
+                  justify-self: end;
+                  max-inline-size: 54px;
+                  color: color-mix(in oklch, var(--rail-from), black 18%);
+                  font-size: 9px;
+                  font-weight: 800;
+                  line-height: 1;
+                  overflow: hidden;
+                  pointer-events: none;
+                  text-overflow: ellipsis;
+                  white-space: nowrap;
+                }
+
+                .time-svg {
+                  display: block;
+                  inline-size: 3px;
+                  block-size: calc(100% - var(--bridge-gap));
+                  overflow: visible;
+                }
+
+                .time-svg-main {
+                  stroke-linecap: butt;
+                  stroke-width: 1.25px;
+                  opacity: 0.9;
+                  vector-effect: non-scaling-stroke;
+                }
+
+                .time-svg-tick {
+                  stroke-linecap: round;
+                  stroke-width: 1px;
+                  opacity: 0.88;
+                  vector-effect: non-scaling-stroke;
+                }
+
+                .chip-link-vertical {
+                  --rail-from: var(--accent);
+                  --rail-to: var(--accent);
+                  grid-column: 5;
+                  position: relative;
+                  z-index: 1;
+                  min-width: 0;
+                  min-block-size: 54px;
+                  margin-block: -1px;
+                  pointer-events: none;
+                }
+
+                .chip-link-vertical::before {
+                  content: "";
+                  position: absolute;
+                  inset-block: 0;
+                  inset-inline-start: var(--chip-axis-x);
+                  inline-size: 1.25px;
+                  margin-block: -1px;
+                  border-radius: 999px;
+                  background: linear-gradient(
+                    180deg in oklch,
+                    var(--rail-from),
+                    color-mix(in oklch, var(--rail-from), var(--rail-to) 45%),
+                    var(--rail-to)
+                  );
+                  transform: translateX(-50%);
+                }
+
+                .station-link {
+                  grid-column: 5;
+                  align-self: start;
+                  justify-self: start;
+                  z-index: 2;
+                  display: inline-flex;
+                  max-inline-size: 118px;
+                  color: inherit;
+                  text-decoration: none;
+                }
+
+                .station-link x-record-chip {
+                  max-inline-size: 118px;
+                }
+
+                .station-body {
+                  grid-column: 6;
+                  align-self: start;
+                  min-width: 0;
+                  padding-block: 1px 14px;
+                  padding-inline-start: 10px;
+                }
+
+                .station-body-head {
+                  display: flex;
+                  align-items: baseline;
+                  gap: 8px;
+                  min-width: 0;
+                  margin-block-end: 4px;
+                }
+
+                .station-body-title {
+                  overflow: hidden;
+                  color: #172033;
+                  font-size: 12px;
+                  font-weight: 820;
+                  line-height: 1.15;
+                  text-overflow: ellipsis;
+                  white-space: nowrap;
+                }
+
+                .station-body-meta {
+                  flex: none;
+                  color: var(--subtle);
+                  font-size: 10px;
+                  font-weight: 760;
+                  line-height: 1;
+                  white-space: nowrap;
+                }
+
+                .station-body-copy {
+                  color: #334155;
+                  font-size: 11.5px;
+                  line-height: 1.48;
+                }
+
+                .station-body-copy > :first-child {
+                  margin-block-start: 0;
+                }
+
+                .station-body-copy > :last-child {
+                  margin-block-end: 0;
+                }
+
+                .content {
+                  display: grid;
+                  gap: 12px;
+                  min-width: 0;
+                }
+
+                .section-card,
+                .tab-panel {
+                  display: grid;
+                  gap: 10px;
+                  border: 1px solid var(--border);
+                  border-radius: 16px;
+                  background: #fff;
+                  padding: 12px;
+                }
+
+                .section-head {
+                  display: grid;
+                  grid-template-columns: auto minmax(0, 1fr) auto;
+                  gap: 12px;
+                  align-items: center;
+                  min-width: 0;
+                }
+
+                .section-head strong {
+                  font-size: 12.5px;
+                }
+
+                .section-title {
+                  overflow: hidden;
+                  text-overflow: ellipsis;
+                  white-space: nowrap;
+                }
+
+                .section-meta {
+                  color: var(--subtle);
+                  font-size: 11px;
+                  font-weight: 720;
+                  line-height: 1;
+                  white-space: nowrap;
+                }
+
+                .section-copy,
+                .code,
+                .yaml {
+                  color: #273449;
+                  font-size: 12px;
+                  line-height: 1.58;
+                }
+
+                .code,
+                .yaml {
+                  overflow: auto;
+                  border: 1px solid rgba(15, 23, 42, 0.08);
+                  border-radius: 12px;
+                  background: #f7f9fc;
+                  padding: 10px;
+                  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+                  white-space: pre-wrap;
+                }
+
+                .tabs {
+                  display: grid;
+                  grid-auto-flow: column;
+                  grid-auto-columns: minmax(0, 1fr);
+                  gap: 6px;
+                }
+
+                .tab {
+                  overflow: hidden;
+                  min-width: 0;
+                  border: 1px solid var(--border);
+                  border-radius: 999px;
+                  background: #fbfcfe;
+                  color: var(--subtle);
+                  padding-inline: 10px;
+                  cursor: pointer;
+                  font-size: 11px;
+                  font-weight: 760;
+                  text-overflow: ellipsis;
+                  white-space: nowrap;
+                }
+
+                .tab[aria-selected="true"] {
+                  border-color: color-mix(in oklab, var(--accent), white 55%);
+                  background: color-mix(in oklab, var(--accent), white 92%);
+                  color: #1748b8;
+                }
+
+                .tab-panel[hidden] {
+                  display: none;
+                }
+
+                .empty-state,
+                .streaming-banner,
+                .error-banner {
+                  border-radius: 13px;
+                  padding: 10px;
+                  font-size: 12px;
+                  line-height: 1.5;
+                }
+
+                .empty-state {
+                  display: grid;
+                  place-items: center;
+                  min-height: 86px;
+                  border: 1px dashed color-mix(in oklab, var(--accent), white 62%);
+                  color: var(--subtle);
+                  animation: breathe 2.8s ease-in-out infinite;
+                }
+
+                .streaming-banner {
+                  border: 1px dashed color-mix(in oklab, var(--accent), white 62%);
+                  background: linear-gradient(
+                    90deg,
+                    rgba(37, 99, 235, 0.04),
+                    rgba(37, 99, 235, 0.12),
+                    rgba(37, 99, 235, 0.04)
+                  );
+                  animation: shimmer 2.6s linear infinite;
+                }
+
+                .error-banner {
+                  border: 1px solid color-mix(in oklab, var(--kind-error, #dc2626), white 58%);
+                  background: color-mix(in oklab, var(--kind-error, #dc2626), white 94%);
+                  color: #9a4312;
+                }
+
+                .mono {
+                  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+                }
+
+                .detail-tabs {
+                  display: grid;
+                  gap: 10px;
+                  min-width: 0;
+                }
+
+                .syntax-block {
+                  overflow: auto;
+                  border: 1px solid color-mix(in oklab, var(--accent), white 78%);
+                  border-radius: 13px;
+                  background: #f8fafc;
+                  color: #263447;
+                  padding: 10px 0;
+                  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+                  font-size: 11.5px;
+                  line-height: 1.55;
+                  white-space: pre;
+                }
+
+                .syntax-line {
+                  display: block;
+                  min-width: max-content;
+                  padding-inline: 12px;
+                }
+
+                .syntax-line--meta {
+                  color: color-mix(in oklch, var(--subtle), black 6%);
+                }
+
+                .syntax-line--context {
+                  color: #41536b;
+                }
+
+                .syntax-line--remove {
+                  background: color-mix(in oklch, var(--kind-error, #dc2626), white 94%);
+                  color: color-mix(in oklch, var(--kind-error, #dc2626), black 4%);
+                }
+
+                .syntax-line--add {
+                  background: color-mix(in oklch, var(--kind-text, #2563eb), white 94%);
+                  color: color-mix(in oklch, var(--kind-text, #2563eb), black 12%);
+                }
+
+                .syntax-key {
+                  color: color-mix(in oklch, var(--kind-config, #9333ea), black 6%);
+                  font-weight: 760;
+                }
+
+                .syntax-value {
+                  color: #31445d;
+                }
+
+                @keyframes shimmer {
+                  0% {
+                    background-position: -180px 0;
+                  }
+                  100% {
+                    background-position: 180px 0;
+                  }
+                }
+
+                @keyframes breathe {
+                  0%,
+                  100% {
+                    opacity: 0.72;
+                    transform: translateY(0);
+                  }
+                  50% {
+                    opacity: 1;
+                    transform: translateY(-1px);
+                  }
+                }
+
+                @media (max-width: 780px) {
+                  .detail-head {
+                    grid-template-columns: 1fr;
+                  }
+
+                  .detail-grid {
+                    grid-template-columns: 1fr;
+                    gap: 12px;
+                  }
+
+                  .detail-track {
+                    grid-template-columns:
+                      max-content 4px 1px var(--rail-gap-col) minmax(min-content, max-content)
+                      minmax(0, 1fr);
+                  }
+
+                  .time-bridge-label {
+                    max-inline-size: 46px;
+                    font-size: 8.5px;
+                  }
+
+                  .section-card,
+                  .tab-panel {
+                    padding: 10px;
+                  }
+
+                  .code,
+                  .yaml {
+                    font-size: 11.5px;
+                  }
+
+                  .syntax-block {
+                    font-size: 10.8px;
+                  }
+                }
+              </style>
+              <section class="detail">
+                <header class="detail-head">
+                  <div class="title">
+                    <strong id="title"></strong>
+                    <span id="meta" class="small"></span>
+                    <p id="summary" class="summary"></p>
+                  </div>
+                  <div id="status" class="status"></div>
+                </header>
+                <div id="body" class="detail-body"></div>
+              </section>
+            </template>
+          </x-record-detail-surface>
+        </section>
+      </section>
+    </main>
+
+    <script>
+      (() => {
+        const hydrateLucide = (root = document) => {
+          if (!window.lucide?.createIcons || !window.lucide.icons) return;
+          window.lucide.createIcons({
+            root,
+            icons: window.lucide.icons,
+            attrs: { width: 15, height: 15, "stroke-width": 1.8 },
+          });
+        };
+
+        const escapeText = (value) =>
+          String(value)
+            .replaceAll("&", "&amp;")
+            .replaceAll("<", "&lt;")
+            .replaceAll(">", "&gt;")
+            .replaceAll('"', "&quot;")
+            .replaceAll("'", "&#39;");
+
+        const renderIcon = (name) => `<i data-lucide="${escapeText(name)}" class="icon-svg" aria-hidden="true"></i>`;
+
+        const renderChip = (kind, label, title, extra = "") =>
+          `<x-record-chip kind="${escapeText(kind)}" label="${escapeText(label)}" title="${escapeText(title)}"${extra}></x-record-chip>`;
+
+        const kindTone = (kind) => `var(--kind-${kind}, var(--tone-accent, #2563eb))`;
+        const kindRailTone = (kind) => `color-mix(in oklch, ${kindTone(kind)}, white 62%)`;
+
+        const renderTimeSvg = (gradientId, fromTone, toTone) => `
+        <svg class="time-svg" viewBox="0 0 3 100" preserveAspectRatio="none" aria-hidden="true" focusable="false">
+          <defs>
+            <linearGradient id="${escapeText(gradientId)}" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="0" y2="100">
+              <stop offset="0%" style="stop-color:${escapeText(fromTone)}"></stop>
+              <stop offset="100%" style="stop-color:${escapeText(toTone)}"></stop>
+            </linearGradient>
+          </defs>
+          <line class="time-svg-main" x1="0.5" y1="0" x2="0.5" y2="100" style="stroke:url(#${escapeText(gradientId)})"></line>
+          <line class="time-svg-tick" x1="0.5" y1="0.5" x2="2.25" y2="0.5" style="stroke:var(--rail-from)"></line>
+          <line class="time-svg-tick" x1="0.5" y1="99.5" x2="2.25" y2="99.5" style="stroke:var(--rail-to)"></line>
+        </svg>
+      `;
+
+        const renderStationBody = (section, row) => {
+          if (!section) return "";
+          return `
+          <article class="station-body" style="grid-row:${row} / span 2" id="${escapeText(section.kind)}">
+            <div class="station-body-head">
+              <strong class="station-body-title">${escapeText(section.title)}</strong>
+              <span class="station-body-meta">${escapeText(section.meta)}</span>
+            </div>
+            <div class="station-body-copy">${section.body}</div>
+          </article>
+        `;
+        };
+
+        const renderFlowTrack = (detail) => {
+          const rowTemplate = detail.rail.flatMap(() => ["min-content", "minmax(54px, 1fr)"]).join(" ");
+          const fragments = [];
+          detail.rail.forEach((item, index) => {
+            const next = detail.rail[index + 1] ?? item;
+            const section = detail.sections[index];
+            const isLast = index === detail.rail.length - 1;
+            const chipRow = index * 2 + 1;
+            const linkRow = chipRow + 1;
+            const fromTone = kindRailTone(item.toneKind ?? item.kind);
+            const toTone = kindRailTone(next.toneKind ?? next.kind);
+            const style = [`--rail-from:${fromTone}`, `--rail-to:${toTone}`].join(";");
+            const extra = [item.open ? "open" : "", item.active ? "active" : ""].filter(Boolean).join(" ");
+            fragments.push(`
+            <a
+              class="station-link"
+              href="#${escapeText(section?.kind ?? item.sectionId ?? item.kind)}"
+              title="${escapeText(item.title)}"
+              style="grid-row:${chipRow}"
+            >
+              ${renderChip(item.kind, item.label, item.title, extra ? ` ${extra}` : "")}
+            </a>
+            ${renderStationBody(section, chipRow)}
+          `);
+            if (!isLast) {
+              const gradientId = `timeGradient-${detail.key}-${index}`;
+              const bridgeRow = index === 0 ? `${chipRow} / span 3` : `${linkRow} / span 2`;
+              fragments.push(`
+              <span class="time-bridge-label" style="grid-row:${bridgeRow};${style}" title="${escapeText(item.intervalTitle ?? item.duration ?? "")}">
+                ${escapeText(item.duration ?? "")}
+              </span>
+              <span class="time-bridge" style="grid-row:${bridgeRow};${style}">
+                ${renderTimeSvg(gradientId, fromTone, toTone)}
+              </span>
+              <span class="chip-link-vertical" style="grid-row:${linkRow};${style}" aria-hidden="true"></span>
+            `);
+            }
+          });
+          return `
+          <div class="detail-track" style="grid-template-rows:${rowTemplate}">
+            ${fragments.join("")}
+          </div>
+        `;
+        };
+
+        const sectionCard = ({ kind, label, title, meta, body, code }) => `
+        <article class="section-card" id="${escapeText(kind)}">
+          <div class="section-head">
+            ${renderChip(kind, label ?? "", `${title} station`)}
+            <strong class="section-title">${escapeText(title)}</strong>
+            <span class="section-meta">${escapeText(meta)}</span>
+          </div>
+          <div class="section-copy">${body}</div>
+          ${code ? `<pre class="code">${escapeText(code)}</pre>` : ""}
+        </article>
+      `;
+
+        const tabs = (items, active) => `
+        <div class="tabs" role="tablist" aria-label="${escapeText(active.label)} tabs">
+          ${items
+            .map(
+              (item) =>
+                `<button class="tab" type="button" data-tab="${escapeText(item.key)}" aria-selected="${item.key === active.key ? "true" : "false"}">${escapeText(item.label)}</button>`,
+            )
+            .join("")}
+        </div>
+      `;
+
+        // Prototype-only tabs wrapper. Product migration should replace this
+        // helper with the Framework7/product tabs component and keep only the
+        // tab content contract below.
+        const detailTabs = ({ label, items, activeKey, panels }) => `
+        <div class="detail-tabs">
+          <div class="tabs" role="tablist" aria-label="${escapeText(label)}">
+            ${items
+              .map(
+                (item) =>
+                  `<button class="tab" type="button" data-tab="${escapeText(item.key)}" aria-selected="${item.key === activeKey ? "true" : "false"}">${escapeText(item.label)}</button>`,
+              )
+              .join("")}
+          </div>
+          ${items
+            .map(
+              (item) => `
+                <div class="tab-panel" data-panel="${escapeText(item.key)}"${item.key === activeKey ? "" : " hidden"}>
+                  ${panels[item.key] ?? ""}
+                </div>
+              `,
+            )
+            .join("")}
+        </div>
+      `;
+
+        // Prototype syntax highlighting. Product migration should replace this
+        // with the project's highlight pipeline for `diff` and `yaml`.
+        const renderSyntaxBlock = (language, source) => {
+          const lineClass = (line) => {
+            if (language === "diff") {
+              if (line.startsWith("@@")) return "syntax-line--meta";
+              if (line.startsWith("-")) return "syntax-line--remove";
+              if (line.startsWith("+")) return "syntax-line--add";
+            }
+            return "syntax-line--context";
+          };
+          const renderLine = (line) => {
+            if (language !== "yaml") return escapeText(line);
+            return escapeText(line).replace(/^(\s*[-\w.]+:)(.*)$/u, (_match, key, value) => {
+              return `<span class="syntax-key">${key}</span><span class="syntax-value">${value}</span>`;
+            });
+          };
+          return `
+          <pre class="syntax-block" data-language="${escapeText(language)}" aria-label="${escapeText(language)} source">${source
+            .split("\n")
+            .map((line) => `<span class="syntax-line ${lineClass(line)}">${line ? renderLine(line) : " "}</span>`)
+            .join("")}</pre>
+        `;
+        };
+
+        const modelSections = [
+          {
+            kind: "input",
+            label: "18t",
+            title: "Input",
+            meta: "start",
+            body: `
+            <p>Update the record projection and detail shell.</p>
+          `,
+            code: `parts: user.text + user.file
+sourceRefs: message_part.input[*]`,
+          },
+          {
+            kind: "thinking",
+            label: "11.8s",
+            title: "Thinking",
+            meta: "11.8s",
+            body: `
+            <p>Open reasoning stream.</p>
+          `,
+            code: `thinking: open
+start: 420
+end: 2100`,
+          },
+          {
+            kind: "tool",
+            label: "2",
+            title: "Tool",
+            meta: "2 calls",
+            body: `
+            <p>read_file · apply_patch</p>
+          `,
+            code: `toolCallId: call-read
+resultMerged: true
+runningArgsVisible: true`,
+          },
+          {
+            kind: "text",
+            label: "14t",
+            title: "Tail",
+            meta: "now",
+            body: `
+            <p>Updating the record projection and detail shell...</p>
+          `,
+            code: `partialText: Updating the record projection and detail shell...
+stream: open`,
+          },
+        ];
+
+        const errorSections = [
+          {
+            kind: "input",
+            label: "21t",
+            title: "Input",
+            meta: "start",
+            body: `<p>Apply the current patch.</p>`,
+            code: `parts: user.text
+sourceRefs: message_part.input[*]`,
+          },
+          {
+            kind: "thinking",
+            label: "1.4s",
+            title: "Thinking",
+            meta: "1.4s",
+            body: `<p>Patch context check.</p>`,
+            code: `thinking: open
+end: 1760`,
+          },
+          {
+            kind: "tool",
+            label: "1",
+            title: "Tool",
+            meta: "merged",
+            body: `<p>workspace.apply_patch</p>`,
+            code: `toolCallId: call-tail
+resultMerged: true`,
+          },
+          {
+            kind: "error",
+            label: "",
+            title: "Error tail",
+            meta: "7.0s",
+            body: `<div class="error-banner">Provider stream ended with a retryable transport error.</div>`,
+            code: `status: error
+tool: workspace.apply_patch
+reason: invalid patch context`,
+          },
+        ];
+
+        const detailData = {
+          model: {
+            key: "model",
+            title: "Model run detail",
+            meta: "gpt-5.1 · streaming · 18.4s",
+            status: `<span class="status-chip">${renderIcon("hourglass")}streaming</span><span class="status-chip">${renderIcon("combine")}latest anchor</span>`,
+            sections: modelSections,
+            rail: [
+              {
+                kind: "input",
+                label: "18t",
+                title:
+                  "Input station. User message contains text plus one file; tool results are excluded from this chip.",
+                overviewIcon: "message-square-text",
+                overviewLabel: "18t + 15KB",
+                duration: "420ms",
+                intervalTitle: "Closed interval from input start to first message part: [input, thinking].",
+              },
+              {
+                kind: "thinking",
+                label: "11.8s",
+                title: "Thinking station. This chip displays the thinking span duration.",
+                overviewIcon: "brain",
+                overviewLabel: "11.8s",
+                duration: "11.8s",
+                intervalTitle: "Half-open interval from previous chip end to this chip end: (thinking, tool].",
+              },
+              {
+                kind: "tool",
+                label: "2",
+                title: "Tool station. Two tool calls with their results merged back into source tool chips.",
+                overviewIcon: "wrench",
+                overviewLabel: "2 calls",
+                duration: "5.1s",
+                intervalTitle: "Half-open interval from previous chip end to this chip end: (tool, text].",
+              },
+              {
+                kind: "text",
+                label: "14t",
+                title: "Latest assistant textPart preview. The record may omit this chip label if no textPart exists.",
+                overviewIcon: "message-square-text",
+                overviewLabel: "14t",
+                duration: "now",
+                open: true,
+              },
+            ],
+            content: `
+            ${sectionCard({
+              kind: "input",
+              label: "18t",
+              title: "Input",
+              meta: "start",
+              body: `
+                <p>Update the record projection and detail shell.</p>
+              `,
+              code: `parts: user.text + user.file
+sourceRefs: message_part.input[*]`,
+            })}
+            ${sectionCard({
+              kind: "thinking",
+              label: "11.8s",
+              title: "Thinking",
+              meta: "11.8s",
+              body: `
+                <p>Open reasoning stream.</p>
+              `,
+              code: `thinking: open
+start: 420
+end: 2100`,
+            })}
+            ${sectionCard({
+              kind: "tool",
+              label: "2",
+              title: "Tool",
+              meta: "2 calls",
+              body: `
+                <p>read_file · apply_patch</p>
+              `,
+              code: `toolCallId: call-read
+resultMerged: true
+runningArgsVisible: true`,
+            })}
+            ${sectionCard({
+              kind: "text",
+              label: "14t",
+              title: "Tail",
+              meta: "now",
+              body: `
+                <p>Updating the record projection and detail shell...</p>
+              `,
+              code: `partialText: Updating the record projection and detail shell...
+stream: open`,
+            })}
+          `,
+          },
+          error: {
+            key: "error",
+            title: "Model run detail",
+            meta: "gpt-5.1 · error · 7.0s",
+            status: `<span class="status-chip">${renderIcon("circle-alert")}error</span><span class="status-chip">${renderIcon("combine")}latest anchor</span>`,
+            sections: errorSections,
+            rail: [
+              {
+                kind: "input",
+                label: "21t",
+                title: "Input station. User message text only.",
+                overviewIcon: "message-square-text",
+                overviewLabel: "21t",
+                duration: "360ms",
+              },
+              {
+                kind: "thinking",
+                label: "1.4s",
+                title: "Thinking station. Duration is captured before the tool call.",
+                overviewIcon: "brain",
+                overviewLabel: "1.4s",
+                duration: "1.4s",
+              },
+              {
+                kind: "tool",
+                label: "1",
+                title: "Tool station. Single tool call is represented without redundant count text in the list card.",
+                overviewIcon: "wrench",
+                overviewLabel: "1 call",
+                duration: "2.5s",
+              },
+              {
+                kind: "error",
+                label: "",
+                title: "Error station. Latest state ended in failure.",
+                overviewIcon: "circle-alert",
+                overviewLabel: "transport error",
+                duration: "now",
+                open: true,
+              },
+            ],
+            content: `
+            ${sectionCard({
+              kind: "input",
+              label: "21t",
+              title: "Input",
+              meta: "start",
+              body: `<p>Apply the current patch.</p>`,
+              code: `parts: user.text
+sourceRefs: message_part.input[*]`,
+            })}
+            ${sectionCard({
+              kind: "thinking",
+              label: "1.4s",
+              title: "Thinking",
+              meta: "1.4s",
+              body: `<p>Patch context check.</p>`,
+              code: `thinking: open
+end: 1760`,
+            })}
+            ${sectionCard({
+              kind: "tool",
+              label: "",
+              title: "Tool",
+              meta: "merged",
+              body: `<p>workspace.apply_patch</p>`,
+              code: `toolCallId: call-tail
+resultMerged: true`,
+            })}
+            <article class="section-card">
+              <div class="section-head">
+                <strong class="section-title">Error tail</strong>
+                <span class="section-meta">7.0s</span>
+              </div>
+              <div class="error-banner">Provider stream ended with a retryable transport error.</div>
+              <pre class="code">status: error
+tool: workspace.apply_patch
+reason: invalid patch context</pre>
+            </article>
+          `,
+          },
+          compact: {
+            title: "Compact detail",
+            meta: "71.2% → 38.6% · streaming",
+            status: `<span class="status-chip">${renderIcon("shredder")}compact</span><span class="status-chip">${renderIcon("hourglass")}streaming</span>`,
+            rail: [
+              {
+                kind: "compact",
+                label: "71→39",
+                title: "71.2% to 38.6%",
+                overviewIcon: "shredder",
+                overviewLabel: "71.2% → 38.6%",
+                duration: "3.1s",
+              },
+              {
+                kind: "text",
+                label: "new",
+                title: "New Context",
+                overviewIcon: "message-square-text",
+                overviewLabel: "streaming",
+                duration: "now",
+              },
+              {
+                kind: "error",
+                label: "",
+                title: "Compact warning",
+                overviewIcon: "circle-alert",
+                overviewLabel: "rate limit",
+                duration: "retry",
+              },
+              {
+                kind: "archive",
+                label: "old",
+                title: "Old Context",
+                overviewIcon: "archive",
+                overviewLabel: "history",
+                duration: "history",
+              },
+            ],
+            content: `
+            <article class="section-card">
+              <div class="section-head">
+                <strong class="section-title">Compression object</strong>
+                <span class="section-meta">2.8s</span>
+              </div>
+              <x-compact-body before="71.2" after="38.6" state="running"></x-compact-body>
+            </article>
+            ${tabs(
+              [
+                { key: "new", label: "New Context" },
+                { key: "old", label: "Old Context" },
+              ],
+              { key: "new", label: "New Context" },
+            )}
+            <div class="tab-panel" data-panel="new">
+              <div class="streaming-banner">streaming · 38.6%</div>
+              <div class="error-banner">rate_limit_exceeded · retryAfter=1200ms</div>
+              <article class="section-card">
+                <div class="section-head">
+                  <strong class="section-title">New Context</strong>
+                  <span class="section-meta">streaming</span>
+                </div>
+                <pre class="code"># Context
+- Heartbeat Record is the durable row unit.
+- Model Run uses metro chips for message-part timing.
+- Config stores changed controls in the row and full YAML in detail.
+
+# Attention
+- Finish vertical detail rail geometry.
+- Keep product surfaces factual and low-copy.</pre>
+              </article>
+              <article class="section-card">
+                <div class="section-head">
+                  <strong class="section-title">Empty</strong>
+                  <span class="section-meta">idle</span>
+                </div>
+                <div class="empty-state">0 chunks</div>
+              </article>
+            </div>
+            <div class="tab-panel" data-panel="old" hidden>
+              <article class="section-card">
+                <div class="section-head">
+                  <strong class="section-title">Old Context</strong>
+                  <span class="section-meta">history</span>
+                </div>
+                <pre class="code"># Context
+- Heartbeat groups are current query-time projections.
+- The list/detail canvas owns anchor behavior.
+- Compact and Config use product-object cards.</pre>
+              </article>
+            </div>
+          `,
+          },
+          config: {
+            title: "Config detail",
+            meta: "14:21 · next call",
+            status: `<span class="status-chip">${renderIcon("sliders-horizontal")}config</span><span class="status-chip">${renderIcon("check")}applied</span>`,
+            rail: [
+              {
+                kind: "config",
+                label: "5",
+                title: "model, thinking, maxToken, topK, effect",
+                overviewIcon: "sliders-horizontal",
+                overviewLabel: "5",
+                duration: "applied",
+              },
+              {
+                kind: "diff",
+                label: "yaml",
+                title: "Diff Config",
+                overviewIcon: "diff",
+                overviewLabel: "diff",
+                duration: "yaml",
+              },
+              {
+                kind: "file",
+                label: "new",
+                title: "New Config",
+                overviewIcon: "file",
+                overviewLabel: "new",
+                duration: "current",
+              },
+              {
+                kind: "archive",
+                label: "old",
+                title: "Old Config",
+                overviewIcon: "archive",
+                overviewLabel: "old",
+                duration: "history",
+              },
+            ],
+            content: `
+            ${detailTabs({
+              label: "Config detail tabs",
+              items: [
+                { key: "diff", label: "Diff Config" },
+                { key: "new", label: "New Config" },
+                { key: "old", label: "Old Config" },
+              ],
+              activeKey: "diff",
+              panels: {
+                diff: `
+                  ${renderSyntaxBlock(
+                    "diff",
+                    `@@ provider.openai
+-model: gpt-5.0
++model: gpt-5.1
+ thinking:
+-  enabled: false
++  enabled: true
++  budgetTokens: 2048
+-maxToken: 4096
++maxToken: 8192
+-topK: 16
++topK: 32
+-effect: default
++effect: high
+ systemPrompt:
+   - keep the runtime facts objective
+-  - compact UI before long sessions
++  - keep full prompt content in detail`,
+                  )}
+                `,
+                new: `
+                  ${renderSyntaxBlock(
+                    "yaml",
+                    `provider: openai
+model: gpt-5.1
+thinking:
+  enabled: true
+  budgetTokens: 2048
+maxToken: 8192
+topK: 32
+effect: high
+systemPrompt:
+  - keep the runtime facts objective
+  - show only changed controls in the row
+  - keep full prompt content in detail`,
+                  )}
+                `,
+                old: `
+                  ${renderSyntaxBlock(
+                    "yaml",
+                    `provider: openai
+model: gpt-5.0
+thinking:
+  enabled: false
+maxToken: 4096
+topK: 16
+effect: default
+systemPrompt:
+  - keep the runtime facts objective
+  - compact UI before long sessions`,
+                  )}
+                `,
+              },
+            })}
+          `,
+          },
+        };
+
+        customElements.define(
+          "x-record-detail-surface",
+          class extends HTMLElement {
+            connectedCallback() {
+              this.render();
+            }
+
+            static get observedAttributes() {
+              return ["record", "anchor"];
+            }
+
+            attributeChangedCallback() {
+              this.render();
+            }
+
+            render() {
+              if (!this.shadowRoot) return;
+              const detail = detailData[this.getAttribute("record") ?? "model"] ?? detailData.model;
+              const anchor = this.getAttribute("anchor") ?? "latest";
+              this.shadowRoot.getElementById("title").textContent = detail.title;
+              this.shadowRoot.getElementById("meta").textContent = `${detail.meta} · ${anchor}`;
+              this.shadowRoot.getElementById("summary").textContent = detail.summary ?? "";
+              this.shadowRoot.getElementById("status").innerHTML = detail.status;
+              this.shadowRoot.getElementById("body").innerHTML = detail.sections
+                ? renderFlowTrack(detail)
+                : `<div class="content">${detail.content}</div>`;
+              this.bindTabs();
+              hydrateLucide(this.shadowRoot);
+              requestAnimationFrame(() => this.syncFlowGeometry());
+            }
+
+            bindTabs() {
+              const tabs = [...this.shadowRoot.querySelectorAll(".tab")];
+              if (!tabs.length) return;
+              tabs.forEach((tab) => {
+                tab.addEventListener("click", () => {
+                  const key = tab.dataset.tab;
+                  tabs.forEach((item) => item.setAttribute("aria-selected", String(item === tab)));
+                  this.shadowRoot.querySelectorAll("[data-panel]").forEach((panel) => {
+                    panel.hidden = panel.dataset.panel !== key;
+                  });
+                });
+              });
+            }
+
+            syncFlowGeometry() {
+              const chipCenterY = 15;
+              this.shadowRoot.querySelectorAll("[data-flow-rail]").forEach((rail, index, rails) => {
+                const height = Math.max(1, Math.round(rail.getBoundingClientRect().height));
+                const isFirst = index === 0;
+                const isLast = index === rails.length - 1;
+                const styles = getComputedStyle(rail);
+                const innerX = Number.parseFloat(styles.getPropertyValue("--inner-x")) || 142;
+                const outerX = Number.parseFloat(styles.getPropertyValue("--outer-x")) || Math.max(0, innerX - 6);
+                const segmentStartY = isFirst ? chipCenterY : chipCenterY + 14;
+                const segmentEndY = height + chipCenterY;
+                const labelY = isLast
+                  ? chipCenterY
+                  : Math.max(segmentStartY + 18, Math.round((segmentStartY + segmentEndY) / 2));
+                rail.style.setProperty("--interval-y", `${labelY}px`);
+                rail.style.setProperty("--chip-center-y", `${chipCenterY}px`);
+                const svg = rail.querySelector(".time-svg");
+                const mainStart = rail.querySelector("[data-time-main-start]");
+                const mainEnd = rail.querySelector("[data-time-main-end]");
+                const tickStart = rail.querySelector("[data-time-tick-start]");
+                const tickEnd = rail.querySelector("[data-time-tick-end]");
+                const leader = rail.querySelector("[data-time-leader]");
+                const mainY1 = segmentStartY;
+                const mainY2 = segmentEndY;
+                if (svg) {
+                  svg.setAttribute("viewBox", `0 0 ${innerX} ${segmentEndY}`);
+                  svg.style.blockSize = `${segmentEndY}px`;
+                }
+                [mainStart, mainEnd].forEach((line) => {
+                  line?.setAttribute("x1", String(outerX));
+                  line?.setAttribute("x2", String(outerX));
+                });
+                [tickStart, tickEnd].forEach((line) => {
+                  line?.setAttribute("x1", String(outerX));
+                  line?.setAttribute("x2", String(outerX + 2));
+                });
+                leader?.setAttribute("x1", String(outerX));
+                leader?.setAttribute("x2", String(innerX));
+                mainStart?.setAttribute("y1", String(mainY1));
+                mainStart?.setAttribute("y2", String(Math.max(mainY1, labelY - 2)));
+                mainEnd?.setAttribute("y1", String(Math.min(mainY2, labelY + 2)));
+                mainEnd?.setAttribute("y2", String(mainY2));
+                tickStart?.setAttribute("y1", String(mainY1));
+                tickStart?.setAttribute("y2", String(mainY1));
+                tickEnd?.setAttribute("y1", String(mainY2));
+                tickEnd?.setAttribute("y2", String(mainY2));
+                if (leader) {
+                  leader.setAttribute("y1", String(labelY));
+                  leader.setAttribute("y2", String(labelY));
+                }
+              });
+            }
+          },
+        );
+
+        const detailSurface = document.getElementById("detail");
+
+        document.querySelectorAll("[data-record]").forEach((button) => {
+          button.addEventListener("click", () => {
+            document.querySelectorAll("[data-record]").forEach((item) => item.setAttribute("aria-selected", "false"));
+            button.setAttribute("aria-selected", "true");
+            detailSurface.setAttribute("record", button.dataset.record);
+          });
+        });
+
+        const anchors = {
+          latest: ["Latest anchor", "live"],
+          fixed: ["Fixed page window", "page 16"],
+          new: ["New records available", "3 records"],
+        };
+
+        document.querySelectorAll("[data-anchor]").forEach((button) => {
+          button.addEventListener("click", () => {
+            document.querySelectorAll("[data-anchor]").forEach((item) => item.setAttribute("aria-selected", "false"));
+            button.setAttribute("aria-selected", "true");
+            const [title, text] = anchors[button.dataset.anchor];
+            document.getElementById("anchorTitle").textContent = title;
+            document.getElementById("anchorText").textContent = text;
+            detailSurface.setAttribute("anchor", button.dataset.anchor);
+          });
+        });
+
+        hydrateLucide();
+        requestAnimationFrame(() => hydrateLucide(detailSurface.shadowRoot));
+      })();
+    </script>
+  </body>
+</html>
