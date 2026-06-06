@@ -14,6 +14,8 @@ export type HeartbeatRecordChipKind =
   | "combo"
   | "unknown";
 
+export type HeartbeatRecordToneKind = HeartbeatRecordChipKind | "compact" | "config";
+
 export interface HeartbeatRecordChip {
   id: string;
   kind: HeartbeatRecordChipKind;
@@ -25,11 +27,29 @@ export interface HeartbeatRecordChip {
   parts: HeartbeatRecordPartSummary[];
 }
 
+export interface HeartbeatRecordChipToken {
+  kind: HeartbeatRecordToneKind;
+  label: string;
+  title: string;
+}
+
+export interface HeartbeatRecordChipTone {
+  startBorder: string;
+  endBorder: string;
+  startBackground: string;
+  endBackground: string;
+  borderGradient: string;
+  backgroundGradient: string;
+  ink: string;
+}
+
 export interface HeartbeatRecordLine {
   id: string;
   durationMs: number | null;
   label: string;
   title: string;
+  fromKind: HeartbeatRecordChipKind;
+  toKind: HeartbeatRecordChipKind;
 }
 
 export interface HeartbeatRecordTimelineSegment {
@@ -41,6 +61,7 @@ export interface HeartbeatRecordTimeline {
   chips: HeartbeatRecordChip[];
   segments: HeartbeatRecordTimelineSegment[];
   hiddenCount: number;
+  density: ChipDensity;
 }
 
 type ChipDensity = "narrow" | "medium" | "full";
@@ -63,6 +84,100 @@ const kindPriority: Record<HeartbeatRecordChipKind, number> = {
 const sizeFormatter = new Intl.NumberFormat(undefined, {
   maximumFractionDigits: 1,
 });
+
+const KIND_BASE_TONE: Record<HeartbeatRecordChipKind, string> = {
+  input: "var(--kind-input, oklch(58% 0.16 230deg))",
+  text: "var(--kind-text, oklch(58% 0.17 260deg))",
+  image: "var(--kind-image, oklch(58% 0.15 150deg))",
+  file: "var(--kind-file, oklch(58% 0.04 250deg))",
+  video: "var(--kind-video, oklch(58% 0.18 285deg))",
+  thinking: "var(--kind-thinking, oklch(58% 0.14 185deg))",
+  refusal: "var(--kind-refusal, oklch(58% 0.18 345deg))",
+  tool: "var(--kind-tool, oklch(58% 0.16 55deg))",
+  pending: "var(--kind-pending, oklch(58% 0.15 85deg))",
+  error: "var(--kind-error, oklch(58% 0.18 25deg))",
+  combo: "var(--kind-combo, oklch(58% 0.05 250deg))",
+  unknown: "var(--kind-unknown, oklch(58% 0.04 250deg))",
+};
+
+const KIND_BASE_TONE_EXTENDED: Record<HeartbeatRecordToneKind, string> = {
+  ...KIND_BASE_TONE,
+  compact: "var(--kind-compact, oklch(58% 0.04 250deg))",
+  config: "var(--kind-config, oklch(58% 0.17 305deg))",
+};
+
+const KIND_BORDER_MIX: Record<HeartbeatRecordToneKind, number> = {
+  input: 56,
+  text: 58,
+  image: 54,
+  file: 62,
+  video: 58,
+  thinking: 56,
+  refusal: 52,
+  tool: 52,
+  pending: 48,
+  error: 50,
+  combo: 60,
+  unknown: 64,
+  compact: 60,
+  config: 56,
+};
+
+const gradientStops = (
+  kinds: readonly HeartbeatRecordToneKind[],
+  toneResolver: (kind: HeartbeatRecordToneKind) => string,
+): string => {
+  const source = kinds.length > 0 ? kinds : ["unknown"];
+  if (source.length === 1) {
+    const color = toneResolver(source[0] as HeartbeatRecordToneKind);
+    return `${color} 0%, ${color} 100%`;
+  }
+  const denominator = source.length - 1;
+  return source
+    .map((kind, index) => {
+      const color = toneResolver(kind as HeartbeatRecordToneKind);
+      return `${color} ${((index / denominator) * 100).toFixed(2)}%`;
+    })
+    .join(", ");
+};
+
+const kindBaseTone = (kind: HeartbeatRecordToneKind): string => KIND_BASE_TONE_EXTENDED[kind] ?? KIND_BASE_TONE_EXTENDED.unknown;
+const kindBorderTone = (kind: HeartbeatRecordToneKind): string =>
+  `color-mix(in oklch, ${kindBaseTone(kind)}, white ${KIND_BORDER_MIX[kind] ?? KIND_BORDER_MIX.unknown}%)`;
+const kindBackgroundTone = (kind: HeartbeatRecordToneKind): string => `color-mix(in oklch, ${kindBaseTone(kind)}, white 92%)`;
+const kindInkTone = (kind: HeartbeatRecordToneKind): string => `color-mix(in oklch, ${kindBaseTone(kind)}, black 16%)`;
+
+export const buildHeartbeatRecordChipTone = (
+  toneKinds: readonly HeartbeatRecordToneKind[],
+): HeartbeatRecordChipTone => {
+  const source = (toneKinds.length > 0 ? toneKinds.filter((kind) => kind in KIND_BASE_TONE_EXTENDED) : ["unknown"]) as HeartbeatRecordToneKind[];
+  const startKind = source[0] ?? "unknown";
+  const endKind = source.at(-1) ?? startKind;
+  const borderStops = gradientStops(source, kindBorderTone);
+  const backgroundStops = gradientStops(source, kindBackgroundTone);
+  return {
+    startBorder: kindBorderTone(startKind),
+    endBorder: kindBorderTone(endKind),
+    startBackground: kindBackgroundTone(startKind),
+    endBackground: kindBackgroundTone(endKind),
+    borderGradient: `linear-gradient(90deg in oklch, ${borderStops})`,
+    backgroundGradient: `linear-gradient(90deg in oklch, ${backgroundStops})`,
+    ink: kindInkTone(endKind),
+  };
+};
+
+export const buildHeartbeatRecordChipToneStyle = (toneKinds: readonly HeartbeatRecordToneKind[]): string => {
+  const tone = buildHeartbeatRecordChipTone(toneKinds);
+  return [
+    `--chip-start-border:${tone.startBorder}`,
+    `--chip-end-border:${tone.endBorder}`,
+    `--chip-start-bg:${tone.startBackground}`,
+    `--chip-end-bg:${tone.endBackground}`,
+    `--chip-border-gradient:${tone.borderGradient}`,
+    `--chip-bg-gradient:${tone.backgroundGradient}`,
+    `--chip-ink:${tone.ink}`,
+  ].join(";");
+};
 
 export const formatHeartbeatRecordDuration = (durationMs: number | null): string => {
   if (durationMs === null || !Number.isFinite(durationMs) || durationMs < 0) {
@@ -133,6 +248,216 @@ const formatBytes = (bytes: number | null): string => {
     return `${sizeFormatter.format(bytes / 1024)}KB`;
   }
   return `${sizeFormatter.format(bytes / (1024 * 1024))}MB`;
+};
+
+interface HeartbeatRecordChipMetrics {
+  textTokens: number;
+  imageBytes: number;
+  fileBytes: number;
+  videoMs: number;
+  thinkingMs: number;
+  toolCount: number;
+  refusalCount: number;
+  errorCount: number;
+  unknownCount: number;
+}
+
+const emptyChipMetrics = (): HeartbeatRecordChipMetrics => ({
+  textTokens: 0,
+  imageBytes: 0,
+  fileBytes: 0,
+  videoMs: 0,
+  thinkingMs: 0,
+  toolCount: 0,
+  refusalCount: 0,
+  errorCount: 0,
+  unknownCount: 0,
+});
+
+const aggregateChipMetrics = (parts: readonly HeartbeatRecordPartSummary[]): HeartbeatRecordChipMetrics => {
+  const metrics = emptyChipMetrics();
+  for (const part of parts) {
+    const kind = resolveHeartbeatRecordPartKind(part);
+    switch (kind) {
+      case "text":
+        metrics.textTokens += estimateTextTokens(readTextPayload(part.label));
+        break;
+      case "image":
+        metrics.imageBytes += readPayloadNumber(part, ["size", "bytes", "fileSize"]) ?? 0;
+        break;
+      case "file":
+        metrics.fileBytes += readPayloadNumber(part, ["size", "bytes", "fileSize"]) ?? 0;
+        break;
+      case "video":
+        metrics.videoMs += readPayloadNumber(part, ["durationMs", "duration", "videoLengthMs"]) ?? 0;
+        break;
+      case "thinking":
+        metrics.thinkingMs += part.completedAt === null ? 0 : Math.max(0, part.completedAt - part.startedAt);
+        break;
+      case "tool":
+        metrics.toolCount += 1;
+        break;
+      case "refusal":
+        metrics.refusalCount += 1;
+        break;
+      case "error":
+        metrics.errorCount += 1;
+        break;
+      default:
+        metrics.unknownCount += 1;
+        break;
+    }
+  }
+  return metrics;
+};
+
+const compactBytesLabel = (label: string): string => label.replaceAll("KB", "K").replaceAll("MB", "M").replaceAll("GB", "G");
+
+const compactDurationLabel = (durationMs: number, density: ChipDensity): string => {
+  if (durationMs < 1000) {
+    return density === "narrow" ? `${Math.max(1, Math.round(durationMs / 1000))}s` : `${Math.round(durationMs)}ms`;
+  }
+  if (durationMs < 10_000) {
+    return density === "full" ? formatHeartbeatRecordDuration(durationMs) : `${(durationMs / 1000).toFixed(1)}s`;
+  }
+  if (durationMs < 60_000) {
+    return density === "narrow" ? `${Math.round(durationMs / 1000)}s` : `${(durationMs / 1000).toFixed(1)}s`;
+  }
+  return density === "full" ? formatHeartbeatRecordDuration(durationMs) : `${Math.round(durationMs / 60_000)}m`;
+};
+
+const estimateTokenWidth = (token: HeartbeatRecordChipToken, density: ChipDensity): number => {
+  const base = density === "narrow" ? 16 : 18;
+  const labelUnit = density === "narrow" ? 4.8 : density === "medium" ? 5.3 : 5.8;
+  const gap = token.label.length > 0 ? 5 : 0;
+  return base + gap + token.label.length * labelUnit;
+};
+
+export const buildHeartbeatRecordChipTokens = (
+  chip: HeartbeatRecordChip,
+  density: ChipDensity,
+): HeartbeatRecordChipToken[] => {
+  const tokens: HeartbeatRecordChipToken[] = [];
+  const pushPrimaryIcon = chip.kind === "input" || chip.kind === "combo";
+  const baseParts = chip.kind === "input" ? chip.parts.filter((part) => part.type !== "tool_result" && part.type !== "tool_call_result") : chip.parts;
+  const metrics = aggregateChipMetrics(baseParts);
+  const addMetricToken = (kind: HeartbeatRecordChipKind, label: string, title: string): void => {
+    if (label.length === 0 && kind !== "refusal" && kind !== "error" && kind !== "pending" && kind !== "unknown") {
+      return;
+    }
+    tokens.push({ kind, label, title });
+  };
+
+  if (pushPrimaryIcon && density !== "narrow") {
+    tokens.push({
+      kind: chip.kind,
+      label: "",
+      title: chip.kind === "input" ? "User message input" : "Merged middle span",
+    });
+  }
+
+  if (chip.kind === "input" || chip.kind === "combo") {
+    if (metrics.textTokens > 0) {
+      addMetricToken("text", `${metrics.textTokens}t`, `${metrics.textTokens} text tokens`);
+    }
+    if (metrics.imageBytes > 0) {
+      addMetricToken("image", compactBytesLabel(formatBytes(metrics.imageBytes)), `${formatBytes(metrics.imageBytes)} image payload`);
+    }
+    if (metrics.fileBytes > 0) {
+      addMetricToken("file", compactBytesLabel(formatBytes(metrics.fileBytes)), `${formatBytes(metrics.fileBytes)} file payload`);
+    }
+    if (metrics.videoMs > 0) {
+      addMetricToken("video", compactDurationLabel(metrics.videoMs, density), `${formatHeartbeatRecordDuration(metrics.videoMs)} video payload`);
+    }
+    if (metrics.thinkingMs > 0) {
+      addMetricToken("thinking", compactDurationLabel(metrics.thinkingMs, density), `${formatHeartbeatRecordDuration(metrics.thinkingMs)} thinking span`);
+    }
+    if (metrics.toolCount > 1) {
+      addMetricToken("tool", String(metrics.toolCount), `${metrics.toolCount} tool calls`);
+    } else if (metrics.toolCount === 1) {
+      addMetricToken("tool", "", "Tool call");
+    }
+    if (metrics.refusalCount > 0) {
+      addMetricToken("refusal", "", "Refusal");
+    }
+    if (metrics.errorCount > 0) {
+      addMetricToken("error", "", "Error");
+    }
+    if (metrics.unknownCount > 0) {
+      addMetricToken("unknown", String(metrics.unknownCount), `${metrics.unknownCount} unknown parts`);
+    }
+    return tokens;
+  }
+
+  switch (chip.kind) {
+    case "text": {
+      const label = chip.label.length > 0 ? chip.label : `${metrics.textTokens} tok`;
+      tokens.push({ kind: "text", label, title: chip.title || "Text part" });
+      break;
+    }
+    case "thinking": {
+      const duration = sumPartDuration(chip.parts);
+      tokens.push({
+        kind: "thinking",
+        label: duration === null ? chip.label : compactDurationLabel(duration, density),
+        title: chip.title || "Thinking span",
+      });
+      break;
+    }
+    case "tool": {
+      tokens.push({
+        kind: "tool",
+        label: chip.count > 1 ? String(chip.count) : "",
+        title: chip.title || "Tool call",
+      });
+      break;
+    }
+    case "image": {
+      const label = chip.label.length > 0 ? chip.label : compactBytesLabel(formatBytes(metrics.imageBytes));
+      tokens.push({ kind: "image", label, title: chip.title || "Image payload" });
+      break;
+    }
+    case "file": {
+      const label = chip.label.length > 0 ? chip.label : compactBytesLabel(formatBytes(metrics.fileBytes));
+      tokens.push({ kind: "file", label, title: chip.title || "File payload" });
+      break;
+    }
+    case "video": {
+      const label = chip.label.length > 0 ? chip.label : compactDurationLabel(metrics.videoMs, density);
+      tokens.push({ kind: "video", label, title: chip.title || "Video payload" });
+      break;
+    }
+    case "refusal":
+      tokens.push({ kind: "refusal", label: chip.label, title: chip.title || "Refusal" });
+      break;
+    case "error":
+      tokens.push({ kind: "error", label: chip.label, title: chip.title || "Error" });
+      break;
+    case "pending":
+      tokens.push({ kind: "pending", label: chip.label, title: chip.title || "Pending latest edge" });
+      break;
+    case "unknown":
+      tokens.push({
+        kind: "unknown",
+        label: chip.label.length > 0 ? chip.label : String(Math.max(1, chip.count)),
+        title: chip.title || "Unknown part",
+      });
+      break;
+    default:
+      tokens.push({ kind: chip.kind, label: chip.label, title: chip.title || chip.kind });
+      break;
+  }
+  return tokens;
+};
+
+const estimateChipWidth = (chip: HeartbeatRecordChip, density: ChipDensity): number => {
+  const tokens = buildHeartbeatRecordChipTokens(chip, density);
+  const chipPadding = density === "narrow" ? 10 : 12;
+  const gapWidth = Math.max(0, tokens.length - 1) * (density === "narrow" ? 2 : 5);
+  const tokenWidth = tokens.reduce((sum, token) => sum + estimateTokenWidth(token, density), 0);
+  const densityAllowance = density === "full" && (chip.parts.length ?? 0) >= 3 ? 10 : 0;
+  const safety = density === "full" ? 24 : density === "medium" ? 30 : 36;
+  return Math.ceil(chipPadding + gapWidth + tokenWidth + densityAllowance + safety);
 };
 
 export const resolveHeartbeatRecordPartKind = (part: HeartbeatRecordPartSummary): HeartbeatRecordChipKind => {
@@ -285,12 +610,6 @@ const densityForWidth = (width: number): ChipDensity => {
   return "full";
 };
 
-const estimateChipWidth = (chip: HeartbeatRecordChip, density: ChipDensity): number => {
-  const base = density === "narrow" ? 34 : density === "medium" ? 42 : 52;
-  const labelWidth = density === "narrow" ? 0 : Math.min(72, chip.label.length * 7);
-  return base + labelWidth;
-};
-
 const estimateLineWidth = (line: HeartbeatRecordLine, density: ChipDensity): number => {
   const base = density === "narrow" ? 14 : 22;
   const label = density === "full" ? Math.min(52, line.label.length * 6) : 0;
@@ -305,6 +624,8 @@ const lineBetween = (previous: HeartbeatRecordChip, next: HeartbeatRecordChip, i
     id: `${previous.id}->${next.id}`,
     durationMs,
     label: formatHeartbeatRecordDuration(durationMs),
+    fromKind: previous.kind,
+    toKind: next.kind,
     title:
       index === 1
         ? `Closed interval from input start to ${next.kind}: ${formatHeartbeatRecordDuration(durationMs)}`
@@ -359,12 +680,12 @@ const timelineFits = (chips: readonly HeartbeatRecordChip[], width: number, dens
 };
 
 const fitTimeline = (chips: readonly HeartbeatRecordChip[], width: number): HeartbeatRecordTimeline => {
-  if (chips.length <= 3) {
-    return { chips: [...chips], segments: buildSegments(chips), hiddenCount: 0 };
-  }
   const density = densityForWidth(width);
+  if (chips.length <= 3) {
+    return { chips: [...chips], segments: buildSegments(chips), hiddenCount: 0, density };
+  }
   if (timelineFits(chips, width, density)) {
-    return { chips: [...chips], segments: buildSegments(chips), hiddenCount: 0 };
+    return { chips: [...chips], segments: buildSegments(chips), hiddenCount: 0, density };
   }
   const input = chips[0]!;
   const tail: HeartbeatRecordChip[] = [];
@@ -388,6 +709,7 @@ const fitTimeline = (chips: readonly HeartbeatRecordChip[], width: number): Hear
     chips: fitted,
     segments: buildSegments(fitted),
     hiddenCount: hidden.length,
+    density,
   };
 };
 

@@ -1,0 +1,406 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Compact / Config Brainstorm</title>
+    <link rel="stylesheet" href="../canvases/record-color-tokens.css" />
+    <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js"></script>
+    <style>
+      :root {
+        --bg: var(--tone-canvas);
+        --paper: var(--tone-surface);
+        --soft: var(--tone-surface-soft);
+        --line: var(--tone-border);
+        --ink: var(--tone-ink);
+        --muted: var(--tone-muted);
+        --blue: var(--tone-accent);
+        font-family:
+          Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--ink);
+      }
+
+      h1,
+      h2,
+      h3,
+      p {
+        margin: 0;
+      }
+
+      h1 {
+        font-size: 18px;
+      }
+
+      h2 {
+        font-size: 13px;
+      }
+
+      h3 {
+        font-size: 12px;
+      }
+
+      p,
+      label {
+        color: var(--muted);
+        font-size: 12px;
+        line-height: 1.45;
+      }
+
+      .page {
+        display: grid;
+        gap: 16px;
+        padding: 22px;
+      }
+
+      .panel {
+        display: grid;
+        gap: 12px;
+        align-content: start;
+        border: 1px solid var(--line);
+        border-radius: 16px;
+        background: var(--paper);
+        padding: 14px;
+      }
+
+      .compare {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 12px;
+      }
+
+      .stack {
+        display: grid;
+        gap: 10px;
+      }
+
+      .state-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 10px;
+      }
+
+      .sheet {
+        display: grid;
+        gap: 12px;
+        border: 1px solid var(--line);
+        border-radius: 14px;
+        background: #fbfcfe;
+        padding: 12px;
+      }
+
+      .sheet-head {
+        display: grid;
+        gap: 4px;
+      }
+
+      .sheet-grid {
+        display: grid;
+        gap: 8px;
+        grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+      }
+
+      .field {
+        display: grid;
+        gap: 4px;
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        background: #fff;
+        padding: 9px 10px;
+      }
+
+      .field strong {
+        font-size: 11px;
+        line-height: 1.2;
+      }
+
+      .field span {
+        color: var(--muted);
+        font-size: 10.5px;
+        line-height: 1.25;
+      }
+
+      .actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+      }
+
+      .actions button {
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        background: #fff;
+        padding: 6px 10px;
+        color: var(--muted);
+        font: inherit;
+        font-size: 11px;
+        font-weight: 760;
+      }
+
+      .note {
+        color: var(--muted);
+        font-size: 10.5px;
+        line-height: 1.35;
+      }
+
+      @media (max-width: 860px) {
+        .compare,
+        .state-grid {
+          grid-template-columns: 1fr;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="page">
+      <section>
+        <h1>Compact / Config Brainstorm</h1>
+        <p>Config should read as changed controls, not as a normal editor. The preferred strip keeps the next-call facts dense and scanable; the operator sheet is here as a foil.</p>
+      </section>
+
+      <section class="compare">
+        <article class="panel">
+          <h2>Preferred strip</h2>
+          <p>One dominant gesture: next-call knobs as a bounded record row.</p>
+
+          <div class="stack">
+            <x-basic-record-card>
+              <template shadowrootmode="open">
+                <link rel="stylesheet" href="../canvases/basic-record-card.css" />
+                <article class="card">
+                  <header class="head">
+                    <div class="stack"><slot name="time"></slot><slot name="duration"></slot></div>
+                    <div class="stack"><slot name="title"></slot><slot name="meta"></slot></div>
+                    <div class="status-wrap"><slot name="status"></slot></div>
+                  </header>
+                  <div class="body"><slot name="body"></slot></div>
+                  <footer class="support"><slot name="support"></slot></footer>
+                </article>
+              </template>
+              <span slot="time">14:21</span>
+              <span slot="duration">next call</span>
+              <span slot="title">Config</span>
+              <span slot="meta">next-call knobs</span>
+              <span slot="status">applied</span>
+              <x-config-body
+                slot="body"
+                provider="openai · gpt-5.1"
+                scope="avatar: user:avatar"
+                state="applied"
+                temperature="0.4"
+                topk="32"
+                maxtoken="8192"
+                thinking="on"
+                thinking-budget="2048"
+              ></x-config-body>
+            </x-basic-record-card>
+
+            <div class="state-grid" aria-label="Config state variants">
+              <x-basic-record-card has-support>
+                <template shadowrootmode="open">
+                  <link rel="stylesheet" href="../canvases/basic-record-card.css" />
+                  <article class="card">
+                    <header class="head">
+                      <div class="stack"><slot name="time"></slot><slot name="duration"></slot></div>
+                      <div class="stack"><slot name="title"></slot><slot name="meta"></slot></div>
+                      <div class="status-wrap"><slot name="status"></slot></div>
+                    </header>
+                    <div class="body"><slot name="body"></slot></div>
+                    <footer class="support"><slot name="support"></slot></footer>
+                  </article>
+                </template>
+                <span slot="time">14:21</span>
+                <span slot="duration">next call</span>
+                <span slot="title">Config</span>
+                <span slot="meta">balanced</span>
+                <span slot="status">applied</span>
+                <x-config-body
+                  slot="body"
+                  provider="openai · gpt-5.1"
+                  scope="avatar: user:avatar"
+                  state="applied"
+                  temperature="0.4"
+                  topk="32"
+                  maxtoken="8192"
+                  thinking="on"
+                  thinking-budget="2048"
+                ></x-config-body>
+                <span slot="support">Stable default next-call knobs.</span>
+              </x-basic-record-card>
+
+              <x-basic-record-card has-support>
+                <template shadowrootmode="open">
+                  <link rel="stylesheet" href="../canvases/basic-record-card.css" />
+                  <article class="card">
+                    <header class="head">
+                      <div class="stack"><slot name="time"></slot><slot name="duration"></slot></div>
+                      <div class="stack"><slot name="title"></slot><slot name="meta"></slot></div>
+                      <div class="status-wrap"><slot name="status"></slot></div>
+                    </header>
+                    <div class="body"><slot name="body"></slot></div>
+                    <footer class="support"><slot name="support"></slot></footer>
+                  </article>
+                </template>
+                <span slot="time">14:23</span>
+                <span slot="duration">writing</span>
+                <span slot="title">Config</span>
+                <span slot="meta">saving</span>
+                <span slot="status" data-status="running">saving</span>
+                <x-config-body
+                  slot="body"
+                  provider="openai · gpt-5.1"
+                  scope="avatar: user:avatar"
+                  state="saving"
+                  temperature="0.4"
+                  topk="32"
+                  maxtoken="8192"
+                  thinking="on"
+                  thinking-budget="2048"
+                ></x-config-body>
+                <span slot="support">Same controls, still readable while the durable Settings write is in flight.</span>
+              </x-basic-record-card>
+
+              <x-basic-record-card has-support>
+                <template shadowrootmode="open">
+                  <link rel="stylesheet" href="../canvases/basic-record-card.css" />
+                  <article class="card">
+                    <header class="head">
+                      <div class="stack"><slot name="time"></slot><slot name="duration"></slot></div>
+                      <div class="stack"><slot name="title"></slot><slot name="meta"></slot></div>
+                      <div class="status-wrap"><slot name="status"></slot></div>
+                    </header>
+                    <div class="body"><slot name="body"></slot></div>
+                    <footer class="support"><slot name="support"></slot></footer>
+                  </article>
+                </template>
+                <span slot="time">14:31</span>
+                <span slot="duration">failed</span>
+                <span slot="title">Config</span>
+                <span slot="meta">error</span>
+                <span slot="status" data-status="error">error</span>
+                <x-config-body
+                  slot="body"
+                  provider="openai · gpt-5.1"
+                  scope="avatar: user:avatar"
+                  state="error"
+                  temperature="0.4"
+                  topk="32"
+                  maxtoken="8192"
+                  thinking="on"
+                  thinking-budget="2048"
+                  error="Conflict while saving next-call config."
+                ></x-config-body>
+                <span slot="support">Stable red failure, not a broken editor state.</span>
+              </x-basic-record-card>
+
+              <x-basic-record-card has-support>
+                <template shadowrootmode="open">
+                  <link rel="stylesheet" href="../canvases/basic-record-card.css" />
+                  <article class="card">
+                    <header class="head">
+                      <div class="stack"><slot name="time"></slot><slot name="duration"></slot></div>
+                      <div class="stack"><slot name="title"></slot><slot name="meta"></slot></div>
+                      <div class="status-wrap"><slot name="status"></slot></div>
+                    </header>
+                    <div class="body"><slot name="body"></slot></div>
+                    <footer class="support"><slot name="support"></slot></footer>
+                  </article>
+                </template>
+                <span slot="time">14:34</span>
+                <span slot="duration">locked</span>
+                <span slot="title">Config</span>
+                <span slot="meta">unavailable</span>
+                <span slot="status">unavailable</span>
+                <x-config-body
+                  slot="body"
+                  provider=""
+                  scope=""
+                  state="unavailable"
+                  temperature="0.4"
+                  topk="32"
+                  maxtoken="8192"
+                  thinking="on"
+                  thinking-budget="2048"
+                ></x-config-body>
+                <span slot="support">No provider or settings scope yet, but the record still explains why.</span>
+              </x-basic-record-card>
+            </div>
+          </div>
+        </article>
+
+        <article class="panel">
+          <h2>Operator panel</h2>
+          <p>Heavier, closer to the raw editor. Useful for editing, noisier for scanning.</p>
+
+          <div class="sheet">
+            <div class="sheet-head">
+              <h3>Next-call editor snapshot</h3>
+              <p>This version carries the same facts, but it spends more attention on the controls themselves.</p>
+            </div>
+
+            <div class="sheet-grid">
+              <div class="field">
+                <strong>Provider</strong>
+                <span>openai · gpt-5.1</span>
+              </div>
+              <div class="field">
+                <strong>Settings scope</strong>
+                <span>avatar: user:avatar</span>
+              </div>
+              <div class="field">
+                <strong>Temperature</strong>
+                <span>0.4</span>
+              </div>
+              <div class="field">
+                <strong>Top-k</strong>
+                <span>32</span>
+              </div>
+              <div class="field">
+                <strong>Max tokens</strong>
+                <span>8192</span>
+              </div>
+              <div class="field">
+                <strong>Thinking</strong>
+                <span>on</span>
+              </div>
+              <div class="field">
+                <strong>Thinking budget</strong>
+                <span>2048</span>
+              </div>
+              <div class="field">
+                <strong>State</strong>
+                <span>applied</span>
+              </div>
+            </div>
+
+            <div class="actions" aria-label="Operator actions">
+              <button type="button">Save</button>
+              <button type="button">Refresh</button>
+              <button type="button">Reset</button>
+            </div>
+
+            <p class="note">Same objective facts, but the editor chrome is the center of gravity.</p>
+          </div>
+        </article>
+      </section>
+    </main>
+
+    <script src="../canvases/record-components.js"></script>
+    <script>
+      if (window.lucide?.createIcons && window.lucide.icons) {
+        window.lucide.createIcons({
+          icons: window.lucide.icons,
+          attrs: { width: 16, height: 16, "stroke-width": 1.8 },
+        });
+      }
+    </script>
+  </body>
+</html>

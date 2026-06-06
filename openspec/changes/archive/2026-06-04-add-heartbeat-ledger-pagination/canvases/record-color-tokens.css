@@ -1,0 +1,27 @@
+:root {
+  --tone-canvas: #f4f6f8;
+  --tone-surface: #ffffff;
+  --tone-surface-soft: #fbfcfd;
+  --tone-border: #d8e1e8;
+  --tone-border-strong: #c4d0dc;
+  --tone-ink: #0f172a;
+  --tone-ink-soft: #1f2937;
+  --tone-muted: #5f7085;
+  --tone-accent: #2563eb;
+  --tone-accent-soft: color-mix(in oklab, var(--tone-accent), white 88%);
+  --tone-accent-border: color-mix(in oklab, var(--tone-accent), white 62%);
+  --metro-rail: #c6d3df;
+
+  --kind-input: #0369a1;
+  --kind-combo: #475569;
+  --kind-thinking: #0f766e;
+  --kind-text: #2563eb;
+  --kind-tool: #b45309;
+  --kind-pending: #b45309;
+  --kind-refusal: #dc2626;
+  --kind-error: #dc2626;
+  --kind-image: #0f766e;
+  --kind-file: #475569;
+  --kind-video: #4f46e5;
+  --kind-unknown: #64748b;
+}

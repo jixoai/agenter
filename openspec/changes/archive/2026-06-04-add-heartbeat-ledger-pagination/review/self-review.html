@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Heartbeat Record Pagination Self Review</title>
+    <style>
+      :root {
+        color-scheme: light;
+        font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      }
+
+      body {
+        margin: 0;
+        background: #f5f7fb;
+        color: #101828;
+      }
+
+      main {
+        max-width: 1120px;
+        margin: 0 auto;
+        padding: 24px;
+      }
+
+      section {
+        margin-block: 0 20px;
+        padding: 18px;
+        border: 1px solid #d5dbea;
+        border-radius: 14px;
+        background: #fff;
+      }
+
+      h1,
+      h2 {
+        margin: 0 0 12px;
+        line-height: 1.15;
+      }
+
+      h1 {
+        font-size: 24px;
+      }
+
+      h2 {
+        font-size: 16px;
+      }
+
+      ul {
+        margin: 0;
+        padding-inline-start: 18px;
+      }
+
+      li + li {
+        margin-top: 6px;
+      }
+
+      code,
+      pre {
+        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      }
+
+      pre {
+        margin: 0;
+        padding: 12px;
+        overflow: auto;
+        border-radius: 12px;
+        background: #0f172a;
+        color: #e2e8f0;
+      }
+
+      .shots {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+        gap: 14px;
+      }
+
+      figure {
+        margin: 0;
+        border: 1px solid #d5dbea;
+        border-radius: 14px;
+        overflow: hidden;
+        background: #fff;
+      }
+
+      img {
+        display: block;
+        inline-size: 100%;
+        block-size: auto;
+      }
+
+      figcaption {
+        padding: 10px 12px;
+        font-size: 13px;
+        color: #475467;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>Heartbeat Record Pagination Self Review</h1>
+
+      <section>
+        <h2>Status</h2>
+        <ul>
+          <li>Package typecheck and tests passed.</li>
+          <li>Example typecheck and tests passed.</li>
+          <li>Mobile and desktop browser verification passed on the live example.</li>
+          <li>List, model run detail, config detail, compact detail, and configable controls all rendered.</li>
+        </ul>
+      </section>
+
+      <section>
+        <h2>Acceptance URL</h2>
+        <pre>http://127.0.0.1:4179/?wsUrl=ws%3A%2F%2F127.0.0.1%3A4582%2Ftrpc&amp;silentConnect=true&amp;mode=configable</pre>
+      </section>
+
+      <section>
+        <h2>Evidence</h2>
+        <div class="shots">
+          <figure>
+            <img src="file:///tmp/web-heartbeat-view-mobile-detail.png" alt="Mobile model run detail" />
+            <figcaption>Mobile model/detail</figcaption>
+          </figure>
+          <figure>
+            <img src="file:///tmp/web-heartbeat-view-desktop-detail.png" alt="Desktop model run detail" />
+            <figcaption>Desktop model/detail</figcaption>
+          </figure>
+          <figure>
+            <img src="file:///tmp/web-heartbeat-view-desktop-compact-detail.png" alt="Desktop compact detail" />
+            <figcaption>Desktop compact detail</figcaption>
+          </figure>
+          <figure>
+            <img src="file:///tmp/web-heartbeat-view-mobile-compact-detail.png" alt="Mobile compact detail" />
+            <figcaption>Mobile compact detail</figcaption>
+          </figure>
+          <figure>
+            <img src="file:///tmp/web-heartbeat-view-context-sheet.png" alt="Context usage sheet" />
+            <figcaption>Context usage sheet</figcaption>
+          </figure>
+        </div>
+      </section>
+    </main>
+  </body>
+</html>

@@ -37,6 +37,9 @@ import type {
   GlobalTerminalPermissionRequestsInput,
   HeartbeatGroupItem,
   HeartbeatPartItem,
+  HeartbeatRecordDetailOutput,
+  HeartbeatRecordPageAnchorInput,
+  HeartbeatRecordsPageOutput,
   HistoryPageCursor,
   JsonValue,
   MessageChannelEntry,
@@ -156,6 +159,8 @@ const createInitialState = (): RuntimeClientState => ({
   observabilityTracesBySession: {},
   apiCallsBySession: {},
   heartbeatGroupsBySession: {},
+  heartbeatRecordsBySession: {},
+  heartbeatRecordDetailsBySession: {},
   modelCallsBySession: {},
   requestAuxBySession: {},
   modelCallDeltasBySession: {},
@@ -207,6 +212,7 @@ const sortSessions = (sessions: SessionEntry[]): SessionEntry[] => {
 const LOOPBUS_LRU_LIMIT = 100;
 const HEARTBEAT_GROUP_PAGE_LIMIT = 5;
 const HEARTBEAT_GROUP_LRU_LIMIT = HEARTBEAT_GROUP_PAGE_LIMIT * 3;
+const HEARTBEAT_RECORD_PAGE_LIMIT = 20;
 const MODEL_CALL_DELTA_LRU_LIMIT = 400;
 const DEFAULT_GLOBAL_TERMINAL_ACTIVITY_LIMIT = 20;
 const TERMINAL_ACTIVITY_PREVIEW_MAX_CHARS = 4_000;
@@ -1035,6 +1041,8 @@ export class RuntimeStore {
   private readonly heartbeatGroupRefreshTimerBySession = new Map<string, ReturnType<typeof setTimeout>>();
   private readonly heartbeatGroupRefreshInFlightBySession = new Set<string>();
   private readonly heartbeatGroupRefreshPendingLimitBySession = new Map<string, number>();
+  private readonly heartbeatRecordRefreshTimerBySession = new Map<string, ReturnType<typeof setTimeout>>();
+  private readonly heartbeatRecordRefreshInFlightBySession = new Set<string>();
   private readonly modelCallsBeforeCursorBySession = new Map<string, HistoryCursorValue>();
   private readonly requestAuxBeforeCursorBySession = new Map<string, HistoryCursorValue>();
   private readonly chatBeforeCursorBySession = new Map<string, HistoryCursorValue>();
@@ -1393,6 +1401,15 @@ export class RuntimeStore {
     this.sessionResourceHandles.delete(sessionId);
   }
 
+  private clearHeartbeatRecordRefresh(sessionId: string): void {
+    const timer = this.heartbeatRecordRefreshTimerBySession.get(sessionId);
+    if (timer) {
+      clearTimeout(timer);
+      this.heartbeatRecordRefreshTimerBySession.delete(sessionId);
+    }
+    this.heartbeatRecordRefreshInFlightBySession.delete(sessionId);
+  }
+
   private ensureMessageChannelsState(sessionId: string): CachedResourceState<MessageChannelEntry[]> {
     return this.state.messageChannelsBySession[sessionId] ?? createCachedResourceState<MessageChannelEntry[]>([]);
   }
@@ -1416,6 +1433,48 @@ export class RuntimeStore {
   ): CachedResourceState<HeartbeatGroupItem[]> {
     const next = updater(this.ensureHeartbeatGroupsState(sessionId));
     this.state.heartbeatGroupsBySession[sessionId] = next;
+    return next;
+  }
+
+  private ensureHeartbeatRecordsState(sessionId: string): CachedResourceState<HeartbeatRecordsPageOutput | null> {
+    return (
+      this.state.heartbeatRecordsBySession[sessionId] ??
+      createCachedResourceState<HeartbeatRecordsPageOutput | null>(null)
+    );
+  }
+
+  private setHeartbeatRecordsState(
+    sessionId: string,
+    updater: (
+      current: CachedResourceState<HeartbeatRecordsPageOutput | null>,
+    ) => CachedResourceState<HeartbeatRecordsPageOutput | null>,
+  ): CachedResourceState<HeartbeatRecordsPageOutput | null> {
+    const next = updater(this.ensureHeartbeatRecordsState(sessionId));
+    this.state.heartbeatRecordsBySession[sessionId] = next;
+    return next;
+  }
+
+  private ensureHeartbeatRecordDetailState(
+    sessionId: string,
+    recordId: number,
+  ): CachedResourceState<HeartbeatRecordDetailOutput> {
+    const detailsById = this.state.heartbeatRecordDetailsBySession[sessionId] ?? {};
+    return detailsById[recordId] ?? createCachedResourceState<HeartbeatRecordDetailOutput>(null);
+  }
+
+  private setHeartbeatRecordDetailState(
+    sessionId: string,
+    recordId: number,
+    updater: (
+      current: CachedResourceState<HeartbeatRecordDetailOutput>,
+    ) => CachedResourceState<HeartbeatRecordDetailOutput>,
+  ): CachedResourceState<HeartbeatRecordDetailOutput> {
+    const detailsById = this.state.heartbeatRecordDetailsBySession[sessionId] ?? {};
+    const next = updater(this.ensureHeartbeatRecordDetailState(sessionId, recordId));
+    this.state.heartbeatRecordDetailsBySession[sessionId] = {
+      ...detailsById,
+      [recordId]: next,
+    };
     return next;
   }
 
@@ -3441,6 +3500,11 @@ export class RuntimeStore {
     this.heartbeatGroupRefreshTimerBySession.clear();
     this.heartbeatGroupRefreshInFlightBySession.clear();
     this.heartbeatGroupRefreshPendingLimitBySession.clear();
+    for (const timer of this.heartbeatRecordRefreshTimerBySession.values()) {
+      clearTimeout(timer);
+    }
+    this.heartbeatRecordRefreshTimerBySession.clear();
+    this.heartbeatRecordRefreshInFlightBySession.clear();
     this.modelCallsBeforeCursorBySession.clear();
     this.requestAuxBeforeCursorBySession.clear();
     this.chatBeforeCursorBySession.clear();
@@ -3604,6 +3668,16 @@ export class RuntimeStore {
               sessionId,
               previousState.heartbeatGroupsBySession[sessionId] ?? createCachedResourceState<HeartbeatGroupItem[]>([]),
             ]),
+          ),
+          heartbeatRecordsBySession: Object.fromEntries(
+            sessionIds.map((sessionId) => [
+              sessionId,
+              previousState.heartbeatRecordsBySession[sessionId] ??
+                createCachedResourceState<HeartbeatRecordsPageOutput | null>(null),
+            ]),
+          ),
+          heartbeatRecordDetailsBySession: Object.fromEntries(
+            sessionIds.map((sessionId) => [sessionId, previousState.heartbeatRecordDetailsBySession[sessionId] ?? {}]),
           ),
           modelCallsBySession: Object.fromEntries(
             sessionIds.map((sessionId) => [sessionId, previousState.modelCallsBySession[sessionId] ?? []]),
@@ -3860,6 +3934,8 @@ export class RuntimeStore {
     delete this.state.observabilityTracesBySession[sessionId];
     delete this.state.apiCallsBySession[sessionId];
     delete this.state.heartbeatGroupsBySession[sessionId];
+    delete this.state.heartbeatRecordsBySession[sessionId];
+    delete this.state.heartbeatRecordDetailsBySession[sessionId];
     delete this.state.modelCallsBySession[sessionId];
     delete this.state.requestAuxBySession[sessionId];
     delete this.state.modelCallDeltasBySession?.[sessionId];
@@ -3882,6 +3958,7 @@ export class RuntimeStore {
     }
     this.heartbeatGroupRefreshInFlightBySession.delete(sessionId);
     this.heartbeatGroupRefreshPendingLimitBySession.delete(sessionId);
+    this.clearHeartbeatRecordRefresh(sessionId);
     this.modelCallsBeforeCursorBySession.delete(sessionId);
     this.requestAuxBeforeCursorBySession.delete(sessionId);
     this.chatBeforeCursorBySession.delete(sessionId);
@@ -6652,6 +6729,78 @@ export class RuntimeStore {
     }
   }
 
+  async loadHeartbeatRecords(
+    sessionId: string,
+    input?: { pageSize?: number; anchor?: HeartbeatRecordPageAnchorInput | null },
+  ): Promise<void> {
+    const current = this.ensureHeartbeatRecordsState(sessionId);
+    const pageSize = input?.pageSize ?? current.data?.pageSize ?? HEARTBEAT_RECORD_PAGE_LIMIT;
+    const anchor = input?.anchor ?? current.data?.anchor ?? { kind: "latest" as const };
+    this.setHeartbeatRecordsState(sessionId, (resource) => ({
+      ...resource,
+      loading: !resource.loaded,
+      refreshing: resource.loaded,
+      error: null,
+    }));
+    this.emit();
+
+    try {
+      const output = await this.client.trpc.runtime.heartbeatRecordPage.query({ sessionId, pageSize, anchor });
+      this.setHeartbeatRecordsState(sessionId, (resource) => ({
+        ...resource,
+        data: output,
+        loaded: true,
+        loading: false,
+        refreshing: false,
+        error: null,
+        refreshedAt: Date.now(),
+      }));
+      this.emit();
+    } catch (error) {
+      this.setHeartbeatRecordsState(sessionId, (resource) => ({
+        ...resource,
+        loading: false,
+        refreshing: false,
+        error: toErrorMessage(error),
+      }));
+      this.emit();
+      throw error;
+    }
+  }
+
+  async loadHeartbeatRecordDetail(sessionId: string, recordId: number): Promise<void> {
+    this.setHeartbeatRecordDetailState(sessionId, recordId, (resource) => ({
+      ...resource,
+      loading: !resource.loaded,
+      refreshing: resource.loaded,
+      error: null,
+    }));
+    this.emit();
+
+    try {
+      const output = await this.client.trpc.runtime.heartbeatRecordDetail.query({ sessionId, recordId });
+      this.setHeartbeatRecordDetailState(sessionId, recordId, (resource) => ({
+        ...resource,
+        data: output,
+        loaded: true,
+        loading: false,
+        refreshing: false,
+        error: null,
+        refreshedAt: Date.now(),
+      }));
+      this.emit();
+    } catch (error) {
+      this.setHeartbeatRecordDetailState(sessionId, recordId, (resource) => ({
+        ...resource,
+        loading: false,
+        refreshing: false,
+        error: toErrorMessage(error),
+      }));
+      this.emit();
+      throw error;
+    }
+  }
+
   async loadMoreHeartbeatGroups(
     sessionId: string,
     limit = HEARTBEAT_GROUP_PAGE_LIMIT,
@@ -6811,6 +6960,53 @@ export class RuntimeStore {
           this.heartbeatGroupRefreshPendingLimitBySession.get(sessionId) ?? HEARTBEAT_GROUP_PAGE_LIMIT,
         );
       }
+    }
+  }
+
+  private scheduleHeartbeatRecordRefresh(sessionId: string): void {
+    if (
+      !this.heartbeatRecordRefreshInFlightBySession.has(sessionId) &&
+      !this.heartbeatRecordRefreshTimerBySession.has(sessionId)
+    ) {
+      void this.flushHeartbeatRecordRefresh(sessionId);
+      return;
+    }
+    const existing = this.heartbeatRecordRefreshTimerBySession.get(sessionId);
+    if (existing) {
+      clearTimeout(existing);
+    }
+    const timer = setTimeout(() => {
+      this.heartbeatRecordRefreshTimerBySession.delete(sessionId);
+      void this.flushHeartbeatRecordRefresh(sessionId);
+    }, 80);
+    this.heartbeatRecordRefreshTimerBySession.set(sessionId, timer);
+  }
+
+  private async flushHeartbeatRecordRefresh(sessionId: string): Promise<void> {
+    if (this.heartbeatRecordRefreshInFlightBySession.has(sessionId)) {
+      return;
+    }
+    const existing = this.heartbeatRecordRefreshTimerBySession.get(sessionId);
+    if (existing) {
+      clearTimeout(existing);
+      this.heartbeatRecordRefreshTimerBySession.delete(sessionId);
+    }
+    this.heartbeatRecordRefreshInFlightBySession.add(sessionId);
+    try {
+      const current = this.ensureHeartbeatRecordsState(sessionId);
+      await this.loadHeartbeatRecords(sessionId, {
+        pageSize: current.data?.pageSize ?? HEARTBEAT_RECORD_PAGE_LIMIT,
+        anchor: current.data?.anchor ?? { kind: "latest" },
+      });
+      await Promise.all(
+        Object.entries(this.state.heartbeatRecordDetailsBySession[sessionId] ?? {})
+          .filter(([, resource]) => resource.loaded)
+          .map(([recordId]) => this.loadHeartbeatRecordDetail(sessionId, Number(recordId))),
+      );
+    } catch {
+      // loadHeartbeatRecords/loadHeartbeatRecordDetail persist resource-level refresh failures.
+    } finally {
+      this.heartbeatRecordRefreshInFlightBySession.delete(sessionId);
     }
   }
 
@@ -7120,6 +7316,8 @@ export class RuntimeStore {
       delete this.state.observabilityTracesBySession[payload.sessionId];
       delete this.state.apiCallsBySession[payload.sessionId];
       delete this.state.heartbeatGroupsBySession[payload.sessionId];
+      delete this.state.heartbeatRecordsBySession[payload.sessionId];
+      delete this.state.heartbeatRecordDetailsBySession[payload.sessionId];
       delete this.state.modelCallsBySession[payload.sessionId];
       delete this.state.requestAuxBySession[payload.sessionId];
       delete this.state.modelCallDeltasBySession?.[payload.sessionId];
@@ -7133,6 +7331,7 @@ export class RuntimeStore {
       }
       this.heartbeatGroupRefreshInFlightBySession.delete(payload.sessionId);
       this.heartbeatGroupRefreshPendingLimitBySession.delete(payload.sessionId);
+      this.clearHeartbeatRecordRefresh(payload.sessionId);
       this.modelCallDeltasAccessBySession.delete(payload.sessionId);
       this.requestAuxAccessBySession.delete(payload.sessionId);
       this.requestAuxBeforeCursorBySession.delete(payload.sessionId);
@@ -7499,6 +7698,7 @@ export class RuntimeStore {
         const payload = event.payload as { entry: HeartbeatPartItem };
         this.applyLiveHeartbeatPart(sessionId, payload.entry);
         this.scheduleHeartbeatGroupRefresh(sessionId);
+        this.scheduleHeartbeatRecordRefresh(sessionId);
       } else if (event.type === "runtime.modelCall") {
         const payload = event.payload as { entry: ModelCallItem };
         const current = this.state.modelCallsBySession[sessionId] ?? [];
@@ -7510,6 +7710,7 @@ export class RuntimeStore {
           LOOPBUS_LRU_LIMIT,
         );
         this.scheduleHeartbeatGroupRefresh(sessionId);
+        this.scheduleHeartbeatRecordRefresh(sessionId);
         void this.loadRequestAux(sessionId, 40).catch(() => undefined);
       } else if (event.type === "runtime.modelCall.delta") {
         const payload = event.payload as {
@@ -7534,6 +7735,7 @@ export class RuntimeStore {
         );
         if (payload.entry.kind === "tool_call" || payload.entry.kind === "tool_result") {
           this.scheduleHeartbeatGroupRefresh(sessionId);
+          this.scheduleHeartbeatRecordRefresh(sessionId);
         }
       } else if (event.type === "runtime.apiCall") {
         const payload = event.payload as { entry: ApiCallItem };
@@ -7698,6 +7900,10 @@ export class RuntimeStore {
     this.state.apiCallsBySession[sessionId] = this.state.apiCallsBySession[sessionId] ?? [];
     this.state.heartbeatGroupsBySession[sessionId] =
       this.state.heartbeatGroupsBySession[sessionId] ?? createCachedResourceState<HeartbeatGroupItem[]>([]);
+    this.state.heartbeatRecordsBySession[sessionId] =
+      this.state.heartbeatRecordsBySession[sessionId] ??
+      createCachedResourceState<HeartbeatRecordsPageOutput | null>(null);
+    this.state.heartbeatRecordDetailsBySession[sessionId] = this.state.heartbeatRecordDetailsBySession[sessionId] ?? {};
     this.state.modelCallsBySession[sessionId] = this.state.modelCallsBySession[sessionId] ?? [];
     this.state.requestAuxBySession[sessionId] = this.state.requestAuxBySession[sessionId] ?? [];
     this.state.modelCallDeltasBySession ??= {};
@@ -7878,6 +8084,10 @@ export class RuntimeStore {
     this.state.apiCallsBySession[sessionId] = this.state.apiCallsBySession[sessionId] ?? [];
     this.state.heartbeatGroupsBySession[sessionId] =
       this.state.heartbeatGroupsBySession[sessionId] ?? createCachedResourceState<HeartbeatGroupItem[]>([]);
+    this.state.heartbeatRecordsBySession[sessionId] =
+      this.state.heartbeatRecordsBySession[sessionId] ??
+      createCachedResourceState<HeartbeatRecordsPageOutput | null>(null);
+    this.state.heartbeatRecordDetailsBySession[sessionId] = this.state.heartbeatRecordDetailsBySession[sessionId] ?? {};
     this.state.modelCallsBySession[sessionId] = this.state.modelCallsBySession[sessionId] ?? [];
     this.state.requestAuxBySession[sessionId] = this.state.requestAuxBySession[sessionId] ?? [];
     this.state.apiCallRecordingBySession[sessionId] = runtime.apiCallRecording;
@@ -7888,12 +8098,16 @@ export class RuntimeStore {
 
   private async hydrateObservabilityArtifacts(sessionId: string, mode: "full" | "heartbeat" = "full"): Promise<void> {
     const heartbeatOnly = mode === "heartbeat";
-    const [logs, traces, , modelCalls, requestAux, apiCalls] = await Promise.allSettled([
+    const [logs, traces, , , modelCalls, requestAux, apiCalls] = await Promise.allSettled([
       heartbeatOnly ? Promise.resolve(null) : this.client.trpc.runtime.schedulerLogs.query({ sessionId, limit: 200 }),
       heartbeatOnly
         ? Promise.resolve(null)
         : this.client.trpc.runtime.observabilityTraces.query({ sessionId, limit: 200 }),
       this.loadHeartbeatGroups(sessionId, HEARTBEAT_GROUP_PAGE_LIMIT),
+      this.loadHeartbeatRecords(sessionId, {
+        pageSize: HEARTBEAT_RECORD_PAGE_LIMIT,
+        anchor: { kind: "latest" },
+      }),
       this.client.trpc.runtime.modelCallsPage.query({ sessionId, limit: heartbeatOnly ? 12 : 200 }),
       heartbeatOnly ? Promise.resolve(null) : this.client.trpc.runtime.requestAuxPage.query({ sessionId, limit: 200 }),
       heartbeatOnly ? Promise.resolve(null) : this.client.trpc.runtime.apiCallsPage.query({ sessionId, limit: 200 }),

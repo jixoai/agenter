@@ -11,6 +11,8 @@ export interface HeartbeatRecordCardMeta {
   statusLabel: string;
   durationLabel: string;
   modelLabel: string | null;
+  metaLabel: string;
+  supportLabel: string | null;
   title: string;
 }
 
@@ -55,6 +57,36 @@ export const getHeartbeatRecordCardMeta = (record: HeartbeatRecordItem): Heartbe
   const statusLabel = describeRecordStatus(record.status);
   const durationLabel = formatHeartbeatRecordDuration((record.completedAt ?? record.updatedAt) - record.startedAt);
   const modelLabel = getHeartbeatRecordModelLabel(record);
+  const metaLabel = (() => {
+    if (record.kind === "compact") {
+      if (record.status === "running") {
+        return "context compressing";
+      }
+      if (record.status === "error") {
+        return "context unchanged";
+      }
+      return "context reclaimed";
+    }
+    if (record.kind === "config") {
+      if (record.status === "running") {
+        return "next-call knobs";
+      }
+      if (record.status === "error") {
+        return "next-call knobs";
+      }
+      return "next-call knobs";
+    }
+    return modelLabel ?? `${record.summary.counts.parts} parts`;
+  })();
+  const supportLabel = (() => {
+    if (record.kind === "compact") {
+      return "New Context";
+    }
+    if (record.kind === "config") {
+      return "Diff Config";
+    }
+    return null;
+  })();
   const title = [
     `${kindLabel} ${statusLabel}`,
     modelLabel,
@@ -72,6 +104,8 @@ export const getHeartbeatRecordCardMeta = (record: HeartbeatRecordItem): Heartbe
     statusLabel,
     durationLabel,
     modelLabel,
+    metaLabel,
+    supportLabel,
     title,
   };
 };

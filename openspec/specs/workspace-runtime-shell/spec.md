@@ -55,60 +55,47 @@ The runtime shell SHALL expose a canonical runtime destination for each avatar s
 - **THEN** the shell hydrates persisted or live heartbeat history, attention/notification state, and runtime settings sources from backend APIs
 - **AND** the first render does not depend on a prior websocket event or on visiting another page first
 
-### Requirement: Heartbeat SHALL render one continuous message-parts runtime stream
+### Requirement: Heartbeat SHALL default to a paged record list with separate detail
 
-The `Heartbeat` tab SHALL render one continuous runtime surface backed by durable `message-parts` truth. It SHALL show request-side auxiliary rows, AI-visible request/response rows, and compact boundaries in chronological order without rebuilding the primary story from mixed chat rows, request-aux cards, and model-call cards. The stream SHALL be hosted inside a virtualizable conversation container, and the stage SHALL expose a persistent footer statusbar for runtime context usage and attention-state summary.
+The `Heartbeat` tab SHALL default to a stable paginated record list backed by Heartbeat record truth, plus a separate structured detail surface for the currently selected record. The list SHALL show bounded rows with time, kind, status, model-call identity where available, adaptive summary graphics, and optional preview text. Full request facts, assistant segments, tool payloads, JSON bodies, compact deltas, and config changes SHALL live in the detail surface instead of expanding the list row into an unbounded transcript card.
 
-#### Scenario: Heartbeat opens with folded auxiliary facts and durable AI-visible rows
+#### Scenario: Heartbeat opens to the latest record page instead of one giant transcript
 
-- **WHEN** the operator opens `Heartbeat` for a session that already recorded `systemPrompt`, `tools`, `config`, request rows, response rows, or compact boundaries
-- **THEN** the stage renders those rows from the durable Heartbeat `message-parts` stream in chronological order
-- **AND** `systemPrompt`, `tools`, `config`, and `compact` rows are visually subordinate and collapsed by default
-- **AND** AI-visible request/response rows remain readable as the primary stream content
+- **WHEN** the operator opens `Heartbeat` for a session that already recorded model runs, compacts, or config changes
+- **THEN** the stage loads the latest record page as the primary list surface
+- **AND** the operator can open one record's full structured detail without needing the whole session transcript to mount at once
 
-#### Scenario: Heartbeat updates live without mixed inspection cards
+#### Scenario: Live updates do not reflow historical record rows into transcript cards
 
-- **WHEN** the runtime records a streamed assistant update or a new Heartbeat request row while the operator is watching the tab
-- **THEN** the stage updates the affected durable Heartbeat row in place
-- **AND** the operator does not need a separate model-call card to understand the live Heartbeat state
+- **WHEN** the runtime records new or updated Heartbeat facts while the operator is watching the list
+- **THEN** only the affected record rows or the latest page membership change
+- **AND** the operator does not need a single continuous transcript stream to understand the live Heartbeat state
 
-#### Scenario: Heartbeat keeps status signals outside the transcript
-
-- **WHEN** the operator inspects the `Heartbeat` tab
-- **THEN** the transcript scroll region ends above a fixed footer statusbar
-- **AND** the footer can show the newest model-call usage context plus focused/background/muted attention counts without those signals becoming transcript rows
-
-#### Scenario: Heartbeat virtualizes long runtime history without changing row semantics
-
-- **WHEN** the durable Heartbeat stream contains a long message-part history
-- **THEN** the stage virtualizes row mounting through its conversation container
-- **AND** compact boundaries still render as boundary markers, tool activity still renders through the tool presentation, and thinking rows still render through reasoning presentation
-
-#### Scenario: Heartbeat reuses the outer runtime surface instead of nesting another frame
+#### Scenario: Heartbeat still reuses the outer runtime surface without another framed shell
 
 - **WHEN** the operator opens the `Heartbeat` tab
 - **THEN** the runtime body content sits flush inside the shared workbench body without route-local outer padding
-- **AND** the Heartbeat stage does not add its own outer rounded border around the transcript surface
+- **AND** the Heartbeat stage does not add its own outer rounded border around the list/detail surfaces
 
-### Requirement: Heartbeat SHALL delegate transcript scrolling to the named anchored-scroll controller
+### Requirement: Heartbeat SHALL anchor paged record windows and keep list/detail scroll ownership separate
 
-The runtime Heartbeat surface SHALL consume the shared named trigger/query/controller runtime for grouped transcript scrolling. Latest follow, older reveal, load-older affordances, and scroll-to-latest affordances SHALL be driven through named triggers and an installed program instead of local imperative timeline control.
+The runtime Heartbeat surface SHALL treat page-window anchoring as a first-class interaction law. It SHALL support at least latest-follow and fixed historical page windows, and it SHALL keep the record list scroll surface independent from the selected-detail scroll surface. Returning from detail SHALL preserve the operator's current page window and list position.
 
-#### Scenario: Heartbeat scroll-to-latest is driven through the shared named runtime
+#### Scenario: Fixed record page stays pinned while detail opens and closes
 
-- **WHEN** the operator activates Heartbeat's `Scroll to latest` affordance
-- **THEN** the stage raises a named action trigger consumed by the installed program
-- **AND** the stage does not directly issue a feature-local semantic viewport write
+- **WHEN** the operator pins one historical record page and then opens or closes one selected record detail
+- **THEN** the list keeps the same page membership and scroll position
+- **AND** the detail surface gets its own scroll lifecycle
 
-#### Scenario: Group prepend and append follow the named trigger program
+#### Scenario: Latest jump does not depend on transcript-local imperative scrolling
 
-- **WHEN** Heartbeat groups are prepended, appended, or replaced
-- **THEN** the installed program derives the resulting scroll behavior from named query facts such as edge state, collection delta, and insert batches
-- **AND** the grouped transcript does not keep a parallel local scroll controller path
+- **WHEN** the operator chooses to jump back to the latest page window
+- **THEN** the Heartbeat stage switches the list anchor back to `latest`
+- **AND** the operator does not need to rely on a long transcript scrollback just to reach current state
 
 ### Requirement: Heartbeat footer SHALL present objective runtime status and context details
 
-The `Heartbeat` footer SHALL derive its primary status label from runtime scheduler containment facts rather than from frontend inference over the latest model-call row. The same footer SHALL render context usage through the shared AI-elements `Context` composition, using the newest available model-call usage plus canonical provider metadata when that metadata exists. When provider metadata is incomplete, the footer SHALL keep the objective usage facts visible and SHALL disable, hide, or degrade the unavailable context details instead of inventing values.
+The Heartbeat footer or its equivalent bottom chrome SHALL derive its primary status label from runtime scheduler containment facts rather than from frontend inference over the latest model-call row. The same chrome SHALL render context usage through the shared AI-elements `Context` composition, using the newest available model-call usage plus canonical provider metadata when that metadata exists. When provider metadata is incomplete, the footer SHALL keep the objective usage facts visible and SHALL disable, hide, or degrade the unavailable context details instead of inventing values. Anchor-mode or page-window status MAY appear in adjacent chrome, but it SHALL not become fake record rows.
 
 #### Scenario: Scheduler truth drives the footer status label
 
@@ -128,109 +115,80 @@ The `Heartbeat` footer SHALL derive its primary status label from runtime schedu
 - **THEN** the Heartbeat footer still shows the available usage facts
 - **AND** max-context progress or estimated cost stays disabled, hidden, or explicitly unavailable instead of inventing values
 
-### Requirement: Heartbeat footer context SHALL reset across compact boundaries while using the shared ai-elements surface
-
-The `Heartbeat` footer SHALL render context usage through the shared ai-elements `Context` composition, and it SHALL treat a newest `compact` call as a hard boundary that resets visible usage facts instead of reusing the previous non-compact model call.
-
-#### Scenario: Compact resets visible footer context usage
-
-- **WHEN** the newest model call for a Heartbeat footer is `kind: compact`
-- **THEN** the footer context becomes unavailable for the new prompt window
-- **AND** it does not keep presenting the token usage from the prior non-compact call as current context truth
-
-#### Scenario: Unavailable context still uses the shared trigger contract
-
-- **WHEN** provider metadata is incomplete or the newest call is compact
-- **THEN** the footer still renders the shared ai-elements Context trigger structure
-- **AND** the trigger is disabled or visually unavailable instead of falling back to a bespoke local badge block
-
 ### Requirement: Heartbeat SHALL distinguish first-load, empty, refreshing, and error states
 
-The `Heartbeat` tab SHALL project its grouped message-parts stream through an explicit resource state rather than treating `no groups mounted` as the only empty condition.
+The `Heartbeat` tab SHALL project its list page, anchor state, and selected detail through explicit resource states rather than treating `no rows mounted` as the only empty condition.
 
-#### Scenario: First load is not mistaken for an empty ledger
+#### Scenario: First load is not mistaken for an empty record list
 
-- **WHEN** the operator opens `Heartbeat` before the first grouped Heartbeat page has loaded
+- **WHEN** the operator opens `Heartbeat` before the first record page has loaded
 - **THEN** the stage shows a loading state
-- **AND** it does not show the `No Heartbeat rows yet` empty-state copy until the grouped resource has actually loaded empty
+- **AND** it does not show the `No Heartbeat records yet` empty-state copy until the list resource has actually loaded empty
 
-#### Scenario: Warm refresh preserves visible rows
+#### Scenario: Warm refresh preserves visible list rows and current detail
 
-- **WHEN** the grouped Heartbeat resource is already loaded and a refresh is triggered by realtime invalidation or manual pagination
+- **WHEN** the record page resource is already loaded and a refresh is triggered by realtime invalidation or page navigation
 - **THEN** the existing Heartbeat rows remain visible
-- **AND** the stage only adds a secondary refresh signal instead of clearing the transcript back to blank or empty state
+- **AND** the selected detail remains mounted unless that selection itself changes
+- **AND** the stage only adds a secondary refresh signal instead of clearing back to blank or empty state
 
-### Requirement: Heartbeat footer SHALL expose manual compact as a control action
+### Requirement: Heartbeat bottom toolbar SHALL expose compact and config actions
 
-The `Heartbeat` footer SHALL expose a dedicated compact action that triggers a manual compact cycle through runtime control rather than by inserting a chat command into the transcript.
+The Heartbeat bottom toolbar SHALL expose a dedicated compact action and a dedicated next-call config action through explicit runtime control or settings paths rather than by inserting chat commands into the record list.
 
-#### Scenario: Operator triggers compact from the footer
+#### Scenario: Operator triggers compact from the bottom toolbar
 
-- **WHEN** the operator clicks the `Compact` button in the Heartbeat footer
+- **WHEN** the operator clicks the compact action in the Heartbeat bottom toolbar
 - **THEN** the runtime queues a manual compact request for that session
-- **AND** the transcript does not gain a fake `/compact` user message just to trigger the cycle
+- **AND** the record list does not gain a fake `/compact` user message just to trigger the cycle
 
-#### Scenario: Compact boundary still appears as durable Heartbeat truth
+#### Scenario: Operator edits next-call config without mutating the active call
 
-- **WHEN** the manual compact request later completes
-- **THEN** Heartbeat records and renders the resulting compact boundary in chronological order
-- **AND** the boundary remains a normal durable Heartbeat fact rather than a special UI-only marker
+- **WHEN** the operator saves new next-call config from the Heartbeat bottom toolbar flow
+- **THEN** the next-call settings change is recorded as Heartbeat fact for the upcoming invocation
+- **AND** the currently streaming call, if any, keeps its original config snapshot
 
-### Requirement: Heartbeat grouped virtualization SHALL remeasure disclosure-driven height changes
+### Requirement: Heartbeat record list SHALL keep bounded rows while detail owns expansion
 
-Grouped Heartbeat virtualization SHALL preserve one virtualized conversation surface while still responding correctly to row-height changes caused by expand/collapse or layout-mode switches.
+Heartbeat list virtualization or pagination SHALL preserve bounded record rows while delegating large structured expansion to the selected detail surface.
 
-#### Scenario: Expanding a grouped Heartbeat card does not leave stale blank space
+#### Scenario: Opening detail does not leave stale whitespace in the list
 
-- **WHEN** the operator expands or collapses a Heartbeat group card within the virtualized stream
-- **THEN** the virtualized conversation recalculates the affected row height
-- **AND** the scroll range does not retain stale whitespace below the final visible rows
+- **WHEN** the operator opens or closes detail for one record in the paged list
+- **THEN** the list surface does not need disclosure-driven row-height remeasurement for every historical row
+- **AND** the list does not retain stale whitespace from transcript-style expansion
 
-### Requirement: Heartbeat stage SHALL stay shrinkable while its inner conversation owns scroll
+### Requirement: Heartbeat compact records SHALL render as compression cards
 
-The Heartbeat route stage SHALL stay shrinkable inside the shared runtime shell so the inner conversation viewport remains the only transcript scroll owner.
+The Heartbeat surface SHALL render a compact record as one compression-oriented card that keeps before/after context usage, reclaim duration, and compact-specific prompt facts inside the same semantic event.
 
-#### Scenario: Inner transcript scroll does not force the stage to expand past the shell body
+#### Scenario: Compact card shows before and after context usage
 
-- **WHEN** the Heartbeat tab mounts a virtualized conversation surface inside the runtime body
-- **THEN** the stage itself remains shrinkable within the shared workbench body
-- **AND** the transcript scroll ownership stays inside the inner conversation viewport instead of escaping to an outer route wrapper
+- **WHEN** one compact record is visible in the Heartbeat list
+- **THEN** the row renders compact as a compression card rather than as a generic transcript block
+- **AND** the operator can scan before/after usage and reclaim duration from the row summary
 
-### Requirement: Heartbeat compact cycles SHALL render as one special card
+#### Scenario: Compact detail reveals exact compact prompt facts in the same event
 
-The Heartbeat surface SHALL render a compact cycle as one special card that keeps the compact prompt facts and the compact result in the same visual event.
+- **WHEN** the operator opens detail for that compact record
+- **THEN** the same record reveals the compact system prompt, tool inventory, and other compact prompt facts
+- **AND** the compact result stays inside that same chronological event
 
-#### Scenario: Compact mode folds compact prompt facts into one card
+### Requirement: Heartbeat page-window controls SHALL keep latest and fixed anchors explicit
 
-- **WHEN** a `before-call` prompt-fact group immediately precedes a `compact` group for the same `aiCallId`
-- **THEN** the Heartbeat surface renders one compact card instead of two separate cards
-- **AND** compact mode keeps the prompt facts folded while still showing the compact result clearly
+The Heartbeat list surface SHALL expose page-window navigation and anchor state explicitly. It SHALL make the distinction between `latest`, `fixed`, and `new records available` visible instead of hiding that state inside top-of-transcript load affordances.
 
-#### Scenario: Detailed mode reveals the exact compact prompt facts in the same card
+#### Scenario: Fixed historical page advertises newer available records objectively
 
-- **WHEN** the operator switches that compact card into detailed mode
-- **THEN** the same card reveals the compact system prompt, tool inventory, and other prompt facts
-- **AND** the operator still sees the compact result in chronological context without leaving that card
+- **WHEN** the operator is pinned to a fixed historical page and newer records later arrive
+- **THEN** the Heartbeat stage shows that newer records are available
+- **AND** it does not silently jump away from the fixed page
 
-### Requirement: Heartbeat tool rows SHALL expose running intent objectively
+#### Scenario: Latest anchor remains one explicit control path
 
-The Heartbeat surface SHALL expose a running tool row as `Running` as soon as the durable row already contains meaningful invocation parameters.
-
-#### Scenario: Parameters are visible before completion
-
-- **WHEN** the Heartbeat surface renders a running tool row with durable parameters but no result yet
-- **THEN** the row label shows that the tool is running
-- **AND** the parameters are visible on that same row before the final result arrives
-
-### Requirement: Heartbeat top paging SHALL keep one dedicated loading affordance
-
-The top-of-stream older-page affordance SHALL stay above the grouped Heartbeat cards and SHALL switch into a disabled loading affordance while an older-page request is in flight.
-
-#### Scenario: Older-page loading stays attached to the top of the stream
-
-- **WHEN** the operator requests older grouped Heartbeat history from the top affordance
-- **THEN** the same top affordance region shows a loading indicator in the disabled state
-- **AND** the first visible Heartbeat group stays below that loading region instead of overlapping it
+- **WHEN** the operator returns from historical inspection to the newest Heartbeat state
+- **THEN** the Heartbeat stage uses one explicit latest-anchor control path
+- **AND** the operator does not need to scroll through the entire list to recover the current state
 
 ### Requirement: Avatar detail SHALL keep notification quick actions inside Attention
 
@@ -427,3 +385,25 @@ The runtime Settings surface SHALL group durable runtime configuration into resp
 - **WHEN** the operator opens the runtime Settings surface
 - **THEN** the surface presents durable runtime configuration through clear responsibility-based sections
 - **AND** the operator can distinguish provider transport settings from runtime retry policy without relying on implementation details
+
+### Requirement: Studio Heartbeat migration SHALL wait for example acceptance
+
+The first `web-heartbeat-view` apply phase SHALL NOT migrate Studio to consume `@agenter/web-heartbeat-view`. The package SHALL remain designed so Studio can later consume it through a thin adapter after `@agenter/web-heartbeat-view:example` is accepted. Until that follow-up is approved, Studio's existing runtime Heartbeat route remains the source for Studio behavior, while the package owns the new standalone Heartbeat presentation law.
+
+#### Scenario: First apply leaves Studio route behavior untouched
+
+- **WHEN** the first package/example implementation is applied
+- **THEN** Studio is not required to import `@agenter/web-heartbeat-view`
+- **AND** the existing Studio runtime Heartbeat route is not rewritten as part of the first acceptance slice
+
+#### Scenario: Package boundary remains migration-ready
+
+- **WHEN** the standalone example is accepted and a later Studio migration is considered
+- **THEN** dependency direction remains `apps/studio` importing `@agenter/web-heartbeat-view`
+- **AND** `@agenter/web-heartbeat-view` does not import Studio feature files, Studio routes, or Studio stores
+
+#### Scenario: Deferred migration records the drift risk
+
+- **WHEN** first-phase implementation copies Studio Heartbeat code into the package
+- **THEN** the change records that Studio migration is deferred by user decision
+- **AND** any remaining Studio/package parser drift is treated as a follow-up migration risk rather than hidden first-phase scope

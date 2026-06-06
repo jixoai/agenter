@@ -8,156 +8,178 @@
   let {
     record,
     selected = false,
-    onSelect,
     children,
     support,
   }: {
     record: HeartbeatRecordItem;
     selected?: boolean;
-    onSelect?: (recordId: number) => void;
     children?: Snippet;
     support?: Snippet;
   } = $props();
 
   const meta = $derived(getHeartbeatRecordCardMeta(record));
+  const recordTime = $derived(formatHeartbeatRecordTime(record.startedAt));
 </script>
 
-<button
-  type="button"
-  class="ag-heartbeat-record-card"
-  class:ag-heartbeat-record-card--selected={selected}
-  class:ag-heartbeat-record-card--running={isRecordRunning(record.status)}
-  class:ag-heartbeat-record-card--error={record.status === "error"}
-  data-kind={record.kind}
+<article
+  class="ag-heartbeat-basic-record-card"
+  class:ag-heartbeat-basic-record-card--selected={selected}
+  class:ag-heartbeat-basic-record-card--running={isRecordRunning(record.status)}
+  class:ag-heartbeat-basic-record-card--error={record.status === "error"}
+  data-card-kind={record.kind}
   data-status={record.status}
   data-testid={`heartbeat-record-${record.id}`}
   title={meta.title}
-  aria-pressed={selected}
-  onclick={() => onSelect?.(record.id)}
 >
-  <span class="ag-heartbeat-record-card__top">
-    <span class="ag-heartbeat-record-card__time" title={`Started at ${new Date(record.startedAt).toISOString()}`}>
-      <span>{formatHeartbeatRecordTime(record.startedAt)}</span>
+  <header class="ag-heartbeat-basic-record-card__head">
+    <div class="ag-heartbeat-basic-record-card__stack">
+      <span class="ag-heartbeat-basic-record-card__time" title={`Started at ${new Date(record.startedAt).toISOString()}`}>{recordTime}</span>
       {#if meta.durationLabel}
-        <small>{meta.durationLabel}</small>
+        <span class="ag-heartbeat-basic-record-card__duration">{meta.durationLabel}</span>
       {/if}
-    </span>
-    <span class="ag-heartbeat-record-card__identity">
-      <strong>{meta.kindLabel}</strong>
-      {#if meta.modelLabel}
-        <span>{meta.modelLabel}</span>
-      {/if}
-    </span>
-    <span class="ag-heartbeat-record-card__status" title={`Record status: ${meta.statusLabel}`}>{meta.statusLabel}</span>
-  </span>
+    </div>
+    <div class="ag-heartbeat-basic-record-card__stack">
+      <strong class="ag-heartbeat-basic-record-card__title">{meta.kindLabel}</strong>
+      <span class="ag-heartbeat-basic-record-card__meta" title={meta.modelLabel ?? meta.metaLabel}>{meta.metaLabel}</span>
+    </div>
+    <div class="ag-heartbeat-basic-record-card__status-wrap">
+      <span class="ag-heartbeat-basic-record-card__status" title={`Record status: ${meta.statusLabel}`}>{meta.statusLabel}</span>
+    </div>
+  </header>
 
-  {@render children?.()}
+  <div class="ag-heartbeat-basic-record-card__body">
+    {@render children?.()}
+  </div>
 
   {#if support}
-    {@render support()}
+    <footer class="ag-heartbeat-basic-record-card__support">{@render support()}</footer>
+  {:else if meta.supportLabel}
+    <footer class="ag-heartbeat-basic-record-card__support">
+      <span>{meta.supportLabel}</span>
+    </footer>
   {:else if record.previewText}
-    <span class="ag-heartbeat-record-card__preview">{record.previewText}</span>
+    <footer class="ag-heartbeat-basic-record-card__support">
+      <span>{record.previewText}</span>
+    </footer>
   {/if}
-</button>
+</article>
 
 <style>
-  .ag-heartbeat-record-card {
-    display: grid;
+  .ag-heartbeat-basic-record-card {
     box-sizing: border-box;
+    display: grid;
+    grid-template-rows: auto minmax(44px, 1fr);
+    gap: 10px;
     inline-size: 100%;
     max-inline-size: 100%;
-    min-width: 0;
-    gap: 0.54rem;
+    min-inline-size: 0;
+    min-block-size: 126px;
     border: 1px solid color-mix(in srgb, currentColor, transparent 86%);
-    border-radius: 12px;
-    background: color-mix(in srgb, Canvas, currentColor 2%);
-    color: inherit;
-    padding: 0.72rem;
+    border-radius: 16px;
+    background: color-mix(in oklab, Canvas, currentColor 2%);
+    padding: 10px;
     text-align: start;
     contain: layout paint;
   }
 
-  .ag-heartbeat-record-card--selected {
-    border-color: color-mix(in srgb, Highlight, currentColor 20%);
-    background: color-mix(in srgb, Highlight, Canvas 92%);
+  .ag-heartbeat-basic-record-card--selected {
+    border-color: color-mix(in oklab, Highlight, currentColor 20%);
+    background: color-mix(in oklab, Highlight, Canvas 92%);
   }
 
-  .ag-heartbeat-record-card--running .ag-heartbeat-record-card__time,
-  .ag-heartbeat-record-card--running .ag-heartbeat-record-card__status {
-    animation: ag-heartbeat-record-breathe 1.6s ease-in-out infinite;
+  .ag-heartbeat-basic-record-card--running .ag-heartbeat-basic-record-card__time,
+  .ag-heartbeat-basic-record-card--running .ag-heartbeat-basic-record-card__duration,
+  .ag-heartbeat-basic-record-card--running .ag-heartbeat-basic-record-card__status {
+    animation: ag-heartbeat-record-breathe 2.3s ease-in-out infinite;
+    transform-origin: center;
   }
 
-  .ag-heartbeat-record-card--error {
-    border-color: color-mix(in srgb, red, currentColor 35%);
+  .ag-heartbeat-basic-record-card--error {
+    border-color: color-mix(in oklab, var(--kind-error, #dc2626), currentColor 35%);
   }
 
-  .ag-heartbeat-record-card__top {
+  .ag-heartbeat-basic-record-card__head {
     display: grid;
-    grid-template-columns: auto minmax(0, 1fr) auto;
+    grid-template-columns: 54px minmax(0, 1fr) auto;
+    gap: 10px;
     align-items: start;
-    min-width: 0;
-    gap: 0.56rem;
   }
 
-  .ag-heartbeat-record-card__time,
-  .ag-heartbeat-record-card__status {
-    box-sizing: border-box;
-    display: inline-grid;
-    grid-auto-flow: column;
-    grid-auto-columns: max-content;
-    align-items: center;
-    justify-content: center;
-    min-width: 0;
-    gap: 0.26rem;
-    border: 1px solid color-mix(in srgb, currentColor, transparent 86%);
-    border-radius: 999px;
-    padding: 0.18rem 0.48rem;
-    font: 600 0.72rem/1.16 system-ui, sans-serif;
-    white-space: nowrap;
-  }
-
-  .ag-heartbeat-record-card__time {
-    grid-auto-flow: row;
-    justify-items: center;
-    gap: 0.02rem;
-  }
-
-  .ag-heartbeat-record-card__time small {
-    color: color-mix(in srgb, currentColor, transparent 42%);
-    font: 0.64rem/1 system-ui, sans-serif;
-  }
-
-  .ag-heartbeat-record-card__identity {
+  .ag-heartbeat-basic-record-card__stack {
     display: grid;
-    min-width: 0;
-    gap: 0.12rem;
+    gap: 2px;
+    min-inline-size: 0;
   }
 
-  .ag-heartbeat-record-card__identity strong,
-  .ag-heartbeat-record-card__identity span,
-  .ag-heartbeat-record-card__preview {
+  .ag-heartbeat-basic-record-card__status-wrap {
+    display: flex;
+    justify-content: flex-end;
+  }
+
+  .ag-heartbeat-basic-record-card__body {
+    display: grid;
+    min-inline-size: 0;
+    align-items: center;
+  }
+
+  .ag-heartbeat-basic-record-card__support {
+    display: block;
+    min-inline-size: 0;
+    color: color-mix(in srgb, currentColor, transparent 42%);
+    font: 0.72rem/1.35 system-ui, sans-serif;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
 
-  .ag-heartbeat-record-card__identity strong {
-    font: 700 0.88rem/1.15 system-ui, sans-serif;
+  .ag-heartbeat-basic-record-card__time {
+    display: block;
+    color: currentColor;
+    font: 600 12.5px/1.15 system-ui, sans-serif;
   }
 
-  .ag-heartbeat-record-card__identity span,
-  .ag-heartbeat-record-card__preview {
+  .ag-heartbeat-basic-record-card__duration,
+  .ag-heartbeat-basic-record-card__meta {
+    display: block;
+    overflow: hidden;
     color: color-mix(in srgb, currentColor, transparent 36%);
-    font: 0.76rem/1.25 system-ui, sans-serif;
+    font: 0.72rem/1.35 system-ui, sans-serif;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .ag-heartbeat-basic-record-card__title {
+    display: block;
+    overflow: hidden;
+    color: currentColor;
+    font: 700 12.5px/1.15 system-ui, sans-serif;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .ag-heartbeat-basic-record-card__status {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    min-height: 28px;
+    border: 1px solid color-mix(in srgb, currentColor, transparent 86%);
+    border-radius: 999px;
+    background: #fff;
+    padding: 0 10px;
+    color: color-mix(in srgb, currentColor, transparent 32%);
+    font: 600 11px/1 system-ui, sans-serif;
+    white-space: nowrap;
   }
 
   @keyframes ag-heartbeat-record-breathe {
     0%,
     100% {
-      opacity: 0.72;
+      opacity: 0.74;
+      transform: scale(1);
     }
     50% {
       opacity: 1;
+      transform: scale(1.018);
     }
   }
 </style>
