@@ -25,25 +25,22 @@
   });
   const compactPanelId = "ag-heartbeat-record-compact-panel";
 
-  const resolveNumber = (value: unknown, fallback: number): number => {
+  const resolveNumber = (value: unknown): number | null => {
     if (typeof value === "number" && Number.isFinite(value)) {
       return value;
     }
-    return fallback;
+    return null;
   };
 
   const beforeValue = $derived(
-    resolveNumber(
-      readHeartbeatRecordPayloadValue(payload, ["before", "beforeContext", "beforeUsage", "beforePercent", "from"]),
-      63.4,
-    ),
+    resolveNumber(readHeartbeatRecordPayloadValue(payload, ["before", "beforeContext", "beforeUsage", "beforePercent", "from"])),
   );
   const afterValue = $derived(
-    resolveNumber(
-      readHeartbeatRecordPayloadValue(payload, ["after", "afterContext", "afterUsage", "afterPercent", "to"]),
-      24.1,
-    ),
+    resolveNumber(readHeartbeatRecordPayloadValue(payload, ["after", "afterContext", "afterUsage", "afterPercent", "to"])),
   );
+  const clampPercent = (value: number): number => Math.min(100, Math.max(0, value));
+  const beforeWidth = $derived(beforeValue === null ? 100 : clampPercent(beforeValue));
+  const afterWidth = $derived(afterValue === null ? 0 : clampPercent(afterValue));
   const compactError = $derived(readHeartbeatRecordPayloadValue(payload, ["error", "message"]) ?? null);
   const newContext = $derived(
     readHeartbeatRecordPayloadValue(payload, ["newContext", "new", "after", "context", "text", "content"]) ??
@@ -59,11 +56,18 @@
   const compactState = $derived(
     record.status === "error" ? "error" : record.status === "running" ? "running" : "completed",
   );
+  const formatUsageValue = (value: number): string => value.toFixed(1);
   const coreText = $derived.by(() => {
-    if (compactState === "error") {
-      return `${beforeValue.toFixed(1)} -> error`;
+    if (beforeValue !== null && afterValue !== null) {
+      return `${formatUsageValue(beforeValue)} -> ${formatUsageValue(afterValue)}`;
     }
-    return `${beforeValue.toFixed(1)} -> ${afterValue.toFixed(1)}`;
+    if (compactState === "error") {
+      return beforeValue === null ? "error" : `${formatUsageValue(beforeValue)} -> error`;
+    }
+    if (compactState === "running") {
+      return "streaming";
+    }
+    return "compact";
   });
 </script>
 
@@ -76,8 +80,8 @@
     data-object-kind="compact"
     title={title}
   >
-    <span class="ag-heartbeat-record-compact__before" style={`width:${beforeValue}%`}></span>
-    <span class="ag-heartbeat-record-compact__after" style={`width:${afterValue}%`}></span>
+    <span class="ag-heartbeat-record-compact__before" style={`width:${beforeWidth}%`}></span>
+    <span class="ag-heartbeat-record-compact__after" style={`width:${afterWidth}%`}></span>
     <span class="ag-heartbeat-record-compact__core">
       <HeartbeatRecordIcon kind={compactState === "error" ? "error" : compactState === "running" ? "pending" : "compact"} size={15} />
       <span>{coreText}</span>
@@ -93,8 +97,8 @@
         data-state={compactState}
         title={title}
       >
-        <span class="ag-heartbeat-record-compact__before" style={`width:${beforeValue}%`}></span>
-        <span class="ag-heartbeat-record-compact__after" style={`width:${afterValue}%`}></span>
+        <span class="ag-heartbeat-record-compact__before" style={`width:${beforeWidth}%`}></span>
+        <span class="ag-heartbeat-record-compact__after" style={`width:${afterWidth}%`}></span>
         <span class="ag-heartbeat-record-compact__core">
           <HeartbeatRecordIcon kind={compactState === "error" ? "error" : compactState === "running" ? "pending" : "compact"} size={15} />
           <span>{coreText}</span>

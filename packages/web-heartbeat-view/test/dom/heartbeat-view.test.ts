@@ -679,6 +679,42 @@ describe("Feature: HeartbeatView DOM capability contract", () => {
     expect(document.querySelector('[data-testid="heartbeat-record-detail"]')).toBeNull();
   });
 
+  test("Scenario: Given compact record without usage payload When the list card renders Then sample compression numbers are not invented", async () => {
+    const compactRecord = heartbeatRecord({
+      id: 105,
+      kind: "compact",
+      parts: [
+        recordPart({
+          messageId: "record-compact-105",
+          partId: "1",
+          role: "assistant",
+          type: "compact",
+          startedAt: 1_780_000_000_000,
+          completedAt: 1_780_000_000_120,
+          label: "compact",
+        }),
+      ],
+    });
+    const component = mount(HeartbeatView, {
+      target: document.body,
+      props: {
+        mode: "readonly",
+        avatarLabel: "Ada",
+        state: {
+          sessionStatus: "running",
+          groupsState: completeLoadedState([]),
+          recordsState: completeLoadedResource(recordsPage([compactRecord])),
+        },
+      },
+    });
+    trackMountedComponent(component);
+
+    await waitForDocumentText("Compact");
+    expect(document.body.textContent).not.toContain("63.4");
+    expect(document.body.textContent).not.toContain("24.1");
+    expect(document.querySelector('[data-object-kind="compact"]')).not.toBeNull();
+  });
+
   test("Scenario: Given compact record detail When tabs change Then new context stays primary and streaming/error facts stay inside detail", async () => {
     const compactRecord = heartbeatRecord({
       id: 102,

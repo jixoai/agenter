@@ -11,6 +11,7 @@
 
 - The standalone example owns the dedicated Framework7 route `/heartbeat/:runtimeId/records/:recordId`.
 - `HeartbeatView` emits `callbacks.onOpenRecordDetail` when present and only uses inline detail as package fallback.
+- Compact cards no longer fall back to prototype sample ratios when before/after usage payloads are absent.
 - `HeartbeatExampleState` now preserves `mode`, `silentConnect`, `wsUrl`, and non-default `pageSize` across list, detail, and Avatar-directory URLs.
 - The example connection adapter forwards `recordPageSize` into `loadHeartbeatRecords` for latest and fixed anchors.
 - Example BDD coverage now asserts that record-row click opens the dedicated record route and preserves `pageSize=2`.
@@ -20,7 +21,7 @@
 - `bun run --cwd packages/web-heartbeat-view/example test -- --run heartbeat-example-app.test.ts` -> 13 passed.
 - `bun run --cwd packages/web-heartbeat-view/example typecheck` -> 0 errors, 0 warnings.
 - `bun run --filter '@agenter/web-heartbeat-view' test:unit` -> 5 files, 19 tests passed.
-- `bun run --filter '@agenter/web-heartbeat-view' test:dom` -> 1 file, 12 tests passed.
+- `bun run --filter '@agenter/web-heartbeat-view' test:dom` -> 1 file, 13 tests passed.
 - `bun test packages/client-sdk/test/runtime-store.test.ts --timeout 30000` -> 93 passed.
 - `bun run openspec:vision -- validate add-heartbeat-record-pagination` -> valid.
 - `bun run openspec:vision -- commit-check add-heartbeat-record-pagination --phase self-review` -> ok.
