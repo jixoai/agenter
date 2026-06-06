@@ -1,4 +1,5 @@
 export type FilePreviewKind = "directory" | "text" | "image" | "audio" | "video" | "pdf" | "binary" | "unsupported";
+export type FilePreviewTextProjection = "source" | "document";
 
 export interface FilePreviewHttpSource {
   protocol: "http";
@@ -18,6 +19,7 @@ export interface FilePreviewPayload {
   mediaDataUrl: string | null;
   truncated: boolean;
   note: string | null;
+  textProjection?: FilePreviewTextProjection;
   source?: FilePreviewHttpSource | null;
 }
 
@@ -69,6 +71,9 @@ const isFilePreviewKind = (value: unknown): value is FilePreviewKind =>
   value === "binary" ||
   value === "unsupported";
 
+const isFilePreviewTextProjection = (value: unknown): value is FilePreviewTextProjection =>
+  value === "source" || value === "document";
+
 const isHttpSource = (value: unknown): value is FilePreviewHttpSource => {
   if (!isObjectRecord(value)) {
     return false;
@@ -94,6 +99,7 @@ export const isFilePreviewPayload = (value: unknown): value is FilePreviewPayloa
     (value.mediaDataUrl === null || typeof value.mediaDataUrl === "string") &&
     typeof value.truncated === "boolean" &&
     (value.note === null || typeof value.note === "string") &&
+    (value.textProjection === undefined || isFilePreviewTextProjection(value.textProjection)) &&
     (value.source === undefined || value.source === null || isHttpSource(value.source))
   );
 };

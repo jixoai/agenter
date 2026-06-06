@@ -95,7 +95,7 @@ test.describe("Feature: Notes workbench route smoke", () => {
         notebook: "shell-assistant-book",
         section: "working-context",
         page: sourcePage,
-        content: `Notes route smoke for ${suffix}.`,
+        content: `# Notes route smoke for ${suffix}\n\n- Rendered markdown document.`,
         mime: "text/markdown",
         mode: "override",
         tags: ["playwright", "notes"],
@@ -141,8 +141,11 @@ test.describe("Feature: Notes workbench route smoke", () => {
       await expect(metadataHint).toContainText("References", { timeout: 15_000 });
       await expect(metadataHint).toContainText(targetPage, { timeout: 15_000 });
       await expect(detail.getByTitle(`${sourcePage} preview`)).toBeVisible({ timeout: 15_000 });
+      await expect(
+        page.frameLocator(`iframe[title="${sourcePage} preview"]`).locator("agenter-markdown-document"),
+      ).toBeVisible({ timeout: 15_000 });
       await expect(page.frameLocator(`iframe[title="${sourcePage} preview"]`).locator("body")).toContainText(
-        `Notes route smoke for ${suffix}.`,
+        `Notes route smoke for ${suffix}`,
         { timeout: 15_000 },
       );
 

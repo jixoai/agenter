@@ -93,6 +93,7 @@
 			mediaDataUrl: null,
 			truncated: false,
 			note: selectedPageFact.content.inline ? null : 'This note page uses file-backed content.',
+			textProjection: 'document',
 			source: {
 				protocol: 'http',
 				url: buildNotePageSourceUrl(selectedPageFact.identity),

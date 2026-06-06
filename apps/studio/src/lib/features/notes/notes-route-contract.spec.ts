@@ -33,6 +33,7 @@ describe("Feature: Studio Notes route contract", () => {
     const locationSource = readSource("apps/studio/src/lib/features/notes/notes-workbench-location.ts");
     const avatarTabSource = readSource("apps/studio/src/lib/features/notes/notes-avatar-tabs-state.ts");
     const avatarRouteSource = readSource("apps/studio/src/lib/features/notes/notes-avatar-route.svelte");
+    const detailDrawerSource = readSource("apps/studio/src/lib/features/notes/notes-page-detail-drawer.svelte");
     const overviewSource = readSource("apps/studio/src/lib/features/notes/notes-overview-route.svelte");
     const searchSource = readSource("apps/studio/src/lib/features/notes/notes-search-mode.svelte");
     const querySource = readSource("apps/studio/src/lib/features/notes/notes-query-mode.svelte");
@@ -56,6 +57,7 @@ describe("Feature: Studio Notes route contract", () => {
     expect(avatarRouteSource).toContain("controller.runtimeStore.searchNotes");
     expect(avatarRouteSource).toContain("controller.runtimeStore.listNoteTags");
     expect(avatarRouteSource).toContain("controller.runtimeStore.queryNotes");
+    expect(detailDrawerSource).toContain("textProjection: 'document'");
     expect(overviewSource).toContain("controller.runtimeStore.listNoteCatalog");
     expect(searchSource).toContain("Catalog browsing stays in Browse mode.");
     expect(querySource).toContain("Read-only SQL");
@@ -76,10 +78,22 @@ describe("Feature: Studio Notes route contract", () => {
       overviewSource,
       searchSource,
       querySource,
+      detailDrawerSource,
     ]) {
       expect(source).not.toContain("@agenter/app-server");
       expect(source).not.toContain("@agenter/note-system");
       expect(source).not.toContain("packages/app-server/src/note-system");
     }
+  });
+
+  test("Scenario: Given shared filePreviewer When Notes requests document projection Then Skills source preview remains available in the same iframe shell", () => {
+    const filePreviewerSource = readSource("apps/studio/src/file-previewer-app/file-previewer-app.svelte");
+    const filePreviewStateSource = readSource("apps/studio/src/lib/components/file-preview/file-preview-state.ts");
+
+    expect(filePreviewStateSource).toContain('export type FilePreviewTextProjection = "source" | "document"');
+    expect(filePreviewerSource).toContain("import MarkdownDocument");
+    expect(filePreviewerSource).toContain("import SkillTextViewer");
+    expect(filePreviewerSource).toContain("shouldRenderDocumentTextProjection");
+    expect(filePreviewerSource).toContain("textProjection === 'document'");
   });
 });

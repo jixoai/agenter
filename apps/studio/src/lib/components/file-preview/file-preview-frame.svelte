@@ -20,7 +20,7 @@
 	);
 	const previewPayloadJson = $derived(JSON.stringify(preview));
 	const previewStorageKey = $derived(
-		`agenter:file-previewer:${preview.previewKind}:${preview.path}:${preview.modifiedAtMs}:${preview.sizeBytes}:${preview.source?.url ?? ''}`,
+		`agenter:file-previewer:${preview.previewKind}:${preview.textProjection ?? 'source'}:${preview.path}:${preview.modifiedAtMs}:${preview.sizeBytes}:${preview.source?.url ?? ''}`,
 	);
 	const previewFrameSrc = $derived(`/file-previewer?previewKey=${encodeURIComponent(previewStorageKey)}`);
 	let previousPreviewStorageKey = $state<string | null>(null);

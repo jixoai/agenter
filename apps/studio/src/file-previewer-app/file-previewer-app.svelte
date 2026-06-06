@@ -10,6 +10,7 @@
 
 	import { loadHttpFilePreviewPayload } from '$lib/components/file-preview/file-preview-http-source';
 	import { isFilePreviewPayload, type FilePreviewKind, type FilePreviewPayload } from '$lib/components/file-preview/file-preview-state';
+	import MarkdownDocument from '$lib/components/web-components/markdown-document.svelte';
 	import SkillTextViewer from '$lib/features/skills/skill-text-viewer.svelte';
 	import { renderPdfPages } from './file-previewer-pdf-renderer';
 
@@ -27,6 +28,15 @@
 		}
 		return FileIcon;
 	};
+
+	const isMarkdownPreview = (nextPreview: FilePreviewPayload): boolean => {
+		const mimeType = nextPreview.mimeType?.split(';', 1)[0]?.trim().toLowerCase() ?? '';
+		const path = nextPreview.path.toLowerCase();
+		return mimeType === 'text/markdown' || mimeType === 'text/x-markdown' || path.endsWith('.md') || path.endsWith('.markdown');
+	};
+
+	const shouldRenderDocumentTextProjection = (nextPreview: FilePreviewPayload): boolean =>
+		nextPreview.previewKind === 'text' && nextPreview.textProjection === 'document' && isMarkdownPreview(nextPreview);
 
 	const readPreviewFromStorage = (): FilePreviewPayload | null => {
 		if (typeof window === 'undefined') {
@@ -184,9 +194,22 @@
 			viewportClass="file-previewer__body-viewport"
 		>
 			{#if preview.previewKind === 'text'}
-				<div class="file-previewer__text-shell">
-					<SkillTextViewer text={preview.textContent ?? ''} path={preview.path} mimeType={preview.mimeType} />
-				</div>
+				{#if shouldRenderDocumentTextProjection(preview)}
+					<MarkdownDocument
+						value={preview.textContent ?? ''}
+						mode="preview"
+						usage="document"
+						surface="plain"
+						overflow="grow"
+						density="default"
+						padding="none"
+						class="file-previewer__markdown-document"
+					/>
+				{:else}
+					<div class="file-previewer__text-shell">
+						<SkillTextViewer text={preview.textContent ?? ''} path={preview.path} mimeType={preview.mimeType} />
+					</div>
+				{/if}
 			{:else if preview.previewKind === 'image'}
 				{#if !preview.mediaDataUrl}
 					{@const PreviewIcon = resolveEmptyIcon(preview.previewKind)}
@@ -298,6 +321,12 @@
 		border-radius: 1rem;
 		padding: 0 0.875rem;
 		background: color-mix(in srgb, var(--card), transparent 4%);
+	}
+
+	:global(.file-previewer__markdown-document) {
+		display: block;
+		inline-size: 100%;
+		min-block-size: calc(100dvh - 2rem);
 	}
 
 	.file-previewer__empty,
