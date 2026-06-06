@@ -1,10 +1,16 @@
 export {
   appAssistantEnsureInputSchema,
+  appAvatarMemoryPackFileSchema,
   appAvatarPromptSeedInputSchema,
+  appMemoryPackEnsureInputSchema,
+  appMemoryRoleSchema,
   appPrivateAssetKindSchema,
   appPrivateTextAssetEnsureInputSchema,
   type AppAssistantEnsureInput,
+  type AppAvatarMemoryPackFile,
   type AppAvatarPromptSeedInput,
+  type AppMemoryPackEnsureInput,
+  type AppMemoryRole,
   type AppPrivateAssetKind,
   type AppPrivateTextAssetEnsureInput,
 } from "./assistant-init";
