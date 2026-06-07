@@ -28,7 +28,7 @@ export const NoRuntimeState = {
 } satisfies Story;
 
 export const GlobalOnlyNewConfig = {
-	name: 'Scenario: Given global-only mode When New is visible Then global add remains separate from project enablement',
+	name: 'Scenario: Given global-only mode When New is visible Then global add can explicitly enable and start one project',
 	args: {
 		scenario: 'global-only',
 	},
@@ -37,6 +37,13 @@ export const GlobalOnlyNewConfig = {
 		await expect(canvas.getByTestId('mcp-new-global-form')).toHaveTextContent('New global config');
 		await expect(canvas.getByText('01 Global config')).toBeInTheDocument();
 		await expect(canvas.getByText('02 Project availability')).toBeInTheDocument();
+		await expect(canvas.getByText('03 Project runtime')).toBeInTheDocument();
+		await userEvent.click(canvas.getByText('Start after install'));
+		await expect(canvas.getAllByText('mcp start')[0]!).toBeInTheDocument();
+		await userEvent.click(canvas.getByRole('button', { name: 'Install & start' }));
+		await waitFor(() => {
+			expect(canvas.getByTestId('mcp-story-event')).toHaveTextContent('submit:browser-tools:stdio:enable:start');
+		});
 	},
 } satisfies Story;
 

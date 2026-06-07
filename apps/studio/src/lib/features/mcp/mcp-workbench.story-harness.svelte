@@ -63,7 +63,9 @@
 	};
 
 	const submitGlobal = async (draft: McpGlobalConfigDraft): Promise<void> => {
-		recordEvent(`submit:${draft.name}:${draft.transport.kind}`);
+		recordEvent(
+			`submit:${draft.name}:${draft.transport.kind}:${draft.enableProjectPath ? 'enable' : 'no-enable'}:${draft.startProjectPath ? 'start' : 'no-start'}`,
+		);
 	};
 
 	const mutateRow = (row: McpWorkbenchRow, next: Partial<McpWorkbenchRow>): void => {

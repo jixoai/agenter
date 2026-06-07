@@ -86,6 +86,7 @@ export interface McpGlobalConfigDraft {
 	transport: McpGlobalConfigDraftTransport;
 	env?: Record<string, string>;
 	enableProjectPath?: string;
+	startProjectPath?: string;
 }
 
 export type McpProjectLifecycleAction = 'start' | 'stop' | 'restart';

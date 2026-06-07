@@ -44,7 +44,7 @@ The MCP workbench SHALL show global MCP configs separately from exact-project en
 - **WHEN** the operator opens `/mcp`
 - **THEN** the page toolbar exposes `List` and `New` tabs
 - **AND** `List` shows installed global configs with the selected exact-project projection
-- **AND** `New` creates an inert global config first, with any project enablement shown as a separate explicit step
+- **AND** `New` creates an inert global config by default, while allowing an explicit same-form enable and start for one exact project path
 - **AND** the default page does not merge global creation into the project lifecycle/detail surface
 
 #### Scenario: Global-only list shows installed configs
@@ -82,6 +82,13 @@ The MCP detail pane SHALL expose global config summary/edit actions, exact-proje
 - **THEN** the global config is persisted through the runtime MCP facade
 - **AND** no project is enabled
 - **AND** no MCP server is started
+
+#### Scenario: New can explicitly enable and start one project
+
+- **WHEN** the operator creates a global MCP config from `New`
+- **AND** opts into current-project enablement and start
+- **THEN** the workbench submits `mcp add`, then `mcp enable`, then `mcp start` for the selected runtime and exact project path
+- **AND** the start action remains visible as a separate project runtime step before submission
 
 #### Scenario: Enablement gates lifecycle controls
 

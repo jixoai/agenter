@@ -49,8 +49,11 @@ describe("Feature: Studio MCP route contract", () => {
     expect(newFormSource).toContain("Project availability");
     expect(newFormSource).toContain("01 Global config");
     expect(newFormSource).toContain("02 Project availability");
+    expect(newFormSource).toContain("03 Project runtime");
     expect(newFormSource).toContain("mcp add");
     expect(newFormSource).toContain("mcp enable");
+    expect(newFormSource).toContain("mcp start");
+    expect(newFormSource).toContain("Start after install");
     expect(newFormSource).toContain("onSubmit");
   });
 

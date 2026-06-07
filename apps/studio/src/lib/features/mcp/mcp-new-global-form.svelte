@@ -3,6 +3,7 @@
 	import ArrowLeftIcon from '@lucide/svelte/icons/arrow-left';
 	import CheckIcon from '@lucide/svelte/icons/check';
 	import HelpCircleIcon from '@lucide/svelte/icons/help-circle';
+	import PlayIcon from '@lucide/svelte/icons/play';
 	import SaveIcon from '@lucide/svelte/icons/save';
 
 	import { Badge } from '$lib/components/ui/badge/index.js';
@@ -65,11 +66,13 @@
 	let globalEnv = $state('');
 	let transportEnv = $state('{\n  "BROWSER_PROFILE": "default"\n}');
 	let enableCurrentProject = $state(false);
+	let startCurrentProject = $state(false);
 	let formError = $state<string | null>(null);
 	let lastInitialName = $state<string | null>(null);
 
 	const modeLabel = $derived(initialRow ? 'Edit global config' : 'New global config');
-	const submitLabel = $derived(initialRow ? 'Update' : 'Install');
+	const submitLabel = $derived(startCurrentProject ? (initialRow ? 'Update & start' : 'Install & start') : initialRow ? 'Update' : 'Install');
+	const startLabel = $derived(initialRow ? 'Start after update' : 'Start after install');
 
 	$effect(() => {
 		const nextInitialName = initialRow?.name ?? null;
@@ -90,6 +93,7 @@
 			globalEnv = '';
 			transportEnv = '{\n  "BROWSER_PROFILE": "default"\n}';
 			enableCurrentProject = false;
+			startCurrentProject = false;
 			return;
 		}
 		name = initialRow.name;
@@ -103,6 +107,16 @@
 		globalEnv = '';
 		transportEnv = serializeRecord(initialRow.transportSummary.env);
 		enableCurrentProject = false;
+		startCurrentProject = false;
+	});
+
+	$effect(() => {
+		if (startCurrentProject && !enableCurrentProject) {
+			enableCurrentProject = true;
+		}
+		if (!enableCurrentProject && startCurrentProject) {
+			startCurrentProject = false;
+		}
 	});
 
 	const buildDraft = (): McpGlobalConfigDraft => {
@@ -112,7 +126,11 @@
 		}
 		const trimmedTitle = title.trim();
 		const trimmedDescription = description.trim();
+		const exactProjectPath = projectPath.trim();
 		const globalEnvRecord = parseOptionalStringRecord(globalEnv, 'Global env');
+		if ((enableCurrentProject || startCurrentProject) && !exactProjectPath) {
+			throw new Error('Exact project path is required for project actions');
+		}
 
 		const draft: McpGlobalConfigDraft = {
 			name: trimmedName,
@@ -133,9 +151,10 @@
 							kind: transport,
 							url: url.trim(),
 							headers: parseOptionalStringRecord(headers, 'Headers'),
-						},
+					},
 			env: globalEnvRecord,
-			enableProjectPath: enableCurrentProject ? projectPath.trim() : undefined,
+			enableProjectPath: enableCurrentProject || startCurrentProject ? exactProjectPath : undefined,
+			startProjectPath: startCurrentProject ? exactProjectPath : undefined,
 		};
 		if (draft.transport.kind === 'stdio' && !draft.transport.command) {
 			throw new Error('Command is required for stdio transport');
@@ -158,7 +177,7 @@
 	const addPayload = $derived.by(() => {
 		try {
 			const draft = buildDraft();
-			const { enableProjectPath: _enableProjectPath, ...globalDraft } = draft;
+			const { enableProjectPath: _enableProjectPath, startProjectPath: _startProjectPath, ...globalDraft } = draft;
 			return globalDraft;
 		} catch {
 			return null;
@@ -166,6 +185,11 @@
 	});
 
 	const enablePayload = $derived({
+		name: name.trim(),
+		projectPath,
+	});
+
+	const startPayload = $derived({
 		name: name.trim(),
 		projectPath,
 	});
@@ -197,7 +221,7 @@
 			</div>
 		</div>
 
-		<div class="grid divide-y divide-border/45 border-b border-border/50 md:grid-cols-2 md:divide-x md:divide-y-0">
+		<div class="grid divide-y divide-border/45 border-b border-border/50 md:grid-cols-3 md:divide-x md:divide-y-0">
 			<section class="grid gap-1 px-3 py-3 md:px-5">
 				<div class="text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground">01 Global config</div>
 				<div class="flex min-w-0 flex-wrap items-center gap-1.5">
@@ -215,6 +239,15 @@
 						{enableCurrentProject ? 'mcp enable' : 'not enabled'}
 					</Badge>
 					<Badge variant="secondary">exact path</Badge>
+				</div>
+			</section>
+			<section class="grid gap-1 px-3 py-3 md:px-5">
+				<div class="text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground">03 Project runtime</div>
+				<div class="flex min-w-0 flex-wrap items-center gap-1.5">
+					<Badge variant={startCurrentProject ? 'outline' : 'secondary'}>
+						{startCurrentProject ? 'mcp start' : 'not started'}
+					</Badge>
+					<Badge variant="secondary">manual</Badge>
 				</div>
 			</section>
 		</div>
@@ -308,6 +341,16 @@
 						</span>
 						<Input bind:value={projectPath} class="h-8 text-xs" aria-label="Exact project path for enablement" />
 					</label>
+					<label class="grid gap-2 text-sm">
+						<span class="flex items-center gap-2">
+							<Checkbox bind:checked={startCurrentProject} />
+							{startLabel}
+						</span>
+						<span class="text-xs text-muted-foreground">
+							<PlayIcon class="mr-1 inline size-3.5 align-[-0.125rem]" />
+							Requires explicit enablement for the same exact path.
+						</span>
+					</label>
 				</section>
 			</div>
 
@@ -333,6 +376,17 @@
 						</div>
 						<ScrollView class="max-h-48 rounded-md bg-muted/45" contentClass="p-3">
 							<pre class="whitespace-pre-wrap break-words text-xs leading-5 text-foreground">{JSON.stringify(enablePayload, null, 2)}</pre>
+						</ScrollView>
+					</div>
+				{/if}
+				{#if startCurrentProject}
+					<div class="grid gap-2">
+						<div class="flex items-center gap-2 text-sm font-semibold">
+							<CheckIcon class="size-4 text-muted-foreground" />
+							mcp start
+						</div>
+						<ScrollView class="max-h-48 rounded-md bg-muted/45" contentClass="p-3">
+							<pre class="whitespace-pre-wrap break-words text-xs leading-5 text-foreground">{JSON.stringify(startPayload, null, 2)}</pre>
 						</ScrollView>
 					</div>
 				{/if}

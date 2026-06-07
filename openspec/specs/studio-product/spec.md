@@ -60,15 +60,23 @@ Studio SHALL expose an app-shell navigation item named `MCP` that opens `/mcp` a
 
 ### Requirement: MCP workbench SHALL expose global registry and exact-project projection separately
 
-The MCP workbench SHALL make the selected AvatarRuntime authority explicit before reading or mutating MCP state. It SHALL present global MCP configs separately from exact-project enablement, lifecycle, project-local snapshots, and action outcomes. Viewing or creating a global config SHALL NOT imply project enablement or start any MCP server.
+The MCP workbench SHALL make the selected AvatarRuntime authority explicit before reading or mutating MCP state. It SHALL present global MCP configs separately from exact-project enablement, lifecycle, project-local snapshots, and action outcomes. Viewing or creating a global config SHALL NOT imply project enablement or start any MCP server unless the operator explicitly opts into one exact-project enable/start action.
 
 #### Scenario: MCP home separates list and new config work
 
 - **WHEN** the operator opens `/mcp`
 - **THEN** the page toolbar exposes `List` and `New` tabs
 - **AND** `List` shows installed global configs with the selected exact-project projection
-- **AND** `New` creates an inert global config first, with any project enablement shown as a separate explicit step
+- **AND** `New` creates an inert global config by default, while allowing an explicit same-form enable and start for one exact project path
 - **AND** the default page does not merge global creation into the project lifecycle/detail surface
+
+#### Scenario: New can explicitly start the current project MCP
+
+- **WHEN** the operator creates a global MCP config from `New`
+- **AND** opts into current-project enablement and start
+- **THEN** Studio calls the typed runtime-store MCP facade in add, enable, then start order
+- **AND** the project runtime step remains visible before submission
+- **AND** other projects remain disabled by default
 
 #### Scenario: No runtime selected
 

@@ -103,7 +103,7 @@
 		{
 			value: 'new',
 			label: 'New',
-			title: 'Create inert global MCP config',
+			title: 'Create a global MCP config and optionally start one exact-project instance',
 		},
 	] satisfies WorkbenchPageTabItem[]);
 	const loadKey = $derived(`${effectiveRuntimeId}\u0000${activeProjectionMode}\u0000${projectPath.trim()}\u0000${refreshVersion}`);
@@ -219,6 +219,13 @@
 					sessionId: effectiveRuntimeId,
 					name: draft.name,
 					projectPath: draft.enableProjectPath,
+				});
+			}
+			if (draft.startProjectPath) {
+				await controller.runtimeStore.startMcpProject({
+					sessionId: effectiveRuntimeId,
+					name: draft.name,
+					projectPath: draft.startProjectPath,
 				});
 			}
 			return global;

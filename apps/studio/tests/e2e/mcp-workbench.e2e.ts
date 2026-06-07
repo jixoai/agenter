@@ -111,6 +111,8 @@ test.describe("Feature: MCP workbench route smoke", () => {
       await expect(page.getByTestId("mcp-new-global-form")).toBeVisible({ timeout: 15_000 });
       await expect(page.getByText("01 Global config", { exact: true })).toBeVisible({ timeout: 15_000 });
       await expect(page.getByText("02 Project availability", { exact: true })).toBeVisible({ timeout: 15_000 });
+      await expect(page.getByText("03 Project runtime", { exact: true })).toBeVisible({ timeout: 15_000 });
+      await expect(page.getByText("Start after install", { exact: true })).toBeVisible({ timeout: 15_000 });
       await expectNoHorizontalOverflow(page);
     } finally {
       if (createdSessionId) {

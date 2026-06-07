@@ -16,7 +16,7 @@ describe('Feature: Storybook DOM contract for MCP workbench states', () => {
 		await NoRuntimeState.run();
 	});
 
-	test('Scenario: Given global-only mode When New is visible Then global add remains separate from project enablement', async () => {
+	test('Scenario: Given global-only mode When New is visible Then global add can explicitly enable and start one project', async () => {
 		await GlobalOnlyNewConfig.run();
 	});
 

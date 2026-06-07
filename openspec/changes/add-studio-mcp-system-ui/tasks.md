@@ -39,3 +39,4 @@
 - [x] 4.3 Run `bun run --filter 'agenter-app-studio' test:unit`, `bun run --filter 'agenter-app-studio' test:dom`, and focused client-sdk/app-server tests. Focused MCP/client/app-server tests passed; full Studio unit/dom were run and currently fail on unrelated runtime/notes/message/terminal stories.
 - [x] 4.4 Update `openspec/specs/studio-product/spec.md`, `openspec/specs/client-runtime-store/spec.md`, and package-level durable docs before archive.
 - [x] 4.5 Run `bun run openspec:vision -- validate add-studio-mcp-system-ui` and `openspec validate --specs --strict`.
+- [x] 4.6 Update `New` to support explicit add + enable + start for the selected exact project without changing global default-disabled semantics.

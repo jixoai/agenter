@@ -132,6 +132,11 @@
 						<td><span class="status pass">Pass</span></td>
 					</tr>
 					<tr>
+						<td><code>New</code> can add config and explicitly start one exact-project MCP.</td>
+						<td><code>mcp-new-global-form.svelte</code> exposes <code>03 Project runtime</code>; submit flow calls add, enable, then start through runtime-store facades.</td>
+						<td><span class="status pass">Pass</span></td>
+					</tr>
+					<tr>
 						<td>Low-noise expert operator UI.</td>
 						<td>Persistent tutorial copy is absent from normal surface; global/project law, defaults, stale snapshots, and blocked removal are behind HelpHint/dialog text.</td>
 						<td><span class="status pass">Pass</span></td>
@@ -157,7 +162,7 @@
 					<tr>
 						<td><code>bun test apps/studio/src/lib/features/mcp/mcp-route-contract.spec.ts</code></td>
 						<td><span class="status pass">Pass</span></td>
-						<td>5 tests, 68 assertions.</td>
+						<td>5 tests, 71 assertions.</td>
 					</tr>
 					<tr>
 						<td><code>bun run --filter 'agenter-app-studio' test:dom -- test/storybook/mcp-workbench.stories.test.ts</code></td>
@@ -202,7 +207,7 @@
 				<p>SQL remains advanced and absent from the default page. The next product decision is whether it deserves a HelpHint-backed dialog or should stay outside the first MCP workbench loop.</p>
 			</div>
 			<div class="note">
-				<p>The current <code>New</code> flow can explicitly enable the current project, but global creation stays inert by default. Confirm whether future design should keep enablement only in list detail after global install.</p>
+				<p>Resolved follow-up: the operator confirmed <code>New</code> should be able to add config and start MCP. The implemented shape is explicit add &rarr; enable &rarr; start for one exact project path; global creation remains inert by default for other projects.</p>
 			</div>
 		</main>
 	</body>

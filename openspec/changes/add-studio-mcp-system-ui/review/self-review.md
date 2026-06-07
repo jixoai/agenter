@@ -10,15 +10,16 @@
 
 ## Intent Alignment
 
-| Intent point | Evidence | Verdict |
-| ------------ | -------- | ------- |
-| MCP page is an expert operator workbench, not a tutorial/settings page | `DESIGN.md`, `.agents/skills/develop-agenter/references/studio-ui.md`, `apps/studio/SPEC.md`, route contract scenario for low-noise HelpHint usage | Aligned |
+| Intent point                                                                                 | Evidence                                                                                                                                                               | Verdict |
+| -------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------- |
+| MCP page is an expert operator workbench, not a tutorial/settings page                       | `DESIGN.md`, `.agents/skills/develop-agenter/references/studio-ui.md`, `apps/studio/SPEC.md`, route contract scenario for low-noise HelpHint usage                     | Aligned |
 | The page exposes runtime authority, global registry, and exact-project projection distinctly | `apps/studio/src/lib/features/mcp/mcp-route.svelte`, `mcp-workbench-state.ts`, `mcp-server-list.svelte`, `mcp-server-detail.svelte`, route contract ownership scenario | Aligned |
-| MCP home has `List / New` page-toolbar tabs | `mcp-route.svelte`, `openspec/specs/studio-product/spec.md`, `openspec/changes/add-studio-mcp-system-ui/specs/studio-mcp-system-workbench/spec.md` | Aligned |
-| Studio consumes runtime-owned MCP facts through typed browser contracts | `packages/client-sdk/src/types.ts`, `packages/client-sdk/src/runtime-store.ts`, `packages/app-server/src/trpc/router.ts`, `mcp-route-contract.spec.ts` | Aligned |
-| Global config creation remains inert unless project enablement is explicit | `mcp-new-global-form.svelte`, `mcp-route.svelte`, `mcp-system` and Studio specs | Aligned |
-| Snapshot and invocation output are structured, bounded projections | `mcp-server-detail.svelte`, `StructuredValueViewer`, Storybook DOM coverage | Aligned |
-| Desktop and iPhone 14 route reachability are proven | `apps/studio/tests/e2e/mcp-workbench.e2e.ts`; command passed for desktop-chromium and mobile-iphone14 | Aligned |
+| MCP home has `List / New` page-toolbar tabs                                                  | `mcp-route.svelte`, `openspec/specs/studio-product/spec.md`, `openspec/changes/add-studio-mcp-system-ui/specs/studio-mcp-system-workbench/spec.md`                     | Aligned |
+| Studio consumes runtime-owned MCP facts through typed browser contracts                      | `packages/client-sdk/src/types.ts`, `packages/client-sdk/src/runtime-store.ts`, `packages/app-server/src/trpc/router.ts`, `mcp-route-contract.spec.ts`                 | Aligned |
+| Global config creation remains inert unless project enablement/start is explicit             | `mcp-new-global-form.svelte`, `mcp-route.svelte`, `mcp-system` and Studio specs                                                                                        | Aligned |
+| `New` can add a config and explicitly start one exact-project MCP                            | `mcp-new-global-form.svelte`, `mcp-route.svelte`, Storybook `GlobalOnlyNewConfig`, route smoke coverage                                                                | Aligned |
+| Snapshot and invocation output are structured, bounded projections                           | `mcp-server-detail.svelte`, `StructuredValueViewer`, Storybook DOM coverage                                                                                            | Aligned |
+| Desktop and iPhone 14 route reachability are proven                                          | `apps/studio/tests/e2e/mcp-workbench.e2e.ts`; command passed for desktop-chromium and mobile-iphone14                                                                  | Aligned |
 
 ## Deviations From Intent
 
@@ -28,7 +29,8 @@
 ## New Questions For User
 
 1. Should `/mcp` expose the read-only SQL query surface as an advanced dialog in the next loop, or keep SQL entirely outside the first operator page?
-2. Should `New` allow an explicit one-step "create global + enable current project" flow long term, or should project enablement always happen from `List` detail after the inert global exists?
+
+Resolved follow-up: the operator confirmed `New` should be able to add config and start MCP. The implemented shape is explicit add -> enable -> start for one exact project path, preserving global default-disabled semantics.
 
 ## Evidence
 
@@ -44,7 +46,7 @@
 - Full Studio DOM: `bun run --filter 'agenter-app-studio' test:dom` failed in non-MCP message/terminal stories and a virtual env import.
 - Git commits reviewed: none yet; this review is over the current working tree before the implementation commit.
 - Uncommitted paths: MCP/OpenSpec/doc paths for this change plus unrelated Notes/Heartbeat/WebHeartbeat worktree changes. Only MCP/OpenSpec/doc paths should be staged for this commit.
-- Task checkboxes updated by this working context: `4.3`, `4.4`, `4.5`.
+- Task checkboxes updated by this working context: `4.3`, `4.4`, `4.5`, `4.6`.
 
 ## Exit Handling
 
