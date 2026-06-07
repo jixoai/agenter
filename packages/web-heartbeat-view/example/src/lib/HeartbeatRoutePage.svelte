@@ -46,7 +46,7 @@
   const openRecordDetail = (recordId: number): void => {
     const href = state.buildHeartbeatRecordHref(runtimeId, recordId);
     if (f7router) {
-      f7router.navigate(href, { animate: false });
+      f7router.navigate(href);
       return;
     }
     window.location.assign(href);
