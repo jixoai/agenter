@@ -6,7 +6,6 @@
   import SlidersHorizontal from "@lucide/svelte/icons/sliders-horizontal";
   import Thermometer from "@lucide/svelte/icons/thermometer";
 
-  import { Button, Segmented, Subnavbar } from "./framework7-components";
   import {
     formatHeartbeatRecordPayload,
     indentHeartbeatYaml,
@@ -15,19 +14,26 @@
   } from "./heartbeat-record-detail-model";
   import type { HeartbeatRecordItem } from "./types";
 
+  type ConfigTab = "diff" | "new" | "old";
+
   let {
     record,
     payload = null,
     variant = "card",
     title,
+    detailTab = "diff",
+    tabPanelId = "ag-heartbeat-record-config-panel",
+    tabPanelLabelledBy = undefined,
   }: {
     record: HeartbeatRecordItem;
     payload?: unknown;
     variant?: "card" | "detail";
     title: string;
+    detailTab?: ConfigTab;
+    tabPanelId?: string;
+    tabPanelLabelledBy?: string | undefined;
   } = $props();
 
-  type ConfigTab = "diff" | "new" | "old";
   type ConfigControlIcon = "temperature" | "topK" | "maxToken" | "thinking" | "budget" | "systemPrompt";
   type ConfigControlEntry = {
     key: string;
@@ -52,14 +58,6 @@
     key: string | null;
     value: string | null;
   };
-
-  let configTab = $state<ConfigTab>("diff");
-  const configTabIds = Object.freeze({
-    diff: "ag-heartbeat-record-config-tab-diff",
-    new: "ag-heartbeat-record-config-tab-new",
-    old: "ag-heartbeat-record-config-tab-old",
-  });
-  const configPanelId = "ag-heartbeat-record-config-panel";
 
   const formatControlScalar = (value: unknown): string => formatHeartbeatRecordPayload(value).replaceAll(/\s+/gu, " ").trim();
 
@@ -219,10 +217,10 @@
     }),
   );
   const configSource = $derived.by(() => {
-    if (configTab === "new") {
+    if (detailTab === "new") {
       return formatHeartbeatRecordPayload(newConfig);
     }
-    if (configTab === "old") {
+    if (detailTab === "old") {
       return oldConfig === null ? "" : formatHeartbeatRecordPayload(oldConfig);
     }
     if (diffConfig !== null) {
@@ -238,14 +236,14 @@
   const configSyntaxLines = $derived.by<ConfigSyntaxLine[]>(() =>
     configSource.split("\n").map((line) => {
       const kind =
-        configTab === "diff" && line.startsWith("@@")
+        detailTab === "diff" && line.startsWith("@@")
           ? "meta"
-          : configTab === "diff" && line.startsWith("-")
+          : detailTab === "diff" && line.startsWith("-")
             ? "remove"
-            : configTab === "diff" && line.startsWith("+")
+            : detailTab === "diff" && line.startsWith("+")
               ? "add"
               : "context";
-      const yamlKeyMatch = configTab === "diff" ? null : /^(\s*[-\w.]+:)(.*)$/u.exec(line);
+      const yamlKeyMatch = detailTab === "diff" ? null : /^(\s*[-\w.]+:)(.*)$/u.exec(line);
       return {
         kind,
         raw: line,
@@ -319,47 +317,14 @@
       </div>
     </div>
 
-    <Subnavbar inner={false} class="ag-heartbeat-record-detail-tabs ag-heartbeat-record-config-detail__subnavbar">
-      <Segmented strong class="ag-heartbeat-record-config-detail__tabs" role="tablist" aria-label="Config detail tabs">
-        <Button
-          id={configTabIds.diff}
-          type="button"
-          role="tab"
-          active={configTab === "diff"}
-          aria-selected={configTab === "diff"}
-          aria-controls={configPanelId}
-          tabindex={configTab === "diff" ? 0 : -1}
-          text="Diff Config"
-          onClick={() => (configTab = "diff")}
-        />
-        <Button
-          id={configTabIds.new}
-          type="button"
-          role="tab"
-          active={configTab === "new"}
-          aria-selected={configTab === "new"}
-          aria-controls={configPanelId}
-          tabindex={configTab === "new" ? 0 : -1}
-          text="New Config"
-          onClick={() => (configTab = "new")}
-        />
-        <Button
-          id={configTabIds.old}
-          type="button"
-          role="tab"
-          active={configTab === "old"}
-          aria-selected={configTab === "old"}
-          aria-controls={configPanelId}
-          tabindex={configTab === "old" ? 0 : -1}
-          text="Old Config"
-          onClick={() => (configTab = "old")}
-        />
-      </Segmented>
-    </Subnavbar>
-
-    <div id={configPanelId} class="ag-heartbeat-record-config-detail__panel" role="tabpanel" aria-labelledby={configTabIds[configTab]}>
+    <div
+      id={tabPanelId}
+      class="ag-heartbeat-record-config-detail__panel"
+      role="tabpanel"
+      aria-labelledby={tabPanelLabelledBy}
+    >
       {#if configSource}
-        <pre class="ag-heartbeat-record-config-detail__source" data-language={configTab === "diff" ? "diff" : "yaml"}>{#each configSyntaxLines as line, index (`${index}:${line.raw}`)}<span class={`ag-heartbeat-record-config-detail__syntax-line ag-heartbeat-record-config-detail__syntax-line--${line.kind}`}>{#if line.key !== null}<span class="ag-heartbeat-record-config-detail__syntax-key">{line.key}</span><span class="ag-heartbeat-record-config-detail__syntax-value">{line.value}</span>{:else}{line.raw || " "}{/if}</span>{/each}</pre>
+        <pre class="ag-heartbeat-record-config-detail__source" data-language={detailTab === "diff" ? "diff" : "yaml"}>{#each configSyntaxLines as line, index (`${index}:${line.raw}`)}<span class={`ag-heartbeat-record-config-detail__syntax-line ag-heartbeat-record-config-detail__syntax-line--${line.kind}`}>{#if line.key !== null}<span class="ag-heartbeat-record-config-detail__syntax-key">{line.key}</span><span class="ag-heartbeat-record-config-detail__syntax-value">{line.value}</span>{:else}{line.raw || " "}{/if}</span>{/each}</pre>
       {:else}
         <div class="ag-heartbeat-record-config-detail__empty">No config snapshot</div>
       {/if}

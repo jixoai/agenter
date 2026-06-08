@@ -112,10 +112,103 @@ const mockSdk = vi.hoisted(() => {
     items: [heartbeatPart("LoopBus heartbeat row")],
   };
 
+  const compactGroup: HeartbeatGroupItem = {
+    id: 2,
+    groupId: "heartbeat-group:compact:2",
+    kind: "compact",
+    aiCallId: 1,
+    createdAt: 2_000,
+    updatedAt: 2_100,
+    isComplete: false,
+    items: [
+      {
+        id: 2,
+        messageId: "message-compact",
+        windowId: null,
+        aiCallId: 1,
+        roundIndex: 2,
+        scope: "heartbeat_part",
+        role: "assistant",
+        createdAt: 2_000,
+        updatedAt: 2_100,
+        isComplete: false,
+        text: "New compact context is streaming.",
+        parts: [
+          {
+            partId: 1,
+            partIndex: 1,
+            messageId: "message-compact",
+            windowId: null,
+            aiCallId: 1,
+            roundIndex: 2,
+            scope: "heartbeat_part",
+            role: "assistant",
+            partType: "compact",
+            mimeType: null,
+            payload: {
+              newContext: "New compact context is streaming.",
+              oldContext: "Old context snapshot.",
+              error: "Partial compact warning",
+            },
+            createdAt: 2_000,
+            updatedAt: 2_100,
+            isComplete: false,
+          },
+        ],
+      },
+    ],
+  };
+
+  const configGroup: HeartbeatGroupItem = {
+    id: 3,
+    groupId: "heartbeat-group:config:3",
+    kind: "config",
+    aiCallId: null,
+    createdAt: 3_000,
+    updatedAt: 3_100,
+    isComplete: true,
+    items: [
+      {
+        id: 3,
+        messageId: "message-config",
+        windowId: null,
+        aiCallId: null,
+        roundIndex: 3,
+        scope: "heartbeat_part",
+        role: "config",
+        createdAt: 3_000,
+        updatedAt: 3_100,
+        isComplete: true,
+        text: "Next call config changed.",
+        parts: [
+          {
+            partId: 1,
+            partIndex: 1,
+            messageId: "message-config",
+            windowId: null,
+            aiCallId: null,
+            roundIndex: 3,
+            scope: "heartbeat_part",
+            role: "config",
+            partType: "config",
+            mimeType: null,
+            payload: {
+              oldConfig: { thinking: false, maxToken: 2000 },
+              newConfig: { thinking: "auto", maxToken: "adaptive" },
+            },
+            createdAt: 3_000,
+            updatedAt: 3_100,
+            isComplete: true,
+          },
+        ],
+      },
+    ],
+  };
+
   const recordFromGroup = (item: HeartbeatGroupItem): HeartbeatRecordItem => ({
     id: item.id,
     recordKey: `mock-record:${item.groupId}`,
-    kind: item.kind === "compact" ? "compact" : "model_call",
+    kind: item.kind === "compact" ? "compact" : item.kind === "config" ? "config" : "model_call",
     status: item.isComplete ? "completed" : "running",
     primaryAiCallId: item.aiCallId,
     aiCallIds: item.aiCallId === null ? [] : [item.aiCallId],
@@ -542,6 +635,12 @@ const mockSdk = vi.hoisted(() => {
     useEmptyHeartbeat() {
       heartbeatGroups = [];
     },
+    useCompactHeartbeat() {
+      heartbeatGroups = [compactGroup];
+    },
+    useConfigHeartbeat() {
+      heartbeatGroups = [configGroup];
+    },
     useRunningSession() {
       sessionStatus = "running";
     },
@@ -729,6 +828,70 @@ describe("Feature: Web heartbeat view example route flow", () => {
     expect(location.pathname).toContain("/heartbeat/runtime-ada/records/1");
     expect(location.search).toContain("pageSize=2");
     expect(mockSdk.heartbeatRecordPageRequests.at(-1)?.input?.pageSize).toBe(2);
+  });
+
+  test("Scenario: Given a Compact record detail route When tabs switch Then Framework7 subnavbar owns the context tabs", async () => {
+    mockSdk.useCompactHeartbeat();
+    component = mount(HeartbeatExampleApp, {
+      target: document.body,
+      props: {
+        initialRuntimeId: "runtime-ada",
+        initialRecordId: 2,
+        initialSilentConnect: true,
+        initialWsUrl: "ws://127.0.0.1:3000/trpc",
+      },
+    });
+
+    await waitForText("Record #2");
+    await waitForText("New compact context is streaming.");
+    const detailPage = document.querySelector<HTMLElement>('.page[data-name="heartbeat-record-detail"]');
+    const subnavbar = detailPage?.querySelector<HTMLElement>(".navbar .subnavbar");
+    expect(subnavbar).not.toBeNull();
+    expect(subnavbar?.querySelector(".segmented")).not.toBeNull();
+    expect(subnavbar?.textContent).toContain("New Context");
+    expect(subnavbar?.textContent).toContain("Old Context");
+    expect(subnavbar?.textContent).not.toContain("Record #2");
+
+    const oldTab = Array.from(subnavbar?.querySelectorAll<HTMLButtonElement>("button") ?? []).find((button) =>
+      button.textContent?.includes("Old Context"),
+    );
+    oldTab?.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+    await waitForText("Old context snapshot.");
+  });
+
+  test("Scenario: Given a Config record detail route When tabs switch Then Framework7 subnavbar owns the config tabs", async () => {
+    mockSdk.useConfigHeartbeat();
+    component = mount(HeartbeatExampleApp, {
+      target: document.body,
+      props: {
+        initialRuntimeId: "runtime-ada",
+        initialRecordId: 3,
+        initialSilentConnect: true,
+        initialWsUrl: "ws://127.0.0.1:3000/trpc",
+      },
+    });
+
+    await waitForText("Record #3");
+    await waitForText("Diff Config");
+    const detailPage = document.querySelector<HTMLElement>('.page[data-name="heartbeat-record-detail"]');
+    const subnavbar = detailPage?.querySelector<HTMLElement>(".navbar .subnavbar");
+    expect(subnavbar).not.toBeNull();
+    expect(subnavbar?.querySelector(".segmented")).not.toBeNull();
+    expect(subnavbar?.textContent).toContain("Diff Config");
+    expect(subnavbar?.textContent).toContain("New Config");
+    expect(subnavbar?.textContent).toContain("Old Config");
+    expect(subnavbar?.textContent).not.toContain("Record #3");
+
+    const newTab = Array.from(subnavbar?.querySelectorAll<HTMLButtonElement>("button") ?? []).find((button) =>
+      button.textContent?.includes("New Config"),
+    );
+    newTab?.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+    await waitForText("thinking: auto");
+    const oldTab = Array.from(subnavbar?.querySelectorAll<HTMLButtonElement>("button") ?? []).find((button) =>
+      button.textContent?.includes("Old Config"),
+    );
+    oldTab?.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+    await waitForText("thinking: false");
   });
 
   test("Scenario: Given a Heartbeat record list When a record row is tapped Then Framework7 opens the dedicated record detail route", async () => {

@@ -9,12 +9,27 @@
   import { buildHeartbeatSubjectSections } from "./heartbeat-parts";
   import type { CachedResourceState, HeartbeatRecordDetail, HeartbeatRecordItem, HeartbeatRecordPartSummary } from "./types";
 
+  type CompactDetailTab = "new" | "old";
+  type ConfigDetailTab = "diff" | "new" | "old";
+
   let {
     record,
     detailState,
+    compactTab = "new",
+    compactPanelId = "ag-heartbeat-record-compact-panel",
+    compactPanelLabelledBy = undefined,
+    configTab = "diff",
+    configPanelId = "ag-heartbeat-record-config-panel",
+    configPanelLabelledBy = undefined,
   }: {
     record: HeartbeatRecordItem;
     detailState?: CachedResourceState<HeartbeatRecordDetail | null>;
+    compactTab?: CompactDetailTab;
+    compactPanelId?: string;
+    compactPanelLabelledBy?: string | undefined;
+    configTab?: ConfigDetailTab;
+    configPanelId?: string;
+    configPanelLabelledBy?: string | undefined;
   } = $props();
 
   const detail = $derived(detailState?.data ?? null);
@@ -91,9 +106,25 @@
     {:else if record.kind === "model_call"}
       <HeartbeatRecordModelRunBody {record} rows={partRows} sections={detailSections} variant="detail" title={meta.title} />
     {:else if record.kind === "compact"}
-      <HeartbeatRecordCompactBody {record} payload={compactPayload} variant="detail" title={meta.title} />
+      <HeartbeatRecordCompactBody
+        {record}
+        payload={compactPayload}
+        variant="detail"
+        title={meta.title}
+        detailTab={compactTab}
+        tabPanelId={compactPanelId}
+        tabPanelLabelledBy={compactPanelLabelledBy}
+      />
     {:else}
-      <HeartbeatRecordConfigBody {record} payload={configPayload} variant="detail" title={meta.title} />
+      <HeartbeatRecordConfigBody
+        {record}
+        payload={configPayload}
+        variant="detail"
+        title={meta.title}
+        detailTab={configTab}
+        tabPanelId={configPanelId}
+        tabPanelLabelledBy={configPanelLabelledBy}
+      />
     {/if}
   </div>
 </section>
@@ -185,29 +216,6 @@
   }
 
   .ag-heartbeat-record-detail__body > :global(*) {
-    min-width: 0;
-  }
-
-  .ag-heartbeat-record-detail__body :global(.ag-heartbeat-record-detail-tabs) {
-    --f7-subnavbar-height: 40px;
-    position: relative;
-    inset: auto;
-    box-sizing: border-box;
-    min-width: 0;
-    border: 1px solid color-mix(in srgb, currentColor, transparent 90%);
-    border-radius: 12px;
-    background: color-mix(in srgb, Canvas, currentColor 2%);
-    overflow: hidden;
-  }
-
-  .ag-heartbeat-record-detail__body :global(.ag-heartbeat-record-detail-tabs .subnavbar-inner) {
-    box-sizing: border-box;
-    min-width: 0;
-    padding: 6px;
-  }
-
-  .ag-heartbeat-record-detail__body :global(.ag-heartbeat-record-detail-tabs .segmented) {
-    width: 100%;
     min-width: 0;
   }
 

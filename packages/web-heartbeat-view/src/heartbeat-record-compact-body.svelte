@@ -1,29 +1,27 @@
 <script lang="ts">
   import HeartbeatRecordIcon from "./heartbeat-record-icon.svelte";
-  import { Button, Segmented, Subnavbar } from "./framework7-components";
   import { formatHeartbeatRecordPayload, readHeartbeatRecordPayloadValue } from "./heartbeat-record-detail-model";
   import type { HeartbeatRecordItem } from "./types";
+
+  type CompactTab = "new" | "old";
 
   let {
     record,
     payload = null,
     variant = "card",
     title,
+    detailTab = "new",
+    tabPanelId = "ag-heartbeat-record-compact-panel",
+    tabPanelLabelledBy = undefined,
   }: {
     record: HeartbeatRecordItem;
     payload?: unknown;
     variant?: "card" | "detail";
     title: string;
+    detailTab?: CompactTab;
+    tabPanelId?: string;
+    tabPanelLabelledBy?: string | undefined;
   } = $props();
-
-  type CompactTab = "new" | "old";
-
-  let compactTab = $state<CompactTab>("new");
-  const compactTabIds = Object.freeze({
-    new: "ag-heartbeat-record-compact-tab-new",
-    old: "ag-heartbeat-record-compact-tab-old",
-  });
-  const compactPanelId = "ag-heartbeat-record-compact-panel";
 
   const resolveNumber = (value: unknown): number | null => {
     if (typeof value === "number" && Number.isFinite(value)) {
@@ -49,7 +47,7 @@
   );
   const oldContext = $derived(readHeartbeatRecordPayloadValue(payload, ["oldContext", "old", "before", "previousContext"]) ?? null);
   const compactSource = $derived.by(() => {
-    if (compactTab === "old") {
+    if (detailTab === "old") {
       return oldContext === null ? "" : formatHeartbeatRecordPayload(oldContext);
     }
     return newContext === null ? "" : formatHeartbeatRecordPayload(newContext);
@@ -107,39 +105,17 @@
       </div>
     </div>
 
-    <Subnavbar inner={false} class="ag-heartbeat-record-detail-tabs ag-heartbeat-record-compact-detail__subnavbar">
-      <Segmented strong class="ag-heartbeat-record-compact-detail__tabs" role="tablist" aria-label="Compact detail tabs">
-        <Button
-          id={compactTabIds.new}
-          type="button"
-          role="tab"
-          active={compactTab === "new"}
-          aria-selected={compactTab === "new"}
-          aria-controls={compactPanelId}
-          tabindex={compactTab === "new" ? 0 : -1}
-          text="New Context"
-          onClick={() => (compactTab = "new")}
-        />
-        <Button
-          id={compactTabIds.old}
-          type="button"
-          role="tab"
-          active={compactTab === "old"}
-          aria-selected={compactTab === "old"}
-          aria-controls={compactPanelId}
-          tabindex={compactTab === "old" ? 0 : -1}
-          text="Old Context"
-          onClick={() => (compactTab = "old")}
-        />
-      </Segmented>
-    </Subnavbar>
-
-    <div id={compactPanelId} class="ag-heartbeat-record-compact-detail__panel" role="tabpanel" aria-labelledby={compactTab === "new" ? compactTabIds.new : compactTabIds.old}>
-      {#if compactTab === "new" && compactError !== null}
+    <div
+      id={tabPanelId}
+      class="ag-heartbeat-record-compact-detail__panel"
+      role="tabpanel"
+      aria-labelledby={tabPanelLabelledBy}
+    >
+      {#if detailTab === "new" && compactError !== null}
         <div class="ag-heartbeat-record-compact-detail__error">{formatHeartbeatRecordPayload(compactError)}</div>
       {/if}
 
-      {#if compactState === "running" && compactTab === "new"}
+      {#if compactState === "running" && detailTab === "new"}
         <div class="ag-heartbeat-record-compact-detail__streaming">streaming</div>
       {/if}
 
@@ -147,7 +123,7 @@
         <pre class="ag-heartbeat-record-compact-detail__source">{compactSource}</pre>
       {:else}
         <div class="ag-heartbeat-record-compact-detail__empty ag-heartbeat-record-compact-detail__empty--pulse">
-          {compactTab === "new" ? "0 chunks" : "No snapshot"}
+          {detailTab === "new" ? "0 chunks" : "No snapshot"}
         </div>
       {/if}
     </div>
@@ -254,21 +230,6 @@
 
   .ag-heartbeat-record-compact-detail__object {
     min-inline-size: 0;
-  }
-
-  :global(.ag-heartbeat-record-compact-detail__tabs) {
-    inline-size: 100%;
-  }
-
-  :global(.ag-heartbeat-record-compact-detail__tabs .button) {
-    min-inline-size: 0;
-    font: 600 11px/1.1 system-ui, sans-serif;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  :global(.ag-heartbeat-record-compact-detail__tabs .button-active) {
-    color: color-mix(in oklab, var(--tone-accent, #2563eb), black 15%);
   }
 
   .ag-heartbeat-record-compact-detail__error {

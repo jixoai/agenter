@@ -6,7 +6,19 @@
   } from "@agenter/web-heartbeat-view";
   import RefreshIcon from "@lucide/svelte/icons/refresh-cw";
   import { onMount } from "svelte";
-  import { Block, Link, Navbar, NavLeft, NavRight, NavTitle, Page, PageContent } from "../../../src/framework7-components";
+  import {
+    Block,
+    Button,
+    Link,
+    Navbar,
+    NavLeft,
+    NavRight,
+    NavTitle,
+    Page,
+    PageContent,
+    Segmented,
+    Subnavbar,
+  } from "../../../src/framework7-components";
 
   import HeartbeatAvatarMedia from "./heartbeat-avatar-media.svelte";
   import { useHeartbeatExampleState } from "./heartbeat-example-context";
@@ -23,6 +35,9 @@
   };
 
   let { runtimeId: runtimeIdProp, recordId: recordIdProp, f7route }: Framework7RouteProps = $props();
+
+  type CompactDetailTab = "new" | "old";
+  type ConfigDetailTab = "diff" | "new" | "old";
 
   const exampleState = useHeartbeatExampleState();
   const readRouteFromLocation = (): { runtimeId: string | null; recordId: string | null } => {
@@ -54,6 +69,21 @@
     }
     return activeHeartbeat?.recordsState?.data?.records.find((record) => record.id === recordIdNumber) ?? null;
   });
+  const hasDetailTabs = $derived(detailRecord?.kind === "compact" || detailRecord?.kind === "config");
+  const tabBaseId = $derived(`heartbeat-record-detail-${recordIdValue || "unknown"}`);
+  const compactTabIds = $derived({
+    new: `${tabBaseId}-compact-new`,
+    old: `${tabBaseId}-compact-old`,
+  });
+  const compactPanelId = $derived(`${tabBaseId}-compact-panel`);
+  const configTabIds = $derived({
+    diff: `${tabBaseId}-config-diff`,
+    new: `${tabBaseId}-config-new`,
+    old: `${tabBaseId}-config-old`,
+  });
+  const configPanelId = $derived(`${tabBaseId}-config-panel`);
+  let compactTab = $state<CompactDetailTab>("new");
+  let configTab = $state<ConfigDetailTab>("diff");
   let loadedDetailKey = $state("");
 
   onMount(() => {
@@ -76,7 +106,7 @@
   });
 </script>
 
-<Page name="heartbeat-record-detail" pageContent={false}>
+<Page name="heartbeat-record-detail" pageContent={false} withSubnavbar={hasDetailTabs}>
   <Navbar>
     <NavLeft>
       <Link
@@ -112,6 +142,72 @@
         <RefreshIcon size={20} aria-hidden="true" />
       </Link>
     </NavRight>
+    {#if detailRecord?.kind === "compact"}
+      <Subnavbar inner={false} class="heartbeat-example-record-detail-tabs">
+        <Segmented strong role="tablist" aria-label="Compact detail tabs">
+          <Button
+            id={compactTabIds.new}
+            type="button"
+            role="tab"
+            active={compactTab === "new"}
+            aria-selected={compactTab === "new"}
+            aria-controls={compactPanelId}
+            tabindex={compactTab === "new" ? 0 : -1}
+            text="New Context"
+            onClick={() => (compactTab = "new")}
+          />
+          <Button
+            id={compactTabIds.old}
+            type="button"
+            role="tab"
+            active={compactTab === "old"}
+            aria-selected={compactTab === "old"}
+            aria-controls={compactPanelId}
+            tabindex={compactTab === "old" ? 0 : -1}
+            text="Old Context"
+            onClick={() => (compactTab = "old")}
+          />
+        </Segmented>
+      </Subnavbar>
+    {:else if detailRecord?.kind === "config"}
+      <Subnavbar inner={false} class="heartbeat-example-record-detail-tabs">
+        <Segmented strong role="tablist" aria-label="Config detail tabs">
+          <Button
+            id={configTabIds.diff}
+            type="button"
+            role="tab"
+            active={configTab === "diff"}
+            aria-selected={configTab === "diff"}
+            aria-controls={configPanelId}
+            tabindex={configTab === "diff" ? 0 : -1}
+            text="Diff Config"
+            onClick={() => (configTab = "diff")}
+          />
+          <Button
+            id={configTabIds.new}
+            type="button"
+            role="tab"
+            active={configTab === "new"}
+            aria-selected={configTab === "new"}
+            aria-controls={configPanelId}
+            tabindex={configTab === "new" ? 0 : -1}
+            text="New Config"
+            onClick={() => (configTab = "new")}
+          />
+          <Button
+            id={configTabIds.old}
+            type="button"
+            role="tab"
+            active={configTab === "old"}
+            aria-selected={configTab === "old"}
+            aria-controls={configPanelId}
+            tabindex={configTab === "old" ? 0 : -1}
+            text="Old Config"
+            onClick={() => (configTab = "old")}
+          />
+        </Segmented>
+      </Subnavbar>
+    {/if}
   </Navbar>
 
   <PageContent class="heartbeat-example-record-detail-content">
@@ -120,7 +216,16 @@
     {:else if !Number.isFinite(recordIdNumber) || recordIdNumber <= 0}
       <Block strong>Invalid Heartbeat record id.</Block>
     {:else if detailRecord}
-      <HeartbeatRecordDetailView record={detailRecord} detailState={detailState} />
+      <HeartbeatRecordDetailView
+        record={detailRecord}
+        detailState={detailState}
+        {compactTab}
+        {compactPanelId}
+        compactPanelLabelledBy={compactTabIds[compactTab]}
+        {configTab}
+        {configPanelId}
+        configPanelLabelledBy={configTabIds[configTab]}
+      />
     {:else if detailState?.error}
       <Block strong>{detailState.error}</Block>
     {:else}
@@ -144,6 +249,28 @@
 
   .heartbeat-example-record-navbar-title > span:last-child {
     overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  :global(.heartbeat-example-record-detail-tabs) {
+    --f7-subnavbar-height: 44px;
+  }
+
+  :global(.heartbeat-example-record-detail-tabs .subnavbar-inner) {
+    box-sizing: border-box;
+    min-width: 0;
+    padding: 6px 10px;
+  }
+
+  :global(.heartbeat-example-record-detail-tabs .segmented) {
+    width: 100%;
+    min-width: 0;
+  }
+
+  :global(.heartbeat-example-record-detail-tabs .button) {
+    min-width: 0;
+    font: 600 11px/1.1 system-ui, sans-serif;
     text-overflow: ellipsis;
     white-space: nowrap;
   }

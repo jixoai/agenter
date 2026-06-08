@@ -715,7 +715,7 @@ describe("Feature: HeartbeatView DOM capability contract", () => {
     expect(document.querySelector('[data-object-kind="compact"]')).not.toBeNull();
   });
 
-  test("Scenario: Given compact record detail When tabs change Then new context stays primary and streaming/error facts stay inside detail", async () => {
+  test("Scenario: Given compact record detail When rendered inline Then new context stays primary and tabs stay host-owned", async () => {
     const compactRecord = heartbeatRecord({
       id: 102,
       kind: "compact",
@@ -771,22 +771,14 @@ describe("Feature: HeartbeatView DOM capability contract", () => {
     await waitForDocumentText("Compact");
     document.querySelector<HTMLElement>('[data-testid="heartbeat-record-102"]')?.click();
     await waitForDocumentText("New compact context is streaming.");
-    expect(document.querySelector(".ag-heartbeat-record-compact-detail__tabs.segmented")).not.toBeNull();
-    expect(document.querySelectorAll(".ag-heartbeat-record-compact-detail__tabs .button")).toHaveLength(2);
-    expect(document.querySelector(".ag-heartbeat-record-compact-detail__tabs .button-active")?.textContent).toContain(
-      "New Context",
-    );
+    expect(document.querySelector(".ag-heartbeat-record-compact-detail__tabs.segmented")).toBeNull();
+    expect(document.body.textContent).not.toContain("Old context snapshot.");
     expect(document.querySelectorAll('[data-object-kind="compact"]').length).toBeGreaterThanOrEqual(2);
     expect(document.body.textContent).toContain("streaming");
     expect(document.body.textContent).toContain("Partial compact warning");
-    const oldTab = Array.from(document.querySelectorAll<HTMLButtonElement>("button")).find((button) =>
-      button.textContent?.includes("Old Context"),
-    );
-    oldTab?.click();
-    await waitForDocumentText("Old context snapshot.");
   });
 
-  test("Scenario: Given config record detail When tabs change Then YAML diff is first and source snapshots remain inspectable", async () => {
+  test("Scenario: Given config record detail When rendered inline Then YAML diff is first and tabs stay host-owned", async () => {
     const configRecord = heartbeatRecord({
       id: 103,
       kind: "config",
@@ -841,11 +833,7 @@ describe("Feature: HeartbeatView DOM capability contract", () => {
     await waitForDocumentText("Config");
     document.querySelector<HTMLElement>('[data-testid="heartbeat-record-103"]')?.click();
     await waitForDocumentText("Diff Config");
-    expect(document.querySelector(".ag-heartbeat-record-config-detail__tabs.segmented")).not.toBeNull();
-    expect(document.querySelectorAll(".ag-heartbeat-record-config-detail__tabs .button")).toHaveLength(3);
-    expect(document.querySelector(".ag-heartbeat-record-config-detail__tabs .button-active")?.textContent).toContain(
-      "Diff Config",
-    );
+    expect(document.querySelector(".ag-heartbeat-record-config-detail__tabs.segmented")).toBeNull();
     expect(document.querySelectorAll('[data-object-kind="config"]').length).toBeGreaterThanOrEqual(2);
     expect(document.querySelector(".ag-heartbeat-record-config__field--thinking")).not.toBeNull();
     expect(document.querySelector(".ag-heartbeat-record-config__field--maxtoken")).not.toBeNull();
@@ -856,16 +844,6 @@ describe("Feature: HeartbeatView DOM capability contract", () => {
     expect(document.querySelector(".ag-heartbeat-record-config__field--budget")).toBeNull();
     expect(document.body.textContent).toContain("old:");
     expect(document.body.textContent).toContain("new:");
-    const newTab = Array.from(document.querySelectorAll<HTMLButtonElement>("button")).find((button) =>
-      button.textContent?.includes("New Config"),
-    );
-    newTab?.click();
-    await waitForDocumentText("thinking: auto");
-    const oldTab = Array.from(document.querySelectorAll<HTMLButtonElement>("button")).find((button) =>
-      button.textContent?.includes("Old Config"),
-    );
-    oldTab?.click();
-    await waitForDocumentText("thinking: false");
   });
 
   test("Scenario: Given structured rows When rendered Then reasoning, JSON config, tool running, compact card, and load older are visible through package components", () => {
