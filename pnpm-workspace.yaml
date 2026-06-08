@@ -19,6 +19,7 @@ packages:
   - packages/avatar
   - packages/cli
   - packages/client-sdk
+  - packages/codemirror
   - packages/ghostty-native
   - packages/ghostty-native-darwin-arm64
   - packages/ghostty-native-darwin-x64

@@ -105,6 +105,57 @@ export interface NoteCatalogOutput {
   totalPages: number;
 }
 
+export interface NotePaginationInput {
+  cursor?: string;
+  limit?: number;
+}
+
+export type NoteListSort = "none" | "alpha" | "createdAt" | "updatedAt";
+
+export interface NoteNotebookSummary {
+  notebook: string;
+  sectionCount: number;
+  pageCount: number;
+  createdAt: string;
+  updatedAt: string;
+  sourceWorkspaces: string[];
+}
+
+export interface NoteSectionSummary {
+  notebook: string;
+  section: string;
+  pageCount: number;
+  createdAt: string;
+  updatedAt: string;
+  sourceWorkspaces: string[];
+}
+
+export interface NoteNotebookListOutput {
+  capability: NoteCapabilityState;
+  notebooks: NoteNotebookSummary[];
+  totalNotebooks: number;
+  totalPages: number;
+  nextCursor: string | null;
+}
+
+export interface NoteSectionListOutput {
+  capability: NoteCapabilityState;
+  notebook: string;
+  sections: NoteSectionSummary[];
+  totalSections: number;
+  totalPages: number;
+  nextCursor: string | null;
+}
+
+export interface NotePageListOutput {
+  capability: NoteCapabilityState;
+  notebook: string;
+  section: string;
+  pages: NotePageSummary[];
+  totalPages: number;
+  nextCursor: string | null;
+}
+
 export interface NotePageOutput {
   capability: NoteCapabilityState;
   page: NotePage | null;
@@ -151,7 +202,9 @@ export interface NoteListInput {
   avatarHome: readonly string[];
   notebook?: string;
   section?: string;
-  limit?: number;
+  offset?: number;
+  limit?: number | null;
+  sort?: NoteListSort;
 }
 
 export interface NoteSearchInput {

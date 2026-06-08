@@ -1,5 +1,6 @@
 <script lang="ts">
-	import MarkdownDocument from '$lib/components/web-components/markdown-document.svelte';
+	import { MarkdownPreviewContent } from '@jixo/codemirror';
+
 	import JSONViewer from '$lib/components/web-components/json-viewer.svelte';
 	import { cn } from '$lib/utils.js';
 
@@ -26,11 +27,9 @@
 				{errorText}
 			</div>
 		{:else if typeof output === 'string'}
-			<MarkdownDocument
+			<MarkdownPreviewContent
 				value={output}
-				mode="preview"
-				usage="chat"
-				padding="compact"
+				tone="viewer"
 				class="min-w-0 rounded-lg bg-background/70 px-2.5 py-2"
 			/>
 		{:else}

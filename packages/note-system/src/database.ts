@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, renameSync, rmSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
+import { dirname, resolve } from "node:path";
 
 import { Database } from "bun:sqlite";
 
@@ -69,9 +69,10 @@ const rowToNullableString = (value: unknown): string | null => (typeof value ===
 
 const normalizeTagName = (value: string): string => value.trim().toLowerCase();
 
-const uniqueSorted = (values: readonly string[]): string[] => [
-  ...new Set(values.map((value) => normalizeTagName(value)).filter((value) => value.length > 0)),
-].sort((left, right) => left.localeCompare(right));
+const uniqueSorted = (values: readonly string[]): string[] =>
+  [...new Set(values.map((value) => normalizeTagName(value)).filter((value) => value.length > 0))].sort((left, right) =>
+    left.localeCompare(right),
+  );
 
 export class NoteDatabase {
   private readonly db: Database;
@@ -173,18 +174,16 @@ export class NoteDatabase {
   }
 
   getPageByIdentity(identity: NoteIdentity): PageRow | null {
-    return (
-      this.db
-        .query(
-          `select p.*
+    return this.db
+      .query(
+        `select p.*
            from note_pages p
            join note_books b on b.id = p.book_id
            join note_sections s on s.id = p.section_id
            where b.name = ? and s.name = ? and p.name = ?
            limit 1`,
-        )
-        .get(identity.notebook, identity.section, identity.page) as PageRow | null
-    );
+      )
+      .get(identity.notebook, identity.section, identity.page) as PageRow | null;
   }
 
   getPageRecordByIdentity(identity: NoteIdentity): NoteDbPageRecord | null {
@@ -205,7 +204,11 @@ export class NoteDatabase {
     return page;
   }
 
-  listPages(input: { notebook?: string; section?: string; limit?: number } = {}): NoteDbPageRecord[] {
+  listPages(
+    input: { notebook?: string; section?: string; offset?: number; limit?: number | null } = {},
+  ): NoteDbPageRecord[] {
+    const limit = input.limit === null ? -1 : Math.max(1, Math.min(input.limit ?? 100, 100_000));
+    const offset = Math.max(0, input.offset ?? 0);
     const rows = this.db
       .query(
         `select p.*
@@ -215,9 +218,9 @@ export class NoteDatabase {
          where (?1 is null or b.name = ?1)
            and (?2 is null or s.name = ?2)
          order by b.name asc, s.name asc, p.name asc
-         limit ?3`,
+         limit ?3 offset ?4`,
       )
-      .all(input.notebook ?? null, input.section ?? null, Math.max(1, Math.min(input.limit ?? 100, 1_000))) as PageRow[];
+      .all(input.notebook ?? null, input.section ?? null, limit, offset) as PageRow[];
     return rows.map((row) => this.toPageRecord(row));
   }
 
@@ -285,11 +288,13 @@ export class NoteDatabase {
         const nextIdentity: NoteIdentity = {
           notebook: input.toNotebook ?? page.notebook,
           section: input.toSection ?? page.section,
-          page: input.page ? input.toPage ?? page.page : page.page,
+          page: input.page ? (input.toPage ?? page.page) : page.page,
         };
         const conflict = this.getPageRecordByIdentity(nextIdentity);
         if (conflict && conflict.pageId !== page.pageId) {
-          throw new Error(`note rename conflict: ${nextIdentity.notebook}/${nextIdentity.section}/${nextIdentity.page}`);
+          throw new Error(
+            `note rename conflict: ${nextIdentity.notebook}/${nextIdentity.section}/${nextIdentity.page}`,
+          );
         }
         const book = this.getOrCreateBook(nextIdentity.notebook, undefined, new Date().toISOString());
         const section = this.getOrCreateSection(book.id, nextIdentity.section, undefined, new Date().toISOString());
@@ -408,7 +413,9 @@ export class NoteDatabase {
   }
 
   private getOrCreateBook(name: string, preferredId: string | undefined, now: string): BookRow {
-    const existing = this.db.query(`select id, name from note_books where name = ? limit 1`).get(name) as BookRow | null;
+    const existing = this.db
+      .query(`select id, name from note_books where name = ? limit 1`)
+      .get(name) as BookRow | null;
     if (existing) {
       return existing;
     }

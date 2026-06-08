@@ -149,8 +149,52 @@ describe("Feature: app-server trpc procedures", () => {
         now: new Date("2026-05-31T15:30:00.000Z"),
         sourceWorkspace: "/repo",
       });
+      writeNotePage({
+        avatarHome: [avatarHome],
+        notebook: "ideas",
+        section: "ux",
+        page: "scope-tabs",
+        content: "Scope tab notes stay under one avatar.",
+        mime: "text/markdown",
+        now: new Date("2026-05-31T15:31:00.000Z"),
+        sourceWorkspace: "/repo",
+      });
+      writeNotePage({
+        avatarHome: [avatarHome],
+        notebook: "logs",
+        section: "daily",
+        page: "today",
+        content: "Daily log.",
+        mime: "text/markdown",
+        now: new Date("2026-05-31T15:32:00.000Z"),
+        sourceWorkspace: "/repo",
+      });
 
       const catalog = await caller.note.catalog({ avatarNickname: "note-reader" });
+      const notebooks = await caller.note.notebooks({ avatarNickname: "note-reader", limit: 1 });
+      const updatedNotebooks = await caller.note.notebooks({
+        avatarNickname: "note-reader",
+        sort: "updatedAt",
+        limit: 1,
+      });
+      const secondNotebookPage = await caller.note.notebooks({
+        avatarNickname: "note-reader",
+        cursor: notebooks.nextCursor ?? undefined,
+        limit: 1,
+      });
+      const sections = await caller.note.sections({
+        avatarNickname: "note-reader",
+        notebook: "ideas",
+        sort: "alpha",
+        limit: 1,
+      });
+      const pages = await caller.note.pages({
+        avatarNickname: "note-reader",
+        notebook: "ideas",
+        section: "shell",
+        sort: "updatedAt",
+        limit: 1,
+      });
       const page = await caller.note.page({
         avatarNickname: "note-reader",
         notebook: "ideas",
@@ -173,7 +217,7 @@ describe("Feature: app-server trpc procedures", () => {
       });
       const sql = await caller.note.query({
         avatarNickname: "note-reader",
-        sql: "select notebook, section, page from note_pages_view where notebook = 'ideas'",
+        sql: "select notebook, section, page from note_pages_view where notebook = 'ideas' order by section, page",
       });
 
       expect(catalog.avatar).toMatchObject({
@@ -194,6 +238,28 @@ describe("Feature: app-server trpc procedures", () => {
         tags: ["contract", "studio"],
         mime: "text/markdown",
       });
+      expect(notebooks).toMatchObject({
+        totalNotebooks: 2,
+        totalPages: 3,
+        nextCursor: "1",
+      });
+      expect(notebooks.notebooks[0]).toMatchObject({ notebook: "ideas", sectionCount: 2, pageCount: 2 });
+      expect(updatedNotebooks.notebooks[0]?.notebook).toBe("logs");
+      expect(secondNotebookPage.notebooks.map((notebook) => notebook.notebook)).toEqual(["logs"]);
+      expect(sections).toMatchObject({
+        notebook: "ideas",
+        totalSections: 2,
+        totalPages: 2,
+        nextCursor: "1",
+      });
+      expect(sections.sections[0]).toMatchObject({ section: "shell", pageCount: 1 });
+      expect(pages).toMatchObject({
+        notebook: "ideas",
+        section: "shell",
+        totalPages: 1,
+        nextCursor: null,
+      });
+      expect(pages.pages[0]).toMatchObject({ notebook: "ideas", section: "shell", page: "typed-surface" });
       expect(page.page?.body).toContain("Typed NoteSystem projection");
       expect(page.page?.metadata.kind).toBe("note");
       expect(missingPage.page).toBeNull();
@@ -204,7 +270,10 @@ describe("Feature: app-server trpc procedures", () => {
       });
       expect(search.results[0]?.snippet).toContain("Studio");
       expect(tags.tags.map((tag) => tag.name)).toEqual(["contract", "studio"]);
-      expect(sql.rows).toEqual([{ notebook: "ideas", section: "shell", page: "typed-surface" }]);
+      expect(sql.rows).toEqual([
+        { notebook: "ideas", section: "shell", page: "typed-surface" },
+        { notebook: "ideas", section: "ux", page: "scope-tabs" },
+      ]);
     } finally {
       await kernel.stop();
     }
@@ -223,6 +292,13 @@ describe("Feature: app-server trpc procedures", () => {
       const { caller } = await createRootSuperadminCaller(kernel);
 
       const catalog = await caller.note.catalog({ avatarNickname: "missing-note-avatar" });
+      const notebooks = await caller.note.notebooks({ avatarNickname: "missing-note-avatar" });
+      const sections = await caller.note.sections({ avatarNickname: "missing-note-avatar", notebook: "ideas" });
+      const pages = await caller.note.pages({
+        avatarNickname: "missing-note-avatar",
+        notebook: "ideas",
+        section: "shell",
+      });
       const page = await caller.note.page({
         avatarNickname: "missing-note-avatar",
         notebook: "ideas",
@@ -248,6 +324,18 @@ describe("Feature: app-server trpc procedures", () => {
       });
       expect(catalog.capability.available).toBeFalse();
       expect(catalog.notebooks).toEqual([]);
+      expect(notebooks).toMatchObject({ notebooks: [], totalNotebooks: 0, totalPages: 0, nextCursor: null });
+      expect(notebooks.capability.available).toBeFalse();
+      expect(sections).toMatchObject({
+        notebook: "ideas",
+        sections: [],
+        totalSections: 0,
+        totalPages: 0,
+        nextCursor: null,
+      });
+      expect(sections.capability.available).toBeFalse();
+      expect(pages).toMatchObject({ notebook: "ideas", section: "shell", pages: [], totalPages: 0, nextCursor: null });
+      expect(pages.capability.available).toBeFalse();
       expect(page.page).toBeNull();
       expect(page.capability.available).toBeFalse();
       expect(search.results).toEqual([]);

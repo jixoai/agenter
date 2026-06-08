@@ -5,21 +5,28 @@
 	import FilePreviewFrame from '$lib/components/file-preview/file-preview-frame.svelte';
 	import { resolveFilePreviewKindFromMime, type FilePreviewPayload } from '$lib/components/file-preview/file-preview-state';
 	import { Badge } from '$lib/components/ui/badge/index.js';
+	import * as Empty from '$lib/components/ui/empty/index.js';
 	import NoticeBanner from '$lib/components/ui/notice-banner.svelte';
+	import * as Skeleton from '$lib/components/ui/skeleton/index.js';
 	import HelpHint from '$lib/components/web-components/help-hint.svelte';
 	import WorkbenchDetailDrawer from '$lib/features/navigation/workbench-detail-drawer.svelte';
 	import type { NotePageIdentity } from './notes-state';
+	import type { NotesMode } from './notes-workbench-location';
 
 	let {
 		selectedPage,
 		pageOutput,
 		loadingPage,
+		pendingDetail = false,
+		mode = 'browse',
 		avatarLabel,
 		avatarNickname,
 	}: {
 		selectedPage: NotePageIdentity | null;
 		pageOutput: NotePageOutput | null;
 		loadingPage: boolean;
+		pendingDetail?: boolean;
+		mode?: NotesMode;
 		avatarLabel: string;
 		avatarNickname: string;
 	} = $props();
@@ -101,6 +108,13 @@
 			},
 		};
 	});
+
+	const shouldRenderEmptyDetail = $derived(!selectedPage && (mode === 'search' || mode === 'query'));
+	const shouldRenderSkeletonDetail = $derived((pendingDetail && !selectedPage) || (loadingPage && !selectedPageFact));
+	const emptyDetailLabel = $derived(mode === 'query' ? 'No query row selected' : 'No search result selected');
+	const emptyDetailDescription = $derived(
+		mode === 'query' ? 'Select a query row with note identity to preview it.' : 'Select a search result to preview it.',
+	);
 </script>
 
 {#snippet noteMetadataAccessory()}
@@ -146,6 +160,25 @@
 	{/if}
 {/snippet}
 
+{#snippet detailSkeleton()}
+	<div class="grid h-full min-h-0 content-start gap-4 p-4" aria-hidden="true" data-testid="notes-detail-skeleton">
+		<div class="grid gap-2">
+			<Skeleton.Root class="h-5 w-1/3" />
+			<Skeleton.Root class="h-3 w-1/2" />
+		</div>
+		<div class="grid gap-2">
+			<Skeleton.Root class="h-3 w-full" />
+			<Skeleton.Root class="h-3 w-11/12" />
+			<Skeleton.Root class="h-3 w-4/5" />
+			<Skeleton.Root class="h-3 w-5/6" />
+		</div>
+		<div class="grid grid-cols-2 gap-2">
+			<Skeleton.Root class="h-7 w-full" />
+			<Skeleton.Root class="h-7 w-full" />
+		</div>
+	</div>
+{/snippet}
+
 <WorkbenchDetailDrawer
 	title={selectedPage ? selectedPage.page : 'Selected note'}
 	description={selectedPage ? undefined : 'Select a note page.'}
@@ -155,10 +188,17 @@
 	titleMeta={noteTitleMeta}
 	data-testid="notes-detail"
 >
-	{#if !selectedPage}
+	{#if shouldRenderSkeletonDetail}
+		{@render detailSkeleton()}
+	{:else if shouldRenderEmptyDetail}
+		<Empty.Root class="h-full min-h-0" data-testid="notes-detail-empty">
+			<Empty.Header>
+				<Empty.Title>{emptyDetailLabel}</Empty.Title>
+				<Empty.Description>{emptyDetailDescription}</Empty.Description>
+			</Empty.Header>
+		</Empty.Root>
+	{:else if !selectedPage}
 		<NoticeBanner tone="info" message="Select a note page from the catalog or search results." />
-	{:else if loadingPage && !selectedPageFact}
-		<NoticeBanner tone="info" message="Loading note page." />
 	{:else if pageOutput && !pageOutput.capability.available}
 		<NoticeBanner tone="warning" message="The selected avatar has no NoteSystem capability." />
 	{:else if pageOutput && !selectedPageFact}

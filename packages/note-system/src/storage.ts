@@ -17,13 +17,16 @@ import type {
   NoteDraftInput,
   NoteIdentity,
   NoteListInput,
+  NoteListSort,
   NoteMetadata,
   NoteMime,
+  NoteNotebookSummary,
   NotePage,
   NoteReadInput,
   NoteReference,
   NoteReferenceInput,
   NoteRenameInput,
+  NoteSectionSummary,
   NoteSqlQueryInput,
   NoteTagQueryInput,
   NoteTagSummary,
@@ -217,6 +220,112 @@ const listNoteArtifactFiles = (root: string): string[] => {
     }
   }
   return files;
+};
+
+const compareNoteRecords = (left: NoteDbPageRecord, right: NoteDbPageRecord): number =>
+  left.notebook.localeCompare(right.notebook) ||
+  left.section.localeCompare(right.section) ||
+  left.page.localeCompare(right.page);
+
+const normalizeListOffset = (offset: number | undefined): number => Math.max(0, offset ?? 0);
+
+const normalizeListLimit = (limit: number | null | undefined): number =>
+  limit === null ? 100_000 : Math.max(1, Math.min(limit ?? 100, 100_000));
+
+const collectVisibleNotePageRecords = (input: {
+  avatarHome: readonly string[];
+  notebook?: string;
+  section?: string;
+}): NoteDbPageRecord[] => {
+  const visible = new Map<string, NoteDbPageRecord>();
+  for (const avatarHome of normalizeAvatarHome(input.avatarHome)) {
+    const records = withIndexedDatabase(avatarHome, (db) =>
+      db.listPages({ notebook: input.notebook, section: input.section, limit: null }),
+    );
+    for (const record of records) {
+      visible.set(createNoteKey(record), record);
+    }
+  }
+  return [...visible.values()].sort(compareNoteRecords);
+};
+
+const sourceWorkspaceValues = (records: readonly NoteDbPageRecord[]): string[] =>
+  [...new Set(records.map((record) => record.sourceWorkspace).filter((value): value is string => Boolean(value)))].sort(
+    (left, right) => left.localeCompare(right),
+  );
+
+const latestUpdatedAt = (records: readonly NoteDbPageRecord[]): string =>
+  records.reduce((latest, record) => (record.updatedAt > latest ? record.updatedAt : latest), "");
+
+const earliestCreatedAt = (records: readonly NoteDbPageRecord[]): string =>
+  records.reduce(
+    (earliest, record) => (earliest === "" || record.createdAt < earliest ? record.createdAt : earliest),
+    "",
+  );
+
+const normalizeListSort = (sort: NoteListSort | undefined): NoteListSort => sort ?? "none";
+
+const compareByTimeThenName = (leftTime: string, rightTime: string, leftName: string, rightName: string): number =>
+  rightTime.localeCompare(leftTime) || leftName.localeCompare(rightName);
+
+const compareNoteRecordsForSort = (sort: NoteListSort | undefined) => {
+  const normalizedSort = normalizeListSort(sort);
+  return (left: NoteDbPageRecord, right: NoteDbPageRecord): number => {
+    if (normalizedSort === "createdAt") {
+      return (
+        compareByTimeThenName(left.createdAt, right.createdAt, left.page, right.page) || compareNoteRecords(left, right)
+      );
+    }
+    if (normalizedSort === "updatedAt") {
+      return (
+        compareByTimeThenName(left.updatedAt, right.updatedAt, left.page, right.page) || compareNoteRecords(left, right)
+      );
+    }
+    if (normalizedSort === "alpha") {
+      return compareNoteRecords(left, right);
+    }
+    return 0;
+  };
+};
+
+const sortNoteRecordsForList = (
+  records: readonly NoteDbPageRecord[],
+  sort: NoteListSort | undefined,
+): NoteDbPageRecord[] => {
+  const normalizedSort = normalizeListSort(sort);
+  return normalizedSort === "none" ? [...records] : [...records].sort(compareNoteRecordsForSort(normalizedSort));
+};
+
+const compareNotebookSummariesForSort = (sort: NoteListSort | undefined) => {
+  const normalizedSort = normalizeListSort(sort);
+  return (left: NoteNotebookSummary, right: NoteNotebookSummary): number => {
+    if (normalizedSort === "createdAt") {
+      return compareByTimeThenName(left.createdAt, right.createdAt, left.notebook, right.notebook);
+    }
+    if (normalizedSort === "updatedAt") {
+      return compareByTimeThenName(left.updatedAt, right.updatedAt, left.notebook, right.notebook);
+    }
+    if (normalizedSort === "alpha") {
+      return left.notebook.localeCompare(right.notebook);
+    }
+    return 0;
+  };
+};
+
+const compareSectionSummariesForSort = (sort: NoteListSort | undefined) => {
+  const normalizedSort = normalizeListSort(sort);
+  return (left: NoteSectionSummary, right: NoteSectionSummary): number => {
+    if (normalizedSort === "createdAt") {
+      return compareByTimeThenName(left.createdAt, right.createdAt, left.section, right.section);
+    }
+    if (normalizedSort === "updatedAt") {
+      return compareByTimeThenName(left.updatedAt, right.updatedAt, left.section, right.section);
+    }
+    if (normalizedSort === "alpha") {
+      return left.section.localeCompare(right.section);
+    }
+    return 0;
+  };
 };
 
 const inferMimeForArtifact = (path: string, frontmatter: Record<string, string>, existingMime?: NoteMime): NoteMime => {
@@ -735,18 +844,73 @@ export const showNotePage = (input: NoteReadInput): NotePage | null => {
 };
 
 export const listNotePages = (input: NoteListInput): NotePage[] => {
-  const visible = new Map<string, NotePage>();
-  for (const avatarHome of normalizeAvatarHome(input.avatarHome)) {
-    const pages = withIndexedDatabase(avatarHome, (db) =>
-      db.listPages({ notebook: input.notebook, section: input.section, limit: 1_000 }).map(recordToPage),
-    );
-    for (const page of pages) {
-      visible.set(createNoteKey(page.identity), page);
-    }
-  }
-  const limit = Math.max(1, Math.min(input.limit ?? 100, 1_000));
-  return [...visible.values()].sort((left, right) => left.path.localeCompare(right.path)).slice(0, limit);
+  const offset = normalizeListOffset(input.offset);
+  const limit = normalizeListLimit(input.limit);
+  return sortNoteRecordsForList(collectVisibleNotePageRecords(input), input.sort)
+    .slice(offset, offset + limit)
+    .map(recordToPage);
 };
+
+export const countNotePages = (input: Pick<NoteListInput, "avatarHome" | "notebook" | "section">): number =>
+  collectVisibleNotePageRecords(input).length;
+
+export const listNoteNotebookSummaries = (input: NoteListInput): NoteNotebookSummary[] => {
+  const byNotebook = new Map<string, NoteDbPageRecord[]>();
+  for (const record of collectVisibleNotePageRecords({ avatarHome: input.avatarHome })) {
+    byNotebook.set(record.notebook, [...(byNotebook.get(record.notebook) ?? []), record]);
+  }
+  const summaries = [...byNotebook.entries()]
+    .map(([notebook, records]) => ({
+      notebook,
+      sectionCount: new Set(records.map((record) => record.section)).size,
+      pageCount: records.length,
+      createdAt: earliestCreatedAt(records),
+      updatedAt: latestUpdatedAt(records),
+      sourceWorkspaces: sourceWorkspaceValues(records),
+    }))
+    .sort(compareNotebookSummariesForSort(input.sort));
+  const offset = normalizeListOffset(input.offset);
+  const limit = normalizeListLimit(input.limit);
+  return summaries.slice(offset, offset + limit);
+};
+
+export const countNoteNotebooks = (input: Pick<NoteListInput, "avatarHome">): number =>
+  new Set(collectVisibleNotePageRecords({ avatarHome: input.avatarHome }).map((record) => record.notebook)).size;
+
+export const listNoteSectionSummaries = (
+  input: NoteListInput & {
+    notebook: string;
+  },
+): NoteSectionSummary[] => {
+  const bySection = new Map<string, NoteDbPageRecord[]>();
+  for (const record of collectVisibleNotePageRecords({ avatarHome: input.avatarHome, notebook: input.notebook })) {
+    bySection.set(record.section, [...(bySection.get(record.section) ?? []), record]);
+  }
+  const summaries = [...bySection.entries()]
+    .map(([section, records]) => ({
+      notebook: input.notebook,
+      section,
+      pageCount: records.length,
+      createdAt: earliestCreatedAt(records),
+      updatedAt: latestUpdatedAt(records),
+      sourceWorkspaces: sourceWorkspaceValues(records),
+    }))
+    .sort(compareSectionSummariesForSort(input.sort));
+  const offset = normalizeListOffset(input.offset);
+  const limit = normalizeListLimit(input.limit);
+  return summaries.slice(offset, offset + limit);
+};
+
+export const countNoteSections = (
+  input: Pick<NoteListInput, "avatarHome"> & {
+    notebook: string;
+  },
+): number =>
+  new Set(
+    collectVisibleNotePageRecords({ avatarHome: input.avatarHome, notebook: input.notebook }).map(
+      (record) => record.section,
+    ),
+  ).size;
 
 export const listNoteTags = (input: NoteTagQueryInput): NoteTagSummary[] => {
   const counts = new Map<string, { id: string; name: string; count: number }>();

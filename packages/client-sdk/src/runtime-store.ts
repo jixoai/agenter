@@ -67,10 +67,14 @@ import type {
   McpStopOutput,
   ModelCallItem,
   NoteCatalogOutput,
+  NoteListSort,
+  NoteNotebookListOutput,
+  NotePageListOutput,
   NotePageOutput,
   NoteReferenceInput,
   NoteRenameOutput,
   NoteSearchOutput,
+  NoteSectionListOutput,
   NoteSqlQueryOutput,
   NoteTagsOutput,
   NoteWriteOutput,
@@ -4243,6 +4247,38 @@ export class RuntimeStore {
 
   async listNoteCatalog(input: { avatarNickname?: string; limit?: number } = {}): Promise<NoteCatalogOutput> {
     return await this.client.trpc.note.catalog.query(input);
+  }
+
+  async listNoteNotebooks(
+    input: {
+      avatarNickname?: string;
+      cursor?: string;
+      limit?: number;
+      sort?: NoteListSort;
+    } = {},
+  ): Promise<NoteNotebookListOutput> {
+    return await this.client.trpc.note.notebooks.query(input);
+  }
+
+  async listNoteSections(input: {
+    avatarNickname?: string;
+    notebook: string;
+    cursor?: string;
+    limit?: number;
+    sort?: NoteListSort;
+  }): Promise<NoteSectionListOutput> {
+    return await this.client.trpc.note.sections.query(input);
+  }
+
+  async listNoteSectionPages(input: {
+    avatarNickname?: string;
+    notebook: string;
+    section: string;
+    cursor?: string;
+    limit?: number;
+    sort?: NoteListSort;
+  }): Promise<NotePageListOutput> {
+    return await this.client.trpc.note.pages.query(input);
   }
 
   async readNotePage(input: {

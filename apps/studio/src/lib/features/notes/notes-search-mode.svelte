@@ -1,16 +1,16 @@
 <script lang="ts">
-	import { ScrollView } from '@agenter/svelte-components';
 	import SearchIcon from '@lucide/svelte/icons/search';
 	import TagsIcon from '@lucide/svelte/icons/tags';
 
 	import type { NoteSearchOutput, NoteTagSummary } from '@agenter/client-sdk';
+	import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '$lib/components/ui/accordion/index.js';
 	import { Badge } from '$lib/components/ui/badge/index.js';
 	import { Button } from '$lib/components/ui/button/index.js';
 	import { Input } from '$lib/components/ui/input/index.js';
-	import NoticeBanner from '$lib/components/ui/notice-banner.svelte';
-	import WorkbenchScaffold from '$lib/features/navigation/workbench-scaffold.svelte';
 	import { cn } from '$lib/utils.js';
-	import type { NotePageIdentity, NoteSearchRow } from './notes-state';
+	import NotesPageResultList from './notes-page-result-list.svelte';
+	import { mapNoteSearchResultItems, type NotePageIdentity, type NoteSearchRow } from './notes-state';
+	import { upsertNotesSearchTag } from './notes-search-syntax';
 
 	let {
 		capabilityAvailable,
@@ -22,7 +22,6 @@
 		searching,
 		selectedPageKey,
 		onRunSearch,
-		onFilterTag,
 		onSelectPage,
 	}: {
 		capabilityAvailable: boolean;
@@ -34,99 +33,113 @@
 		searching: boolean;
 		selectedPageKey: string;
 		onRunSearch: () => void | Promise<void>;
-		onFilterTag: (tagName: string) => void | Promise<void>;
 		onSelectPage: (identity: NotePageIdentity) => void;
 	} = $props();
+
+	const tagsFromSearchRows = $derived.by(() => {
+		const counts = new Map<string, NoteTagSummary>();
+		for (const row of searchRows) {
+			for (const tag of row.tags) {
+				const current = counts.get(tag);
+				counts.set(tag, {
+					id: current?.id ?? tag,
+					name: tag,
+					count: (current?.count ?? 0) + 1,
+				});
+			}
+		}
+		return [...counts.values()].sort((left, right) => left.name.localeCompare(right.name));
+	});
+	const shouldShowAllTags = $derived(searchQuery.trim().length === 0 || !searchOutput || searchRows.length === 0);
+	const visibleTags = $derived(shouldShowAllTags ? tagRows : tagsFromSearchRows);
+	const resultItems = $derived(mapNoteSearchResultItems(searchRows));
+	const replaceTagInputOnClick = $derived(searchQuery.trim().length === 0 || Boolean(searchOutput && searchRows.length === 0));
+	let tagsOpen = $state<string[]>(['tags']);
+
+	const applyTag = (tagName: string): void => {
+		searchQuery = upsertNotesSearchTag(searchQuery, tagName, { replace: replaceTagInputOnClick });
+		queueMicrotask(() => void onRunSearch());
+	};
 </script>
 
-<WorkbenchScaffold tone="page" bodyClass="h-full" data-testid="notes-search-mode">
-	<div class="grid h-full min-w-0 gap-3 p-3 md:grid-cols-[minmax(14rem,0.42fr)_minmax(0,1fr)] md:p-4">
-		<section class="grid h-full min-w-0 grid-rows-[auto_minmax(0,1fr)] gap-3" aria-label="Note search filters">
-			<form
-				class="grid gap-2"
-				onsubmit={(event) => {
-					event.preventDefault();
-					void onRunSearch();
-				}}
-			>
-				<div class="relative min-w-0">
-					<SearchIcon class="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-					<Input
-						class="pl-9"
-						placeholder="Search notes"
-						aria-label="Search notes"
-						disabled={!capabilityAvailable}
-						bind:value={searchQuery}
-					/>
-				</div>
-				<Button type="submit" size="sm" disabled={!capabilityAvailable || searching || !searchQuery.trim()}>
-					<SearchIcon class={cn('size-4', searching && 'animate-pulse')} />
-					Search
-				</Button>
-			</form>
+<section
+	class="grid h-full min-h-0 min-w-0 grid-rows-[auto_auto_minmax(0,1fr)] gap-3 p-3 md:p-4"
+	aria-label="Note search"
+	data-testid="notes-search-mode"
+>
+	<form
+		class="flex min-w-0 items-center gap-2"
+		onsubmit={(event) => {
+			event.preventDefault();
+			void onRunSearch();
+		}}
+	>
+		<div class="relative min-w-0 flex-1">
+			<SearchIcon class="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+			<Input
+				class="pl-9"
+				placeholder="Search notes"
+				aria-label="Search notes"
+				disabled={!capabilityAvailable}
+				bind:value={searchQuery}
+			/>
+		</div>
+		<Button type="submit" size="sm" disabled={!capabilityAvailable || searching || !searchQuery.trim()}>
+			<SearchIcon class={cn('size-4', searching && 'animate-pulse')} />
+			Search
+		</Button>
+	</form>
 
-			<div class="grid h-full min-w-0 grid-rows-[auto_minmax(0,1fr)] gap-2 rounded-lg border border-border/60 bg-background/55 p-2">
-				<div class="flex items-center justify-between gap-2">
-					<div class="flex items-center gap-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
-						<TagsIcon class={cn('size-3.5', loadingTags && 'animate-pulse')} />
-						<span>Tags</span>
-					</div>
-					<Badge variant="outline">{tagRows.length}</Badge>
+	<Accordion bind:value={tagsOpen} type="multiple" class="border-border/55 bg-background/45" data-testid="notes-search-tags-accordion">
+		<AccordionItem value="tags">
+			<AccordionTrigger class="items-center px-3 py-2 hover:no-underline">
+				<div class="flex min-w-0 items-center gap-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+					<TagsIcon class={cn('size-3.5', loadingTags && 'animate-pulse')} />
+					<span>Tags</span>
+					{#if visibleTags.length > 0 && !loadingTags}
+						<Badge variant="outline">{visibleTags.length}</Badge>
+					{/if}
 				</div>
-				<ScrollView class="h-full" contentClass="flex flex-wrap content-start gap-1 pr-2">
-					{#each tagRows as tag (tag.id)}
+			</AccordionTrigger>
+			<AccordionContent class="pb-2">
+				<div class={cn('flex flex-wrap content-start gap-1 overflow-hidden pr-2', tagsOpen.includes('tags') ? 'max-h-16' : 'max-h-0')}>
+					{#each visibleTags as tag (tag.id)}
 						<Button
 							type="button"
 							variant="outline"
 							size="sm"
 							class="h-7 px-2 text-xs"
 							disabled={!capabilityAvailable}
-							onclick={() => void onFilterTag(tag.name)}
+							onclick={() => applyTag(tag.name)}
 						>
 							{tag.name}
 							<span class="text-muted-foreground">{tag.count}</span>
 						</Button>
 					{/each}
-					{#if tagRows.length === 0}
+					{#if visibleTags.length === 0}
 						<span class="text-xs text-muted-foreground">No tags indexed.</span>
 					{/if}
-				</ScrollView>
-			</div>
-		</section>
+				</div>
+			</AccordionContent>
+		</AccordionItem>
+	</Accordion>
 
-		<section class="grid h-full min-w-0 grid-rows-[auto_minmax(0,1fr)] gap-3" aria-label="Note search results">
-			<div class="flex items-center justify-between gap-2 px-1">
-				<div class="text-xs font-medium uppercase tracking-wide text-muted-foreground">Results</div>
+	<section class="grid min-h-0 min-w-0 grid-rows-[auto_minmax(0,1fr)] gap-3" aria-label="Note search results">
+		<div class="flex items-center justify-between gap-2 px-1">
+			<div class="text-xs font-medium uppercase tracking-wide text-muted-foreground">Results</div>
+			{#if searchOutput && searchRows.length > 0}
 				<Badge variant="outline">{searchRows.length}</Badge>
-			</div>
-			<ScrollView class="h-full" contentClass="grid auto-rows-max gap-2 pr-2" viewportTestId="notes-search-scroll">
-				{#if searchOutput && searchRows.length === 0}
-					<NoticeBanner tone="info" message="No matching notes." />
-				{/if}
-				{#each searchRows as result (result.key)}
-					<button
-						type="button"
-						class={cn(
-							'grid gap-1 rounded-lg border border-border/60 bg-background/55 p-3 text-left transition-colors hover:bg-muted/50',
-							selectedPageKey === result.key && 'border-primary/45 bg-accent/55',
-						)}
-						aria-pressed={selectedPageKey === result.key}
-						onclick={() => onSelectPage(result)}
-					>
-						<div class="flex items-center justify-between gap-2">
-							<div class="min-w-0 truncate text-sm font-medium">{result.notebook} / {result.section} / {result.page}</div>
-							<Badge variant="outline">score {result.score.toFixed(2)}</Badge>
-						</div>
-						<p class="line-clamp-3 text-sm text-muted-foreground">{result.snippet}</p>
-					</button>
-				{/each}
-				{#if !searchOutput}
-					<div class="grid gap-2 rounded-lg border border-dashed border-border/70 p-4 text-sm text-muted-foreground">
-						<div>Search results appear here.</div>
-						<div>Catalog browsing stays in Browse mode.</div>
-					</div>
-				{/if}
-			</ScrollView>
-		</section>
-	</div>
-</WorkbenchScaffold>
+			{/if}
+		</div>
+		<NotesPageResultList
+			items={resultItems}
+			{selectedPageKey}
+			loading={searching}
+			emptyMessage={searchOutput && searchRows.length === 0 ? 'No matching notes.' : null}
+			placeholderMessage={!searchOutput ? 'Search results appear here.' : null}
+			viewportTestId="notes-search-scroll"
+			rowTestId="notes-search-result-row"
+			{onSelectPage}
+		/>
+	</section>
+</section>

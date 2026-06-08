@@ -632,6 +632,20 @@ const createMockClient = (input: {
   mcpRestartMutation?: (input: unknown) => Promise<unknown>;
   mcpCallMutation?: (input: unknown) => Promise<unknown>;
   noteCatalogQuery?: (input: { avatarNickname?: string; limit?: number }) => Promise<unknown>;
+  noteNotebooksQuery?: (input: { avatarNickname?: string; cursor?: string; limit?: number }) => Promise<unknown>;
+  noteSectionsQuery?: (input: {
+    avatarNickname?: string;
+    notebook: string;
+    cursor?: string;
+    limit?: number;
+  }) => Promise<unknown>;
+  noteSectionPagesQuery?: (input: {
+    avatarNickname?: string;
+    notebook: string;
+    section: string;
+    cursor?: string;
+    limit?: number;
+  }) => Promise<unknown>;
   notePageQuery?: (input: {
     avatarNickname?: string;
     notebook: string;
@@ -2468,6 +2482,50 @@ const createMockClient = (input: {
                   capability: { available: false, readableRoots: [], writableRoot: null },
                   notebooks: [],
                   totalPages: 0,
+                },
+        },
+        notebooks: {
+          query: async (payload: { avatarNickname?: string; cursor?: string; limit?: number }) =>
+            input.noteNotebooksQuery
+              ? await input.noteNotebooksQuery(payload)
+              : {
+                  capability: { available: false, readableRoots: [], writableRoot: null },
+                  notebooks: [],
+                  totalNotebooks: 0,
+                  totalPages: 0,
+                  nextCursor: null,
+                },
+        },
+        sections: {
+          query: async (payload: { avatarNickname?: string; notebook: string; cursor?: string; limit?: number }) =>
+            input.noteSectionsQuery
+              ? await input.noteSectionsQuery(payload)
+              : {
+                  capability: { available: false, readableRoots: [], writableRoot: null },
+                  notebook: payload.notebook,
+                  sections: [],
+                  totalSections: 0,
+                  totalPages: 0,
+                  nextCursor: null,
+                },
+        },
+        pages: {
+          query: async (payload: {
+            avatarNickname?: string;
+            notebook: string;
+            section: string;
+            cursor?: string;
+            limit?: number;
+          }) =>
+            input.noteSectionPagesQuery
+              ? await input.noteSectionPagesQuery(payload)
+              : {
+                  capability: { available: false, readableRoots: [], writableRoot: null },
+                  notebook: payload.notebook,
+                  section: payload.section,
+                  pages: [],
+                  totalPages: 0,
+                  nextCursor: null,
                 },
         },
         page: {
@@ -11763,6 +11821,48 @@ describe("Feature: runtime store synchronization", () => {
         },
       },
     };
+    const notebooksOutput = {
+      avatar: catalogOutput.avatar,
+      capability: catalogOutput.capability,
+      notebooks: [
+        {
+          notebook: "ideas",
+          sectionCount: 1,
+          pageCount: 1,
+          updatedAt: "2026-05-31T15:31:00.000Z",
+          sourceWorkspaces: [],
+        },
+      ],
+      totalNotebooks: 1,
+      totalPages: 1,
+      nextCursor: null,
+    };
+    const sectionsOutput = {
+      avatar: catalogOutput.avatar,
+      capability: catalogOutput.capability,
+      notebook: "ideas",
+      sections: [
+        {
+          notebook: "ideas",
+          section: "shell",
+          pageCount: 1,
+          updatedAt: "2026-05-31T15:31:00.000Z",
+          sourceWorkspaces: [],
+        },
+      ],
+      totalSections: 1,
+      totalPages: 1,
+      nextCursor: null,
+    };
+    const pagesOutput = {
+      avatar: catalogOutput.avatar,
+      capability: catalogOutput.capability,
+      notebook: "ideas",
+      section: "shell",
+      pages: catalogOutput.notebooks[0]?.sections[0]?.pages ?? [],
+      totalPages: 1,
+      nextCursor: null,
+    };
     const searchOutput = {
       avatar: catalogOutput.avatar,
       capability: catalogOutput.capability,
@@ -11806,6 +11906,18 @@ describe("Feature: runtime store synchronization", () => {
           calls.push(["catalog", input]);
           return catalogOutput;
         },
+        noteNotebooksQuery: async (input) => {
+          calls.push(["notebooks", input]);
+          return notebooksOutput;
+        },
+        noteSectionsQuery: async (input) => {
+          calls.push(["sections", input]);
+          return sectionsOutput;
+        },
+        noteSectionPagesQuery: async (input) => {
+          calls.push(["pages", input]);
+          return pagesOutput;
+        },
         notePageQuery: async (input) => {
           calls.push(["page", input]);
           return pageOutput;
@@ -11830,6 +11942,28 @@ describe("Feature: runtime store synchronization", () => {
     );
 
     expect(await store.listNoteCatalog({ avatarNickname: "shell-assistant", limit: 50 })).toEqual(catalogOutput);
+    expect(await store.listNoteNotebooks({ avatarNickname: "shell-assistant", limit: 25, sort: "updatedAt" })).toEqual(
+      notebooksOutput,
+    );
+    expect(
+      await store.listNoteSections({
+        avatarNickname: "shell-assistant",
+        notebook: "ideas",
+        cursor: "25",
+        limit: 25,
+        sort: "alpha",
+      }),
+    ).toEqual(sectionsOutput);
+    expect(
+      await store.listNoteSectionPages({
+        avatarNickname: "shell-assistant",
+        notebook: "ideas",
+        section: "shell",
+        cursor: "50",
+        limit: 25,
+        sort: "createdAt",
+      }),
+    ).toEqual(pagesOutput);
     expect(
       await store.readNotePage({
         avatarNickname: "shell-assistant",
@@ -11858,6 +11992,19 @@ describe("Feature: runtime store synchronization", () => {
     ).toEqual(writeOutput);
     expect(calls).toEqual([
       ["catalog", { avatarNickname: "shell-assistant", limit: 50 }],
+      ["notebooks", { avatarNickname: "shell-assistant", limit: 25, sort: "updatedAt" }],
+      ["sections", { avatarNickname: "shell-assistant", notebook: "ideas", cursor: "25", limit: 25, sort: "alpha" }],
+      [
+        "pages",
+        {
+          avatarNickname: "shell-assistant",
+          notebook: "ideas",
+          section: "shell",
+          cursor: "50",
+          limit: 25,
+          sort: "createdAt",
+        },
+      ],
       [
         "page",
         {

@@ -233,6 +233,18 @@ const noteCatalogInputSchema = noteAvatarInputSchema
     limit: z.number().int().positive().max(1000).optional(),
   })
   .optional();
+const noteListSortSchema = z.enum(["none", "alpha", "createdAt", "updatedAt"]);
+const notePaginationInputSchema = noteAvatarInputSchema.extend({
+  cursor: z.string().trim().min(1).optional(),
+  limit: z.number().int().positive().max(1000).optional(),
+  sort: noteListSortSchema.optional(),
+});
+const noteSectionsInputSchema = notePaginationInputSchema.extend({
+  notebook: z.string().trim().min(1),
+});
+const noteSectionPagesInputSchema = noteSectionsInputSchema.extend({
+  section: z.string().trim().min(1),
+});
 const noteSearchInputSchema = noteAvatarInputSchema.extend({
   query: z.string().optional(),
   limit: z.number().int().positive().max(1000).optional(),
@@ -667,6 +679,15 @@ export const appRouter = t.router({
     catalog: superadminProcedure
       .input(noteCatalogInputSchema)
       .query(async ({ ctx, input }) => await ctx.kernel.listNoteCatalog(input ?? {})),
+    notebooks: superadminProcedure
+      .input(notePaginationInputSchema.optional())
+      .query(async ({ ctx, input }) => await ctx.kernel.listNoteNotebooks(input ?? {})),
+    sections: superadminProcedure
+      .input(noteSectionsInputSchema)
+      .query(async ({ ctx, input }) => await ctx.kernel.listNoteSections(input)),
+    pages: superadminProcedure
+      .input(noteSectionPagesInputSchema)
+      .query(async ({ ctx, input }) => await ctx.kernel.listNoteSectionPages(input)),
     page: superadminProcedure
       .input(noteIdentityInputSchema)
       .query(async ({ ctx, input }) => await ctx.kernel.readNotePage(input)),

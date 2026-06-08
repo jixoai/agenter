@@ -1,9 +1,11 @@
 export const TERMINAL_VIEW_WORKSPACE_PACKAGE = "@agenter/terminal-view";
+export const JIXO_CODEMIRROR_WORKSPACE_PACKAGE = "@jixo/codemirror";
 
 export const codemirrorDedupe = [
   "@codemirror/autocomplete",
   "@codemirror/lang-json",
   "@codemirror/lang-markdown",
+  "@codemirror/lang-sql",
   "@codemirror/lang-yaml",
   "@codemirror/language",
   "@codemirror/language-data",
@@ -11,11 +13,9 @@ export const codemirrorDedupe = [
   "@codemirror/view",
 ];
 
-// `@agenter/terminal-view` is a workspace package whose named exports and
-// renderer-facing source can change while the Studio dev server stays alive.
-// Prebundling it into `.vite/deps` turns those source edits into stale module
-// snapshots and surfaces false "500 Internal Error" pages on terminal routes.
-export const workspaceSourceDependencyExcludes = [TERMINAL_VIEW_WORKSPACE_PACKAGE];
+// Workspace source packages whose Svelte/components exports can change while
+// the Studio dev server stays alive must not be snapshotted into `.vite/deps`.
+export const workspaceSourceDependencyExcludes = [TERMINAL_VIEW_WORKSPACE_PACKAGE, JIXO_CODEMIRROR_WORKSPACE_PACKAGE];
 
 export const appOptimizeDepsInclude = [
   ...codemirrorDedupe,
@@ -29,7 +29,6 @@ export const appOptimizeDepsInclude = [
   "lit/directives/style-map.js",
   "lit/directives/unsafe-html.js",
   "lit/static-html.js",
-  "markdown-it",
   "tailwind-merge",
   "tailwind-variants",
   "yaml",

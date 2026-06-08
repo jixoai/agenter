@@ -114,6 +114,11 @@ test.describe("Feature: Notes workbench route smoke", () => {
       await expect(page).toHaveURL(/\/notes\/avatar\/architect$/, { timeout: 15_000 });
       await expect(page.getByTestId("notes-avatar-route")).toBeVisible({ timeout: 30_000 });
       await expect(page.getByLabel("Notes avatar")).toHaveCount(0);
+      await expect(page.getByTestId("notes-browse-list-pane")).toBeVisible({ timeout: 15_000 });
+      await expect(page.getByTestId("notes-sections-pages-list")).toBeVisible({ timeout: 15_000 });
+      await expect(page.getByTestId("notes-sections-scroll")).toBeVisible({ timeout: 15_000 });
+      await expect(page.getByTestId("notes-pages-scroll")).toBeVisible({ timeout: 15_000 });
+      await expect(page.getByTestId("notes-notebooks-scroll")).toHaveCount(0);
 
       const sourceRootsHelp = page.getByRole("button", { name: "Note source roots" });
       await expect(sourceRootsHelp).toBeVisible({ timeout: 15_000 });
@@ -122,6 +127,15 @@ test.describe("Feature: Notes workbench route smoke", () => {
       await expect(sourceRootsHint).toContainText("Source roots", { timeout: 15_000 });
       await expect(sourceRootsHint).toContainText("Workspace/source facts are metadata", { timeout: 15_000 });
       await page.keyboard.press("Escape");
+
+      await clickStable(page.getByTestId("notes-notebook-scope-toggle"));
+      await expect(page.getByTestId("notes-notebooks-list")).toBeVisible({ timeout: 15_000 });
+      await expect(page.getByTestId("notes-notebooks-scroll")).toBeVisible({ timeout: 15_000 });
+      await expect(page.getByRole("button", { name: "添加笔记本" })).toBeVisible({ timeout: 15_000 });
+      await clickStable(page.getByRole("button", { name: /shell-assistant-book/i }).first());
+      await expect(page.getByTestId("notes-sections-pages-list")).toBeVisible({ timeout: 15_000 });
+      await expect(page.getByRole("button", { name: "添加章节" })).toBeVisible({ timeout: 15_000 });
+      await expect(page.getByRole("button", { name: "添加页面" })).toBeVisible({ timeout: 15_000 });
 
       const sourceButton = page.getByRole("button", { name: new RegExp(sourcePage) }).first();
       await expect(sourceButton).toBeVisible({ timeout: 30_000 });
@@ -142,7 +156,7 @@ test.describe("Feature: Notes workbench route smoke", () => {
       await expect(metadataHint).toContainText(targetPage, { timeout: 15_000 });
       await expect(detail.getByTitle(`${sourcePage} preview`)).toBeVisible({ timeout: 15_000 });
       await expect(
-        page.frameLocator(`iframe[title="${sourcePage} preview"]`).locator("agenter-markdown-document"),
+        page.frameLocator(`iframe[title="${sourcePage} preview"]`).locator("[data-jixo-codemirror-markdown-preview]"),
       ).toBeVisible({ timeout: 15_000 });
       await expect(page.frameLocator(`iframe[title="${sourcePage} preview"]`).locator("body")).toContainText(
         `Notes route smoke for ${suffix}`,
@@ -162,28 +176,15 @@ test.describe("Feature: Notes workbench route smoke", () => {
       await clickNotesModeTab(page, "query");
       await expect(page).toHaveURL(/\/notes\/avatar\/architect\/query$/, { timeout: 15_000 });
       await expect(page.getByTestId("notes-query-mode")).toBeVisible({ timeout: 15_000 });
-      const sqlRows = page.locator("pre").filter({ hasText: sourcePage }).first();
-      const clickedQuery = await expect(sqlRows)
-        .toBeVisible({ timeout: 3_000 })
-        .then(() => true)
-        .catch(() => false);
-      if (!clickedQuery) {
-        const sqlInput = page.getByRole("textbox", { name: "Note SQL query" });
-        await sqlInput.press("Enter");
-        const submittedByEnter = await expect(sqlRows)
-          .toBeVisible({ timeout: 3_000 })
-          .then(() => true)
-          .catch(() => false);
-        if (!submittedByEnter) {
-          await sqlInput.evaluate((element) => {
-            if (!(element instanceof HTMLInputElement)) {
-              throw new Error("Expected note SQL input");
-            }
-            element.form?.requestSubmit();
-          });
-        }
-      }
-      await expect(sqlRows).toBeVisible({ timeout: 15_000 });
+      await expect(page.locator("[data-jixo-codemirror-sql-editor]")).toBeVisible({ timeout: 15_000 });
+      await expect(page.getByRole("textbox", { name: "Note SQL query" })).toBeVisible({ timeout: 15_000 });
+      await clickStable(
+        page.getByRole("form", { name: "Read-only note SQL query" }).getByRole("button", { name: "Query" }),
+      );
+      const sqlRow = page.getByTestId("notes-query-result-row").filter({ hasText: sourcePage }).first();
+      await expect(sqlRow).toBeVisible({ timeout: 15_000 });
+      await clickStable(sqlRow);
+      await expect(page.getByTestId("notes-detail")).toContainText(sourcePage, { timeout: 15_000 });
     } finally {
       client.close();
     }

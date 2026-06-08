@@ -6,11 +6,11 @@
 	import TriangleAlertIcon from '@lucide/svelte/icons/triangle-alert';
 	import VideoIcon from '@lucide/svelte/icons/video';
 	import { ScrollView } from '@agenter/svelte-components';
+	import { MarkdownPreviewContent } from '@jixo/codemirror';
 	import { onMount } from 'svelte';
 
 	import { loadHttpFilePreviewPayload } from '$lib/components/file-preview/file-preview-http-source';
 	import { isFilePreviewPayload, type FilePreviewKind, type FilePreviewPayload } from '$lib/components/file-preview/file-preview-state';
-	import MarkdownDocument from '$lib/components/web-components/markdown-document.svelte';
 	import SkillTextViewer from '$lib/features/skills/skill-text-viewer.svelte';
 	import { renderPdfPages } from './file-previewer-pdf-renderer';
 
@@ -195,15 +195,10 @@
 		>
 			{#if preview.previewKind === 'text'}
 				{#if shouldRenderDocumentTextProjection(preview)}
-					<MarkdownDocument
+					<MarkdownPreviewContent
 						value={preview.textContent ?? ''}
-						mode="preview"
-						usage="document"
-						surface="plain"
-						overflow="grow"
-						density="default"
-						padding="none"
-						class="file-previewer__markdown-document"
+						tone="viewer"
+						class="file-previewer__markdown-preview"
 					/>
 				{:else}
 					<div class="file-previewer__text-shell">
@@ -323,7 +318,7 @@
 		background: color-mix(in srgb, var(--card), transparent 4%);
 	}
 
-	:global(.file-previewer__markdown-document) {
+	:global(.file-previewer__markdown-preview) {
 		display: block;
 		inline-size: 100%;
 		min-block-size: calc(100dvh - 2rem);

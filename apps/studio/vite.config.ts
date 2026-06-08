@@ -11,6 +11,7 @@ import {
   appOptimizeDepsInclude,
   appVitestOptimizeDepsInclude,
   codemirrorDedupe,
+  JIXO_CODEMIRROR_WORKSPACE_PACKAGE,
   workspaceSourceDependencyExcludes,
 } from './src/lib/dev/vite-dependency-optimization';
 const dirname = typeof __dirname !== 'undefined' ? __dirname : path.dirname(fileURLToPath(import.meta.url));
@@ -36,6 +37,7 @@ const appSvelteDependencyExcludes = [
   '@agenter/svelte-components',
   '@agenter/web-chat-view',
   '@agenter/web-components',
+  JIXO_CODEMIRROR_WORKSPACE_PACKAGE,
   '@lucide/svelte',
   'bits-ui',
   'framework7-svelte',

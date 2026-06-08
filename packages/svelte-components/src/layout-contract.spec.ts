@@ -92,4 +92,11 @@ describe("Feature: svelte-components layout foundation", () => {
     expect(source).toContain('dynamicMeasure ? "" : `block-size:${virtualItem.size}px;`');
     expect(source).not.toContain("inline-size: 100%;\n  }");
   });
+
+  test("Scenario: Given horizontal virtual rows When reviewing ScrollView source Then the virtual host can resolve viewport height", () => {
+    const source = readFileSync(resolve(packageRoot, "src/scroll-view.svelte"), "utf8");
+
+    expect(source).toContain('.scroll-view-viewport[data-scroll-view-viewport="horizontal"] .scroll-view-content');
+    expect(source).toContain("block-size: 100%;\n    inline-size: max-content;");
+  });
 });

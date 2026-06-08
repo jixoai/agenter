@@ -476,6 +476,7 @@
   }
 
   .scroll-view-viewport[data-scroll-view-viewport="horizontal"] .scroll-view-content {
+    block-size: 100%;
     inline-size: max-content;
   }
 

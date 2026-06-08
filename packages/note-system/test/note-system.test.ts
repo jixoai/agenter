@@ -11,7 +11,10 @@ import {
   createNoteCommand,
   draftNotePage,
   listNoteCatalog,
+  listNoteNotebooks,
   listNotePages,
+  listNoteSectionPages,
+  listNoteSections,
   listNoteTags,
   parseNoteAvatarHomeEnv,
   projectNoteCliCapabilities,
@@ -758,6 +761,147 @@ describe("Feature: NoteSystem avatar-private note projection", () => {
     });
   });
 
+  test("Scenario: Given many note scopes When paged browse indexes are requested Then notebooks sections and pages page independently", () => {
+    const avatarHome = createTempRoot();
+    for (const page of [
+      { notebook: "ideas", section: "shell", page: "alpha", content: "Alpha body.", sourceWorkspace: "/repo-a" },
+      { notebook: "ideas", section: "shell", page: "beta", content: "Beta body.", sourceWorkspace: "/repo-b" },
+      { notebook: "ideas", section: "ux", page: "draft", content: "UX body.", sourceWorkspace: "/repo-a" },
+      { notebook: "logs", section: "daily", page: "today", content: "Log body.", sourceWorkspace: "/repo-c" },
+    ]) {
+      writeNotePage({
+        avatarHome: [avatarHome],
+        notebook: page.notebook,
+        section: page.section,
+        page: page.page,
+        content: page.content,
+        mime: "text/markdown",
+        sourceWorkspace: page.sourceWorkspace,
+      });
+    }
+
+    const firstNotebookPage = listNoteNotebooks({ avatarHome: [avatarHome], limit: 1 });
+    const secondNotebookPage = listNoteNotebooks({
+      avatarHome: [avatarHome],
+      cursor: firstNotebookPage.nextCursor ?? undefined,
+      limit: 1,
+    });
+    const firstSectionPage = listNoteSections({ avatarHome: [avatarHome], notebook: "ideas", limit: 1 });
+    const secondSectionPage = listNoteSections({
+      avatarHome: [avatarHome],
+      notebook: "ideas",
+      cursor: firstSectionPage.nextCursor ?? undefined,
+      limit: 1,
+    });
+    const firstPages = listNoteSectionPages({
+      avatarHome: [avatarHome],
+      notebook: "ideas",
+      section: "shell",
+      limit: 1,
+    });
+    const secondPages = listNoteSectionPages({
+      avatarHome: [avatarHome],
+      notebook: "ideas",
+      section: "shell",
+      cursor: firstPages.nextCursor ?? undefined,
+      limit: 1,
+    });
+
+    expect(firstNotebookPage).toMatchObject({
+      totalNotebooks: 2,
+      totalPages: 4,
+      nextCursor: "1",
+    });
+    expect(firstNotebookPage.notebooks[0]).toMatchObject({
+      notebook: "ideas",
+      sectionCount: 2,
+      pageCount: 3,
+      sourceWorkspaces: ["/repo-a", "/repo-b"],
+    });
+    expect(secondNotebookPage.notebooks.map((notebook) => notebook.notebook)).toEqual(["logs"]);
+    expect(secondNotebookPage.nextCursor).toBeNull();
+
+    expect(firstSectionPage).toMatchObject({
+      notebook: "ideas",
+      totalSections: 2,
+      totalPages: 3,
+      nextCursor: "1",
+    });
+    expect(firstSectionPage.sections[0]).toMatchObject({ section: "shell", pageCount: 2 });
+    expect(secondSectionPage.sections.map((section) => section.section)).toEqual(["ux"]);
+
+    expect(firstPages).toMatchObject({
+      notebook: "ideas",
+      section: "shell",
+      totalPages: 2,
+      nextCursor: "1",
+    });
+    expect(firstPages.pages[0]?.page).toBe("alpha");
+    expect(secondPages.pages[0]).toMatchObject({ page: "beta", preview: "Beta body." });
+    expect(secondPages.nextCursor).toBeNull();
+  });
+
+  test("Scenario: Given paged note browse lists When a sort option is requested Then the facade sorts before cursor slicing", () => {
+    const avatarHome = createTempRoot();
+    for (const page of [
+      {
+        notebook: "omega",
+        section: "z-later",
+        page: "a-old-page",
+        content: "Old body.",
+        now: new Date("2026-06-01T00:00:00.000Z"),
+      },
+      {
+        notebook: "beta",
+        section: "earlier",
+        page: "new-page",
+        content: "New body.",
+        now: new Date("2026-06-01T00:02:00.000Z"),
+      },
+      {
+        notebook: "omega",
+        section: "z-later",
+        page: "z-fresh-page",
+        content: "Fresh body.",
+        now: new Date("2026-06-01T00:03:00.000Z"),
+      },
+    ]) {
+      writeNotePage({
+        avatarHome: [avatarHome],
+        notebook: page.notebook,
+        section: page.section,
+        page: page.page,
+        content: page.content,
+        mime: "text/markdown",
+        now: page.now,
+      });
+    }
+
+    expect(
+      listNoteSectionPages({ avatarHome: [avatarHome], notebook: "omega", section: "z-later", limit: 1 }).pages[0]
+        ?.page,
+    ).toBe("a-old-page");
+    expect(
+      listNoteSectionPages({
+        avatarHome: [avatarHome],
+        notebook: "omega",
+        section: "z-later",
+        sort: "updatedAt",
+        limit: 1,
+      }).pages[0]?.page,
+    ).toBe("z-fresh-page");
+    expect(listNoteNotebooks({ avatarHome: [avatarHome], sort: "updatedAt", limit: 1 }).notebooks[0]?.notebook).toBe(
+      "omega",
+    );
+    expect(
+      listNoteSections({ avatarHome: [avatarHome], notebook: "omega", sort: "createdAt", limit: 1 }).sections[0],
+    ).toMatchObject({
+      section: "z-later",
+      createdAt: "2026-06-01T00:00:00.000Z",
+      updatedAt: "2026-06-01T00:03:00.000Z",
+    });
+  });
+
   test("Scenario: Given a notebook section page identity When note page is requested Then metadata and Markdown body are returned", () => {
     const avatarHome = createTempRoot();
     writeNotePage({
@@ -807,6 +951,13 @@ describe("Feature: NoteSystem avatar-private note projection", () => {
       capability: { available: false, readableRoots: [], writableRoot: null },
       notebooks: [],
       totalPages: 0,
+    });
+    expect(listNoteNotebooks({ avatarHome: [] })).toEqual({
+      capability: { available: false, readableRoots: [], writableRoot: null },
+      notebooks: [],
+      totalNotebooks: 0,
+      totalPages: 0,
+      nextCursor: null,
     });
     expect(readNotePage({ avatarHome: [], notebook: "ideas", section: "shell", page: "missing" })).toEqual({
       capability: { available: false, readableRoots: [], writableRoot: null },
