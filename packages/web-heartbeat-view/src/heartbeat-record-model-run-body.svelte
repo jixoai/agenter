@@ -12,16 +12,19 @@
   } from "./heartbeat-record-chips";
   import type { HeartbeatRecordDetailPartRow } from "./heartbeat-record-detail-model";
   import HeartbeatRecordDetailTrack from "./heartbeat-record-detail-track.svelte";
+  import type { HeartbeatSubjectSection } from "./heartbeat-parts";
   import type { HeartbeatRecordItem } from "./types";
 
   let {
     record,
     rows = [],
+    sections = [],
     variant = "card",
     title,
   }: {
     record: HeartbeatRecordItem;
     rows?: HeartbeatRecordDetailPartRow[];
+    sections?: HeartbeatSubjectSection[];
     variant?: "card" | "detail";
     title: string;
   } = $props();
@@ -134,7 +137,7 @@
     </span>
   </span>
 {:else}
-  <HeartbeatRecordDetailTrack {record} timeline={fullTimeline} {rows} />
+  <HeartbeatRecordDetailTrack {record} timeline={fullTimeline} {rows} {sections} />
 {/if}
 
 <style>

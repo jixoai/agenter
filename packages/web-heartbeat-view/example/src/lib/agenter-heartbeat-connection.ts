@@ -11,6 +11,7 @@ import {
   type GlobalAvatarCatalogEntry,
   type HeartbeatConfigDraft,
   type HeartbeatConfigLayerFile,
+  type HeartbeatRecordPage,
   type HeartbeatRecordPageAnchor,
   type HeartbeatTargetIdentity,
   type HeartbeatViewState,
@@ -21,6 +22,7 @@ type ConnectionOptions = {
   wsUrl: string;
   authToken?: string | null;
   recordPageSize?: number;
+  preserveHeartbeatRecordPageSizeOnRefresh?: boolean;
 };
 
 type HeartbeatConfigLayerSnapshot = HeartbeatConfigLayerFile & {
@@ -186,14 +188,17 @@ export class ClientSdkAgenterHeartbeatConnection implements AgenterHeartbeatConn
       includeChatHistory: false,
       observabilityMode: "heartbeat",
     });
-    await Promise.all([
-      this.store.loadHeartbeatGroups(target.sessionId),
-      this.store.loadHeartbeatRecords(target.sessionId, {
-        pageSize: this.options.recordPageSize,
-        anchor: { kind: "latest" },
-      }),
-      this.refreshConfigBinding(target),
-    ]);
+    const currentRecordsState = this.store.getState().heartbeatRecordsBySession[target.sessionId];
+    const pageSize =
+      this.options.preserveHeartbeatRecordPageSizeOnRefresh && currentRecordsState?.data?.pageSize
+        ? currentRecordsState.data.pageSize
+        : this.options.recordPageSize;
+    const anchor =
+      this.options.preserveHeartbeatRecordPageSizeOnRefresh && currentRecordsState?.data?.anchor
+        ? currentRecordsState.data.anchor
+        : { kind: "latest" as const };
+    await this.store.loadHeartbeatRecords(target.sessionId, { pageSize, anchor });
+    await Promise.all([this.store.loadHeartbeatGroups(target.sessionId), this.refreshConfigBinding(target)]);
     this.state = {
       ...this.state,
       selectedTarget: target,
@@ -300,7 +305,9 @@ export class ClientSdkAgenterHeartbeatConnection implements AgenterHeartbeatConn
       sessionStatus: session?.status ?? "stopped",
       schedulerState: runtime?.schedulerState ?? null,
       groupsState: runtimeState.heartbeatGroupsBySession[target.sessionId] ?? createCachedResourceState([]),
-      recordsState: runtimeState.heartbeatRecordsBySession[target.sessionId],
+      recordsState:
+        runtimeState.heartbeatRecordsBySession[target.sessionId] ??
+        createCachedResourceState<HeartbeatRecordPage | null>(null),
       recordDetailsState: runtimeState.heartbeatRecordDetailsBySession[target.sessionId],
       modelCalls: runtimeState.modelCallsBySession[target.sessionId] ?? [],
       attention: runtimeState.attentionBySession?.[target.sessionId] ?? runtime?.attention ?? null,

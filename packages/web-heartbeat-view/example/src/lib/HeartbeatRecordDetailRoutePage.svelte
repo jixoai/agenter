@@ -1,12 +1,6 @@
 <script lang="ts">
   import {
-    HeartbeatPageSubnavbar,
     HeartbeatRecordDetailView,
-    buildHeartbeatAttentionFocusSummary,
-    buildHeartbeatContextState,
-    buildHeartbeatStatusState,
-    buildHeartbeatSubnavbarTitle,
-    resolveHeartbeatConfiguredContextLimit,
     type HeartbeatRecordItem,
     type HeartbeatViewState,
   } from "@agenter/web-heartbeat-view";
@@ -44,7 +38,7 @@
   );
   const recordIdValue = $derived(String(recordIdProp ?? f7route?.params?.recordId ?? locationRoute.recordId ?? ""));
   const recordIdNumber = $derived(Number(recordIdValue));
-  const backHref = $derived(runtimeId ? exampleState.buildHeartbeatHref(runtimeId) : "/");
+  const backHref = $derived(runtimeId ? exampleState.buildHeartbeatListHref(runtimeId) : "/");
 
   const activeHeartbeat = $derived.by<HeartbeatViewState | null>(() => {
     const heartbeat = exampleState.connectionState.selectedHeartbeat;
@@ -60,34 +54,6 @@
     }
     return activeHeartbeat?.recordsState?.data?.records.find((record) => record.id === recordIdNumber) ?? null;
   });
-  const chromeState = $derived.by(() => {
-    if (!activeHeartbeat) {
-      return {
-        statusTitle: "Loading Heartbeat record",
-      };
-    }
-    const configuredContextLimit = resolveHeartbeatConfiguredContextLimit(activeHeartbeat.configBinding);
-    const contextState = buildHeartbeatContextState(activeHeartbeat.modelCalls ?? [], configuredContextLimit);
-    const attentionSummary = buildHeartbeatAttentionFocusSummary(activeHeartbeat.attention);
-    const recordCount = activeHeartbeat.recordsState?.data?.totalRecords ?? activeHeartbeat.groupsState.data.length;
-    const recordCountVisible = activeHeartbeat.recordsState?.loaded ?? activeHeartbeat.groupsState.loaded;
-    const statusState = buildHeartbeatStatusState({
-      sessionStatus: activeHeartbeat.sessionStatus,
-      schedulerState: activeHeartbeat.schedulerState,
-      heartbeatGroups: activeHeartbeat.groupsState,
-    });
-    return {
-      statusTitle: buildHeartbeatSubnavbarTitle({
-        statusState,
-        contextState,
-        attentionSummary,
-        recordCount,
-        recordCountVisible,
-        livePushStatus: activeHeartbeat.livePushStatus,
-      }),
-    };
-  });
-
   let loadedDetailKey = $state("");
 
   onMount(() => {
@@ -110,7 +76,7 @@
   });
 </script>
 
-<Page name="heartbeat-record-detail" pageContent={false} withSubnavbar={true}>
+<Page name="heartbeat-record-detail" pageContent={false}>
   <Navbar>
     <NavLeft>
       <Link
@@ -146,13 +112,6 @@
         <RefreshIcon size={20} aria-hidden="true" />
       </Link>
     </NavRight>
-    <HeartbeatPageSubnavbar
-      title={chromeState.statusTitle}
-      mode={exampleState.mode}
-      sessionStatus={activeHeartbeat?.sessionStatus ?? "stopped"}
-      runtimeActions={undefined}
-      class="heartbeat-example-record-status-subnavbar"
-    />
   </Navbar>
 
   <PageContent class="heartbeat-example-record-detail-content">
@@ -174,10 +133,6 @@
   :global(.heartbeat-example-record-detail-content) {
     box-sizing: border-box;
     overflow-x: clip;
-  }
-
-  :global(.heartbeat-example-record-status-subnavbar) {
-    --f7-subnavbar-height: 34px;
   }
 
   .heartbeat-example-record-navbar-title {

@@ -70,6 +70,7 @@
 </script>
 
 <svelte:element this={MARKDOWN_DOCUMENT_TAG} bind:this={element} class={hostClass}></svelte:element>
+<span class="ag-heartbeat-markdown-host__fallback" aria-hidden="true">{value}</span>
 
 <style>
   :global(.ag-heartbeat-markdown-host) {
@@ -80,5 +81,15 @@
     min-inline-size: 0;
     contain: inline-size;
     overflow-wrap: anywhere;
+  }
+
+  .ag-heartbeat-markdown-host__fallback {
+    position: absolute;
+    inline-size: 1px;
+    block-size: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    clip-path: inset(50%);
+    white-space: pre-wrap;
   }
 </style>

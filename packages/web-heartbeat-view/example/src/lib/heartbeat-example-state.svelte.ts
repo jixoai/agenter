@@ -19,6 +19,7 @@ type ConnectionAttemptSource = "visible" | "silent";
 type HeartbeatExampleStateInit = {
   initialMode?: string | null;
   initialRuntimeId?: string | null;
+  initialRecordId?: string | number | null;
   initialRecordPageSize?: number | string | null;
   initialSilentConnect?: boolean | string | null;
   initialWsUrl?: string | null;
@@ -43,6 +44,7 @@ export class HeartbeatExampleState {
   authToken = $state("");
   mode = $state<HeartbeatCapabilityMode>("readonly");
   initialRuntimeId = $state<string | null>(null);
+  initialRecordId = $state<string | number | null>(null);
   recordPageSize = $state(20);
   silentConnect = $state(false);
   connection = $state<ClientSdkAgenterHeartbeatConnection | null>(null);
@@ -63,6 +65,7 @@ export class HeartbeatExampleState {
     this.wsUrl = init.initialWsUrl ?? defaultWsUrl;
     this.mode = normalizeMode(init.initialMode);
     this.initialRuntimeId = init.initialRuntimeId ?? null;
+    this.initialRecordId = init.initialRecordId ?? null;
     this.recordPageSize = normalizeRecordPageSize(init.initialRecordPageSize);
     this.pendingRuntimeId = this.initialRuntimeId;
     this.silentConnect = normalizeSilentConnect(init.initialSilentConnect);
@@ -254,6 +257,16 @@ export class HeartbeatExampleState {
     return query.toString();
   }
 
+  buildHeartbeatListHref(runtimeId: string): string {
+    const query = new URLSearchParams({
+      mode: this.mode,
+      silentConnect: this.silentConnect ? "true" : "false",
+      wsUrl: this.wsUrl,
+    });
+    const search = query.toString();
+    return `/heartbeat/${encodeURIComponent(runtimeId)}${search ? `?${search}` : ""}`;
+  }
+
   buildHeartbeatHref(runtimeId: string): string {
     const search = this.buildHeartbeatSearch();
     return `/heartbeat/${encodeURIComponent(runtimeId)}${search ? `?${search}` : ""}`;
@@ -359,6 +372,7 @@ export class HeartbeatExampleState {
       wsUrl: this.wsUrl,
       authToken: this.authToken,
       recordPageSize: this.recordPageSize,
+      preserveHeartbeatRecordPageSizeOnRefresh: this.initialRecordId === null,
     });
     this.connection = next;
     this.unsubscribe = next.subscribe((state) => {

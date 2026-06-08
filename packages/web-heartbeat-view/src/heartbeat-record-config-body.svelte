@@ -6,7 +6,7 @@
   import SlidersHorizontal from "@lucide/svelte/icons/sliders-horizontal";
   import Thermometer from "@lucide/svelte/icons/thermometer";
 
-  import { Button, Segmented } from "./framework7-components";
+  import { Button, Segmented, Subnavbar } from "./framework7-components";
   import {
     formatHeartbeatRecordPayload,
     indentHeartbeatYaml,
@@ -319,41 +319,43 @@
       </div>
     </div>
 
-    <Segmented strong class="ag-heartbeat-record-config-detail__tabs" role="tablist" aria-label="Config detail tabs">
-      <Button
-        id={configTabIds.diff}
-        type="button"
-        role="tab"
-        active={configTab === "diff"}
-        aria-selected={configTab === "diff"}
-        aria-controls={configPanelId}
-        tabindex={configTab === "diff" ? 0 : -1}
-        text="Diff Config"
-        onClick={() => (configTab = "diff")}
-      />
-      <Button
-        id={configTabIds.new}
-        type="button"
-        role="tab"
-        active={configTab === "new"}
-        aria-selected={configTab === "new"}
-        aria-controls={configPanelId}
-        tabindex={configTab === "new" ? 0 : -1}
-        text="New Config"
-        onClick={() => (configTab = "new")}
-      />
-      <Button
-        id={configTabIds.old}
-        type="button"
-        role="tab"
-        active={configTab === "old"}
-        aria-selected={configTab === "old"}
-        aria-controls={configPanelId}
-        tabindex={configTab === "old" ? 0 : -1}
-        text="Old Config"
-        onClick={() => (configTab = "old")}
-      />
-    </Segmented>
+    <Subnavbar inner={false} class="ag-heartbeat-record-detail-tabs ag-heartbeat-record-config-detail__subnavbar">
+      <Segmented strong class="ag-heartbeat-record-config-detail__tabs" role="tablist" aria-label="Config detail tabs">
+        <Button
+          id={configTabIds.diff}
+          type="button"
+          role="tab"
+          active={configTab === "diff"}
+          aria-selected={configTab === "diff"}
+          aria-controls={configPanelId}
+          tabindex={configTab === "diff" ? 0 : -1}
+          text="Diff Config"
+          onClick={() => (configTab = "diff")}
+        />
+        <Button
+          id={configTabIds.new}
+          type="button"
+          role="tab"
+          active={configTab === "new"}
+          aria-selected={configTab === "new"}
+          aria-controls={configPanelId}
+          tabindex={configTab === "new" ? 0 : -1}
+          text="New Config"
+          onClick={() => (configTab = "new")}
+        />
+        <Button
+          id={configTabIds.old}
+          type="button"
+          role="tab"
+          active={configTab === "old"}
+          aria-selected={configTab === "old"}
+          aria-controls={configPanelId}
+          tabindex={configTab === "old" ? 0 : -1}
+          text="Old Config"
+          onClick={() => (configTab = "old")}
+        />
+      </Segmented>
+    </Subnavbar>
 
     <div id={configPanelId} class="ag-heartbeat-record-config-detail__panel" role="tabpanel" aria-labelledby={configTabIds[configTab]}>
       {#if configSource}

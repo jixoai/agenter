@@ -22,7 +22,7 @@
   <List strongIos insetIos dividersIos mediaList>
     {#each state.connectionState.avatars.data as avatar (avatar.runtimeId)}
       <ListItem
-        link={state.buildHeartbeatHref(avatar.runtimeId)}
+        link={state.buildHeartbeatListHref(avatar.runtimeId)}
         animate={false}
         title={avatar.displayName ?? avatar.nickname}
         subtitle={avatar.nickname}

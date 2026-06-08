@@ -1,6 +1,6 @@
 <script lang="ts">
   import HeartbeatRecordIcon from "./heartbeat-record-icon.svelte";
-  import { Button, Segmented } from "./framework7-components";
+  import { Button, Segmented, Subnavbar } from "./framework7-components";
   import { formatHeartbeatRecordPayload, readHeartbeatRecordPayloadValue } from "./heartbeat-record-detail-model";
   import type { HeartbeatRecordItem } from "./types";
 
@@ -38,7 +38,8 @@
   const afterValue = $derived(
     resolveNumber(readHeartbeatRecordPayloadValue(payload, ["after", "afterContext", "afterUsage", "afterPercent", "to"])),
   );
-  const clampPercent = (value: number): number => Math.min(100, Math.max(0, value));
+  const normalizePercent = (value: number): number => (Math.abs(value) <= 1 ? value * 100 : value);
+  const clampPercent = (value: number): number => Math.min(100, Math.max(0, normalizePercent(value)));
   const beforeWidth = $derived(beforeValue === null ? 100 : clampPercent(beforeValue));
   const afterWidth = $derived(afterValue === null ? 0 : clampPercent(afterValue));
   const compactError = $derived(readHeartbeatRecordPayloadValue(payload, ["error", "message"]) ?? null);
@@ -56,7 +57,7 @@
   const compactState = $derived(
     record.status === "error" ? "error" : record.status === "running" ? "running" : "completed",
   );
-  const formatUsageValue = (value: number): string => value.toFixed(1);
+  const formatUsageValue = (value: number): string => `${normalizePercent(value).toFixed(1)}%`;
   const coreText = $derived.by(() => {
     if (beforeValue !== null && afterValue !== null) {
       return `${formatUsageValue(beforeValue)} -> ${formatUsageValue(afterValue)}`;
@@ -106,30 +107,32 @@
       </div>
     </div>
 
-    <Segmented strong class="ag-heartbeat-record-compact-detail__tabs" role="tablist" aria-label="Compact detail tabs">
-      <Button
-        id={compactTabIds.new}
-        type="button"
-        role="tab"
-        active={compactTab === "new"}
-        aria-selected={compactTab === "new"}
-        aria-controls={compactPanelId}
-        tabindex={compactTab === "new" ? 0 : -1}
-        text="New Context"
-        onClick={() => (compactTab = "new")}
-      />
-      <Button
-        id={compactTabIds.old}
-        type="button"
-        role="tab"
-        active={compactTab === "old"}
-        aria-selected={compactTab === "old"}
-        aria-controls={compactPanelId}
-        tabindex={compactTab === "old" ? 0 : -1}
-        text="Old Context"
-        onClick={() => (compactTab = "old")}
-      />
-    </Segmented>
+    <Subnavbar inner={false} class="ag-heartbeat-record-detail-tabs ag-heartbeat-record-compact-detail__subnavbar">
+      <Segmented strong class="ag-heartbeat-record-compact-detail__tabs" role="tablist" aria-label="Compact detail tabs">
+        <Button
+          id={compactTabIds.new}
+          type="button"
+          role="tab"
+          active={compactTab === "new"}
+          aria-selected={compactTab === "new"}
+          aria-controls={compactPanelId}
+          tabindex={compactTab === "new" ? 0 : -1}
+          text="New Context"
+          onClick={() => (compactTab = "new")}
+        />
+        <Button
+          id={compactTabIds.old}
+          type="button"
+          role="tab"
+          active={compactTab === "old"}
+          aria-selected={compactTab === "old"}
+          aria-controls={compactPanelId}
+          tabindex={compactTab === "old" ? 0 : -1}
+          text="Old Context"
+          onClick={() => (compactTab = "old")}
+        />
+      </Segmented>
+    </Subnavbar>
 
     <div id={compactPanelId} class="ag-heartbeat-record-compact-detail__panel" role="tabpanel" aria-labelledby={compactTab === "new" ? compactTabIds.new : compactTabIds.old}>
       {#if compactTab === "new" && compactError !== null}

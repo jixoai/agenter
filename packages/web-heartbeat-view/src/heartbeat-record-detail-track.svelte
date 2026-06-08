@@ -1,4 +1,5 @@
 <script lang="ts">
+  import HeartbeatEntry from "./heartbeat-entry.svelte";
   import HeartbeatRecordChip from "./heartbeat-record-chip.svelte";
   import {
     formatHeartbeatRecordPayload,
@@ -8,16 +9,23 @@
     HeartbeatRecordChip as HeartbeatRecordChipModel,
     HeartbeatRecordTimeline,
   } from "./heartbeat-record-chips";
+  import type { HeartbeatSubjectSection, HeartbeatSubjectSectionBlock } from "./heartbeat-parts";
   import type { HeartbeatRecordItem } from "./types";
+
+  type HeartbeatPartSectionBlock = HeartbeatSubjectSectionBlock & {
+    content: Extract<HeartbeatSubjectSectionBlock["content"], { kind: "part" }>;
+  };
 
   let {
     record,
     timeline,
     rows = [],
+    sections = [],
   }: {
     record: HeartbeatRecordItem;
     timeline: HeartbeatRecordTimeline;
     rows?: HeartbeatRecordDetailPartRow[];
+    sections?: HeartbeatSubjectSection[];
   } = $props();
 
   const detailRowTemplate = $derived(timeline.segments.flatMap(() => ["min-content", "minmax(54px, 1fr)"]).join(" "));
@@ -50,6 +58,43 @@
   const rowsForChip = (chip: HeartbeatRecordChipModel): HeartbeatRecordDetailPartRow[] =>
     rows.filter((row) => partMatchesChip(row, chip));
 
+  const rowMatchesPart = (row: HeartbeatRecordDetailPartRow, part: HeartbeatRecordDetailPartRow["part"]): boolean =>
+    row.part.messageId === part.messageId && row.part.partId === part.partId;
+
+  const isToolPartRow = (row: HeartbeatRecordDetailPartRow): boolean =>
+    row.part.partType === "tool_call" || row.part.partType === "tool_result" || row.part.partType === "tool_call_result";
+
+  const isPartSectionBlock = (block: HeartbeatSubjectSectionBlock): block is HeartbeatPartSectionBlock =>
+    block.content.kind === "part";
+
+  const blockMatchesRows = (block: HeartbeatSubjectSectionBlock, detailRows: readonly HeartbeatRecordDetailPartRow[]): boolean => {
+    if (isPartSectionBlock(block)) {
+      return detailRows.some((row) => rowMatchesPart(row, block.content.part));
+    }
+    return detailRows.some((row) => isToolPartRow(row) && block.sourceEntryIds.includes(row.message.id));
+  };
+
+  const sectionsForRows = (detailRows: readonly HeartbeatRecordDetailPartRow[]): HeartbeatSubjectSection[] =>
+    sections.flatMap((section) => {
+      const blocks = section.blocks.filter((block) => blockMatchesRows(block, detailRows));
+      if (blocks.length === 0) {
+        return [];
+      }
+      const sourceEntryIds = new Set(blocks.flatMap((block) => block.sourceEntryIds));
+      const entries = section.entries.filter((entry) => sourceEntryIds.has(entry.id));
+      return [
+        {
+          ...section,
+          key: `${section.key}:${blocks.map((block) => block.key).join("|")}`,
+          entries: entries.length > 0 ? entries : section.entries,
+          blocks,
+        },
+      ];
+    });
+
+  const sectionGroupLabel = (section: HeartbeatSubjectSection): string =>
+    section.name && section.name.length > 0 ? `${section.role} · ${section.name}` : section.role;
+
   const kindRailTone = (kind: HeartbeatRecordChipModel["kind"]): string =>
     `color-mix(in oklch, var(--kind-${kind}, var(--tone-accent, #2563eb)), white 62%)`;
 
@@ -74,6 +119,7 @@
     {@const bridgeRow = index === 0 ? `${chipRow} / span 3` : `${linkRow} / span 2`}
     {@const style = railStyle(segment.chip, nextChip)}
     {@const bridgeLine = nextSegment?.lineBefore ?? null}
+    {@const detailSections = sectionsForRows(detailRows)}
     <a
       class="ag-heartbeat-record-detail-track__station-link station-link"
       href={`#${stationBodyId(segment.chip, index)}`}
@@ -100,7 +146,18 @@
         {/if}
       </div>
       <div class="station-body-copy">
-        {#if detailRows.length > 0}
+        {#if detailSections.length > 0}
+          <div class="station-heartbeat-entries">
+            {#each detailSections as section (section.key)}
+              <HeartbeatEntry
+                {section}
+                layoutMode="detailed"
+                groupLabel={sectionGroupLabel(section)}
+                groupTimestamp={record.startedAt}
+              />
+            {/each}
+          </div>
+        {:else if detailRows.length > 0}
           <div class="station-payloads">
             {#each detailRows as row (row.key)}
               <section class="station-payload" data-part-kind={row.kind}>
@@ -330,6 +387,12 @@
 
   .station-body-copy > :last-child {
     margin-block-end: 0;
+  }
+
+  .station-heartbeat-entries {
+    display: grid;
+    min-width: 0;
+    gap: 8px;
   }
 
   .station-payloads {

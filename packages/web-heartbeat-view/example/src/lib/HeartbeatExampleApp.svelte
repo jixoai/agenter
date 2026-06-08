@@ -32,6 +32,7 @@
   const createInitialState = (): HeartbeatExampleState =>
     new HeartbeatExampleState({
       initialMode,
+      initialRecordId,
       initialRecordPageSize,
       initialRuntimeId,
       initialSilentConnect,
@@ -83,7 +84,7 @@
     const recordId = initialRecordId === null || initialRecordId === undefined ? "" : String(initialRecordId);
     const href = recordId
       ? `${exampleState.buildHeartbeatRecordHref(initialRuntimeId, recordId)}`
-      : exampleState.buildHeartbeatHref(initialRuntimeId);
+      : exampleState.buildHeartbeatListHref(initialRuntimeId);
     mainView.router.navigate(href, {
       animate: false,
     });
