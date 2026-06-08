@@ -53,6 +53,13 @@ The Notes avatar tab SHALL expose local Notes modes through the shared `Workbenc
 - **AND** query execution remains scoped to the selected avatar tab
 - **AND** mutating SQL errors remain bounded NoteSystem errors
 
+#### Scenario: Loading modes do not show misleading zero badges
+
+- **GIVEN** an avatar Notes tab is loading or a mode projection has not produced rows yet
+- **WHEN** the page-toolbar tabs render their count badges
+- **THEN** `Browse`, `Search`, and `Query` MUST NOT show `(0)` or equivalent zero badges for absent/loading projections
+- **AND** a count badge MAY appear only after the backing projection is known and the count is greater than zero
+
 ### Requirement: Notes route URLs SHALL encode avatar and mode scope
 
 The Notes workbench SHALL encode avatar scope and local mode in canonical routes so browser navigation, reload, and tab restoration preserve the operator's current scope. Legacy `/notes?avatar=<nickname>` links SHALL canonicalize into the new avatar route without keeping a second durable spelling alive.
@@ -119,8 +126,44 @@ The Notes workbench SHALL present NoteSystem's notebook -> section -> page hiera
 
 - **GIVEN** notes exist in notebooks `ideas` and `_draft` for avatar `default`
 - **WHEN** the operator opens `/notes/avatar/default`
-- **THEN** the `Browse` mode shows notebook and section groupings
+- **THEN** the `Browse` mode keeps the outer workbench as a list-detail layout
+- **AND** the list header shows the selected notebook label with source-root HelpHint and a direct toggle affordance
+- **AND** the list body defaults to a `SectionsAndPages` projection with sections and pages as the two navigable columns
 - **AND** selecting a page opens its body/content descriptor and structured metadata in the detail surface
+- **AND** the selected page detail remains the detail side of the list-detail layout
+
+#### Scenario: Browse stages page and virtualize independently
+
+- **GIVEN** avatar `default` has many notebooks, many sections inside a notebook, and many pages inside a section
+- **WHEN** the operator opens Browse mode
+- **THEN** notebooks, sections, and pages are loaded through separate client runtime-store NoteSystem facades
+- **AND** clicking the selected-notebook list header switches the list body to a single-column virtual `Notebooks` list
+- **AND** notebook switching is not implemented as a Select or Popover
+- **AND** sections and pages each own their own list-pane scroll viewport suitable for virtual rendering
+- **AND** scrolling near the end of a stage with a next cursor requests the next page for that same stage
+- **AND** sections are not embedded into an always-expanded notebook tree
+- **AND** selecting a notebook scopes the section list without switching avatar scope
+- **AND** selecting a section scopes the page list without switching avatar scope
+- **AND** when a section page list loads with no still-visible selected page, the first visible page is selected by default
+- **AND** sorting choices are applied at the NoteSystem paged-list facade before cursor slicing, not only to the currently rendered page
+
+#### Scenario: Browse list headers expose scoped sorting
+
+- **GIVEN** the operator is viewing Browse mode
+- **THEN** the notebook list header shows `Notebooks (n)` plus source-root HelpHint plus an icon-button sort selector
+- **AND** the sections column header shows `Sections (n)` plus an icon-button sort selector
+- **AND** the pages column header shows `Pages (n)` plus an icon-button sort selector
+- **WHEN** the operator opens a sort selector
+- **THEN** its title matches the sorted entity, such as `排序页面`
+- **AND** the available choices are none, alphabetic, created time, and updated time
+
+#### Scenario: Browse list footers expose scoped actions
+
+- **GIVEN** the operator is viewing the `Notebooks` list projection
+- **THEN** the list footer exposes one action for adding a notebook
+- **WHEN** the operator returns to the `SectionsAndPages` list projection
+- **THEN** the sections column footer exposes one action for adding a section
+- **AND** the pages column footer exposes one action for adding a page
 
 #### Scenario: Search opens a matching page
 
@@ -128,6 +171,24 @@ The Notes workbench SHALL present NoteSystem's notebook -> section -> page hiera
 - **THEN** matching pages show stable IDs, notebook, section, page, snippet, score, tags, and reference metadata
 - **AND** selecting a result opens the same page detail contract as normal browsing
 - **AND** it does not switch avatar scope
+
+#### Scenario: Search uses stack layout and syntax-driven tags
+
+- **GIVEN** the operator opens Search mode
+- **THEN** the body is a vertical stack of search input, tags accordion, and result list
+- **AND** the tags accordion collapsed state shows at most about two rows of tags
+- **WHEN** the operator searches `tag:ux 哈哈哈`
+- **THEN** the search input parser submits tag `ux` plus full-text query `哈哈哈`
+- **AND** full-text search covers notebook name, section name, page name, and note body
+
+#### Scenario: Search tags derive from current result context
+
+- **GIVEN** a non-empty search result list is visible
+- **THEN** the tags accordion shows only tags present in that result list
+- **WHEN** the search input is empty
+- **THEN** the tags accordion shows all indexed tags
+- **WHEN** the current search result is empty and the operator clicks tag `ux`
+- **THEN** Search clears the input, inserts `tag:ux`, and reruns search through the same parser-backed search path
 
 ### Requirement: Notes workbench SHALL have responsive BDD coverage
 
@@ -181,9 +242,71 @@ The Studio Notes workbench SHALL present NoteSystem's structured metadata withou
 #### Scenario: SQL query is read-only
 
 - **WHEN** the operator submits a read-only SQL query over note views in one avatar tab
-- **THEN** the workbench shows returned rows
+- **THEN** the workbench shows returned rows as structured Query result items aligned with the Search result list
 - **AND** mutating SQL errors are displayed as bounded NoteSystem errors
 - **AND** the query does not read or combine another avatar's NoteSystem projection
+
+#### Scenario: Query uses a highlighted SQL editor
+
+- **GIVEN** the operator opens the Notes `Query` mode
+- **WHEN** the SQL input is rendered
+- **THEN** it is a CodeMirror-backed editor with SQL language highlighting
+- **AND** submitting the query remains possible without leaving the selected avatar scope
+- **AND** Studio consumes the editor through the shared `@jixo/codemirror` package rather than hand-rolling CodeMirror setup in the feature route
+
+#### Scenario: Query rows can open page detail when identity columns exist
+
+- **GIVEN** a read-only SQL query returns columns containing `notebook`, `section`, and `page`
+- **WHEN** Query renders the result rows
+- **THEN** each identity-bearing row is selectable with the same page selection contract as Search results
+- **AND** selecting that row opens the shared page detail surface for the returned note identity
+- **AND** rows without a complete note identity remain structured, inspectable rows rather than raw JSON blocks
+
+#### Scenario: Query rows do not repeat the same metadata
+
+- **GIVEN** a read-only SQL query returns `notebook`, `section`, `page`, `mime`, and `updatedAt`
+- **WHEN** Query renders one result row
+- **THEN** the page identity appears once as title/subtitle
+- **AND** `mime` appears at most once as a compact badge
+- **AND** `updatedAt` appears at most once as a compact field or secondary line
+- **AND** the row MUST NOT repeat those same values again in a description sentence and field chips
+
+#### Scenario: Query default SQL auto-runs and opens detail
+
+- **GIVEN** the operator opens `Query` with the default read-only SQL still present
+- **WHEN** the selected avatar has NoteSystem capability
+- **THEN** Query automatically executes the default SQL once
+- **AND** if the result list contains an identity-bearing first row, that row is selected and its page detail opens
+- **AND** if no identity-bearing result exists, the detail side remains open and renders the shadcn `Empty` component
+
+#### Scenario: Query result list owns a scroll viewport like Search
+
+- **GIVEN** a read-only SQL query returns more rows than fit in the visible Query panel
+- **WHEN** Query renders its result list
+- **THEN** the result rows are inside the shared result-list `ScrollView` viewport
+- **AND** the Query mode root uses the same Stack-style height and `min-h-0` scroll ownership law as Search
+- **AND** Query MUST NOT wrap the result list in an extra scaffold/body layer that prevents the list viewport from scrolling
+
+#### Scenario: Search and Query empty detail use Empty
+
+- **GIVEN** the operator is viewing `Search` or `Query`
+- **WHEN** no page is selected in the shared detail side and no search/query request is pending
+- **THEN** the detail surface renders the local shadcn `Empty` component
+- **AND** it does not render a warning banner or raw placeholder text as the primary detail body
+
+#### Scenario: Search and Query pending states use Skeleton
+
+- **GIVEN** the operator is viewing `Search` or `Query`
+- **WHEN** a search or read-only SQL request is pending
+- **THEN** the shared result list renders Skeleton rows instead of Empty or placeholder content
+- **AND** when no page is selected, the shared detail side renders Skeleton instead of the shadcn `Empty` component
+- **AND** Empty remains reserved for completed no-selection or no-result states
+
+#### Scenario: Page detail loading uses Skeleton
+
+- **GIVEN** a note page identity is selected
+- **WHEN** the page content projection is still loading
+- **THEN** the detail body renders Skeleton rather than a text-only loading banner
 
 ## REMOVED Requirements
 

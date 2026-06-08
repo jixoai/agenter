@@ -2,9 +2,9 @@
 
 ## Current Round
 
-- Round: 11
-- Status: User clarified that searching/loading states must not render Empty and should render Skeleton across the relevant Search, Query, result-list, and detail surfaces. After the fix, only related code should be organized and committed.
-- Previous plan backup: `plans/plan-v10.md` was created before this Round 11 Skeleton pending-state loop.
+- Round: 4
+- Status: User corrected the Browse visual layout: use OneNote-style top page/notebook switching with two body columns for sections and pages.
+- Previous plan backup: `plans/plan-v2.md` was created before this Round 4 material plan correction.
 
 ## Workflow Command Surface
 
@@ -69,100 +69,6 @@ The following records preserve requirement-bearing user inputs verbatim. They ar
 > page的切换在正上方。
 > 然后两列分别是sections+pages，这样比你用三列来的合理
 
-##### Turn 7
-
-> 我没看到你的改动效果啊，现在还是三列布局
-
-##### Turn 8
-
-> 这和 NotesPageDetailDrawer 有什么关系呢，你有截图证明你改了吗？或者有url给我看看
-
-##### Turn 9
-
-> 我现在这个url（ 127.0.0.1:4173）是我刚刚重启的，我已经排除了我能排除的各种异常可能的
-
-##### Turn 10
-
-> 你的首先还是没有符合我的要求，我直接说明几个重要的验收点：
->
-> 1. 首先仍然要使用list-detail布局
-> 2. list页面顶部的`Notebooks (?)  (N pages)` 这里，直接改成 `<NoteBookName>  (?) ↓` ，点击可以把下方的双列区域的视图改成 Notebooks List单列列表。是的，不是Select-Popover组件，而是直接使用List来显示
-> 3. list页面的正文部分，有两种模式，一种是 NoteBooks List；一种是 SectionsAndPages List
->
-> ```
-> <header>
-> ---------
-> NoteBook1
-> NoteBook2
->
->
-> ---------
-> <footer>
-> ```
->
-> 这里footer就是一个Actions，目前只需要提供“添加笔记本”这个按钮
->
-> ```
-> <header>
-> ----------------
-> Section1 | Page1
-> Section2 | Page2
->          | Page3
->          |
-> ----------------
-> <Fot1>   | <Fot2>
-> ```
->
-> 同理Fot1只有一个“添加章节”的按钮，Fot2只有一个“添加页面”的按钮
-
-##### Turn 11
-
-> 在打开NotebookList的时候，顶部Header变成“Notebooks (?) ⬆️”，因为我们的当前选中的Notebook会出现在列表中，并显示选中的样式
-
-##### Turn 12
-
-> `<NOTEBOOK_TITLE> (?) (n pages)`，这里没必要显示`(n pages)`
-
-##### Turn 13
-
-> 0. 这个页面的结构基本可以，最后再补充一些体验：
->    0.1. 默认打开第一页
->    0.2. `Pages   (n)` 改成 `Pages (n)    (ORDER)`，这里补充一个排序icon-button，点击出现一个选择器，标题是“排序页面”，可以选择排序时间：无、字母排序、创建时间、修改时间
->    0.3. 同理`Sections (n)    (ORDER)`；`Notebooks (n) (?)    (ORDER)`
-> 1. 搜索页面，使用Stack布局，分别是搜索框、tags、list。其中tags是一个手风琴，最大就显示2行。多的就收起来。
-> 2. 搜索语法，参考项目中已有的一些搜索框的逻辑。
->
-> 2.1. 理论上可以搜索元数据+正文的内容。元数据就包含pagename、sectionname、nookbookname
-> 2.2. 还可以支持标签化搜索：比如 `tag:ux 哈哈哈`
->
-> 2.3. 也就是说，点击tags，本质是是在输入框中，添加`tag:XXX` 的语法（不绝对，下面还有另外一种情况）。
->
-> 3. tags会根据目前搜索出来的列表自动变更。比如现在搜索出来20条，那么tags只会显示这20条数据的所有tags。
-> 4. 在没有搜索语句或者搜索结果为空的情况下，会显示所有的tags
->    4.1. 如果搜索结果为空，点击tag，会清空input然后再添加`tag:XXX`，接着才会重新开始搜索
-
-##### Turn 14
-
-> 0. 差不多了，最后一些小细节，loading的，不要显示'(0)'
-> 1. Search面板没有选中任何Page的时候，右侧就显示一个Empty（ShadcnUI的组件）就好
-> 2. 同理Query面板也是同上
-> 3. Query面板的SQL输入框应该是 基于codemirror的，有高亮支持的。
-> 4. Query面板搜索出来的条目现在只是展示成JSON。请参考Search面板的结构，进行重构开发
-
-##### Turn 15
-
-> Query 页面的列表无法滚动（所以一开始我就强调，你要参考Search页面）
-
-##### Turn 16
-
-> 1. [Image #1] 存在信息冗余重复
-> 2. 这个Query页面既然有默认的Read-only SQL语句，那么进来的时候，默认就执行搜索，并选中搜索结果的第一项。如果没有第一项，那么Detail面板也保持打开状态，显示Empty组件（Shadcnui组件）
-
-##### Turn 17
-
-> 0. 搜索中的情况下就不该显示Empty，而是应该用 Skeleton。这几个页面都是，统一优化一下。
-> 1. 完成后把相关的代码整理提交上去
-
 | Turn | Speaker | Objective record                                                                                                                                         | Impact on intent                                                                                                                                              |
 | ---- | ------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | 1    | User    | "搜索功能把它独立出来"                                                                                                                                   | Search must stop being an inline panel inside the browse page. It becomes its own page-tab/surface.                                                           |
@@ -184,45 +90,6 @@ The following records preserve requirement-bearing user inputs verbatim. They ar
 | 6    | User    | "改掉目前的布局，参考OneNote的布局"                                                                                                                      | The current Browse visual layout must be changed to follow OneNote's visible navigation hierarchy.                                                            |
 | 6    | User    | "page的切换在正上方。"                                                                                                                                   | The notebook/page-scope switcher should move to the top of Browse, not remain as a full left body column.                                                     |
 | 6    | User    | "然后两列分别是sections+pages，这样比你用三列来的合理"                                                                                                   | The Browse body should use two columns for sections and pages. Three visible body columns are rejected for this layout.                                       |
-| 7    | User    | "现在还是三列布局"                                                                                                                                       | A persistent selected-note detail pane still counts against the visible layout if it makes Browse appear as three columns.                                    |
-| 8    | User    | "你有截图证明你改了吗？或者有url给我看看"                                                                                                                | Runtime URL and screenshot/DOM evidence are required; component-level rationale is insufficient.                                                              |
-| 9    | User    | "127.0.0.1:4173）是我刚刚重启的"                                                                                                                         | Treat the restarted local server at `127.0.0.1:4173` as the source of truth, not stale cache or an old server.                                                |
-| 10   | User    | "首先仍然要使用list-detail布局"                                                                                                                          | Reopen the Round 5 conclusion that forced selected-page detail into a sheet; the top-level Browse surface must remain list-detail.                            |
-| 10   | User    | "`Notebooks (?)  (N pages)` 这里，直接改成 `<NoteBookName>  (?) ↓`"                                                                                      | The list header should show the selected notebook as the scope label, keep the HelpHint affordance, and expose a direct toggle affordance.                    |
-| 10   | User    | "点击可以把下方的双列区域的视图改成 Notebooks List单列列表"                                                                                              | The list panel body has a local view mode: `sections-pages` by default and `notebooks` as a single-column list after clicking the notebook header.            |
-| 10   | User    | "不是Select-Popover组件，而是直接使用List来显示"                                                                                                         | Notebook selection must not be a Select/Popover; it is a real list view inside the same list panel.                                                           |
-| 10   | User    | "list页面的正文部分，有两种模式，一种是 NoteBooks List；一种是 SectionsAndPages List"                                                                    | The list pane body supports exactly two projections for Browse: notebook list or sections/pages list.                                                         |
-| 10   | User    | "footer就是一个Actions，目前只需要提供“添加笔记本”这个按钮"                                                                                              | Notebook list has a footer action area with an add-notebook button.                                                                                           |
-| 10   | User    | "Fot1只有一个“添加章节”的按钮，Fot2只有一个“添加页面”的按钮"                                                                                             | Sections and pages columns each have a footer action area with one add button.                                                                                |
-| 11   | User    | "打开NotebookList的时候，顶部Header变成“Notebooks (?) ⬆️”"                                                                                               | When the notebook list projection is open, the list header label is the projection title `Notebooks`, not the selected notebook title.                        |
-| 11   | User    | "当前选中的Notebook会出现在列表中，并显示选中的样式"                                                                                                     | The selected notebook state should be represented by the highlighted row inside the notebook list.                                                            |
-| 12   | User    | "`<NOTEBOOK_TITLE> (?) (n pages)`，这里没必要显示`(n pages)`"                                                                                            | The outer list header must not show a page-count badge; counts belong in list rows or column headers.                                                         |
-| 13   | User    | "默认打开第一页"                                                                                                                                         | When Browse pages load and no selected page is still visible, select/read the first page by default.                                                          |
-| 13   | User    | "`Pages   (n)` 改成 `Pages (n)    (ORDER)`"                                                                                                              | Pages column header needs an icon-button sorting control next to its count.                                                                                   |
-| 13   | User    | "标题是“排序页面”，可以选择排序时间：无、字母排序、创建时间、修改时间"                                                                                   | The page sorting selector title is `排序页面` and choices are none, alphabetic, created time, updated time.                                                   |
-| 13   | User    | "同理`Sections (n)    (ORDER)`；`Notebooks (n) (?)    (ORDER)`"                                                                                          | Sections and Notebooks headers need equivalent sorting controls; Notebooks header also keeps HelpHint.                                                        |
-| 13   | User    | "搜索页面，使用Stack布局，分别是搜索框、tags、list"                                                                                                      | Search mode should be vertical stack layout, not filter column + result column.                                                                               |
-| 13   | User    | "tags是一个手风琴，最大就显示2行。多的就收起来"                                                                                                          | Tags area uses accordion/collapsible behavior with collapsed height capped to about two tag rows.                                                             |
-| 13   | User    | "搜索语法，参考项目中已有的一些搜索框的逻辑"                                                                                                             | Use simple input-driven search syntax rather than parallel tag-only state paths.                                                                              |
-| 13   | User    | "可以搜索元数据+正文的内容。元数据就包含pagename、sectionname、nookbookname"                                                                             | The search backend must cover page, section, notebook metadata and body.                                                                                      |
-| 13   | User    | "支持标签化搜索：比如 `tag:ux 哈哈哈`"                                                                                                                   | Search input parser must extract `tag:<name>` tokens and submit remaining text as full-text query.                                                            |
-| 13   | User    | "点击tags，本质是是在输入框中，添加`tag:XXX` 的语法"                                                                                                     | Tag clicks normally mutate the search input with `tag:<name>` and run the same parser-backed search path.                                                     |
-| 13   | User    | "tags会根据目前搜索出来的列表自动变更"                                                                                                                   | Tag suggestions are result-derived when there are non-empty search results.                                                                                   |
-| 13   | User    | "在没有搜索语句或者搜索结果为空的情况下，会显示所有的tags"                                                                                               | Tag suggestions fall back to all tags when the input is empty or the current search result is empty.                                                          |
-| 13   | User    | "如果搜索结果为空，点击tag，会清空input然后再添加`tag:XXX`，接着才会重新开始搜索"                                                                        | In empty-result state, tag click replaces input with `tag:<name>` instead of appending.                                                                       |
-| 14   | User    | "loading的，不要显示'(0)'"                                                                                                                               | Page-toolbar/local count badges must not render a misleading zero while the backing projection is still loading or absent.                                    |
-| 14   | User    | "Search面板没有选中任何Page的时候，右侧就显示一个Empty（ShadcnUI的组件）就好"                                                                            | The shared Notes detail side should render the shadcn `Empty` component when Search has no selected page.                                                     |
-| 14   | User    | "同理Query面板也是同上"                                                                                                                                  | The same no-selected-page detail law applies to Query.                                                                                                        |
-| 14   | User    | "Query面板的SQL输入框应该是 基于codemirror的，有高亮支持的。"                                                                                            | Query SQL entry should be a CodeMirror editor with SQL highlighting, not a plain input.                                                                       |
-| 14   | User    | "Query面板搜索出来的条目现在只是展示成JSON。请参考Search面板的结构，进行重构开发"                                                                        | Query output should be normalized into structured result rows aligned with Search, with selectable page rows when SQL returns notebook/section/page identity. |
-| 15   | User    | "Query 页面的列表无法滚动"                                                                                                                               | Query result list must have the same explicit Stack/scroll-owner structure as Search and must not be wrapped in a scaffold/body layer that breaks scrolling.  |
-| 15   | User    | "所以一开始我就强调，你要参考Search页面"                                                                                                                 | The fix should reduce structural divergence from Search instead of adding Query-only overflow patches.                                                        |
-| 16   | User    | "[Image #1] 存在信息冗余重复"                                                                                                                            | Query result rows must avoid repeating the same facts across title, badge, description, and field chips.                                                      |
-| 16   | User    | "这个Query页面既然有默认的Read-only SQL语句，那么进来的时候，默认就执行搜索，并选中搜索结果的第一项。"                                                   | Query mode should auto-run its default read-only SQL on entry and select the first identity-bearing result by default.                                        |
-| 16   | User    | "如果没有第一项，那么Detail面板也保持打开状态，显示Empty组件（Shadcnui组件）"                                                                            | Query detail side must remain open after the default query even when no selectable result exists, showing the Empty component.                                |
-| 17   | User    | "搜索中的情况下就不该显示Empty，而是应该用 Skeleton。"                                                                                                   | Search/Query pending states must render Skeleton instead of the completed Empty projection.                                                                   |
-| 17   | User    | "这几个页面都是，统一优化一下。"                                                                                                                         | Apply the pending-state law consistently through shared result-list/detail atoms rather than mode-local one-off branches.                                     |
-| 17   | User    | "完成后把相关的代码整理提交上去"                                                                                                                         | After validation, stage only related OpenSpec/Notes files and commit them without mixing unrelated dirty workspace changes.                                   |
 
 ### Evidence Read
 
@@ -275,13 +142,6 @@ The following records preserve requirement-bearing user inputs verbatim. They ar
 | "参考OneNote的布局"                                   | The visible navigation hierarchy should resemble OneNote.                               | Use a top switcher plus body columns rather than equal three-column panes.                 |
 | "page的切换在正上方"                                  | The higher-level note scope switch belongs above the body columns.                      | Notebook/page-scope selection becomes a top horizontal switcher.                           |
 | "两列分别是sections+pages"                            | The main Browse body should have exactly two navigation columns.                        | Body columns are Sections and Pages.                                                       |
-| "现在还是三列布局"                                    | A persistent selected-note pane can still violate the visual intent.                    | Detail should not be a permanent third body column in Browse.                              |
-| "127.0.0.1:4173 是我刚刚重启的"                       | Runtime evidence must use the restarted local server as truth.                          | Do not explain the issue as stale cache without evidence.                                  |
-| "仍然要使用list-detail布局"                           | The outer Browse surface still has a list side and a detail side.                       | Do not remove the detail pane law; fix the list side structure.                            |
-| "`<NoteBookName> (?) ↓`"                              | The list header's primary label is the selected notebook scope.                         | Replace the generic `Notebooks` + page-count header with current notebook + HelpHint.      |
-| "不是Select-Popover组件，而是直接使用List来显示"      | Notebook switching is a first-class list projection, not a compact overlay control.     | Clicking the header swaps the list body into a virtual notebook list.                      |
-| "NoteBooks List"                                      | A single-column list pane projection for notebook selection.                            | It has one scroll owner and a footer action area.                                          |
-| "SectionsAndPages List"                               | A two-column list pane projection under the selected notebook.                          | Sections and Pages each own scroll/paging and footer actions.                              |
 
 ### Demo / Spike Code
 
@@ -297,9 +157,7 @@ The following records preserve requirement-bearing user inputs verbatim. They ar
 | Should the local page-toolbar tabs be `Browse / Search / Query`, or should SQL be hidden behind an advanced action rather than a tab? | 独立 tab.                                                                                                       | Make `Query` a dedicated page-toolbar tab, visually advanced/read-only.                                                                       |
 | Should a workspace dimension be selectable at the avatar-tab level?                                                                   | Yes to the proposed law.                                                                                        | Do not add workspace/source roots to tab identity; keep them as grouping/filtering metadata inside one avatar tab.                            |
 | Should Browse stay as `notebooks(with sections)->page` or move to a staged model?                                                     | User proposed `notebooks->setions->page` and asked to avoid mixed sections because paging/scrolling is unclear. | Treat three-stage Browse as the current intended law; the nested card alternative remains a rejected fallback unless explicitly chosen later. |
-| Should Browse remain a three-column notebook/section/page layout?                                                                     | No. User asked to reference OneNote and use two body columns inside the list pane: `sections+pages`.            | Do not render notebooks, sections, and pages as three equal navigation columns.                                                               |
-| Should the selected-note detail stay as a persistent right split pane in Browse?                                                      | Yes after Round 6 clarification: "仍然要使用list-detail布局".                                                   | Restore normal list-detail semantics. The detail pane is the detail side; the list side owns the notebook-list / sections-pages view mode.    |
-| Should notebook switching be a top horizontal switcher?                                                                               | No after Round 6 clarification.                                                                                 | The list header shows `<NoteBookName> (?) ↓`; clicking it switches the list body to a single-column Notebooks List.                           |
+| Should Browse remain a three-column layout?                                                                                           | No. User asked to reference OneNote and use two body columns: `sections+pages`.                                 | Keep notebook/page-scope selection as a top switcher; render only Sections and Pages as body columns.                                         |
 
 ### Workflow Correction
 
@@ -344,10 +202,6 @@ Browse | Search | Query
 The page body contains no avatar selector. Browse shows notebooks/sections/pages and detail. Search is a full dedicated surface with query, tags, result list, and preview/detail. Query is a dedicated advanced surface for read-only SQL. Workspace/source facts are shown as grouping/filtering inside the selected avatar scope, not as another role switch.
 
 Round 4 visible correction: Browse should feel closer to OneNote. The higher-level notebook/page-scope switch is a horizontal control at the top of Browse, and the body underneath is two columns: Sections and Pages. This preserves the staged data law without making notebooks, sections, and pages appear as three equal panes.
-
-Round 5 runtime correction: the restarted `127.0.0.1:4173` page is the truth source. If the selected-note detail is rendered as a persistent right split pane, the operator still sees three vertical areas. The selected page detail must use the shared compact detail layer for this Notes surface so the Browse body remains the visible two-column `Sections` / `Pages` layout.
-
-Round 6 acceptance correction: the Round 5 conclusion over-corrected the layout by removing the persistent list-detail model. The current user acceptance points explicitly require list-detail. The correct law is: the outer Notes Browse surface remains list-detail; the list pane header shows the selected notebook with HelpHint and a down affordance; clicking that header switches the list pane body into a real single-column Notebooks List; the default list pane body is the SectionsAndPages List with two columns and footer actions.
 
 ## Platform Diagnosis
 
@@ -427,9 +281,9 @@ Round 6 acceptance correction: the Round 5 conclusion over-corrected the layout 
   - shared avatar-scope state/controller
 - Keep all NoteSystem operations through `controller.runtimeStore`.
 - Browse owns explicit scroll owners:
-  - notebooks inside the `Notebooks List` list-pane projection
-  - sections inside the `SectionsAndPages List` list-pane projection
-  - pages inside the `SectionsAndPages List` list-pane projection
+  - notebook/page-scope switcher at the top for many notebooks
+  - sections for the selected notebook
+  - pages for the selected notebook + section
 - Forbidden couplings:
   - No app-server or note-system imports in Studio.
   - No body-level avatar selector.
@@ -452,9 +306,6 @@ Round 6 acceptance correction: the Round 5 conclusion over-corrected the layout 
 - [ ] 5. Self-review against intent and decide whether to loop.
 - [ ] 6. Round 3 correction: preserve the user's reopened requirements verbatim, validate the change, then investigate and fix the reported bug.
 - [ ] 7. Round 4 layout correction: replace the three-column Browse visual layout with a OneNote-style top scope switcher and two body columns for sections/pages.
-- [ ] 8. Round 5 runtime correction: use restarted `127.0.0.1:4173` evidence to keep Browse visibly two-column and selected-note detail out of the persistent body columns.
-- [ ] 9. Round 6 acceptance correction: restore list-detail, move notebook switching into the list header/list-body projection, and add footer action slots for notebooks, sections, and pages.
-- [ ] 10. Round 11 pending-state correction: Search/Query loading states use Skeleton in the shared list/detail atoms, while Empty remains the completed no-selection/no-result projection.
 
 ## Open Questions
 
