@@ -108,14 +108,7 @@
 
 <Page name="heartbeat-record-detail" pageContent={false} withSubnavbar={hasDetailTabs}>
   <Navbar>
-    <NavLeft>
-      <Link
-        iconOnly
-        iconF7="chevron_left_ios"
-        href={backHref}
-        aria-label="Back to Heartbeat records"
-      />
-    </NavLeft>
+    <NavLeft backLink={true} backLinkUrl={backHref} backLinkShowText={false} />
     <NavTitle>
       <span class="heartbeat-example-record-navbar-title">
         {#if exampleState.selectedTarget}

@@ -825,6 +825,7 @@ describe("Feature: Web heartbeat view example route flow", () => {
 
     await waitForText("Record #1");
     expect(document.querySelector('.page[data-name="heartbeat-record-detail"]')).not.toBeNull();
+    expect(document.querySelector('.page[data-name="heartbeat-record-detail"] .navbar .link.back')).not.toBeNull();
     expect(location.pathname).toContain("/heartbeat/runtime-ada/records/1");
     expect(location.search).toContain("pageSize=2");
     expect(mockSdk.heartbeatRecordPageRequests.at(-1)?.input?.pageSize).toBe(2);

@@ -59,7 +59,7 @@
     rows.filter((row) => partMatchesChip(row, chip));
 
   const rowMatchesPart = (row: HeartbeatRecordDetailPartRow, part: HeartbeatRecordDetailPartRow["part"]): boolean =>
-    row.part.messageId === part.messageId && row.part.partId === part.partId;
+    row.part.messageId === part.messageId && String(row.part.partId) === String(part.partId);
 
   const isToolPartRow = (row: HeartbeatRecordDetailPartRow): boolean =>
     row.part.partType === "tool_call" || row.part.partType === "tool_result" || row.part.partType === "tool_call_result";

@@ -8,7 +8,6 @@
 
   import {
     formatHeartbeatRecordPayload,
-    indentHeartbeatYaml,
     isHeartbeatRecordPayload,
     readHeartbeatRecordPayloadValue,
   } from "./heartbeat-record-detail-model";
@@ -167,6 +166,25 @@
 
   const hasConfigValue = (value: unknown): boolean => value !== undefined && value !== null;
   const compareConfigValue = (value: unknown): string => formatHeartbeatRecordPayload(value);
+  const splitPayloadLines = (value: unknown): string[] => formatHeartbeatRecordPayload(value).split("\n");
+  const prefixDiffLines = (prefix: "+" | "-", lines: readonly string[]): string[] =>
+    lines.length === 0 ? [`${prefix}`] : lines.map((line) => `${prefix}${line}`);
+  const looksLikeDiffSource = (value: string): boolean =>
+    value
+      .split("\n")
+      .some((line) => line.startsWith("---") || line.startsWith("+++") || line.startsWith("@@") || /^[+-][^-+]/u.test(line));
+  const buildConfigDiffSource = (oldValue: unknown, newValue: unknown, diffValue: unknown): string => {
+    if (typeof diffValue === "string" && looksLikeDiffSource(diffValue)) {
+      return diffValue;
+    }
+    return [
+      "--- old-config",
+      "+++ new-config",
+      "@@",
+      ...prefixDiffLines("-", splitPayloadLines(oldValue)),
+      ...prefixDiffLines("+", splitPayloadLines(newValue)),
+    ].join("\n");
+  };
 
   const providerLabel = $derived.by(() => {
     const provider = readHeartbeatRecordPayloadValue(payload, ["provider", "modelProvider", "providerLabel"]);
@@ -223,20 +241,12 @@
     if (detailTab === "old") {
       return oldConfig === null ? "" : formatHeartbeatRecordPayload(oldConfig);
     }
-    if (diffConfig !== null) {
-      return formatHeartbeatRecordPayload(diffConfig);
-    }
-    return [
-      "old:",
-      oldConfig === null ? "  null" : indentHeartbeatYaml(formatHeartbeatRecordPayload(oldConfig)),
-      "new:",
-      indentHeartbeatYaml(formatHeartbeatRecordPayload(newConfig)),
-    ].join("\n");
+    return buildConfigDiffSource(oldConfig, newConfig, diffConfig);
   });
   const configSyntaxLines = $derived.by<ConfigSyntaxLine[]>(() =>
     configSource.split("\n").map((line) => {
       const kind =
-        detailTab === "diff" && line.startsWith("@@")
+        detailTab === "diff" && (line.startsWith("---") || line.startsWith("+++") || line.startsWith("@@"))
           ? "meta"
           : detailTab === "diff" && line.startsWith("-")
             ? "remove"

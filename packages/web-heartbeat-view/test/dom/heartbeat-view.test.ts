@@ -606,6 +606,8 @@ describe("Feature: HeartbeatView DOM capability contract", () => {
     );
     expect(document.body.textContent).toContain("Trace the source refs.");
     expect(document.body.textContent).toContain("shell.exec");
+    expect(document.querySelector(".station-heartbeat-entries .ag-heartbeat-entry")).not.toBeNull();
+    expect(document.querySelector(".station-payload")).toBeNull();
     expect(document.querySelector(".ag-heartbeat-record-detail__time-label")).not.toBeNull();
     expect(document.querySelector(".ag-heartbeat-record-detail__time-crossline")).not.toBeNull();
     expect(
@@ -816,7 +818,7 @@ describe("Feature: HeartbeatView DOM capability contract", () => {
                       role: "config",
                       partType: "config",
                       payload: {
-                        oldConfig: { thinking: false, maxToken: 2000 },
+                        oldConfig: null,
                         newConfig: { thinking: "auto", maxToken: "adaptive" },
                       },
                     }),
@@ -842,8 +844,10 @@ describe("Feature: HeartbeatView DOM capability contract", () => {
     expect(document.body.textContent).not.toContain("0t");
     expect(document.querySelector(".ag-heartbeat-record-config__field--topk")).toBeNull();
     expect(document.querySelector(".ag-heartbeat-record-config__field--budget")).toBeNull();
-    expect(document.body.textContent).toContain("old:");
-    expect(document.body.textContent).toContain("new:");
+    expect(document.body.textContent).toContain("--- old-config");
+    expect(document.body.textContent).toContain("+++ new-config");
+    expect(document.body.textContent).toContain("-null");
+    expect(document.body.textContent).toContain("+thinking: auto");
   });
 
   test("Scenario: Given structured rows When rendered Then reasoning, JSON config, tool running, compact card, and load older are visible through package components", () => {
