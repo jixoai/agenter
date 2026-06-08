@@ -727,7 +727,7 @@ const fitTimeline = (chips: readonly HeartbeatRecordChip[], width: number): Hear
   };
 };
 
-export const buildHeartbeatRecordTimeline = (record: HeartbeatRecordItem, width = 390): HeartbeatRecordTimeline => {
+const buildHeartbeatRecordChips = (record: HeartbeatRecordItem): HeartbeatRecordChip[] => {
   const parts = [...record.summary.parts].sort((left, right) => left.startedAt - right.startedAt);
   const inputParts = parts.filter(isUserInputPart);
   const inputChip = createChip("input", inputParts, record.startedAt, inputParts.at(-1)?.completedAt ?? record.startedAt);
@@ -739,6 +739,21 @@ export const buildHeartbeatRecordTimeline = (record: HeartbeatRecordItem, width 
   if (record.status === "error" && chips.every((chip) => chip.kind !== "error")) {
     chips.push(createChip("error", [], record.updatedAt, record.completedAt ?? record.updatedAt));
   }
+  return chips;
+};
+
+export const buildHeartbeatRecordFullTimeline = (record: HeartbeatRecordItem): HeartbeatRecordTimeline => {
+  const chips = buildHeartbeatRecordChips(record);
+  return {
+    chips,
+    segments: buildSegments(chips),
+    hiddenCount: 0,
+    density: "full",
+  };
+};
+
+export const buildHeartbeatRecordTimeline = (record: HeartbeatRecordItem, width = 390): HeartbeatRecordTimeline => {
+  const chips = buildHeartbeatRecordChips(record);
   return fitTimeline(chips, width);
 };
 
