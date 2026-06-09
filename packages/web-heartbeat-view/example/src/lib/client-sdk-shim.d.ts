@@ -33,7 +33,10 @@ export interface RuntimeClientState {
   globalAvatarCatalog: CachedResourceState<GlobalAvatarCatalogEntry[]>;
   heartbeatGroupsBySession: Record<string, CachedResourceState<HeartbeatGroupItem[]> | undefined>;
   heartbeatRecordsBySession: Record<string, CachedResourceState<HeartbeatRecordPage | null> | undefined>;
-  heartbeatRecordDetailsBySession: Record<string, Record<number, CachedResourceState<HeartbeatRecordDetail | null>> | undefined>;
+  heartbeatRecordDetailsBySession: Record<
+    string,
+    Record<number, CachedResourceState<HeartbeatRecordDetail | null>> | undefined
+  >;
   modelCallsBySession: Record<string, ModelCallItem[] | undefined>;
   attentionBySession?: Record<string, RuntimeAttentionState | undefined>;
   attentionDeliveryBySession?: Record<string, RuntimeAttentionDeliveryState | undefined>;
@@ -63,17 +66,27 @@ export interface RuntimeStore {
     cwd: string;
     avatar: string;
     autoStart?: boolean;
+    hydrationMode?: "full" | "heartbeat" | "none";
+    refreshWorkspaces?: boolean;
   }): Promise<SessionEntry>;
   hydrateSessionArtifacts(
     sessionId: string,
     options: {
       includeChatHistory: boolean;
       observabilityMode: "heartbeat";
+      observability?: {
+        includeHeartbeatGroups?: boolean;
+        includeHeartbeatRecords?: boolean;
+        includeModelCalls?: boolean;
+      };
     },
   ): Promise<void>;
   loadHeartbeatGroups(sessionId: string): Promise<void>;
   loadMoreHeartbeatGroups(sessionId: string): Promise<{ items: number; hasMore: boolean }>;
-  loadHeartbeatRecords(sessionId: string, input?: { pageSize?: number; anchor?: HeartbeatRecordPageAnchor | null }): Promise<void>;
+  loadHeartbeatRecords(
+    sessionId: string,
+    input?: { pageSize?: number; anchor?: HeartbeatRecordPageAnchor | null },
+  ): Promise<void>;
   loadHeartbeatRecordDetail(sessionId: string, recordId: number): Promise<void>;
   requestRuntimeCompact(sessionId: string): Promise<{ ok: boolean }>;
   listRuntimeSettingsScope(sessionId: string): Promise<ScopedSettingsOutput>;

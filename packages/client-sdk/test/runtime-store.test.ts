@@ -3632,6 +3632,58 @@ describe("Feature: runtime store synchronization", () => {
     store.disconnect();
   });
 
+  test("Scenario: Given createSession uses no hydration When a lightweight surface opens a session Then runtime chrome is not refreshed eagerly", async () => {
+    const nowIso = new Date().toISOString();
+    const newSession: SessionEntry = {
+      id: "i-light",
+      name: "heartbeat-light",
+      cwd: process.cwd(),
+      workspacePath: process.cwd(),
+      avatar: "tester-bot",
+      createdAt: nowIso,
+      updatedAt: nowIso,
+      status: "stopped" as const,
+      storageState: "active" as const,
+      sessionRoot: "/tmp/sessions/i-light",
+      storeTarget: "global" as const,
+    };
+    let snapshotCalls = 0;
+    let listAllCalls = 0;
+    const client = createMockClient({
+      snapshotQuery: async () => {
+        snapshotCalls += 1;
+        return {
+          ...createSnapshot(31),
+          sessions: [],
+          runtimes: {},
+        };
+      },
+      workspaceListAllQuery: async () => {
+        listAllCalls += 1;
+        return { items: [] };
+      },
+      createSessionResult: newSession,
+    });
+    const store = new RuntimeStore(client);
+
+    await store.connect();
+    expect(snapshotCalls).toBe(1);
+
+    const created = await store.createSession({
+      cwd: process.cwd(),
+      autoStart: false,
+      hydrationMode: "none",
+      refreshWorkspaces: false,
+    });
+
+    expect(created.id).toBe("i-light");
+    expect(snapshotCalls).toBe(1);
+    expect(listAllCalls).toBe(0);
+    expect(store.getState().sessions.some((session) => session.id === "i-light")).toBe(true);
+    expect(store.getState().runtimes["i-light"]).toBeDefined();
+    store.disconnect();
+  });
+
   test("Scenario: Given runtime usage analytics query is available When the store requests it Then the typed token totals are returned without local recomputation", async () => {
     const client = createMockClient({
       snapshotQuery: async () => createSnapshot(30),
@@ -5158,6 +5210,8 @@ describe("Feature: runtime store synchronization", () => {
     let requestAuxCalls = 0;
     let apiCallsCalls = 0;
     const modelCallLimits: number[] = [];
+    let heartbeatGroupCalls = 0;
+    let heartbeatRecordCalls = 0;
     const client = createMockClient({
       snapshotQuery: async () => createSnapshot(756),
       runtimeMessagesPageQuery: async () => {
@@ -5200,6 +5254,14 @@ describe("Feature: runtime store synchronization", () => {
         modelCallLimits.push(input.limit ?? 0);
         return { items: [], nextBefore: null, hasMoreBefore: false };
       },
+      heartbeatGroupsPageQuery: async () => {
+        heartbeatGroupCalls += 1;
+        return { items: [], nextBefore: null, hasMoreBefore: false };
+      },
+      heartbeatRecordPageQuery: async () => {
+        heartbeatRecordCalls += 1;
+        return createHeartbeatRecordPage([]);
+      },
     });
     const store = new RuntimeStore(client);
 
@@ -5217,7 +5279,23 @@ describe("Feature: runtime store synchronization", () => {
     expect(traceCalls).toBe(0);
     expect(requestAuxCalls).toBe(0);
     expect(apiCallsCalls).toBe(0);
+    expect(heartbeatGroupCalls).toBe(1);
+    expect(heartbeatRecordCalls).toBe(1);
     expect(modelCallLimits).toEqual([12]);
+
+    await store.hydrateSessionArtifacts("i-1", {
+      includeChatHistory: false,
+      observabilityMode: "heartbeat",
+      observability: {
+        includeHeartbeatGroups: false,
+        includeHeartbeatRecords: false,
+        includeModelCalls: true,
+      },
+    });
+
+    expect(heartbeatGroupCalls).toBe(1);
+    expect(heartbeatRecordCalls).toBe(1);
+    expect(modelCallLimits).toEqual([12, 12]);
     expect(store.getState().sessions.some((session) => session.id === "i-1")).toBe(true);
     store.disconnect();
   });

@@ -7,8 +7,8 @@ import {
   type AgenterHeartbeatConnection,
   type AgenterHeartbeatConnectionState,
   type AvatarRuntimeStatus,
-  type HeartbeatConfigBinding,
   type GlobalAvatarCatalogEntry,
+  type HeartbeatConfigBinding,
   type HeartbeatConfigDraft,
   type HeartbeatConfigLayerFile,
   type HeartbeatRecordPage,
@@ -72,6 +72,7 @@ export class ClientSdkAgenterHeartbeatConnection implements AgenterHeartbeatConn
   private readonly configErrorsBySession = new Map<string, string>();
   private readonly configLoadingBySession = new Set<string>();
   private readonly configSavingBySession = new Set<string>();
+  private readonly heartbeatSecondaryRefreshTasks = new Map<string, Promise<void>>();
   private unsubscribeStore: (() => void) | null = null;
   state: AgenterHeartbeatConnectionState = createInitialState();
 
@@ -118,6 +119,7 @@ export class ClientSdkAgenterHeartbeatConnection implements AgenterHeartbeatConn
     this.store.disconnect();
     this.unsubscribeStore?.();
     this.unsubscribeStore = null;
+    this.heartbeatSecondaryRefreshTasks.clear();
   }
 
   async refreshAvatars(): Promise<void> {
@@ -160,6 +162,8 @@ export class ClientSdkAgenterHeartbeatConnection implements AgenterHeartbeatConn
       cwd: input.avatar.globalPath,
       avatar: input.avatar.nickname,
       autoStart: input.autoStart ?? false,
+      hydrationMode: "none",
+      refreshWorkspaces: false,
     });
     const avatarPrincipalId = input.avatar.avatarPrincipalId ?? null;
     const target: HeartbeatTargetIdentity = {
@@ -195,11 +199,46 @@ export class ClientSdkAgenterHeartbeatConnection implements AgenterHeartbeatConn
         : { kind: "latest" as const };
     await this.store.loadHeartbeatRecords(target.sessionId, { pageSize, anchor });
     this.syncFromRuntimeStore();
-    await this.store.hydrateSessionArtifacts(target.sessionId, {
-      includeChatHistory: false,
-      observabilityMode: "heartbeat",
+    this.queueHeartbeatSecondaryRefresh(target);
+  }
+
+  private queueHeartbeatSecondaryRefresh(target: HeartbeatTargetIdentity): void {
+    if (this.heartbeatSecondaryRefreshTasks.has(target.sessionId)) {
+      return;
+    }
+    const task = this.refreshHeartbeatSecondary(target).finally(() => {
+      this.heartbeatSecondaryRefreshTasks.delete(target.sessionId);
     });
-    await Promise.all([this.store.loadHeartbeatGroups(target.sessionId), this.refreshConfigBinding(target)]);
+    this.heartbeatSecondaryRefreshTasks.set(target.sessionId, task);
+    void task;
+  }
+
+  private async refreshHeartbeatSecondary(target: HeartbeatTargetIdentity): Promise<void> {
+    const results = await Promise.allSettled([
+      this.store.hydrateSessionArtifacts(target.sessionId, {
+        includeChatHistory: false,
+        observabilityMode: "heartbeat",
+        observability: {
+          includeHeartbeatGroups: false,
+          includeHeartbeatRecords: false,
+          includeModelCalls: true,
+        },
+      }),
+      this.store.loadHeartbeatGroups(target.sessionId),
+      this.refreshConfigBinding(target),
+    ]);
+    const rejected = results.find((result): result is PromiseRejectedResult => result.status === "rejected");
+    if (rejected && this.state.selectedTarget?.sessionId === target.sessionId) {
+      this.state = {
+        ...this.state,
+        error: toErrorMessage(rejected.reason),
+      };
+      this.emit();
+      return;
+    }
+    if (this.state.selectedTarget?.sessionId !== target.sessionId) {
+      return;
+    }
     this.state = {
       ...this.state,
       selectedTarget: target,
@@ -312,7 +351,8 @@ export class ClientSdkAgenterHeartbeatConnection implements AgenterHeartbeatConn
       recordDetailsState: runtimeState.heartbeatRecordDetailsBySession[target.sessionId],
       modelCalls: runtimeState.modelCallsBySession[target.sessionId] ?? [],
       attention: runtimeState.attentionBySession?.[target.sessionId] ?? runtime?.attention ?? null,
-      attentionDelivery: runtimeState.attentionDeliveryBySession?.[target.sessionId] ?? runtime?.attentionDelivery ?? null,
+      attentionDelivery:
+        runtimeState.attentionDeliveryBySession?.[target.sessionId] ?? runtime?.attentionDelivery ?? null,
       compactPending: false,
       compactDisabled: false,
       configBinding: this.configBindingsBySession.get(target.sessionId) ?? {
@@ -331,7 +371,10 @@ export class ClientSdkAgenterHeartbeatConnection implements AgenterHeartbeatConn
     };
   }
 
-  private findAvatarSession(avatar: GlobalAvatarCatalogEntry, sessions: ReadonlyArray<SessionEntry>): SessionEntry | null {
+  private findAvatarSession(
+    avatar: GlobalAvatarCatalogEntry,
+    sessions: ReadonlyArray<SessionEntry>,
+  ): SessionEntry | null {
     const matches = sessions.filter((session) => {
       if (avatar.avatarPrincipalId && session.avatarPrincipalId === avatar.avatarPrincipalId) {
         return true;
@@ -356,7 +399,8 @@ export class ClientSdkAgenterHeartbeatConnection implements AgenterHeartbeatConn
       statuses[avatar.runtimeId] = {
         sessionId: session?.id ?? null,
         status: session?.status ?? "unknown",
-        livePushStatus: session && runtime && session.status === "running" ? "active" : session ? "inactive" : "unknown",
+        livePushStatus:
+          session && runtime && session.status === "running" ? "active" : session ? "inactive" : "unknown",
       };
     }
     return statuses;

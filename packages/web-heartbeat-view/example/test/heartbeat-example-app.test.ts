@@ -330,6 +330,8 @@ const mockSdk = vi.hoisted(() => {
     sessionId: string;
     input?: { pageSize?: number; anchor?: HeartbeatRecordPage["anchor"] | null };
   }> = [];
+  let createSessionRequests: unknown[] = [];
+  let hydrateSessionArtifactsRequests: unknown[] = [];
   let sessionStatus: SessionEntry["status"] = "stopped";
   let authToken: string | null = null;
   let connectDelayMs = 0;
@@ -350,6 +352,8 @@ const mockSdk = vi.hoisted(() => {
     avatarCatalogFailure = null;
     heartbeatGroups = [group];
     heartbeatRecordPageRequests = [];
+    createSessionRequests = [];
+    hydrateSessionArtifactsRequests = [];
     sessionStatus = "stopped";
     authToken = null;
     connectDelayMs = 0;
@@ -437,7 +441,8 @@ const mockSdk = vi.hoisted(() => {
       };
       emit();
     },
-    async createSession() {
+    async createSession(input: unknown) {
+      createSessionRequests.push(input);
       const session: SessionEntry = {
         id: avatar.runtimeId,
         status: sessionStatus,
@@ -493,7 +498,8 @@ const mockSdk = vi.hoisted(() => {
       };
       emit();
     },
-    async hydrateSessionArtifacts() {
+    async hydrateSessionArtifacts(_sessionId: string, options: unknown) {
+      hydrateSessionArtifactsRequests.push(options);
       state = {
         ...state,
         runtimes: {
@@ -662,6 +668,12 @@ const mockSdk = vi.hoisted(() => {
     get heartbeatRecordPageRequests() {
       return heartbeatRecordPageRequests;
     },
+    get createSessionRequests() {
+      return createSessionRequests;
+    },
+    get hydrateSessionArtifactsRequests() {
+      return hydrateSessionArtifactsRequests;
+    },
   };
 });
 
@@ -812,6 +824,20 @@ describe("Feature: Web heartbeat view example route flow", () => {
     expect(document.body.textContent).toContain("Stopped");
     expect(document.body.textContent).toContain("No live push");
     expect(document.querySelector('[title="Request compact"]')).toBeNull();
+    expect(mockSdk.createSessionRequests[0]).toMatchObject({
+      hydrationMode: "none",
+      refreshWorkspaces: false,
+    });
+    expect(mockSdk.heartbeatRecordPageRequests).toHaveLength(1);
+    expect(mockSdk.hydrateSessionArtifactsRequests[0]).toMatchObject({
+      includeChatHistory: false,
+      observabilityMode: "heartbeat",
+      observability: {
+        includeHeartbeatGroups: false,
+        includeHeartbeatRecords: false,
+        includeModelCalls: true,
+      },
+    });
   });
 
   test("Scenario: Given a direct Heartbeat record URL When connection hydrates Then the example opens a dedicated record detail route", async () => {
@@ -832,6 +858,7 @@ describe("Feature: Web heartbeat view example route flow", () => {
     expect(location.pathname).toContain("/heartbeat/runtime-ada/records/1");
     expect(location.search).toContain("pageSize=2");
     expect(mockSdk.heartbeatRecordPageRequests.at(-1)?.input?.pageSize).toBe(2);
+    expect(mockSdk.heartbeatRecordPageRequests).toHaveLength(1);
   });
 
   test("Scenario: Given a Compact record detail route When tabs switch Then Framework7 subnavbar owns the context tabs", async () => {

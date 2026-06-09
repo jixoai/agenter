@@ -244,6 +244,21 @@ const HEARTBEAT_RECORD_PAGE_LIMIT = 20;
 const MODEL_CALL_DELTA_LRU_LIMIT = 400;
 const DEFAULT_GLOBAL_TERMINAL_ACTIVITY_LIMIT = 20;
 const TERMINAL_ACTIVITY_PREVIEW_MAX_CHARS = 4_000;
+type RuntimeObservabilityMode = "full" | "heartbeat";
+type RuntimeSessionHydrationMode = RuntimeObservabilityMode | "none";
+
+interface RuntimeObservabilityHydrationOptions {
+  includeHeartbeatGroups?: boolean;
+  includeHeartbeatRecords?: boolean;
+  includeModelCalls?: boolean;
+}
+
+interface RuntimeSessionHydrationOptions {
+  includeChatHistory?: boolean;
+  observabilityMode?: RuntimeObservabilityMode;
+  observability?: RuntimeObservabilityHydrationOptions;
+}
+
 const DEFAULT_MODEL_CAPABILITIES = {
   streaming: false,
   tools: false,
@@ -3909,11 +3924,18 @@ export class RuntimeStore {
     name?: string;
     avatar?: string;
     autoStart?: boolean;
+    hydrationMode?: RuntimeSessionHydrationMode;
+    refreshWorkspaces?: boolean;
   }): Promise<SessionEntry> {
-    const result = await this.client.trpc.session.create.mutate(input);
+    const { hydrationMode = "full", refreshWorkspaces = true, ...sessionCreateInput } = input;
+    const result = await this.client.trpc.session.create.mutate(sessionCreateInput);
     this.upsertSession(result.session);
-    await this.hydrateRuntime(result.session.id);
-    await this.listAllWorkspaces();
+    if (hydrationMode !== "none") {
+      await this.hydrateRuntime(result.session.id, hydrationMode);
+    }
+    if (refreshWorkspaces) {
+      await this.listAllWorkspaces();
+    }
     return result.session;
   }
 
@@ -6612,10 +6634,7 @@ export class RuntimeStore {
     return await task;
   }
 
-  async hydrateSessionArtifacts(
-    sessionId: string,
-    input?: { includeChatHistory?: boolean; observabilityMode?: "full" | "heartbeat" },
-  ): Promise<void> {
+  async hydrateSessionArtifacts(sessionId: string, input?: RuntimeSessionHydrationOptions): Promise<void> {
     if (this.connectTask) {
       await this.connectTask;
     }
@@ -6631,9 +6650,9 @@ export class RuntimeStore {
       ]);
       this.clearRuntimeState(sessionId, session.status, persistedAttention, persistedAttentionDelivery);
       this.emit();
-      await this.hydrateObservabilityArtifacts(sessionId, input?.observabilityMode);
+      await this.hydrateObservabilityArtifacts(sessionId, input?.observabilityMode, input?.observability);
     } else if (this.state.runtimes[sessionId]) {
-      await this.hydrateObservabilityArtifacts(sessionId, input?.observabilityMode);
+      await this.hydrateObservabilityArtifacts(sessionId, input?.observabilityMode, input?.observability);
     } else {
       await this.hydrateRuntime(sessionId, input?.observabilityMode);
       session = this.state.sessions.find((entry) => entry.id === sessionId);
@@ -8147,7 +8166,7 @@ export class RuntimeStore {
     this.apiCallStreams.delete(sessionId);
   }
 
-  private async hydrateRuntime(sessionId: string, observabilityMode: "full" | "heartbeat" = "full"): Promise<void> {
+  private async hydrateRuntime(sessionId: string, observabilityMode: RuntimeObservabilityMode = "full"): Promise<void> {
     const snapshot = await this.client.trpc.runtime.snapshot.query();
     const sessionsById = new Map(this.state.sessions.map((session) => [session.id, session]));
     for (const session of snapshot.sessions) {
@@ -8204,19 +8223,30 @@ export class RuntimeStore {
     await this.hydrateObservabilityArtifacts(sessionId, observabilityMode);
   }
 
-  private async hydrateObservabilityArtifacts(sessionId: string, mode: "full" | "heartbeat" = "full"): Promise<void> {
+  private async hydrateObservabilityArtifacts(
+    sessionId: string,
+    mode: RuntimeObservabilityMode = "full",
+    options: RuntimeObservabilityHydrationOptions = {},
+  ): Promise<void> {
     const heartbeatOnly = mode === "heartbeat";
+    const includeHeartbeatGroups = options.includeHeartbeatGroups ?? true;
+    const includeHeartbeatRecords = options.includeHeartbeatRecords ?? true;
+    const includeModelCalls = options.includeModelCalls ?? true;
     const [logs, traces, , , modelCalls, requestAux, apiCalls] = await Promise.allSettled([
       heartbeatOnly ? Promise.resolve(null) : this.client.trpc.runtime.schedulerLogs.query({ sessionId, limit: 200 }),
       heartbeatOnly
         ? Promise.resolve(null)
         : this.client.trpc.runtime.observabilityTraces.query({ sessionId, limit: 200 }),
-      this.loadHeartbeatGroups(sessionId, HEARTBEAT_GROUP_PAGE_LIMIT),
-      this.loadHeartbeatRecords(sessionId, {
-        pageSize: HEARTBEAT_RECORD_PAGE_LIMIT,
-        anchor: { kind: "latest" },
-      }),
-      this.client.trpc.runtime.modelCallsPage.query({ sessionId, limit: heartbeatOnly ? 12 : 200 }),
+      includeHeartbeatGroups ? this.loadHeartbeatGroups(sessionId, HEARTBEAT_GROUP_PAGE_LIMIT) : Promise.resolve(null),
+      includeHeartbeatRecords
+        ? this.loadHeartbeatRecords(sessionId, {
+            pageSize: HEARTBEAT_RECORD_PAGE_LIMIT,
+            anchor: { kind: "latest" },
+          })
+        : Promise.resolve(null),
+      includeModelCalls
+        ? this.client.trpc.runtime.modelCallsPage.query({ sessionId, limit: heartbeatOnly ? 12 : 200 })
+        : Promise.resolve(null),
       heartbeatOnly ? Promise.resolve(null) : this.client.trpc.runtime.requestAuxPage.query({ sessionId, limit: 200 }),
       heartbeatOnly ? Promise.resolve(null) : this.client.trpc.runtime.apiCallsPage.query({ sessionId, limit: 200 }),
     ]);
@@ -8244,7 +8274,7 @@ export class RuntimeStore {
       this.updateBeforeCursor(this.observabilityTracesBeforeCursorBySession, sessionId, traces.value.nextBefore);
       shouldEmit = true;
     }
-    if (modelCalls.status === "fulfilled") {
+    if (includeModelCalls && modelCalls.status === "fulfilled" && modelCalls.value) {
       this.state.modelCallsBySession[sessionId] = this.applyLruEntries(
         this.modelCallsAccessBySession,
         sessionId,
