@@ -141,12 +141,14 @@ export const HeavyInspectorDialog = {
     await waitFor(() => {
       expect(within(dialog).getByTestId("mcp-config-heavy-inspector-iframe")).toBeInTheDocument();
     });
+    await expect(within(dialog).getByTestId("mcp-config-heavy-inspector-signal")).toHaveAttribute("data-state", "live");
     await expect(dialog).toHaveAttribute("data-fullscreen", "false");
     await userEvent.click(within(dialog).getByTestId("mcp-config-heavy-inspector-fullscreen"));
     await expect(dialog).toHaveAttribute("data-fullscreen", "true");
     await userEvent.click(within(dialog).getByTestId("mcp-config-heavy-inspector-fullscreen"));
     await expect(dialog).toHaveAttribute("data-fullscreen", "false");
-    await userEvent.click(within(dialog).getByRole("button", { name: "Close" }));
+    await expect(within(dialog).queryByRole("button", { name: "Close" })).toBeNull();
+    await userEvent.click(within(dialog).getByRole("button", { name: "Close inspector" }));
     await expect(body.getByTestId("mcp-config-heavy-inspector-close-confirm")).toBeInTheDocument();
     await userEvent.click(body.getByTestId("mcp-config-heavy-inspector-release"));
     await waitFor(() => {

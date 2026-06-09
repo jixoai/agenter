@@ -2,7 +2,6 @@
 	import type {
 		McpInspectorCloseInput,
 		McpInspectorCloseOutput,
-		McpInspectorEvent,
 		McpInspectorStartInput,
 		McpInspectorStartOutput,
 		McpProbeInput,
@@ -14,6 +13,7 @@
 	import RotateCwIcon from '@lucide/svelte/icons/rotate-cw';
 	import SquareIcon from '@lucide/svelte/icons/square';
 	import TrashIcon from '@lucide/svelte/icons/trash';
+	import type { ComponentProps } from 'svelte';
 
 	import { Badge } from '$lib/components/ui/badge/index.js';
 	import { Button } from '$lib/components/ui/button/index.js';
@@ -45,7 +45,7 @@
 		onProbe,
 		onInspectorStart,
 		onInspectorClose,
-		onInspectorSubscribe,
+		createInspectorSocket,
 		onAddProject,
 		onStartProject,
 		onStopProject,
@@ -65,13 +65,7 @@
 		onProbe: (input: McpProbeInput) => Promise<McpProbeOutput>;
 		onInspectorStart?: (input: McpInspectorStartInput) => Promise<McpInspectorStartOutput>;
 		onInspectorClose?: (input: McpInspectorCloseInput) => Promise<McpInspectorCloseOutput>;
-		onInspectorSubscribe?: (
-			input: McpInspectorCloseInput,
-			handlers: {
-				onData: (event: McpInspectorEvent) => void;
-				onError?: () => void;
-			},
-		) => { unsubscribe: () => void };
+		createInspectorSocket?: ComponentProps<typeof McpNewGlobalForm>['createInspectorSocket'];
 		onAddProject: (projectPath: string) => Promise<void>;
 		onStartProject: (row: McpWorkbenchRow) => Promise<void>;
 		onStopProject: (row: McpWorkbenchRow) => Promise<void>;
@@ -140,7 +134,7 @@
 			{onProbe}
 			{onInspectorStart}
 			{onInspectorClose}
-			{onInspectorSubscribe}
+			{createInspectorSocket}
 		/>
 
 		<section class="grid gap-3 border-t border-border/50 p-4">

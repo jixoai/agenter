@@ -15,6 +15,7 @@
 	import NetworkIcon from '@lucide/svelte/icons/network';
 	import PlayIcon from '@lucide/svelte/icons/play';
 	import RefreshCwIcon from '@lucide/svelte/icons/refresh-cw';
+	import XIcon from '@lucide/svelte/icons/x';
 	import { onDestroy, onMount } from 'svelte';
 
 	import StructuredValueViewer from '$lib/components/structured-value/structured-value-viewer.svelte';
@@ -52,7 +53,27 @@
 		kind: CapabilityKind;
 		items: InspectCapabilityCard[];
 	};
-	type InspectorSubscription = { unsubscribe: () => void };
+	type InspectorSocketState = 'idle' | 'connecting' | 'open' | 'closed' | 'error';
+	type InspectorSocketEventMap = {
+		open: Event;
+		close: CloseEvent;
+		error: Event;
+		message: MessageEvent<string>;
+	};
+	type InspectorSocket = {
+		close: (code?: number, reason?: string) => void;
+		addEventListener: <K extends keyof InspectorSocketEventMap>(
+			type: K,
+			listener: (event: InspectorSocketEventMap[K]) => void,
+		) => void;
+		removeEventListener: <K extends keyof InspectorSocketEventMap>(
+			type: K,
+			listener: (event: InspectorSocketEventMap[K]) => void,
+		) => void;
+	};
+	type InspectorSocketFactory = (url: string) => InspectorSocket;
+	type InspectorWireEvent = McpInspectorEvent | { type: 'error'; error: string };
+	type InspectorLogEntry = McpInspectorSnapshotOutput['logs'][number];
 	type ProbeOpenParsed = Extract<McpProbeInput, { action: 'open' }> extends never
 		? never
 		: {
@@ -81,7 +102,7 @@
 		onProbe,
 		onInspectorStart,
 		onInspectorClose,
-		onInspectorSubscribe,
+		createInspectorSocket,
 	}: {
 		resetKey: string;
 		pending?: boolean;
@@ -89,13 +110,7 @@
 		onProbe: (input: McpProbeInput) => Promise<McpProbeOutput>;
 		onInspectorStart?: (input: McpInspectorStartInput) => Promise<McpInspectorStartOutput>;
 		onInspectorClose?: (input: McpInspectorCloseInput) => Promise<McpInspectorCloseOutput>;
-		onInspectorSubscribe?: (
-			input: McpInspectorCloseInput,
-			handlers: {
-				onData: (event: McpInspectorEvent) => void;
-				onError?: () => void;
-			},
-		) => InspectorSubscription;
+		createInspectorSocket?: InspectorSocketFactory;
 	} = $props();
 
 	const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -238,9 +253,12 @@
 	let inspectorError = $state<string | null>(null);
 	let inspectorAvatarNickname = $state<string | null>(null);
 	let inspectorSession = $state<McpInspectorSnapshotOutput | null>(null);
+	let inspectorWsUrl = $state<string | null>(null);
 	let inspectorCompactViewport = $state(false);
 	let inspectorFullscreenRequested = $state(false);
-	let inspectorSubscription: InspectorSubscription | null = null;
+	let inspectorSocket: InspectorSocket | null = null;
+	let inspectorSocketState = $state<InspectorSocketState>('idle');
+	let inspectorDialogContentElement = $state<HTMLElement | null>(null);
 
 	const toolOptions = $derived.by(() =>
 		(snapshot?.tools ?? []).map((tool, index) => resolveCapabilityProtocolId('tool', tool, `tool_${index + 1}`)),
@@ -355,8 +373,14 @@
 	const inspectorFullscreenToggleLabel = $derived(
 		inspectorFullscreen ? 'Exit full screen inspector' : 'Expand inspector',
 	);
+	const inspectorSocketLive = $derived(inspectorSocketState === 'open');
+	const inspectorSocketLabel = $derived(inspectorSocketLive ? 'Inspector process lease is live' : 'Inspector process lease is closed');
 
 	$effect(() => {
+		if (lastResetKey === null) {
+			lastResetKey = resetKey;
+			return;
+		}
 		if (resetKey === lastResetKey) {
 			return;
 		}
@@ -500,21 +524,157 @@
 		}
 	});
 
+	const isInspectorLogEntry = (value: unknown): value is InspectorLogEntry =>
+		isRecord(value) &&
+		typeof value.id === 'number' &&
+		(value.stream === 'stdout' || value.stream === 'stderr' || value.stream === 'system') &&
+		typeof value.text === 'string' &&
+		typeof value.createdAt === 'string';
+
+	const isInspectorSnapshot = (value: unknown): value is McpInspectorSnapshotOutput =>
+		isRecord(value) &&
+		typeof value.sessionId === 'string' &&
+		typeof value.leaseId === 'string' &&
+		(value.state === 'starting' ||
+			value.state === 'ready' ||
+			value.state === 'exited' ||
+			value.state === 'failed' ||
+			value.state === 'closed') &&
+		value.command === 'bunx' &&
+		Array.isArray(value.args) &&
+		value.args.every((item) => typeof item === 'string') &&
+		typeof value.cwd === 'string' &&
+		Array.isArray(value.logs) &&
+		value.logs.every(isInspectorLogEntry) &&
+		typeof value.startedAt === 'string' &&
+		typeof value.updatedAt === 'string';
+
+	const parseInspectorWireEvent = (source: string): InspectorWireEvent => {
+		const parsed: unknown = JSON.parse(source);
+		if (!isRecord(parsed)) {
+			throw new Error('Inspector event must be a JSON object');
+		}
+		if (parsed.type === 'error') {
+			const message = typeof parsed.error === 'string' ? parsed.error : 'Inspector event stream failed';
+			return { type: 'error', error: message };
+		}
+		if (parsed.type === 'snapshot' && isInspectorSnapshot(parsed.session)) {
+			return { type: 'snapshot', session: parsed.session };
+		}
+		if (
+			parsed.type === 'log' &&
+			typeof parsed.sessionId === 'string' &&
+			isInspectorLogEntry(parsed.entry) &&
+			isInspectorSnapshot(parsed.session)
+		) {
+			return {
+				type: 'log',
+				sessionId: parsed.sessionId,
+				entry: parsed.entry,
+				session: parsed.session,
+			};
+		}
+		throw new Error('Unsupported inspector event payload');
+	};
+
 	const applyInspectorEvent = (event: McpInspectorEvent): void => {
 		inspectorSession = event.session;
 	};
 
-	const clearInspectorSubscription = (): void => {
-		inspectorSubscription?.unsubscribe();
-		inspectorSubscription = null;
+	const appendInspectorSystemLog = (message: string): void => {
+		if (!inspectorSession) {
+			return;
+		}
+		const now = new Date().toISOString();
+		const nextId = Math.max(0, ...inspectorSession.logs.map((entry) => entry.id)) + 1;
+		inspectorSession = {
+			...inspectorSession,
+			state: inspectorSession.state === 'closed' ? 'closed' : inspectorSession.state,
+			logs: [
+				...inspectorSession.logs,
+				{
+					id: nextId,
+					stream: 'system',
+					text: message,
+					createdAt: now,
+				},
+			],
+			updatedAt: now,
+		};
+	};
+
+	const closeInspectorSocket = (): void => {
+		const socket = inspectorSocket;
+		inspectorSocket = null;
+		if (!socket) {
+			return;
+		}
+		try {
+			socket.close(1000, 'inspector dialog released');
+		} catch {
+			// Closing is best-effort; the backend also has an unclaimed lease timeout.
+		}
+	};
+
+	const defaultInspectorSocketFactory: InspectorSocketFactory = (url: string) => new WebSocket(url);
+
+	const connectInspectorSocket = (url: string): void => {
+		closeInspectorSocket();
+		const socket = (createInspectorSocket ?? defaultInspectorSocketFactory)(url);
+		inspectorSocket = socket;
+		inspectorSocketState = 'connecting';
+		const handleOpen = (): void => {
+			if (inspectorSocket !== socket) {
+				return;
+			}
+			inspectorSocketState = 'open';
+		};
+		const handleClose = (): void => {
+			if (inspectorSocket !== socket && inspectorSocket !== null) {
+				return;
+			}
+			inspectorSocket = null;
+			inspectorSocketState = 'closed';
+			if (inspectorSession && inspectorSession.state !== 'closed') {
+				inspectorSession = {
+					...inspectorSession,
+					state: 'closed',
+					closedAt: new Date().toISOString(),
+					updatedAt: new Date().toISOString(),
+				};
+			}
+		};
+		const handleError = (): void => {
+			inspectorSocketState = 'error';
+			inspectorError = 'Inspector WebSocket failed';
+		};
+		const handleMessage = (event: MessageEvent<string>): void => {
+			try {
+				const wireEvent = parseInspectorWireEvent(event.data);
+				if (wireEvent.type === 'error') {
+					inspectorError = wireEvent.error;
+					return;
+				}
+				applyInspectorEvent(wireEvent);
+			} catch (error) {
+				inspectorError = error instanceof Error ? error.message : String(error);
+			}
+		};
+		socket.addEventListener('open', handleOpen);
+		socket.addEventListener('close', handleClose);
+		socket.addEventListener('error', handleError);
+		socket.addEventListener('message', handleMessage);
 	};
 
 	const releaseInspectorSession = async (options: { closeDialog?: boolean } = {}): Promise<void> => {
 		const session = inspectorSession;
 		const avatarNickname = inspectorAvatarNickname;
-		clearInspectorSubscription();
 		inspectorConfirmCloseOpen = false;
-		if (session && avatarNickname && onInspectorClose) {
+		if (inspectorSocket) {
+			inspectorReleasePending = true;
+			closeInspectorSocket();
+			inspectorReleasePending = false;
+		} else if (session && avatarNickname && onInspectorClose) {
 			inspectorReleasePending = true;
 			try {
 				inspectorSession = await onInspectorClose({
@@ -529,9 +689,11 @@
 			}
 		}
 		inspectorAvatarNickname = null;
+		inspectorWsUrl = null;
 		if (options.closeDialog) {
 			inspectorSession = null;
 			inspectorError = null;
+			inspectorSocketState = 'idle';
 			inspectorDialogOpen = false;
 		}
 	};
@@ -680,20 +842,13 @@
 				env: draft.env,
 			} satisfies McpInspectorStartInput;
 			inspectorAvatarNickname = draft.avatarNickname;
-			inspectorSession = await onInspectorStart(input);
-			if (onInspectorSubscribe) {
-				inspectorSubscription = onInspectorSubscribe(
-					{
-						avatarNickname: draft.avatarNickname,
-						sessionId: inspectorSession.sessionId,
-					},
-					{
-						onData: applyInspectorEvent,
-						onError: () => {
-							inspectorError = 'Inspector event stream closed';
-						},
-					},
-				);
+			const started = await onInspectorStart(input);
+			inspectorSession = started;
+			inspectorWsUrl = typeof started.wsUrl === 'string' && started.wsUrl.trim() ? started.wsUrl : null;
+			if (inspectorWsUrl) {
+				connectInspectorSocket(inspectorWsUrl);
+			} else {
+				appendInspectorSystemLog('Inspector WebSocket URL unavailable; close will use fallback release.');
 			}
 		} catch (error) {
 			inspectorError = error instanceof Error ? error.message : String(error);
@@ -705,6 +860,23 @@
 	onDestroy(() => {
 		void closeCurrentProbe();
 		void releaseInspectorSession();
+	});
+
+	$effect(() => {
+		const node = inspectorDialogContentElement;
+		if (!node || !inspectorSocket) {
+			return;
+		}
+		const observer = new MutationObserver(() => {
+			if (document.contains(node)) {
+				return;
+			}
+			closeInspectorSocket();
+		});
+		observer.observe(document.body, { childList: true, subtree: true });
+		return () => {
+			observer.disconnect();
+		};
 	});
 
 	onMount(() => {
@@ -1094,8 +1266,9 @@
 	}}
 >
 	<Dialog.Content
+		bind:ref={inspectorDialogContentElement}
 		class={cn(
-			'grid grid-rows-[auto_minmax(0,1fr)_auto] gap-0 p-0',
+			'grid overflow-hidden grid-rows-[auto_minmax(0,1fr)] gap-0 p-0',
 			inspectorFullscreen
 				? 'left-0 top-0 h-[100dvh] max-h-none w-[100vw] max-w-none translate-x-0 translate-y-0 rounded-none border-0 sm:max-w-none'
 				: 'h-[min(92dvh,58rem)] max-h-[calc(100dvh-1rem)] w-[min(96vw,88rem)] max-w-[calc(100vw-1rem)] sm:max-w-[min(96vw,88rem)]',
@@ -1117,6 +1290,20 @@
 					/>
 				</div>
 				<div class="flex min-w-0 items-center gap-1.5">
+					<div
+						class="flex size-8 items-center justify-center"
+						aria-label={inspectorSocketLabel}
+						title={inspectorSocketLabel}
+						data-testid="mcp-config-heavy-inspector-signal"
+						data-state={inspectorSocketLive ? 'live' : 'closed'}
+					>
+						<span
+							class={cn(
+								'size-2.5 rounded-full shadow-[0_0_0_3px_color-mix(in_srgb,currentColor,transparent_82%)]',
+								inspectorSocketLive ? 'bg-emerald-500 text-emerald-500' : 'bg-destructive text-destructive',
+							)}
+						></span>
+					</div>
 					{#if inspectorSession}
 						<Badge variant={inspectorSession.state === 'failed' ? 'destructive' : 'secondary'}>
 							{inspectorSession.state}
@@ -1141,11 +1328,27 @@
 							<Maximize2Icon class="size-4" />
 						{/if}
 					</Button>
+					<Button
+						variant="destructive"
+						size="icon-sm"
+						disabled={inspectorReleasePending}
+						aria-label="Close inspector"
+						title="Close inspector"
+						onclick={requestInspectorDialogClose}
+						data-testid="mcp-config-heavy-inspector-close"
+					>
+						<XIcon class="size-4" />
+					</Button>
 				</div>
 			</div>
 		</Dialog.Header>
 
-		<div class="grid h-full min-h-0 grid-rows-[auto_minmax(0,1fr)]">
+		<div
+			class={cn(
+				'grid h-full min-h-0 overflow-hidden',
+				inspectorError ? 'grid-rows-[auto_minmax(0,1fr)]' : 'grid-rows-[minmax(0,1fr)]',
+			)}
+		>
 			{#if inspectorError}
 				<div class="border-b border-border/50 px-4 py-3">
 					<NoticeBanner tone="destructive" message={inspectorError} />
@@ -1155,7 +1358,7 @@
 				<iframe
 					src={inspectorSession.url}
 					title="MCP Inspector"
-					class="h-full min-h-0 w-full border-0 bg-background"
+					class="block h-full min-h-0 w-full border-0 bg-background"
 					data-testid="mcp-config-heavy-inspector-iframe"
 				></iframe>
 			{:else}
@@ -1180,12 +1383,6 @@
 				</div>
 			{/if}
 		</div>
-
-		<Dialog.Footer class="border-t border-border/50 px-4 py-3">
-			<Button variant="outline" disabled={inspectorReleasePending} onclick={requestInspectorDialogClose}>
-				Close
-			</Button>
-		</Dialog.Footer>
 	</Dialog.Content>
 </Dialog.Root>
 

@@ -61,7 +61,10 @@ describe("Feature: Studio MCP route contract", () => {
     expect(inspectSource).toContain("inspectorCompactViewport || inspectorFullscreenRequested");
     expect(inspectSource).toContain("onInspectorStart");
     expect(inspectSource).toContain("onInspectorClose");
-    expect(inspectSource).toContain("onInspectorSubscribe");
+    expect(inspectSource).toContain("connectInspectorSocket(inspectorWsUrl)");
+    expect(inspectSource).toContain("mcp-config-heavy-inspector-signal");
+    expect(inspectSource).toContain("mcp-config-heavy-inspector-close");
+    expect(inspectSource).not.toContain("onInspectorSubscribe");
     expect(inspectSource).toContain("bunx @modelcontextprotocol/inspector");
     expect(inspectSource).toContain("seeded from inputSchema");
     expect(inspectSource).toContain("McpHelpHint");

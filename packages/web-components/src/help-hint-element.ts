@@ -26,8 +26,8 @@ export const HELP_HINT_PARTS = {
 const VIEWPORT_PADDING = 8;
 const HIDDEN_POSITION = -10_000;
 const HIDDEN_POPUP_STYLE = {
-  left: `${HIDDEN_POSITION}px`,
-  top: `${HIDDEN_POSITION}px`,
+  "--help-hint-popover-left": `${HIDDEN_POSITION}px`,
+  "--help-hint-popover-top": `${HIDDEN_POSITION}px`,
 } as const;
 
 const clamp = (value: number, min: number, max: number): number => Math.min(Math.max(value, min), max);
@@ -76,6 +76,7 @@ export class HelpHintElement extends LitElement {
     }
 
     .trigger {
+      anchor-name: --agenter-help-hint-trigger;
       display: inline-flex;
       align-items: center;
       justify-content: center;
@@ -102,7 +103,10 @@ export class HelpHintElement extends LitElement {
 
     .popup {
       position: fixed;
+      inset: var(--help-hint-popover-top, ${HIDDEN_POSITION}px) auto auto
+        var(--help-hint-popover-left, ${HIDDEN_POSITION}px);
       z-index: 60;
+      width: max-content;
       max-width: min(30rem, calc(100vw - 1rem));
       border-radius: 0.75rem;
       border: 1px solid hsl(var(--border, 214 32% 91%));
@@ -112,7 +116,16 @@ export class HelpHintElement extends LitElement {
       padding: 0.625rem 0.75rem;
       font-size: 0.75rem;
       line-height: 1.6;
+      margin: 0;
       outline: none;
+    }
+
+    .popup[data-native-popover="true"]:not(:popover-open) {
+      display: none;
+    }
+
+    .popup::backdrop {
+      display: none;
     }
 
     .popup[data-help-hint-presentation="passive-auto"] {
@@ -126,6 +139,47 @@ export class HelpHintElement extends LitElement {
 
     ::slotted(*) {
       margin: 0;
+    }
+
+    @supports (position-anchor: --agenter-help-hint-trigger) and (position-area: top center) {
+      @position-try --agenter-help-hint-top {
+        position-area: top center;
+      }
+
+      @position-try --agenter-help-hint-right {
+        position-area: right center;
+      }
+
+      @position-try --agenter-help-hint-bottom {
+        position-area: bottom center;
+      }
+
+      @position-try --agenter-help-hint-left {
+        position-area: left center;
+      }
+
+      .popup[data-native-popover="true"] {
+        inset: auto;
+        position-anchor: --agenter-help-hint-trigger;
+        position-area: top center;
+        position-try-fallbacks: --agenter-help-hint-bottom, --agenter-help-hint-right, --agenter-help-hint-left;
+        margin: var(--help-hint-side-offset, 8px);
+      }
+
+      .popup[data-native-popover="true"][data-side="right"] {
+        position-area: right center;
+        position-try-fallbacks: --agenter-help-hint-left, --agenter-help-hint-bottom, --agenter-help-hint-top;
+      }
+
+      .popup[data-native-popover="true"][data-side="bottom"] {
+        position-area: bottom center;
+        position-try-fallbacks: --agenter-help-hint-top, --agenter-help-hint-right, --agenter-help-hint-left;
+      }
+
+      .popup[data-native-popover="true"][data-side="left"] {
+        position-area: left center;
+        position-try-fallbacks: --agenter-help-hint-right, --agenter-help-hint-bottom, --agenter-help-hint-top;
+      }
     }
 
     @keyframes help-hint-breathe {
@@ -216,8 +270,10 @@ export class HelpHintElement extends LitElement {
     }
     if (this.displayState.kind === "closed") {
       this.scheduleHiddenPopupReset();
+      this.syncNativePopover();
       return;
     }
+    this.syncNativePopover();
     this.schedulePositioning();
   }
 
@@ -290,8 +346,8 @@ export class HelpHintElement extends LitElement {
 
   private scheduleHiddenPopupReset(): void {
     if (
-      this.popupStyle.left === HIDDEN_POPUP_STYLE.left &&
-      this.popupStyle.top === HIDDEN_POPUP_STYLE.top
+      this.popupStyle["--help-hint-popover-left"] === HIDDEN_POPUP_STYLE["--help-hint-popover-left"] &&
+      this.popupStyle["--help-hint-popover-top"] === HIDDEN_POPUP_STYLE["--help-hint-popover-top"]
     ) {
       return;
     }
@@ -305,8 +361,8 @@ export class HelpHintElement extends LitElement {
         return;
       }
       if (
-        this.popupStyle.left === HIDDEN_POPUP_STYLE.left &&
-        this.popupStyle.top === HIDDEN_POPUP_STYLE.top
+        this.popupStyle["--help-hint-popover-left"] === HIDDEN_POPUP_STYLE["--help-hint-popover-left"] &&
+        this.popupStyle["--help-hint-popover-top"] === HIDDEN_POPUP_STYLE["--help-hint-popover-top"]
       ) {
         return;
       }
@@ -349,14 +405,39 @@ export class HelpHintElement extends LitElement {
     const maxTop = Math.max(VIEWPORT_PADDING, viewportHeight - popupRect.height - VIEWPORT_PADDING);
 
     const nextPopupStyle = {
-      left: `${clamp(left, VIEWPORT_PADDING, maxLeft)}px`,
-      top: `${clamp(top, VIEWPORT_PADDING, maxTop)}px`,
+      "--help-hint-popover-left": `${clamp(left, VIEWPORT_PADDING, maxLeft)}px`,
+      "--help-hint-popover-top": `${clamp(top, VIEWPORT_PADDING, maxTop)}px`,
+      "--help-hint-side-offset": `${this.sideOffset}px`,
     };
     if (
-      this.popupStyle.left !== nextPopupStyle.left ||
-      this.popupStyle.top !== nextPopupStyle.top
+      this.popupStyle["--help-hint-popover-left"] !== nextPopupStyle["--help-hint-popover-left"] ||
+      this.popupStyle["--help-hint-popover-top"] !== nextPopupStyle["--help-hint-popover-top"] ||
+      this.popupStyle["--help-hint-side-offset"] !== nextPopupStyle["--help-hint-side-offset"]
     ) {
       this.popupStyle = nextPopupStyle;
+    }
+  }
+
+  private get hasNativePopover(): boolean {
+    return typeof HTMLElement !== "undefined" && "showPopover" in HTMLElement.prototype;
+  }
+
+  private syncNativePopover(): void {
+    const popup = this.popupElement;
+    if (!popup || !this.hasNativePopover) {
+      return;
+    }
+    const nativePopup = popup as HTMLDivElement & {
+      showPopover?: () => void;
+      hidePopover?: () => void;
+    };
+    const nativeOpen = popup.matches(":popover-open");
+    if (this.open && !nativeOpen) {
+      nativePopup.showPopover?.();
+      return;
+    }
+    if (!this.open && nativeOpen) {
+      nativePopup.hidePopover?.();
     }
   }
 
@@ -433,9 +514,13 @@ export class HelpHintElement extends LitElement {
         id=${this.popupId}
         part=${HELP_HINT_PARTS.popup}
         role="tooltip"
+        popover=${this.hasNativePopover ? "manual" : nothing}
         aria-hidden=${this.open ? "false" : "true"}
         data-help-hint-presentation=${this.presentationMode}
-        ?hidden=${!this.open}
+        data-native-popover=${this.hasNativePopover ? "true" : "false"}
+        data-side=${this.side}
+        data-align=${this.align}
+        ?hidden=${!this.open && !this.hasNativePopover}
         style=${styleMap(this.popupStyle)}
         @click=${() => {
           if (this.isOnboardingPassive) {

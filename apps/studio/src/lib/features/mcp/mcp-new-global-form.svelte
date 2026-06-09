@@ -2,7 +2,6 @@
 	import type {
 		McpInspectorCloseInput,
 		McpInspectorCloseOutput,
-		McpInspectorEvent,
 		McpInspectorStartInput,
 		McpInspectorStartOutput,
 		McpProbeInput,
@@ -10,6 +9,7 @@
 	} from '@agenter/client-sdk';
 	import SaveIcon from '@lucide/svelte/icons/save';
 	import TrashIcon from '@lucide/svelte/icons/trash';
+	import type { ComponentProps } from 'svelte';
 
 	import ProfileAvatar from '$lib/components/profile-avatar.svelte';
 	import { Button } from '$lib/components/ui/button/index.js';
@@ -48,7 +48,7 @@
 		onProbe,
 		onInspectorStart,
 		onInspectorClose,
-		onInspectorSubscribe,
+		createInspectorSocket,
 	}: {
 		avatarOptions?: readonly McpAvatarCatalogOption[];
 		knownConfigRows?: readonly McpConfigCatalogRow[];
@@ -62,13 +62,7 @@
 		onProbe?: (input: McpProbeInput) => Promise<McpProbeOutput>;
 		onInspectorStart?: (input: McpInspectorStartInput) => Promise<McpInspectorStartOutput>;
 		onInspectorClose?: (input: McpInspectorCloseInput) => Promise<McpInspectorCloseOutput>;
-		onInspectorSubscribe?: (
-			input: McpInspectorCloseInput,
-			handlers: {
-				onData: (event: McpInspectorEvent) => void;
-				onError?: () => void;
-			},
-		) => { unsubscribe: () => void };
+		createInspectorSocket?: ComponentProps<typeof McpConfigInspectPanel>['createInspectorSocket'];
 	} = $props();
 
 	const isStringRecord = (value: unknown): value is Record<string, string> =>
@@ -575,7 +569,7 @@
 			onProbe={onProbe}
 			{onInspectorStart}
 			{onInspectorClose}
-			{onInspectorSubscribe}
+			{createInspectorSocket}
 		/>
 	{/if}
 </div>

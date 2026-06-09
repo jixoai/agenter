@@ -2,7 +2,6 @@
 	import type {
 		McpInspectorCloseInput,
 		McpInspectorCloseOutput,
-		McpInspectorEvent,
 		McpInspectorSnapshotOutput,
 		McpInspectorStartInput,
 		McpInspectorStartOutput,
@@ -24,6 +23,24 @@
 		type McpGlobalConfigDraft,
 		type McpWorkbenchRow,
 	} from './mcp-workbench-state';
+
+	type StoryInspectorSocketEventMap = {
+		open: Event;
+		close: CloseEvent;
+		error: Event;
+		message: MessageEvent<string>;
+	};
+	type StoryInspectorSocket = {
+		close: (code?: number, reason?: string) => void;
+		addEventListener: <K extends keyof StoryInspectorSocketEventMap>(
+			type: K,
+			listener: (event: StoryInspectorSocketEventMap[K]) => void,
+		) => void;
+		removeEventListener: <K extends keyof StoryInspectorSocketEventMap>(
+			type: K,
+			listener: (event: StoryInspectorSocketEventMap[K]) => void,
+		) => void;
+	};
 
 	type McpStoryScenario =
 		| 'avatar-authority'
@@ -242,6 +259,7 @@
 		url?: string,
 	): McpInspectorSnapshotOutput => ({
 		sessionId: 'inspector-story-1',
+		leaseId: 'lease-story-1',
 		state,
 		url,
 		command: 'bunx',
@@ -355,7 +373,10 @@
 
 	const startInspector = async (input: McpInspectorStartInput): Promise<McpInspectorStartOutput> => {
 		recordEvent(`inspector-start:${input.name ?? 'draft'}`);
-		return buildInspectorSession('starting');
+		return {
+			...buildInspectorSession('starting'),
+			wsUrl: 'ws://127.0.0.1:6006/mcp/inspector/lease-story-1?avatarNickname=default',
+		};
 	};
 
 	const closeInspector = async (input: McpInspectorCloseInput): Promise<McpInspectorCloseOutput> => {
@@ -363,22 +384,60 @@
 		return buildInspectorSession('closed');
 	};
 
-	const subscribeInspector = (
-		input: McpInspectorCloseInput,
-		handlers: {
-			onData: (event: McpInspectorEvent) => void;
-			onError?: () => void;
-		},
-	): { unsubscribe: () => void } => {
-		recordEvent(`inspector-events:${input.sessionId}`);
-		setTimeout(() => {
-			handlers.onData({
-				type: 'snapshot',
-				session: buildInspectorSession('ready', 'http://127.0.0.1:6274/?MCP_PROXY_AUTH_TOKEN=story'),
-			});
+	const createInspectorSocket = (url: string): StoryInspectorSocket => {
+		recordEvent(`inspector-ws:${url}`);
+		const listeners = {
+			open: new Set<(event: Event) => void>(),
+			close: new Set<(event: CloseEvent) => void>(),
+			error: new Set<(event: Event) => void>(),
+			message: new Set<(event: MessageEvent<string>) => void>(),
+		};
+		let closed = false;
+		const dispatch = <K extends keyof StoryInspectorSocketEventMap>(
+			type: K,
+			event: StoryInspectorSocketEventMap[K],
+		): void => {
+			for (const listener of listeners[type]) {
+				listener(event as never);
+			}
+		};
+		queueMicrotask(() => {
+			if (!closed) {
+				dispatch('open', new Event('open'));
+			}
+		});
+		const readyTimer = setTimeout(() => {
+			if (closed) {
+				return;
+			}
+			dispatch(
+				'message',
+				new MessageEvent('message', {
+					data: JSON.stringify({
+						type: 'snapshot',
+						session: buildInspectorSession('ready', 'http://127.0.0.1:6274/?MCP_PROXY_AUTH_TOKEN=story'),
+					}),
+				}),
+			);
 		}, 20);
 		return {
-			unsubscribe: () => recordEvent(`inspector-unsubscribe:${input.sessionId}`),
+			close: () => {
+				if (closed) {
+					return;
+				}
+				closed = true;
+				clearTimeout(readyTimer);
+				recordEvent('inspector-close:inspector-story-1');
+				const closeEvent =
+					typeof CloseEvent === 'function' ? new CloseEvent('close') : (new Event('close') as CloseEvent);
+				dispatch('close', closeEvent);
+			},
+			addEventListener: (type, listener) => {
+				listeners[type].add(listener as never);
+			},
+			removeEventListener: (type, listener) => {
+				listeners[type].delete(listener as never);
+			},
 		};
 	};
 </script>
@@ -410,7 +469,7 @@
 					onProbe={probeDraft}
 					onInspectorStart={startInspector}
 					onInspectorClose={closeInspector}
-					onInspectorSubscribe={subscribeInspector}
+					{createInspectorSocket}
 				/>
 			</div>
 		</div>
@@ -436,7 +495,7 @@
 					onProbe={probeDraft}
 					onInspectorStart={startInspector}
 					onInspectorClose={closeInspector}
-					onInspectorSubscribe={subscribeInspector}
+					{createInspectorSocket}
 				/>
 			</div>
 		</div>
@@ -469,7 +528,7 @@
 					onProbe={probeDraft}
 					onInspectorStart={startInspector}
 					onInspectorClose={closeInspector}
-					onInspectorSubscribe={subscribeInspector}
+					{createInspectorSocket}
 					onAddProject={async (nextProjectPath) => {
 						selectedProjectPath = nextProjectPath;
 						recordEvent(`add-project:${nextProjectPath}`);
@@ -521,7 +580,7 @@
 					onProbe={probeDraft}
 					onInspectorStart={startInspector}
 					onInspectorClose={closeInspector}
-					onInspectorSubscribe={subscribeInspector}
+					{createInspectorSocket}
 					onAddProject={async (nextProjectPath) => {
 						selectedProjectPath = nextProjectPath;
 						recordEvent(`add-project:${nextProjectPath}`);

@@ -2519,7 +2519,9 @@ const createMockClient = (input: {
               ? await input.mcpInspectorStartMutation(payload)
               : {
                   sessionId: "inspector-1",
+                  leaseId: "lease-1",
                   state: "starting",
+                  wsUrl: "ws://127.0.0.1:3000/mcp/inspector/lease-1?avatarNickname=default",
                   command: "bunx",
                   args: ["@modelcontextprotocol/inspector"],
                   cwd: "/repo/app",
@@ -2534,6 +2536,7 @@ const createMockClient = (input: {
               ? await input.mcpInspectorSnapshotQuery(payload)
               : {
                   sessionId: "inspector-1",
+                  leaseId: "lease-1",
                   state: "ready",
                   url: "http://127.0.0.1:6274/?MCP_PROXY_AUTH_TOKEN=test",
                   command: "bunx",
@@ -2550,6 +2553,7 @@ const createMockClient = (input: {
               ? await input.mcpInspectorCloseMutation(payload)
               : {
                   sessionId: "inspector-1",
+                  leaseId: "lease-1",
                   state: "closed",
                   command: "bunx",
                   args: ["@modelcontextprotocol/inspector"],
@@ -12003,7 +12007,9 @@ describe("Feature: runtime store synchronization", () => {
     let unsubscribed = false;
     const inspectorStart = {
       sessionId: "inspector-1",
+      leaseId: "lease-1",
       state: "starting",
+      wsUrl: "ws://127.0.0.1:3000/mcp/inspector/lease-1?avatarNickname=default",
       command: "bunx",
       args: [
         "@modelcontextprotocol/inspector",

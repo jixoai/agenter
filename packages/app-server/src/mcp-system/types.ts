@@ -240,6 +240,7 @@ export interface McpInspectorLogEntry {
 
 export interface McpInspectorSessionSnapshot {
   sessionId: string;
+  leaseId: string;
   state: McpInspectorState;
   url?: string;
   command: "bunx";
@@ -319,4 +320,5 @@ export interface McpSystemSurface {
   inspectorSnapshot: (input: McpInspectorCloseInput) => McpInspectorSessionSnapshot;
   inspectorClose: (input: McpInspectorCloseInput) => Promise<McpInspectorSessionSnapshot>;
   subscribeInspector: (sessionId: string, listener: (event: McpInspectorEvent) => void) => () => void;
+  attachInspectorLease: (leaseId: string, listener: (event: McpInspectorEvent) => void) => () => void;
 }

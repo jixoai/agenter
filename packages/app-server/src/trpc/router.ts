@@ -824,7 +824,16 @@ export const appRouter = t.router({
       .mutation(async ({ ctx, input }) => await ctx.kernel.mcpProbe(input)),
     inspectorStart: superadminProcedure
       .input(mcpInspectorStartInputSchema)
-      .mutation(async ({ ctx, input }) => await ctx.kernel.mcpInspectorStart(input)),
+      .mutation(async ({ ctx, input }) => {
+        const session = await ctx.kernel.mcpInspectorStart(input);
+        return {
+          ...session,
+          wsUrl: ctx.resolveMcpInspectorWsUrl?.({
+            avatarNickname: input.avatarNickname,
+            leaseId: session.leaseId,
+          }),
+        };
+      }),
     inspectorSnapshot: superadminProcedure
       .input(mcpInspectorSessionInputSchema)
       .query(async ({ ctx, input }) => await ctx.kernel.mcpInspectorSnapshot(input)),

@@ -5,6 +5,7 @@ import { join } from "node:path";
 
 import { createAgenterClient, type AuthDraftEvent, type AuthKvEvent } from "@agenter/client-sdk";
 import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
+import { WebSocket } from "ws";
 
 import { type DaemonLauncherIdentity } from "../src/daemon-runtime-descriptor";
 import {
@@ -292,6 +293,37 @@ describe("Feature: cli server contracts", () => {
     expect(mediaResponse.status).toBe(200);
     expect(mediaResponse.headers.get("content-type")).toBe("image/png");
     expect([...mediaBytes]).toEqual([137, 80, 78, 71]);
+  });
+
+  test("Scenario: Given an inspector websocket lease When the lease is unknown Then the daemon reports a structured error and closes", async () => {
+    const { dir, workspace } = createWorkspaceRoot();
+    const handle = await startTrpcServer({
+      host: "127.0.0.1",
+      port: 0,
+      globalSessionRoot: join(dir, "sessions"),
+      workspacesPath: join(dir, "workspaces.yaml"),
+      workspaceCwd: workspace,
+      homeDir: join(dir, "home"),
+    });
+    handles.push(handle);
+
+    const messages: unknown[] = [];
+    const closeCode = await new Promise<number>((resolveClose, rejectClose) => {
+      const ws = new WebSocket(`ws://${handle.host}:${handle.port}/mcp/inspector/missing-lease`);
+      ws.on("message", (data) => {
+        messages.push(JSON.parse(data.toString()) as unknown);
+      });
+      ws.on("close", (code) => resolveClose(code));
+      ws.on("error", rejectClose);
+    });
+
+    expect(closeCode).toBe(1011);
+    expect(messages).toEqual([
+      {
+        type: "error",
+        error: "mcp inspector lease not found: missing-lease",
+      },
+    ]);
   });
 
   test("Scenario: Given cross-origin HTTP tRPC queries When requesting runtime snapshot Then the /trpc prefix is rewritten and CORS headers are present", async () => {

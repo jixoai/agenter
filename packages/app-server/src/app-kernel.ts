@@ -6263,6 +6263,16 @@ export class AppKernel {
     );
   }
 
+  async attachMcpInspectorLease(
+    input: { avatarNickname?: string | null; leaseId: string },
+    listener: (event: McpInspectorEvent) => void,
+  ): Promise<() => void> {
+    return (await this.resolveMcpSurface({ avatarNickname: input.avatarNickname })).attachInspectorLease(
+      input.leaseId,
+      listener,
+    );
+  }
+
   private async refreshRuntimesForWorkspaceSettingsSave(input: {
     workspacePath: string;
     avatar?: string;

@@ -80,6 +80,7 @@ interface McpProbeSession {
 
 interface McpInspectorSession {
   sessionId: string;
+  leaseId: string;
   state: McpInspectorState;
   child: ChildProcessWithoutNullStreams;
   configPath: string;
@@ -96,6 +97,8 @@ interface McpInspectorSession {
   closedAt?: string;
   nextLogId: number;
   closeRequested: boolean;
+  leaseAttached: boolean;
+  leaseClaimTimer: ReturnType<typeof setTimeout> | null;
 }
 
 const actionError = (error: unknown): string => (error instanceof Error ? error.message : String(error));
@@ -134,6 +137,7 @@ const createPromptArguments = (argumentsInput: McpJsonObject | undefined): Recor
 };
 
 const INSPECTOR_LOG_LIMIT = 500;
+const INSPECTOR_LEASE_CLAIM_TIMEOUT_MS = 30_000;
 
 const stripAnsi = (input: string): string => input.replace(/\u001b\[[0-?]*[ -/]*[@-~]/gu, "");
 
@@ -301,6 +305,7 @@ export class McpSystem {
   private readonly sessions = new Map<string, McpLiveSession>();
   private readonly probeSessions = new Map<string, McpProbeSession>();
   private readonly inspectorSessions = new Map<string, McpInspectorSession>();
+  private readonly inspectorSessionIdsByLease = new Map<string, string>();
   private readonly inspectorListeners = new Map<string, Set<(event: McpInspectorEvent) => void>>();
   private readonly locks = new Map<string, Promise<unknown>>();
   private closed = false;
@@ -341,10 +346,12 @@ export class McpSystem {
     }
     this.probeSessions.clear();
     for (const session of this.inspectorSessions.values()) {
+      this.clearInspectorLeaseTimer(session);
       this.killInspectorProcess(session);
       this.unlinkInspectorConfig(session);
     }
     this.inspectorSessions.clear();
+    this.inspectorSessionIdsByLease.clear();
     this.inspectorListeners.clear();
     this.store.close();
   }
@@ -664,6 +671,7 @@ export class McpSystem {
     const name = input.name?.trim() || "inspector";
     const projectPath = input.projectPath ? normalizeProjectPath(input.projectPath) : this.rootWorkspacePath;
     const sessionId = randomUUID();
+    const leaseId = randomUUID();
     const inspectorServerName = name.replace(/[^a-zA-Z0-9_.-]/gu, "-") || "mcp";
     const clientPort = await reserveTcpPort();
     const serverPort = await reserveTcpPort();
@@ -699,6 +707,7 @@ export class McpSystem {
     const now = new Date().toISOString();
     const session: McpInspectorSession = {
       sessionId,
+      leaseId,
       state: "starting",
       child,
       configPath,
@@ -710,8 +719,12 @@ export class McpSystem {
       updatedAt: now,
       nextLogId: 1,
       closeRequested: false,
+      leaseAttached: false,
+      leaseClaimTimer: null,
     };
     this.inspectorSessions.set(sessionId, session);
+    this.inspectorSessionIdsByLease.set(leaseId, sessionId);
+    this.armInspectorLeaseClaimTimer(session);
     this.appendInspectorLog(session, "system", `bunx ${args.map((arg) => JSON.stringify(arg)).join(" ")}`);
     this.emitInspectorSnapshot(session);
 
@@ -738,6 +751,8 @@ export class McpSystem {
       if (session.closeRequested) {
         session.closedAt = session.updatedAt;
       }
+      this.clearInspectorLeaseTimer(session);
+      this.inspectorSessionIdsByLease.delete(session.leaseId);
       this.unlinkInspectorConfig(session);
       this.emitInspectorSnapshot(session);
     });
@@ -755,6 +770,8 @@ export class McpSystem {
     session.state = "closed";
     session.closedAt = new Date().toISOString();
     session.updatedAt = session.closedAt;
+    this.clearInspectorLeaseTimer(session);
+    this.inspectorSessionIdsByLease.delete(session.leaseId);
     this.killInspectorProcess(session);
     this.unlinkInspectorConfig(session);
     this.appendInspectorLog(session, "system", "inspector session closed");
@@ -775,6 +792,29 @@ export class McpSystem {
       if (listeners.size === 0) {
         this.inspectorListeners.delete(sessionId);
       }
+    };
+  }
+
+  attachInspectorLease(leaseId: string, listener: (event: McpInspectorEvent) => void): () => void {
+    const session = this.requireInspectorSessionByLease(leaseId);
+    if (session.leaseAttached) {
+      throw new Error(`mcp inspector lease already attached: ${leaseId}`);
+    }
+    session.leaseAttached = true;
+    this.clearInspectorLeaseTimer(session);
+    const unsubscribe = this.subscribeInspector(session.sessionId, listener);
+    let released = false;
+    return () => {
+      if (released) {
+        return;
+      }
+      released = true;
+      unsubscribe();
+      session.leaseAttached = false;
+      if (this.isInspectorTerminal(session)) {
+        return;
+      }
+      void this.inspectorClose({ sessionId: session.sessionId }).catch(() => undefined);
     };
   }
 
@@ -981,9 +1021,18 @@ export class McpSystem {
     return session;
   }
 
+  private requireInspectorSessionByLease(leaseId: string): McpInspectorSession {
+    const sessionId = this.inspectorSessionIdsByLease.get(leaseId.trim());
+    if (!sessionId) {
+      throw new Error(`mcp inspector lease not found: ${leaseId}`);
+    }
+    return this.requireInspectorSession(sessionId);
+  }
+
   private snapshotInspectorSession(session: McpInspectorSession): McpInspectorSessionSnapshot {
     return {
       sessionId: session.sessionId,
+      leaseId: session.leaseId,
       state: session.state,
       url: session.url,
       command: session.command,
@@ -997,6 +1046,29 @@ export class McpSystem {
       updatedAt: session.updatedAt,
       closedAt: session.closedAt,
     };
+  }
+
+  private isInspectorTerminal(session: McpInspectorSession): boolean {
+    return session.state === "closed" || session.state === "exited" || session.state === "failed";
+  }
+
+  private armInspectorLeaseClaimTimer(session: McpInspectorSession): void {
+    this.clearInspectorLeaseTimer(session);
+    session.leaseClaimTimer = setTimeout(() => {
+      if (session.leaseAttached || this.isInspectorTerminal(session)) {
+        return;
+      }
+      void this.inspectorClose({ sessionId: session.sessionId }).catch(() => undefined);
+    }, INSPECTOR_LEASE_CLAIM_TIMEOUT_MS);
+    session.leaseClaimTimer.unref?.();
+  }
+
+  private clearInspectorLeaseTimer(session: McpInspectorSession): void {
+    if (!session.leaseClaimTimer) {
+      return;
+    }
+    clearTimeout(session.leaseClaimTimer);
+    session.leaseClaimTimer = null;
   }
 
   private appendInspectorLog(session: McpInspectorSession, stream: McpInspectorLogEntry["stream"], text: string): void {

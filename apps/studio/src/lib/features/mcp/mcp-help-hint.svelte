@@ -40,8 +40,8 @@
 	class={className}
 >
 	{#if mode === 'mono'}
-		<pre class="max-w-[28rem] whitespace-pre-wrap break-words text-left font-mono text-[0.7rem] leading-5 text-foreground">{textContext}</pre>
+		<pre class="w-[28rem] max-w-[calc(100vw-2rem)] whitespace-pre-wrap break-words text-left font-mono text-[0.7rem] leading-5 text-foreground">{textContext}</pre>
 	{:else}
-		<div class="max-w-[24rem] whitespace-pre-wrap text-left text-xs leading-5 text-foreground">{textContext}</div>
+		<div class="w-[24rem] max-w-[calc(100vw-2rem)] whitespace-pre-wrap text-left text-xs leading-5 text-foreground">{textContext}</div>
 	{/if}
 </HelpHint>

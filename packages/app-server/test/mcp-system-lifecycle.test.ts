@@ -453,6 +453,7 @@ describe("Feature: mcpSystem lifecycle", () => {
       unsubscribe();
 
       expect(started.command).toBe("bunx");
+      expect(started.leaseId).toMatch(/^[0-9a-f-]+$/u);
       expect(started.args).toContain("@modelcontextprotocol/inspector");
       expect(spawns[0]?.command).toBe("bunx");
       expect(spawns[0]?.options.cwd).toBe("/repo/app");
@@ -467,6 +468,39 @@ describe("Feature: mcpSystem lifecycle", () => {
       expect(existsSync(configPath)).toBe(false);
       expect(JSON.stringify(events)).toContain("snapshot");
       expect(JSON.stringify(events)).toContain("log");
+    } finally {
+      system.close();
+      await Promise.all(fixture.servers.map((server) => server.close().catch(() => undefined)));
+    }
+  });
+
+  test("Scenario: Given an inspector lease When the WebSocket lease is released Then the heavyweight process is closed", async () => {
+    const fixture = createFixtureTransportFactory();
+    const fakeInspectorProcess = createFakeInspectorProcess();
+    const system = createSystem({
+      transportFactory: fixture.factory,
+      inspectorSpawnFactory: () => fakeInspectorProcess,
+    });
+    try {
+      const started = await system.inspectorStart({
+        name: "memory",
+        projectPath: "/repo/app",
+        transport: {
+          kind: "stdio",
+          command: "fixture",
+          args: ["--stdio"],
+        },
+      });
+      const events: unknown[] = [];
+      const releaseLease = system.attachInspectorLease(started.leaseId, (event) => events.push(event));
+
+      releaseLease();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+
+      const closed = system.inspectorSnapshot({ sessionId: started.sessionId });
+      expect(closed.state).toBe("closed");
+      expect(fakeInspectorProcess.killedSignal).toBe("SIGTERM");
+      expect(JSON.stringify(events)).toContain("snapshot");
     } finally {
       system.close();
       await Promise.all(fixture.servers.map((server) => server.close().catch(() => undefined)));

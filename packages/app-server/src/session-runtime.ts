@@ -1627,6 +1627,9 @@ const unavailableMcpSystemSurface: McpSystemSurface = {
   subscribeInspector: () => {
     throw new Error("mcp system surface unavailable");
   },
+  attachInspectorLease: () => {
+    throw new Error("mcp system surface unavailable");
+  },
 };
 
 type RuntimeTerminalManageInviteResult = {

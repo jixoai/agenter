@@ -973,6 +973,9 @@ const createRuntimeLocalHandlers = (input: {
     subscribeInspector: () => {
       throw new Error("mcp inspector events not configured");
     },
+    attachInspectorLease: () => {
+      throw new Error("mcp inspector lease not configured");
+    },
   },
 });
 

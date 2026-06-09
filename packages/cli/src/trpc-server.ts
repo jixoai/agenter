@@ -1,7 +1,8 @@
 import { createReadStream, existsSync } from "node:fs";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
+import type { Socket } from "node:net";
 import { extname, join, normalize, resolve } from "node:path";
-import { Readable } from "node:stream";
+import { Readable, type Duplex } from "node:stream";
 
 import { AppKernel, appRouter, createTrpcContext, readBearerToken, type AppKernelOptions } from "@agenter/app-server";
 import type { MessageAttachment, MessageContactId } from "@agenter/message-system";
@@ -147,6 +148,14 @@ const decodePathMatch = (pathname: string, pattern: RegExp): string[] | null => 
 
 const readRequestHeader = (value: string | string[] | undefined): string | null =>
   Array.isArray(value) ? (value[0] ?? null) : (value ?? null);
+
+const resolveRequestWsProtocol = (req: IncomingMessage): "ws:" | "wss:" => {
+  const forwardedProto = readRequestHeader(req.headers["x-forwarded-proto"])?.toLowerCase();
+  return forwardedProto === "https" ? "wss:" : "ws:";
+};
+
+const resolveRequestHost = (req: IncomingMessage, fallback: string): string =>
+  readRequestHeader(req.headers.host)?.trim() || fallback;
 
 const readJsonBody = async (request: IncomingMessage): Promise<unknown> => {
   const chunks: Uint8Array[] = [];
@@ -512,12 +521,21 @@ export const startTrpcServer = async (options: TrpcServerOptions): Promise<TrpcS
   });
   await kernel.start();
 
+  let actualPort = options.port;
   const trpcHandler = createHTTPHandler({
     router: appRouter,
     createContext: async ({ req }) =>
       await createTrpcContext({
         kernel,
         authorizationHeader: req.headers.authorization ?? null,
+        resolveMcpInspectorWsUrl: ({ avatarNickname, leaseId }) => {
+          const url = new URL(`${resolveRequestWsProtocol(req)}//${resolveRequestHost(req, `${options.host}:${actualPort}`)}`);
+          url.pathname = `/mcp/inspector/${encodeURIComponent(leaseId)}`;
+          if (avatarNickname?.trim()) {
+            url.searchParams.set("avatarNickname", avatarNickname.trim());
+          }
+          return url.toString();
+        },
       }),
   });
 
@@ -1122,6 +1140,14 @@ export const startTrpcServer = async (options: TrpcServerOptions): Promise<TrpcS
     });
   });
 
+  const serverSockets = new Set<Socket>();
+  server.on("connection", (socket) => {
+    serverSockets.add(socket);
+    socket.once("close", () => {
+      serverSockets.delete(socket);
+    });
+  });
+
   const wss = new WebSocketServer({ noServer: true });
   const wsHandler = applyWSSHandler({
     wss,
@@ -1135,8 +1161,58 @@ export const startTrpcServer = async (options: TrpcServerOptions): Promise<TrpcS
           null,
       }),
   });
+  const inspectorWss = new WebSocketServer({ noServer: true });
+  const upgradedSockets = new Set<Duplex>();
+  inspectorWss.on("connection", (ws: WebSocket, req) => {
+    const url = req.url ? new URL(req.url, `http://${options.host}:${actualPort}`) : null;
+    const [leaseId] = decodePathMatch(url?.pathname ?? "", /^\/mcp\/inspector\/([^/]+)$/) ?? [];
+    let releaseLease: (() => void) | null = null;
+    let socketClosed = false;
+    const send = (payload: unknown): void => {
+      try {
+        ws.send(JSON.stringify(payload));
+      } catch {
+        // The close handler owns lease release; failed sends are best-effort telemetry.
+      }
+    };
+    const releaseFromSocket = (): void => {
+      socketClosed = true;
+      releaseLease?.();
+      releaseLease = null;
+    };
+    ws.once("close", releaseFromSocket);
+    ws.once("error", releaseFromSocket);
+    if (!leaseId) {
+      send({ type: "error", error: "mcp inspector lease id is required" });
+      ws.close(1008, "mcp inspector lease id is required");
+      return;
+    }
+    void kernel
+      .attachMcpInspectorLease(
+        {
+          avatarNickname: url?.searchParams.get("avatarNickname") ?? undefined,
+          leaseId,
+        },
+        send,
+      )
+      .then((release) => {
+        if (socketClosed) {
+          release();
+          return;
+        }
+        releaseLease = release;
+      })
+      .catch((error: unknown) => {
+        send({ type: "error", error: error instanceof Error ? error.message : String(error) });
+        ws.close(1011, "mcp inspector lease attach failed");
+      });
+  });
 
   server.on("upgrade", (req, socket, head) => {
+    upgradedSockets.add(socket);
+    socket.once("close", () => {
+      upgradedSockets.delete(socket);
+    });
     const pathname = req.url ? new URL(req.url, `http://${options.host}:${options.port}`).pathname : "";
     const allowedOrigin = resolveAllowedOrigin({
       requestOriginHeader: readRequestHeader(req.headers.origin) ?? undefined,
@@ -1144,6 +1220,12 @@ export const startTrpcServer = async (options: TrpcServerOptions): Promise<TrpcS
     });
     if (readRequestHeader(req.headers.origin) && !allowedOrigin) {
       socket.destroy();
+      return;
+    }
+    if (pathname.startsWith("/mcp/inspector/")) {
+      inspectorWss.handleUpgrade(req, socket, head, (ws: WebSocket) => {
+        inspectorWss.emit("connection", ws, req);
+      });
       return;
     }
     if (!pathname.startsWith("/trpc")) {
@@ -1162,7 +1244,7 @@ export const startTrpcServer = async (options: TrpcServerOptions): Promise<TrpcS
     });
   });
 
-  const actualPort = (server.address() as { port?: number } | null)?.port ?? options.port;
+  actualPort = (server.address() as { port?: number } | null)?.port ?? options.port;
   const homeDir = options.homeDir ?? process.env.HOME ?? process.cwd();
   kernel.setManagedSeatAuthorityUrl(`http://${options.host}:${actualPort}`);
   writeDaemonRuntimeDescriptor({
@@ -1181,12 +1263,28 @@ export const startTrpcServer = async (options: TrpcServerOptions): Promise<TrpcS
     kernel,
     stop: async () => {
       wsHandler.broadcastReconnectNotification();
+      for (const ws of inspectorWss.clients) {
+        ws.terminate();
+      }
+      for (const socket of upgradedSockets) {
+        socket.destroy();
+      }
+      for (const socket of serverSockets) {
+        socket.destroy();
+      }
+      server.closeIdleConnections?.();
+      server.closeAllConnections?.();
+      inspectorWss.close();
       wss.close();
       await kernel.stop();
       try {
         await new Promise<void>((resolveStop, rejectStop) => {
           server.close((error) => {
             if (error) {
+              if ((error as NodeJS.ErrnoException).code === "ERR_SERVER_NOT_RUNNING") {
+                resolveStop();
+                return;
+              }
               rejectStop(error);
               return;
             }
