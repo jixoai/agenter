@@ -41,7 +41,7 @@
   const runtimeId = $derived(
     runtimeIdProp ?? f7route?.params?.runtimeId ?? readRuntimeIdFromLocation() ?? state.initialRuntimeId ?? "",
   );
-  const avatarsHref = $derived(runtimeId ? state.buildHeartbeatListHref(runtimeId) : "/");
+  const avatarsHref = "/";
   const openRecordDetail = (recordId: number): void => {
     const href = state.buildHeartbeatRecordHref(runtimeId, recordId);
     if (f7router) {

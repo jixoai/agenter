@@ -30,17 +30,11 @@
         recordId?: string;
       };
     };
-    f7router?: {
-      back?: (url?: string, options?: { animate?: boolean; force?: boolean }) => void;
-    };
     runtimeId?: string;
     recordId?: string | number;
   };
 
-  let { runtimeId: runtimeIdProp, recordId: recordIdProp, f7route, f7router }: Framework7RouteProps = $props();
-  type PreventableFramework7MouseEvent = MouseEvent & {
-    preventF7Router?: boolean;
-  };
+  let { runtimeId: runtimeIdProp, recordId: recordIdProp, f7route }: Framework7RouteProps = $props();
 
   type CompactDetailTab = "new" | "old";
   type ConfigDetailTab = "diff" | "new" | "old";
@@ -92,19 +86,6 @@
   let configTab = $state<ConfigDetailTab>("diff");
   let loadedDetailKey = $state("");
 
-  const handleBackClick = (event?: PreventableFramework7MouseEvent): void => {
-    event?.preventDefault();
-    event?.stopPropagation();
-    if (event) {
-      event.preventF7Router = true;
-    }
-    if (f7router?.back) {
-      f7router.back(backHref, { animate: true, force: true });
-      return;
-    }
-    window.location.assign(backHref);
-  };
-
   onMount(() => {
     if (runtimeId) {
       void exampleState.openRuntimeId(runtimeId);
@@ -132,10 +113,6 @@
       backLinkUrl={backHref}
       backLinkForce={true}
       backLinkShowText={false}
-      onClickBack={handleBackClick}
-      onBackClick={handleBackClick}
-      onclickback={handleBackClick}
-      onbackclick={handleBackClick}
     />
     <NavTitle>
       <span class="heartbeat-example-record-navbar-title">
