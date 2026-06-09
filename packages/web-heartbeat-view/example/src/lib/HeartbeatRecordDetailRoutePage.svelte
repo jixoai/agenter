@@ -40,18 +40,8 @@
   type ConfigDetailTab = "diff" | "new" | "old";
 
   const exampleState = useHeartbeatExampleState();
-  const readRouteFromLocation = (): { runtimeId: string | null; recordId: string | null } => {
-    const match = /^\/heartbeat\/([^/?#]+)\/records\/([^/?#]+)/u.exec(window.location.pathname);
-    return {
-      runtimeId: match ? decodeURIComponent(match[1]) : null,
-      recordId: match ? decodeURIComponent(match[2]) : null,
-    };
-  };
-  const locationRoute = readRouteFromLocation();
-  const runtimeId = $derived(
-    runtimeIdProp ?? f7route?.params?.runtimeId ?? locationRoute.runtimeId ?? exampleState.initialRuntimeId ?? "",
-  );
-  const recordIdValue = $derived(String(recordIdProp ?? f7route?.params?.recordId ?? locationRoute.recordId ?? ""));
+  const runtimeId = $derived(runtimeIdProp ?? f7route?.params?.runtimeId ?? exampleState.initialRuntimeId ?? "");
+  const recordIdValue = $derived(String(recordIdProp ?? f7route?.params?.recordId ?? exampleState.initialRecordId ?? ""));
   const recordIdNumber = $derived(Number(recordIdValue));
   const backHref = $derived(runtimeId ? exampleState.buildHeartbeatListHref(runtimeId) : "/");
 

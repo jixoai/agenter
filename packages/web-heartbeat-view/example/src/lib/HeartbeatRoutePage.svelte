@@ -28,22 +28,13 @@
         runtimeId?: string;
       };
     };
-    f7router?: {
-      back: (url?: string, options?: { animate?: boolean; force?: boolean }) => void;
-    };
     runtimeId?: string;
   };
 
-  let { runtimeId: runtimeIdProp, f7route, f7router }: Framework7RouteProps = $props();
+  let { runtimeId: runtimeIdProp, f7route }: Framework7RouteProps = $props();
 
   const state = useHeartbeatExampleState();
-  const readRuntimeIdFromLocation = (): string | null => {
-    const match = /^\/heartbeat\/([^/?#]+)/u.exec(window.location.pathname);
-    return match ? decodeURIComponent(match[1]) : null;
-  };
-  const runtimeId = $derived(
-    runtimeIdProp ?? f7route?.params?.runtimeId ?? readRuntimeIdFromLocation() ?? state.initialRuntimeId ?? "",
-  );
+  const runtimeId = $derived(runtimeIdProp ?? f7route?.params?.runtimeId ?? state.initialRuntimeId ?? "");
   const avatarsHref = "/";
   const openRecordDetail = (recordId: number): void => {
     if (state.openHeartbeatRecordRoute(runtimeId, recordId)) {
@@ -150,34 +141,11 @@
     }
   });
 
-  const readCurrentPageName = (): string | null =>
-    typeof document === "undefined"
-      ? null
-      : (document.querySelector(".page-current")?.getAttribute("data-name") ?? null);
-  const readPreviousPageName = (): string | null =>
-    typeof document === "undefined"
-      ? null
-      : (document.querySelector(".page-previous")?.getAttribute("data-name") ?? null);
-  const logBackNavigation = (event: string): void => {
-    heartbeatPerfLog.mark(event, {
+  const logBackIntent = (): void => {
+    heartbeatPerfLog.mark("heartbeat.navigation.backToAvatars:click", {
       runtimeId,
       routePath: f7route?.path ?? null,
       routeUrl: f7route?.url ?? null,
-      currentPage: readCurrentPageName(),
-      previousPage: readPreviousPageName(),
-    });
-  };
-
-  const backToAvatars = (event?: Event): void => {
-    logBackNavigation("heartbeat.navigation.backToAvatars:click");
-    event?.preventDefault();
-    if (!f7router) {
-      logBackNavigation("heartbeat.navigation.backToAvatars:no-router");
-      return;
-    }
-    f7router.back(avatarsHref, { force: true });
-    window.requestAnimationFrame(() => {
-      logBackNavigation("heartbeat.navigation.backToAvatars:after-frame");
     });
   };
 </script>
@@ -186,11 +154,12 @@
   <Navbar>
     <NavLeft>
       <Link
+        back
         iconOnly
         iconF7="chevron_left_ios"
         href={avatarsHref}
         aria-label="Back to Avatars"
-        onClick={backToAvatars}
+        onClick={logBackIntent}
       />
     </NavLeft>
     <NavTitle>

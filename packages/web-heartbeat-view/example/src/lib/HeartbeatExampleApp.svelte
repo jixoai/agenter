@@ -115,8 +115,6 @@
       exampleState.setRouter(view.router ?? null);
       void applyInitialRoute();
     }}
-  >
-    <HeartbeatAvatarDirectoryPage />
-  </View>
+  />
   <HeartbeatConnectionSheet />
 </App>
