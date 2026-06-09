@@ -10,6 +10,7 @@
 	import WorkbenchPageToolbar from '$lib/features/navigation/workbench-page-toolbar.svelte';
 	import WorkbenchScaffold from '$lib/features/navigation/workbench-scaffold.svelte';
 	import { buildMessageRoomHref } from '$lib/features/messages/message-room-location';
+	import { cn } from '$lib/utils';
 	import RuntimePageToolbarContent from './runtime-page-toolbar-content.svelte';
 	import {
 		pickEditableSettingsLayerId,
@@ -342,7 +343,12 @@
 	</div>
 {:else}
 	<WorkbenchScaffold tone="page" body="body" bodyClass="h-full" data-testid="runtime-shell">
-		<div class="runtime-shell__layout-grid grid h-full grid-rows-[auto_minmax(0,1fr)] gap-3">
+		<div
+			class={cn(
+				'runtime-shell__layout-grid grid h-full gap-3',
+				runtimeRouteNotice ? 'grid-rows-[auto_minmax(0,1fr)]' : 'grid-rows-[minmax(0,1fr)]',
+			)}
+		>
 			{#if runtimeRouteNotice}
 				<NoticeBanner
 					tone={runtimeRouteNotice.tone}
