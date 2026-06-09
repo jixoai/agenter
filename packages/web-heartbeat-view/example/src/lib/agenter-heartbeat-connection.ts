@@ -18,6 +18,8 @@ import {
   type SessionEntry,
 } from "@agenter/web-heartbeat-view";
 
+import { heartbeatPerfLog } from "./heartbeat-performance-log";
+
 type ConnectionOptions = {
   wsUrl: string;
   authToken?: string | null;
@@ -100,10 +102,15 @@ export class ClientSdkAgenterHeartbeatConnection implements AgenterHeartbeatConn
   }
 
   async connect(): Promise<void> {
+    const endConnect = heartbeatPerfLog.start("connection.connect", { wsUrl: normalizeWsUrl(this.options.wsUrl) });
     try {
       await this.tryAutoLogin();
       await this.store.connect();
       await this.refreshAvatars();
+      endConnect({
+        connected: this.state.connected,
+        avatars: this.state.avatars.data.length,
+      });
     } catch (error) {
       this.state = {
         ...this.state,
@@ -112,6 +119,8 @@ export class ClientSdkAgenterHeartbeatConnection implements AgenterHeartbeatConn
         connected: false,
       };
       this.emit();
+      heartbeatPerfLog.error("connection.connect", error);
+      endConnect({ connected: false });
     }
   }
 
@@ -123,9 +132,14 @@ export class ClientSdkAgenterHeartbeatConnection implements AgenterHeartbeatConn
   }
 
   async refreshAvatars(): Promise<void> {
+    const endRefresh = heartbeatPerfLog.start("avatars.refresh");
     try {
       await this.store.hydrateGlobalAvatarCatalog({ force: true });
       this.syncFromRuntimeStore();
+      endRefresh({
+        avatars: this.state.avatars.data.length,
+        statuses: Object.keys(this.state.avatarStatuses).length,
+      });
     } catch (error) {
       this.state = {
         ...this.state,
@@ -138,26 +152,39 @@ export class ClientSdkAgenterHeartbeatConnection implements AgenterHeartbeatConn
         error: toErrorMessage(error),
       };
       this.emit();
+      heartbeatPerfLog.error("avatars.refresh", error);
+      endRefresh({ avatars: this.state.avatars.data.length });
       throw error;
     }
   }
 
   private async tryAutoLogin(): Promise<void> {
     if (this.options.authToken?.trim()) {
+      heartbeatPerfLog.mark("auth.autoLogin:skip", { reason: "explicit-token" });
       return;
     }
+    const endAutoLogin = heartbeatPerfLog.start("auth.autoLogin");
     try {
       const result = await this.store.autoLogin();
       if (result.ok) {
         this.store.setAuthToken(result.session.token);
       }
+      endAutoLogin({ ok: result.ok });
     } catch {
       // Auth remains a transport concern; unavailable auto-login should fall through to the explicit connection error path.
+      endAutoLogin({ ok: false });
     }
   }
 
   async openAvatar(input: { avatar: GlobalAvatarCatalogEntry; autoStart?: boolean }): Promise<HeartbeatTargetIdentity> {
     // Avatar Heartbeat is a DB target even when no runtime is currently pushing live events.
+    const openFields = {
+      runtimeId: input.avatar.runtimeId,
+      avatar: input.avatar.nickname,
+      autoStart: input.autoStart ?? false,
+    };
+    const endOpenAvatar = heartbeatPerfLog.start("avatar.open", openFields);
+    const endCreateSession = heartbeatPerfLog.start("avatar.open.createSession", openFields);
     const session = await this.store.createSession({
       cwd: input.avatar.globalPath,
       avatar: input.avatar.nickname,
@@ -165,6 +192,7 @@ export class ClientSdkAgenterHeartbeatConnection implements AgenterHeartbeatConn
       hydrationMode: "none",
       refreshWorkspaces: false,
     });
+    endCreateSession({ sessionId: session.id });
     const avatarPrincipalId = input.avatar.avatarPrincipalId ?? null;
     const target: HeartbeatTargetIdentity = {
       avatar: input.avatar.nickname,
@@ -183,11 +211,16 @@ export class ClientSdkAgenterHeartbeatConnection implements AgenterHeartbeatConn
     };
     this.emit();
     await this.refreshHeartbeat(target);
+    endOpenAvatar({ sessionId: session.id });
     return target;
   }
 
   async refreshHeartbeat(target: HeartbeatTargetIdentity): Promise<void> {
     // The adapter stays on existing client-sdk session-scoped reads; no Avatar-specific backend endpoint is introduced here.
+    const endRefresh = heartbeatPerfLog.start("heartbeat.records.refresh", {
+      runtimeId: target.runtimeId,
+      sessionId: target.sessionId,
+    });
     const currentRecordsState = this.store.getState().heartbeatRecordsBySession[target.sessionId];
     const pageSize =
       this.options.preserveHeartbeatRecordPageSizeOnRefresh && currentRecordsState?.data?.pageSize
@@ -199,11 +232,23 @@ export class ClientSdkAgenterHeartbeatConnection implements AgenterHeartbeatConn
         : { kind: "latest" as const };
     await this.store.loadHeartbeatRecords(target.sessionId, { pageSize, anchor });
     this.syncFromRuntimeStore();
+    const recordsState = this.store.getState().heartbeatRecordsBySession[target.sessionId];
+    endRefresh({
+      pageSize: recordsState?.data?.pageSize ?? pageSize ?? null,
+      records: recordsState?.data?.records.length ?? null,
+      totalRecords: recordsState?.data?.totalRecords ?? null,
+      anchor: anchor.kind,
+    });
     this.queueHeartbeatSecondaryRefresh(target);
   }
 
   private queueHeartbeatSecondaryRefresh(target: HeartbeatTargetIdentity): void {
     if (this.heartbeatSecondaryRefreshTasks.has(target.sessionId)) {
+      heartbeatPerfLog.mark("heartbeat.secondaryRefresh:skip", {
+        runtimeId: target.runtimeId,
+        sessionId: target.sessionId,
+        reason: "in-flight",
+      });
       return;
     }
     const task = this.refreshHeartbeatSecondary(target).finally(() => {
@@ -214,6 +259,10 @@ export class ClientSdkAgenterHeartbeatConnection implements AgenterHeartbeatConn
   }
 
   private async refreshHeartbeatSecondary(target: HeartbeatTargetIdentity): Promise<void> {
+    const endRefresh = heartbeatPerfLog.start("heartbeat.secondaryRefresh", {
+      runtimeId: target.runtimeId,
+      sessionId: target.sessionId,
+    });
     const results = await Promise.allSettled([
       this.store.hydrateSessionArtifacts(target.sessionId, {
         includeChatHistory: false,
@@ -229,14 +278,20 @@ export class ClientSdkAgenterHeartbeatConnection implements AgenterHeartbeatConn
     ]);
     const rejected = results.find((result): result is PromiseRejectedResult => result.status === "rejected");
     if (rejected && this.state.selectedTarget?.sessionId === target.sessionId) {
+      heartbeatPerfLog.error("heartbeat.secondaryRefresh", rejected.reason, {
+        runtimeId: target.runtimeId,
+        sessionId: target.sessionId,
+      });
       this.state = {
         ...this.state,
         error: toErrorMessage(rejected.reason),
       };
       this.emit();
+      endRefresh({ ok: false });
       return;
     }
     if (this.state.selectedTarget?.sessionId !== target.sessionId) {
+      endRefresh({ ok: true, stale: true });
       return;
     }
     this.state = {
@@ -246,6 +301,13 @@ export class ClientSdkAgenterHeartbeatConnection implements AgenterHeartbeatConn
       error: null,
     };
     this.emit();
+    const runtimeState = this.store.getState();
+    endRefresh({
+      ok: true,
+      groups: runtimeState.heartbeatGroupsBySession[target.sessionId]?.data.length ?? null,
+      modelCalls: runtimeState.modelCallsBySession[target.sessionId]?.length ?? null,
+      configLoaded: this.configBindingsBySession.has(target.sessionId),
+    });
   }
 
   async loadOlderHeartbeat(target: HeartbeatTargetIdentity): Promise<{ items: number; hasMore: boolean }> {
@@ -255,16 +317,39 @@ export class ClientSdkAgenterHeartbeatConnection implements AgenterHeartbeatConn
   }
 
   async loadHeartbeatRecordPage(target: HeartbeatTargetIdentity, anchor: HeartbeatRecordPageAnchor): Promise<void> {
+    const endLoad = heartbeatPerfLog.start("heartbeat.records.page", {
+      runtimeId: target.runtimeId,
+      sessionId: target.sessionId,
+      anchor: anchor.kind,
+    });
     await this.store.loadHeartbeatRecords(target.sessionId, {
       pageSize: this.options.recordPageSize,
       anchor,
     });
     this.syncFromRuntimeStore();
+    const recordsState = this.store.getState().heartbeatRecordsBySession[target.sessionId];
+    endLoad({
+      pageSize: recordsState?.data?.pageSize ?? this.options.recordPageSize ?? null,
+      records: recordsState?.data?.records.length ?? null,
+      totalRecords: recordsState?.data?.totalRecords ?? null,
+    });
   }
 
   async loadHeartbeatRecordDetail(target: HeartbeatTargetIdentity, recordId: number): Promise<void> {
+    const endLoad = heartbeatPerfLog.start("heartbeat.recordDetail", {
+      runtimeId: target.runtimeId,
+      sessionId: target.sessionId,
+      recordId,
+    });
     await this.store.loadHeartbeatRecordDetail(target.sessionId, recordId);
     this.syncFromRuntimeStore();
+    const detailState = this.store.getState().heartbeatRecordDetailsBySession[target.sessionId]?.[recordId];
+    endLoad({
+      loaded: detailState?.loaded ?? false,
+      aiCalls: detailState?.data?.aiCalls.length ?? null,
+      messages: detailState?.data?.messages.length ?? null,
+      sourceRefs: detailState?.data?.sourceRefs.length ?? null,
+    });
   }
 
   async startRuntime(target: HeartbeatTargetIdentity): Promise<void> {

@@ -11,6 +11,7 @@ import {
 
 import { createClientSdkAgenterHeartbeatConnection, type ClientSdkAgenterHeartbeatConnection } from "./agenter-heartbeat-connection";
 import { defaultWsUrl, normalizeMode, normalizeRecordPageSize, normalizeSilentConnect } from "./defaults";
+import { heartbeatPerfLog } from "./heartbeat-performance-log";
 
 export type HeartbeatConnectionPhase = "idle" | "editing" | "connecting" | "success" | "failed";
 
@@ -147,14 +148,21 @@ export class HeartbeatExampleState {
     connection: ClientSdkAgenterHeartbeatConnection,
     avatar: GlobalAvatarCatalogEntry,
   ): Promise<HeartbeatTargetIdentity> {
+    const endOpen = heartbeatPerfLog.start("state.openAvatar", {
+      runtimeId: avatar.runtimeId,
+      avatar: avatar.nickname,
+    });
     this.openingRuntimeId = avatar.runtimeId;
     this.error = null;
     try {
       const target = await connection.openAvatar({ avatar, autoStart: false });
       this.selectedTarget = target;
+      endOpen({ sessionId: target.sessionId });
       return target;
     } catch (error) {
       this.error = toErrorMessage(error);
+      heartbeatPerfLog.error("state.openAvatar", error, { runtimeId: avatar.runtimeId });
+      endOpen({ ok: false });
       throw error;
     } finally {
       this.openingRuntimeId = null;
@@ -165,12 +173,19 @@ export class HeartbeatExampleState {
     connection: ClientSdkAgenterHeartbeatConnection,
     runtimeId: string,
   ): Promise<void> {
+    const endOpen = heartbeatPerfLog.start("state.openRuntimeId", { runtimeId });
+    if (this.selectedTarget?.runtimeId === runtimeId && this.connectionState.selectedHeartbeat) {
+      endOpen({ ok: true, skipped: true, reason: "already-selected" });
+      return;
+    }
     const avatar = connection.state.avatars.data.find((entry) => entry.runtimeId === runtimeId);
     if (!avatar) {
       this.error = `Heartbeat target ${runtimeId} was not returned by this Agenter target.`;
+      endOpen({ ok: false, reason: "avatar-not-found" });
       return;
     }
     await this.openAvatarWithConnection(connection, avatar);
+    endOpen({ ok: true });
   }
 
   async refreshSelectedHeartbeat(): Promise<void> {
@@ -346,6 +361,7 @@ export class HeartbeatExampleState {
 
   private async connectFromSource(source: ConnectionAttemptSource): Promise<void> {
     if (this.connectTask) {
+      heartbeatPerfLog.mark("state.connect:join", { source });
       if (source === "visible") {
         this.connectionSheetOpen = true;
       }
@@ -361,6 +377,11 @@ export class HeartbeatExampleState {
   }
 
   private async connectInternal(source: ConnectionAttemptSource): Promise<void> {
+    const endConnect = heartbeatPerfLog.start("state.connect", {
+      source,
+      silentConnect: this.silentConnect,
+      hasInitialRuntime: this.initialRuntimeId !== null,
+    });
     this.clearConnectionCloseTimer();
     this.connecting = true;
     this.connectionPhase = "connecting";
@@ -385,6 +406,7 @@ export class HeartbeatExampleState {
         this.error = next.state.error ?? "Agenter connection failed.";
         this.connectionPhase = "failed";
         this.connectionSheetOpen = true;
+        endConnect({ ok: false, reason: "not-connected" });
         return;
       }
       this.error = null;
@@ -395,10 +417,17 @@ export class HeartbeatExampleState {
       } else {
         this.connectionSheetOpen = false;
       }
+      endConnect({
+        ok: true,
+        avatars: this.connectionState.avatars.data.length,
+        selectedRuntime: this.selectedTarget?.runtimeId ?? null,
+      });
     } catch (error) {
       this.error = toErrorMessage(error);
       this.connectionPhase = "failed";
       this.connectionSheetOpen = true;
+      heartbeatPerfLog.error("state.connect", error, { source });
+      endConnect({ ok: false });
     } finally {
       this.connecting = false;
     }
