@@ -114,7 +114,7 @@ const recordsPage = (records: HeartbeatRecordItem[]): HeartbeatRecordPage => ({
   totalPages: records.length > 0 ? 1 : 0,
   windowTotalRecords: records.length,
   windowTotalPages: records.length > 0 ? 1 : 0,
-  latestRecordId: records[0]?.id ?? null,
+  latestRecordId: records[records.length - 1]?.id ?? null,
   anchor: { kind: "latest" },
   hasOlder: false,
   hasNewer: false,
@@ -696,6 +696,39 @@ describe("Feature: HeartbeatView DOM capability contract", () => {
     expect(openedRecordIds).toEqual([104]);
     expect(inlineDetailLoads).toBe(0);
     expect(document.querySelector('[data-testid="heartbeat-record-detail"]')).toBeNull();
+  });
+
+  test("Scenario: Given a latest record page returned oldest first When the record list renders Then newest records appear first", async () => {
+    const olderRecord = heartbeatRecord({
+      id: 104,
+      kind: "model_call",
+      previewText: "Older model run",
+    });
+    const newerRecord = heartbeatRecord({
+      id: 105,
+      kind: "config",
+      previewText: "Newer config update",
+    });
+    const component = mount(HeartbeatView, {
+      target: document.body,
+      props: {
+        mode: "readonly",
+        avatarLabel: "Ada",
+        state: {
+          sessionStatus: "running",
+          groupsState: completeLoadedState([]),
+          recordsState: completeLoadedResource(recordsPage([olderRecord, newerRecord])),
+        },
+      },
+    });
+    trackMountedComponent(component);
+
+    await waitForDocumentText("Config");
+    const renderedRecordIds = Array.from(
+      document.querySelectorAll<HTMLElement>('article[data-testid^="heartbeat-record-"]'),
+    ).map((node) => node.dataset.testid);
+
+    expect(renderedRecordIds).toEqual(["heartbeat-record-105", "heartbeat-record-104"]);
   });
 
   test("Scenario: Given compact record without usage payload When the list card renders Then sample compression numbers are not invented", async () => {

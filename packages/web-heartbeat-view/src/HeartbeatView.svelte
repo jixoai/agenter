@@ -32,6 +32,7 @@
   const recordsResource = $derived(viewState.recordsState ?? null);
   const recordsPage = $derived(recordsResource?.data ?? null);
   const records = $derived(recordsPage?.records ?? []);
+  const displayRecords = $derived([...records].reverse());
   const hasRecordResource = $derived(Boolean(recordsResource));
   const groups = $derived(buildHeartbeatDisplayGroups(viewState.groupsState.data));
   const selectedRecord = $derived(callbacks.onOpenRecordDetail ? null : records.find((record) => record.id === selectedRecordId) ?? null);
@@ -170,7 +171,7 @@
       {/if}
       {#if records.length > 0}
         <div class="ag-heartbeat-record-list" data-testid="heartbeat-record-list">
-          {#each records as record (record.id)}
+          {#each displayRecords as record (record.id)}
             {@const recordHref = callbacks.recordDetailHref?.(record.id)}
             <HeartbeatRecordCard
               {record}
