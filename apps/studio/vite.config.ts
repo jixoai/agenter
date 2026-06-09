@@ -61,6 +61,9 @@ const createConfig = async (): Promise<UserConfig & { test: InlineConfig }> => {
   const isVitest = Boolean(process.env.VITEST);
   return {
     plugins: [bitsUiVirtualStylePlugin(), tailwindcss(), sveltekit()],
+    define: {
+      __LEGACY_WEB_HEARTBEAT_VIEW__: JSON.stringify(process.env.Legacy_WEB_HEARTBEAT_VIEW === 'true')
+    },
     resolve: {
       dedupe: codemirrorDedupe
     },
@@ -121,7 +124,7 @@ const createConfig = async (): Promise<UserConfig & { test: InlineConfig }> => {
               browser: 'chromium'
             }]
           }
-        }
+        },
       }]
     }
   } satisfies UserConfig & { test: InlineConfig };

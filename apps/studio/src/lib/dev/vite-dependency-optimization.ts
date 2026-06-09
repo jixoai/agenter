@@ -1,4 +1,5 @@
 export const TERMINAL_VIEW_WORKSPACE_PACKAGE = "@agenter/terminal-view";
+export const WEB_HEARTBEAT_VIEW_WORKSPACE_PACKAGE = "@agenter/web-heartbeat-view";
 export const JIXO_CODEMIRROR_WORKSPACE_PACKAGE = "@jixo/codemirror";
 
 export const codemirrorDedupe = [
@@ -15,7 +16,11 @@ export const codemirrorDedupe = [
 
 // Workspace source packages whose Svelte/components exports can change while
 // the Studio dev server stays alive must not be snapshotted into `.vite/deps`.
-export const workspaceSourceDependencyExcludes = [TERMINAL_VIEW_WORKSPACE_PACKAGE, JIXO_CODEMIRROR_WORKSPACE_PACKAGE];
+export const workspaceSourceDependencyExcludes = [
+  TERMINAL_VIEW_WORKSPACE_PACKAGE,
+  WEB_HEARTBEAT_VIEW_WORKSPACE_PACKAGE,
+  JIXO_CODEMIRROR_WORKSPACE_PACKAGE,
+];
 
 export const appOptimizeDepsInclude = [
   ...codemirrorDedupe,
@@ -37,4 +42,8 @@ export const appOptimizeDepsInclude = [
 // Browser-based Vitest runs start from a fresh Vite server, so prebundling the
 // terminal-view workspace package there avoids mid-run optimize reloads without
 // reintroducing stale long-lived dev-host snapshots.
-export const appVitestOptimizeDepsInclude = [...appOptimizeDepsInclude, TERMINAL_VIEW_WORKSPACE_PACKAGE];
+export const appVitestOptimizeDepsInclude = [
+  ...appOptimizeDepsInclude,
+  TERMINAL_VIEW_WORKSPACE_PACKAGE,
+  WEB_HEARTBEAT_VIEW_WORKSPACE_PACKAGE,
+];

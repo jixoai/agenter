@@ -17,6 +17,7 @@
 		RuntimeHeartbeatConfigDraft,
 	} from './runtime-heartbeat-config-state';
 	import RuntimeStageAttention from './runtime-stage-attention.svelte';
+	import RuntimeStageHeartbeatEmbed from './runtime-stage-heartbeat-embed.svelte';
 	import RuntimeStageHeartbeat from './runtime-stage-heartbeat.svelte';
 	import RuntimeStageSettings from './runtime-stage-settings.svelte';
 	import type { RuntimeTabId } from './runtime-shell-state';
@@ -85,26 +86,30 @@
 <Scaffold.Root class="h-full" data-testid="runtime-primary-stage">
 	<Scaffold.Body class="h-full">
 		{#if tab === 'heartbeat'}
-			<RuntimeStageHeartbeat
-				sessionStatus={session.status}
-				schedulerState={heartbeatSchedulerState}
-				groupsState={heartbeatGroups}
-				modelCalls={modelCalls}
-				attention={runtime?.attention ?? null}
-				attentionDelivery={runtime?.attentionDelivery ?? null}
-				compactPending={heartbeatCompactPending}
-				compactDisabled={heartbeatCompactDisabled}
-				onRequestCompact={onRequestHeartbeatCompact}
-				configBinding={heartbeatConfigBinding}
-				configLoading={heartbeatConfigLoading}
-				configSaving={heartbeatConfigSaving}
-				configError={heartbeatConfigError}
-				{sessionIconUrl}
-				{avatarLabel}
-				onLoadOlder={onLoadOlderHeartbeat}
-				onRefreshConfig={onRefreshHeartbeatConfig}
-				onSaveConfig={onSaveHeartbeatConfig}
-			/>
+			{#if __LEGACY_WEB_HEARTBEAT_VIEW__}
+				<RuntimeStageHeartbeat
+					sessionStatus={session.status}
+					schedulerState={heartbeatSchedulerState}
+					groupsState={heartbeatGroups}
+					modelCalls={modelCalls}
+					attention={runtime?.attention ?? null}
+					attentionDelivery={runtime?.attentionDelivery ?? null}
+					compactPending={heartbeatCompactPending}
+					compactDisabled={heartbeatCompactDisabled}
+					onRequestCompact={onRequestHeartbeatCompact}
+					configBinding={heartbeatConfigBinding}
+					configLoading={heartbeatConfigLoading}
+					configSaving={heartbeatConfigSaving}
+					configError={heartbeatConfigError}
+					{sessionIconUrl}
+					{avatarLabel}
+					onLoadOlder={onLoadOlderHeartbeat}
+					onRefreshConfig={onRefreshHeartbeatConfig}
+					onSaveConfig={onSaveHeartbeatConfig}
+				/>
+			{:else}
+				<RuntimeStageHeartbeatEmbed sessionId={session.id} {avatarLabel} />
+			{/if}
 		{:else if tab === 'attention'}
 			<RuntimeStageAttention
 				sessionId={session.id}

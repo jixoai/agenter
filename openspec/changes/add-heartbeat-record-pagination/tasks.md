@@ -35,9 +35,10 @@
 - [x] 4.5 Implement package-owned record list/detail presentation in `@agenter/web-heartbeat-view`, including a data-driven `ModelRunCard` with chip-fit math, input-chip derivation, line-duration law, compression-style `compact` cards, changed-controls `config` cards, and mobile-first list/detail navigation.
 - [x] 4.6 Implement selected-record detail components for `model_call`, `compact`, and `config`: vertical sticky-step Model Run detail, Compact `New Context | Old Context` tabs, and Config YAML `Diff | New | Old` tabs.
 - [x] 4.7 Integrate the new record/list/detail contract into `@agenter/web-heartbeat-view:example`, including page-window controls and selected-detail behavior.
-- [ ] 4.8 Decide with the user before touching Studio migration; completion condition: Studio files are not rebound to the new record contract unless that work is explicitly authorized.
+- [x] 4.8 Decide with the user before touching Studio migration; completion condition: Studio files are not rebound to the new record contract unless that work is explicitly authorized.
 - [x] 4.9 Add concise intent comments at critical effect points derived from `plans/plan.md`, especially around record classification, anchor invalidation, and detail reconstruction boundaries.
 - [x] 4.10 Update only the task checkboxes completed in the current working context, and pair those checkbox updates with matching implementation or BDD evidence commits.
+- [x] 4.11 Integrate `@agenter/web-heartbeat-view` into Studio as Studio-owned same-origin app-view routes, with a split list/detail iframe host and `Legacy_WEB_HEARTBEAT_VIEW=true` as the legacy opt-in.
 
 ## 5. Verification
 
@@ -46,6 +47,7 @@
 - [x] 5.3 Start `@agenter/web-heartbeat-view:example`, then verify mobile and desktop list/detail behavior, no horizontal overflow, latest/fixed page anchors, Model Run detail steps, Compact tabs, and Config YAML tabs with real browser evidence.
 - [x] 5.4 Run `bun run openspec:vision -- validate add-heartbeat-record-pagination`.
 - [x] 5.5 Run `bun run openspec:vision -- commit-check add-heartbeat-record-pagination --phase self-review` before writing final review evidence.
+- [x] 5.6 Verify Studio Heartbeat app-view with targeted Studio unit tests and same-origin browser smoke: default avatar Heartbeat renders two iframes, list shows mixed records, selecting record `2` updates the detail iframe to `/records/2`, and Model Run detail content loads.
 
 ## 6. Self-Review / Archive
 

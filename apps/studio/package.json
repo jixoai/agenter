@@ -36,6 +36,7 @@
     "@agenter/svelte-components": "workspace:*",
     "@agenter/terminal-view": "workspace:*",
     "@agenter/web-chat-view": "workspace:*",
+    "@agenter/web-heartbeat-view": "workspace:*",
     "@agenter/web-components": "workspace:*",
     "@jixo/codemirror": "workspace:*",
     "@codemirror/autocomplete": "^6.20.1",

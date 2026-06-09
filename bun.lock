@@ -57,6 +57,7 @@
         "@agenter/terminal-view": "workspace:*",
         "@agenter/web-chat-view": "workspace:*",
         "@agenter/web-components": "workspace:*",
+        "@agenter/web-heartbeat-view": "workspace:*",
         "@codemirror/autocomplete": "^6.20.1",
         "@codemirror/lang-json": "^6.0.2",
         "@codemirror/lang-markdown": "^6.5.0",

@@ -5,6 +5,7 @@ import {
   appVitestOptimizeDepsInclude,
   JIXO_CODEMIRROR_WORKSPACE_PACKAGE,
   TERMINAL_VIEW_WORKSPACE_PACKAGE,
+  WEB_HEARTBEAT_VIEW_WORKSPACE_PACKAGE,
   workspaceSourceDependencyExcludes,
 } from "./vite-dependency-optimization";
 
@@ -19,11 +20,17 @@ describe("Feature: Studio Vite dependency optimization law", () => {
     expect(appOptimizeDepsInclude).not.toContain(JIXO_CODEMIRROR_WORKSPACE_PACKAGE);
   });
 
+  test("Scenario: Given the Heartbeat app-view imports the workspace package When Studio defines optimizeDeps Then Heartbeat Svelte source stays outside prebundling", () => {
+    expect(workspaceSourceDependencyExcludes).toContain(WEB_HEARTBEAT_VIEW_WORKSPACE_PACKAGE);
+    expect(appOptimizeDepsInclude).not.toContain(WEB_HEARTBEAT_VIEW_WORKSPACE_PACKAGE);
+  });
+
   test("Scenario: Given Notes Query uses SQL CodeMirror When Studio defines optimizeDeps Then the SQL language package is deduped with the other CodeMirror atoms", () => {
     expect(appOptimizeDepsInclude).toContain("@codemirror/lang-sql");
   });
 
   test("Scenario: Given browser-based Vitest hosts When optimizeDeps are resolved Then terminal-view is prebundled up front to avoid mid-run optimize reloads", () => {
     expect(appVitestOptimizeDepsInclude).toContain(TERMINAL_VIEW_WORKSPACE_PACKAGE);
+    expect(appVitestOptimizeDepsInclude).toContain(WEB_HEARTBEAT_VIEW_WORKSPACE_PACKAGE);
   });
 });

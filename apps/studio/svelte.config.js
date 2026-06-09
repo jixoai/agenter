@@ -13,6 +13,7 @@ const config = {
       const isNodeModules = pathSegments.includes("node_modules");
       const isAgenterWorkspacePackage =
         normalizedPath.includes("@agenter/web-chat-view") ||
+        normalizedPath.includes("@agenter/web-heartbeat-view") ||
         normalizedPath.includes("@agenter/web-components") ||
         normalizedPath.includes("@jixo/codemirror") ||
         normalizedPath.includes("agenter-app-studio");
