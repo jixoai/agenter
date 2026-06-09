@@ -220,6 +220,9 @@ describe("Feature: web-components foundation", () => {
     const helpHintDefinition = customElements.get(HELP_HINT_TAG) as { styles?: unknown } | undefined;
     expect(String(helpHintDefinition?.styles ?? "")).toContain(":host([open])");
     expect(String(helpHintDefinition?.styles ?? "")).toContain("z-index: 80");
+    expect(String(helpHintDefinition?.styles ?? "")).toContain("position-anchor");
+    expect(String(helpHintDefinition?.styles ?? "")).toContain("@position-try");
+    expect(popup?.getAttribute("data-native-popover")).toBe("false");
   });
 
   test("Scenario: Given a fresh help hint without onboarding opt-in When it first renders Then it stays closed until explicit user intent", async () => {
@@ -361,6 +364,14 @@ describe("Feature: web-components foundation", () => {
     const jsonViewerMenu = jsonViewer.shadowRoot?.querySelector<HTMLElement>(".menu");
     expect(jsonViewerMenu?.getAttribute("part")).toBe(JSON_VIEWER_PARTS.menu);
     expect(jsonViewerMenu?.getAttribute("popover")).toBe("auto");
+    expect(menuTrigger?.getAttribute("style")).toContain("--menu-anchor-name:--agenter-json-viewer-menu-");
+    expect(jsonViewerMenu?.getAttribute("style")).toContain("--menu-anchor-name:--agenter-json-viewer-menu-");
+    expect(jsonViewerMenu?.hasAttribute("data-anchor-positioning")).toBe(true);
+    const jsonViewerDefinition = customElements.get(JSON_VIEWER_TAG) as { styles?: unknown } | undefined;
+    const jsonViewerStyles = String(jsonViewerDefinition?.styles ?? "");
+    expect(jsonViewerStyles).toContain("anchor-name: var(--menu-anchor-name)");
+    expect(jsonViewerStyles).toContain("position-anchor: var(--menu-anchor-name)");
+    expect(jsonViewerStyles).toContain("position-try-fallbacks");
     expect(jsonViewer.shadowRoot?.querySelector(".wrap-toggle")?.getAttribute("part")).toBe(
       JSON_VIEWER_PARTS.wrapToggle,
     );

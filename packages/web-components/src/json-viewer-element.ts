@@ -291,6 +291,7 @@ export class JsonViewerElement extends LitElement {
     }
 
     .menu-trigger {
+      anchor-name: var(--menu-anchor-name);
       border: 1px solid color-mix(in srgb, hsl(var(--border, 214 32% 91%)) 80%, transparent);
       border-radius: 999px;
       background: color-mix(in srgb, hsl(var(--background, 0 0% 100%)) 88%, transparent);
@@ -306,6 +307,7 @@ export class JsonViewerElement extends LitElement {
 
     .menu {
       position: fixed;
+      position-anchor: var(--menu-anchor-name);
       inset: var(--menu-popover-top, 0.75rem) auto auto var(--menu-popover-left, 0.75rem);
       z-index: 10;
       width: min(18rem, var(--menu-popover-max-width, calc(100vw - 1rem)));
@@ -316,6 +318,15 @@ export class JsonViewerElement extends LitElement {
       color: hsl(var(--foreground, 222 47% 11%));
       box-shadow: 0 1rem 2.5rem rgba(15, 23, 42, 0.14);
       padding: 0.5rem;
+    }
+
+    @supports (position-anchor: --agenter-json-viewer-menu-fallback) and (position-area: bottom) {
+      .menu {
+        inset: auto;
+        position-area: bottom span-right;
+        position-try-fallbacks: flip-block, flip-inline, flip-block flip-inline;
+        margin-block-start: 0.375rem;
+      }
     }
 
     .menu[data-native-popover="false"][data-open="false"] {
@@ -496,6 +507,8 @@ export class JsonViewerElement extends LitElement {
 
   private unsubscribeGlobalMode: (() => void) | null = null;
 
+  private readonly menuAnchorName = `--agenter-json-viewer-menu-${Math.random().toString(36).slice(2)}`;
+
   connectedCallback(): void {
     super.connectedCallback();
     this.globalMode = getGlobalJsonViewerModeSnapshot();
@@ -527,6 +540,15 @@ export class JsonViewerElement extends LitElement {
       typeof HTMLElement !== "undefined" &&
       "showPopover" in HTMLElement.prototype &&
       "hidePopover" in HTMLElement.prototype
+    );
+  }
+
+  private supportsCssAnchorPositioning(): boolean {
+    return (
+      typeof CSS !== "undefined" &&
+      typeof CSS.supports === "function" &&
+      CSS.supports("position-anchor: --agenter-json-viewer-menu-fallback") &&
+      CSS.supports("position-area: bottom")
     );
   }
 
@@ -567,7 +589,9 @@ export class JsonViewerElement extends LitElement {
       this.menuOpen = !this.menuOpen;
       return;
     }
-    this.positionMenuPopover(menu);
+    if (!this.supportsCssAnchorPositioning()) {
+      this.positionMenuPopover(menu);
+    }
     if (this.isMenuPopoverOpen(menu)) {
       menu.hidePopover();
       this.menuOpen = false;
@@ -638,6 +662,7 @@ export class JsonViewerElement extends LitElement {
             class="menu-trigger"
             part=${JSON_VIEWER_PARTS.menuTrigger}
             type="button"
+            style=${`--menu-anchor-name:${this.menuAnchorName}`}
             aria-label=${this.menuLabel}
             aria-expanded=${this.menuOpen ? "true" : "false"}
             @click=${() => this.toggleMenuPopover()}
@@ -671,8 +696,10 @@ export class JsonViewerElement extends LitElement {
           part=${JSON_VIEWER_PARTS.menu}
           role="menu"
           popover="auto"
+          style=${`--menu-anchor-name:${this.menuAnchorName}`}
           data-open=${this.menuOpen ? "true" : "false"}
           data-native-popover=${nativePopover ? "true" : "false"}
+          data-anchor-positioning=${this.supportsCssAnchorPositioning() ? "true" : "false"}
           @toggle=${this.handleMenuToggle}
         >
           <div class="menu-label" part=${JSON_VIEWER_PARTS.menuLabel}>This viewer</div>
