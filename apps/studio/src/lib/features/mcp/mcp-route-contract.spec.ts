@@ -47,6 +47,7 @@ describe("Feature: Studio MCP route contract", () => {
     expect(inspectSource).toContain("Visual");
     expect(inspectSource).toContain("Raw");
     expect(inspectSource).toContain("mcp probe");
+    expect(inspectSource).toContain("formatProbeHelp");
     expect(inspectSource).toContain("action: 'open'");
     expect(inspectSource).toContain("action: 'ping'");
     expect(inspectSource).toContain("action: 'read-resource'");
@@ -55,7 +56,12 @@ describe("Feature: Studio MCP route contract", () => {
     expect(inspectSource).toContain("Inspect capability dialog view");
     expect(inspectSource).toContain("mcp-inspect-capability-grid");
     expect(inspectSource).toContain("mcp-config-inspect-capability-dialog");
-    expect(inspectSource).toContain("Seeded from inputSchema.");
+    expect(inspectSource).toContain("mcp-config-heavy-inspector-dialog");
+    expect(inspectSource).toContain("onInspectorStart");
+    expect(inspectSource).toContain("onInspectorClose");
+    expect(inspectSource).toContain("onInspectorSubscribe");
+    expect(inspectSource).toContain("bunx @modelcontextprotocol/inspector");
+    expect(inspectSource).toContain("seeded from inputSchema");
     expect(newFormSource).toContain("Override existing config?");
     expect(newFormSource).toContain("Install requires explicit override");
     expect(configDetailSource).toContain("Add project instance");

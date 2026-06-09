@@ -19,6 +19,10 @@ import type {
   McpCallOutput,
   McpDisableOutput,
   McpEnableOutput,
+  McpInspectorCloseOutput,
+  McpInspectorEvent,
+  McpInspectorSnapshotOutput,
+  McpInspectorStartOutput,
   McpListOutput,
   McpProbeOutput,
   McpRestartOutput,
@@ -634,6 +638,10 @@ const createMockClient = (input: {
   mcpCallMutation?: (input: unknown) => Promise<unknown>;
   mcpInspectMutation?: (input: unknown) => Promise<unknown>;
   mcpProbeMutation?: (input: unknown) => Promise<unknown>;
+  mcpInspectorStartMutation?: (input: unknown) => Promise<unknown>;
+  mcpInspectorSnapshotQuery?: (input: unknown) => Promise<unknown>;
+  mcpInspectorCloseMutation?: (input: unknown) => Promise<unknown>;
+  mcpInspectorEventsSubscription?: (input: unknown, handlers: SubscriptionHandlers) => { unsubscribe: () => void };
   noteCatalogQuery?: (input: { avatarNickname?: string; limit?: number }) => Promise<unknown>;
   noteNotebooksQuery?: (input: { avatarNickname?: string; cursor?: string; limit?: number }) => Promise<unknown>;
   noteSectionsQuery?: (input: {
@@ -2504,6 +2512,59 @@ const createMockClient = (input: {
                   exitCode: 0,
                   parsed: {},
                 },
+        },
+        inspectorStart: {
+          mutate: async (payload: unknown) =>
+            input.mcpInspectorStartMutation
+              ? await input.mcpInspectorStartMutation(payload)
+              : {
+                  sessionId: "inspector-1",
+                  state: "starting",
+                  command: "bunx",
+                  args: ["@modelcontextprotocol/inspector"],
+                  cwd: "/repo/app",
+                  logs: [],
+                  startedAt: "2026-06-07T00:00:00.000Z",
+                  updatedAt: "2026-06-07T00:00:00.000Z",
+                },
+        },
+        inspectorSnapshot: {
+          query: async (payload: unknown) =>
+            input.mcpInspectorSnapshotQuery
+              ? await input.mcpInspectorSnapshotQuery(payload)
+              : {
+                  sessionId: "inspector-1",
+                  state: "ready",
+                  url: "http://127.0.0.1:6274/?MCP_PROXY_AUTH_TOKEN=test",
+                  command: "bunx",
+                  args: ["@modelcontextprotocol/inspector"],
+                  cwd: "/repo/app",
+                  logs: [],
+                  startedAt: "2026-06-07T00:00:00.000Z",
+                  updatedAt: "2026-06-07T00:00:01.000Z",
+                },
+        },
+        inspectorClose: {
+          mutate: async (payload: unknown) =>
+            input.mcpInspectorCloseMutation
+              ? await input.mcpInspectorCloseMutation(payload)
+              : {
+                  sessionId: "inspector-1",
+                  state: "closed",
+                  command: "bunx",
+                  args: ["@modelcontextprotocol/inspector"],
+                  cwd: "/repo/app",
+                  logs: [],
+                  startedAt: "2026-06-07T00:00:00.000Z",
+                  updatedAt: "2026-06-07T00:00:02.000Z",
+                  closedAt: "2026-06-07T00:00:02.000Z",
+                },
+        },
+        inspectorEvents: {
+          subscribe: (payload: unknown, handlers: SubscriptionHandlers) =>
+            input.mcpInspectorEventsSubscription
+              ? input.mcpInspectorEventsSubscription(payload, handlers)
+              : { unsubscribe: () => undefined },
         },
       },
       note: {
@@ -11935,6 +11996,123 @@ describe("Feature: runtime store synchronization", () => {
         probeId: "probe-1",
       },
     ]);
+  });
+
+  test("Scenario: Given MCP inspector TRPC outcomes When runtime store inspector facades are called Then session lifecycle and stream events are forwarded", async () => {
+    const calls: Array<[string, unknown]> = [];
+    let unsubscribed = false;
+    const inspectorStart = {
+      sessionId: "inspector-1",
+      state: "starting",
+      command: "bunx",
+      args: [
+        "@modelcontextprotocol/inspector",
+        "--config",
+        "/avatar/tmp/mcp-inspector-inspector-1.json",
+        "--server",
+        "memory",
+      ],
+      cwd: "/repo/app",
+      logs: [
+        {
+          id: 1,
+          stream: "system",
+          text: 'bunx "@modelcontextprotocol/inspector"',
+          createdAt: "2026-06-07T00:00:00.000Z",
+        },
+      ],
+      startedAt: "2026-06-07T00:00:00.000Z",
+      updatedAt: "2026-06-07T00:00:00.000Z",
+    } satisfies McpInspectorStartOutput;
+    const inspectorSnapshot = {
+      ...inspectorStart,
+      state: "ready",
+      url: "http://127.0.0.1:6274/?MCP_PROXY_AUTH_TOKEN=test",
+      updatedAt: "2026-06-07T00:00:01.000Z",
+    } satisfies McpInspectorSnapshotOutput;
+    const inspectorClose = {
+      ...inspectorSnapshot,
+      state: "closed",
+      closedAt: "2026-06-07T00:00:02.000Z",
+      updatedAt: "2026-06-07T00:00:02.000Z",
+    } satisfies McpInspectorCloseOutput;
+    const event = {
+      type: "snapshot",
+      session: inspectorSnapshot,
+    } satisfies McpInspectorEvent;
+    const store = new RuntimeStore(
+      createMockClient({
+        snapshotQuery: async () => createSnapshot(0),
+        mcpInspectorStartMutation: async (input) => {
+          calls.push(["inspectorStart", input]);
+          return inspectorStart;
+        },
+        mcpInspectorSnapshotQuery: async (input) => {
+          calls.push(["inspectorSnapshot", input]);
+          return inspectorSnapshot;
+        },
+        mcpInspectorCloseMutation: async (input) => {
+          calls.push(["inspectorClose", input]);
+          return inspectorClose;
+        },
+        mcpInspectorEventsSubscription: (input, handlers) => {
+          calls.push(["inspectorEvents", input]);
+          handlers.onData?.(event);
+          return {
+            unsubscribe: () => {
+              unsubscribed = true;
+            },
+          };
+        },
+      }),
+    );
+    const streamedEvents: McpInspectorEvent[] = [];
+
+    await expect(
+      store.startMcpInspector({
+        avatarNickname: "default",
+        name: "memory",
+        projectPath: "/repo/app",
+        transport: { kind: "stdio", command: "memory-mcp", args: ["--stdio"] },
+      }),
+    ).resolves.toEqual(inspectorStart);
+    await expect(
+      store.getMcpInspectorSnapshot({
+        avatarNickname: "default",
+        sessionId: "inspector-1",
+      }),
+    ).resolves.toEqual(inspectorSnapshot);
+    const subscription = store.subscribeMcpInspectorEvents(
+      {
+        avatarNickname: "default",
+        sessionId: "inspector-1",
+      },
+      {
+        onData: (nextEvent) => streamedEvents.push(nextEvent),
+      },
+    );
+    subscription.unsubscribe();
+    await expect(
+      store.closeMcpInspector({
+        avatarNickname: "default",
+        sessionId: "inspector-1",
+      }),
+    ).resolves.toEqual(inspectorClose);
+
+    expect(streamedEvents).toEqual([event]);
+    expect(unsubscribed).toBe(true);
+    expect(calls).toContainEqual([
+      "inspectorStart",
+      {
+        avatarNickname: "default",
+        name: "memory",
+        projectPath: "/repo/app",
+        transport: { kind: "stdio", command: "memory-mcp", args: ["--stdio"] },
+      },
+    ]);
+    expect(calls).toContainEqual(["inspectorSnapshot", { avatarNickname: "default", sessionId: "inspector-1" }]);
+    expect(calls).toContainEqual(["inspectorEvents", { avatarNickname: "default", sessionId: "inspector-1" }]);
+    expect(calls).toContainEqual(["inspectorClose", { avatarNickname: "default", sessionId: "inspector-1" }]);
   });
 
   test("Scenario: Given NoteSystem TRPC outputs When runtime store facades are called Then catalog page and search contracts are preserved", async () => {

@@ -218,6 +218,54 @@ export interface McpProbeCliResult {
   parsed?: unknown;
 }
 
+export interface McpInspectorStartInput {
+  name?: string;
+  projectPath?: string;
+  transport: McpTransportConfig;
+  env?: Record<string, string>;
+}
+
+export interface McpInspectorCloseInput {
+  sessionId: string;
+}
+
+export type McpInspectorState = "starting" | "ready" | "exited" | "failed" | "closed";
+
+export interface McpInspectorLogEntry {
+  id: number;
+  stream: "stdout" | "stderr" | "system";
+  text: string;
+  createdAt: string;
+}
+
+export interface McpInspectorSessionSnapshot {
+  sessionId: string;
+  state: McpInspectorState;
+  url?: string;
+  command: "bunx";
+  args: string[];
+  cwd: string;
+  logs: McpInspectorLogEntry[];
+  exitCode?: number | null;
+  signal?: string | null;
+  error?: string;
+  startedAt: string;
+  updatedAt: string;
+  closedAt?: string;
+}
+
+export type McpInspectorEvent =
+  | {
+      type: "snapshot";
+      session: McpInspectorSessionSnapshot;
+    }
+  | {
+      type: "log";
+      sessionId: string;
+      entry: McpInspectorLogEntry;
+      session: McpInspectorSessionSnapshot;
+    };
+
 export interface McpTransportStartContext {
   name: string;
   projectPath: string;
@@ -267,4 +315,8 @@ export interface McpSystemSurface {
   call: (input: McpCallInput, options?: { signal?: AbortSignal }) => Promise<McpCallResult>;
   inspect: (input: McpInspectInput, options?: { signal?: AbortSignal }) => Promise<McpInspectResult>;
   probe: (input: McpProbeInput, options?: { signal?: AbortSignal }) => Promise<McpProbeCliResult>;
+  inspectorStart: (input: McpInspectorStartInput) => Promise<McpInspectorSessionSnapshot>;
+  inspectorSnapshot: (input: McpInspectorCloseInput) => McpInspectorSessionSnapshot;
+  inspectorClose: (input: McpInspectorCloseInput) => Promise<McpInspectorSessionSnapshot>;
+  subscribeInspector: (sessionId: string, listener: (event: McpInspectorEvent) => void) => () => void;
 }

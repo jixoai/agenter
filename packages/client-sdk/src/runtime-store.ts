@@ -52,6 +52,13 @@ import type {
   McpEnableOutput,
   McpInspectInput,
   McpInspectOutput,
+  McpInspectorCloseInput,
+  McpInspectorCloseOutput,
+  McpInspectorEvent,
+  McpInspectorSnapshotInput,
+  McpInspectorSnapshotOutput,
+  McpInspectorStartInput,
+  McpInspectorStartOutput,
   McpListInput,
   McpListOutput,
   McpProbeInput,
@@ -4277,6 +4284,28 @@ export class RuntimeStore {
 
   async probeMcp(input: McpProbeInput): Promise<McpProbeOutput> {
     return await this.client.trpc.mcp.probe.mutate(input);
+  }
+
+  async startMcpInspector(input: McpInspectorStartInput): Promise<McpInspectorStartOutput> {
+    return await this.client.trpc.mcp.inspectorStart.mutate(input);
+  }
+
+  async getMcpInspectorSnapshot(input: McpInspectorSnapshotInput): Promise<McpInspectorSnapshotOutput> {
+    return await this.client.trpc.mcp.inspectorSnapshot.query(input);
+  }
+
+  async closeMcpInspector(input: McpInspectorCloseInput): Promise<McpInspectorCloseOutput> {
+    return await this.client.trpc.mcp.inspectorClose.mutate(input);
+  }
+
+  subscribeMcpInspectorEvents(
+    input: McpInspectorSnapshotInput,
+    handlers: {
+      onData: (event: McpInspectorEvent) => void;
+      onError?: () => void;
+    },
+  ): SubscriptionHandle {
+    return this.client.trpc.mcp.inspectorEvents.subscribe(input, handlers);
   }
 
   async listNoteCatalog(input: { avatarNickname?: string; limit?: number } = {}): Promise<NoteCatalogOutput> {

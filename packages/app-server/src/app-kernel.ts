@@ -183,6 +183,9 @@ import type {
   McpAddInput,
   McpCallInput,
   McpDisableInput,
+  McpInspectorCloseInput,
+  McpInspectorEvent,
+  McpInspectorStartInput,
   McpInspectInput,
   McpListInput,
   McpProbeInput,
@@ -6227,6 +6230,37 @@ export class AppKernel {
   ): Promise<Awaited<ReturnType<McpSystemSurface["probe"]>>> {
     const { avatarNickname, ...mcpInput } = input;
     return await (await this.resolveMcpSurface({ avatarNickname })).probe(mcpInput);
+  }
+
+  async mcpInspectorStart(
+    input: { avatarNickname?: string | null } & McpInspectorStartInput,
+  ): Promise<Awaited<ReturnType<McpSystemSurface["inspectorStart"]>>> {
+    const { avatarNickname, ...mcpInput } = input;
+    return await (await this.resolveMcpSurface({ avatarNickname })).inspectorStart(mcpInput);
+  }
+
+  async mcpInspectorSnapshot(
+    input: { avatarNickname?: string | null } & McpInspectorCloseInput,
+  ): Promise<ReturnType<McpSystemSurface["inspectorSnapshot"]>> {
+    const { avatarNickname, ...mcpInput } = input;
+    return (await this.resolveMcpSurface({ avatarNickname })).inspectorSnapshot(mcpInput);
+  }
+
+  async mcpInspectorClose(
+    input: { avatarNickname?: string | null } & McpInspectorCloseInput,
+  ): Promise<Awaited<ReturnType<McpSystemSurface["inspectorClose"]>>> {
+    const { avatarNickname, ...mcpInput } = input;
+    return await (await this.resolveMcpSurface({ avatarNickname })).inspectorClose(mcpInput);
+  }
+
+  async onMcpInspectorEvent(
+    input: { avatarNickname?: string | null; sessionId: string },
+    listener: (event: McpInspectorEvent) => void,
+  ): Promise<() => void> {
+    return (await this.resolveMcpSurface({ avatarNickname: input.avatarNickname })).subscribeInspector(
+      input.sessionId,
+      listener,
+    );
   }
 
   private async refreshRuntimesForWorkspaceSettingsSave(input: {

@@ -33,6 +33,7 @@ import {
 } from "../auth-kv-types";
 import type { AnyRuntimeEvent } from "../realtime-types";
 import { settingsKindSchema } from "../realtime-types";
+import type { McpInspectorEvent } from "../mcp-system/types";
 import { t } from "./init";
 
 const sessionIdInput = z.object({ sessionId: z.string().min(1) });
@@ -386,6 +387,15 @@ const mcpProbeInputSchema = mcpAvatarInputSchema.and(
     }),
   ]),
 );
+const mcpInspectorStartInputSchema = mcpAvatarInputSchema.extend({
+  name: z.string().trim().min(1).optional(),
+  projectPath: z.string().trim().min(1).optional(),
+  transport: mcpTransportSchema,
+  env: mcpStringRecordSchema.optional(),
+});
+const mcpInspectorSessionInputSchema = mcpAvatarInputSchema.extend({
+  sessionId: z.string().trim().min(1),
+});
 const noteReferenceInputSchema = z.union([
   z.string().trim().min(1),
   z
@@ -812,6 +822,43 @@ export const appRouter = t.router({
     probe: superadminProcedure
       .input(mcpProbeInputSchema)
       .mutation(async ({ ctx, input }) => await ctx.kernel.mcpProbe(input)),
+    inspectorStart: superadminProcedure
+      .input(mcpInspectorStartInputSchema)
+      .mutation(async ({ ctx, input }) => await ctx.kernel.mcpInspectorStart(input)),
+    inspectorSnapshot: superadminProcedure
+      .input(mcpInspectorSessionInputSchema)
+      .query(async ({ ctx, input }) => await ctx.kernel.mcpInspectorSnapshot(input)),
+    inspectorClose: superadminProcedure
+      .input(mcpInspectorSessionInputSchema)
+      .mutation(async ({ ctx, input }) => await ctx.kernel.mcpInspectorClose(input)),
+    inspectorEvents: superadminProcedure.input(mcpInspectorSessionInputSchema).subscription(({ ctx, input }) => {
+      return observable<McpInspectorEvent>((emit) => {
+        let unsubscribe: (() => void) | null = null;
+        let closed = false;
+        void ctx.kernel
+          .onMcpInspectorEvent(input, (event) => {
+            if (!closed) {
+              emit.next(event);
+            }
+          })
+          .then((nextUnsubscribe) => {
+            if (closed) {
+              nextUnsubscribe();
+              return;
+            }
+            unsubscribe = nextUnsubscribe;
+          })
+          .catch((error: unknown) => {
+            if (!closed) {
+              emit.error(error instanceof Error ? error : new Error(String(error)));
+            }
+          });
+        return () => {
+          closed = true;
+          unsubscribe?.();
+        };
+      });
+    }),
   }),
   session: t.router({
     list: superadminProcedure.query(({ ctx }) => ({ sessions: ctx.kernel.listSessions() })),

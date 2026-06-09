@@ -1,5 +1,14 @@
 <script lang="ts">
-	import type { McpProbeInput, McpProbeOutput } from '@agenter/client-sdk';
+	import type {
+		McpInspectorCloseInput,
+		McpInspectorCloseOutput,
+		McpInspectorEvent,
+		McpInspectorSnapshotOutput,
+		McpInspectorStartInput,
+		McpInspectorStartOutput,
+		McpProbeInput,
+		McpProbeOutput,
+	} from '@agenter/client-sdk';
 
 	import McpAvatarOverview from './mcp-avatar-overview.svelte';
 	import McpConfigDetail from './mcp-config-detail.svelte';
@@ -227,6 +236,41 @@
 		parsed,
 	});
 
+	const buildInspectorSession = (
+		state: McpInspectorSnapshotOutput['state'],
+		url?: string,
+	): McpInspectorSnapshotOutput => ({
+		sessionId: 'inspector-story-1',
+		state,
+		url,
+		command: 'bunx',
+		args: [
+			'@modelcontextprotocol/inspector',
+			'--config',
+			'/avatar/tmp/mcp-inspector-story-1.json',
+			'--server',
+			'browser-tools',
+		],
+		cwd: '/repo/app',
+		logs: [
+			{
+				id: 1,
+				stream: 'system',
+				text: 'bunx "@modelcontextprotocol/inspector" "--config" "/avatar/tmp/mcp-inspector-story-1.json" "--server" "browser-tools"',
+				createdAt: '2026-06-08T00:00:00.000Z',
+			},
+			{
+				id: 2,
+				stream: 'stdout',
+				text: 'MCP Inspector listening on http://127.0.0.1:6274/?MCP_PROXY_AUTH_TOKEN=story',
+				createdAt: '2026-06-08T00:00:01.000Z',
+			},
+		],
+		startedAt: '2026-06-08T00:00:00.000Z',
+		updatedAt: state === 'starting' ? '2026-06-08T00:00:00.000Z' : '2026-06-08T00:00:01.000Z',
+		closedAt: state === 'closed' ? '2026-06-08T00:00:02.000Z' : undefined,
+	});
+
 	const submitGlobal = async (
 		draft: McpGlobalConfigDraft,
 		options: { override?: boolean } = {},
@@ -239,12 +283,19 @@
 	const probeDraft = async (input: McpProbeInput): Promise<McpProbeOutput> => {
 		recordEvent(`probe:${input.action}:${'probeId' in input ? input.probeId : input.name ?? 'draft'}`);
 		if (input.action === 'open') {
+			const transport =
+				input.transport.kind === 'stdio'
+					? {
+							...input.transport,
+							args: input.transport.args ?? [],
+						}
+					: input.transport;
 			return buildProbeOutput(input, {
 				probeId: 'probe-story-1',
 				snapshot: buildProbeSnapshot({
 					name: input.name,
 					projectPath: input.projectPath,
-					transport: input.transport,
+					transport,
 				}),
 			});
 		}
@@ -300,6 +351,35 @@
 						: undefined;
 		return buildProbeOutput(input, result ?? {});
 	};
+
+	const startInspector = async (input: McpInspectorStartInput): Promise<McpInspectorStartOutput> => {
+		recordEvent(`inspector-start:${input.name ?? 'draft'}`);
+		return buildInspectorSession('starting');
+	};
+
+	const closeInspector = async (input: McpInspectorCloseInput): Promise<McpInspectorCloseOutput> => {
+		recordEvent(`inspector-close:${input.sessionId}`);
+		return buildInspectorSession('closed');
+	};
+
+	const subscribeInspector = (
+		input: McpInspectorCloseInput,
+		handlers: {
+			onData: (event: McpInspectorEvent) => void;
+			onError?: () => void;
+		},
+	): { unsubscribe: () => void } => {
+		recordEvent(`inspector-events:${input.sessionId}`);
+		setTimeout(() => {
+			handlers.onData({
+				type: 'snapshot',
+				session: buildInspectorSession('ready', 'http://127.0.0.1:6274/?MCP_PROXY_AUTH_TOKEN=story'),
+			});
+		}, 20);
+		return {
+			unsubscribe: () => recordEvent(`inspector-unsubscribe:${input.sessionId}`),
+		};
+	};
 </script>
 
 <div class="grid h-[58rem] max-h-[calc(100vh-2rem)] min-w-0 grid-rows-[auto_minmax(0,1fr)] border border-border/50" data-testid="mcp-story-harness">
@@ -327,6 +407,9 @@
 					bind:ownerAvatarNickname={draftAvatarNickname}
 					onSubmit={submitGlobal}
 					onProbe={probeDraft}
+					onInspectorStart={startInspector}
+					onInspectorClose={closeInspector}
+					onInspectorSubscribe={subscribeInspector}
 				/>
 			</div>
 		</div>
@@ -350,6 +433,9 @@
 					bind:ownerAvatarNickname={draftAvatarNickname}
 					onSubmit={submitGlobal}
 					onProbe={probeDraft}
+					onInspectorStart={startInspector}
+					onInspectorClose={closeInspector}
+					onInspectorSubscribe={subscribeInspector}
 				/>
 			</div>
 		</div>
@@ -380,6 +466,9 @@
 					}}
 					onSubmitGlobal={submitGlobal}
 					onProbe={probeDraft}
+					onInspectorStart={startInspector}
+					onInspectorClose={closeInspector}
+					onInspectorSubscribe={subscribeInspector}
 					onAddProject={async (nextProjectPath) => {
 						selectedProjectPath = nextProjectPath;
 						recordEvent(`add-project:${nextProjectPath}`);
@@ -429,6 +518,9 @@
 					}}
 					onSubmitGlobal={submitGlobal}
 					onProbe={probeDraft}
+					onInspectorStart={startInspector}
+					onInspectorClose={closeInspector}
+					onInspectorSubscribe={subscribeInspector}
 					onAddProject={async (nextProjectPath) => {
 						selectedProjectPath = nextProjectPath;
 						recordEvent(`add-project:${nextProjectPath}`);

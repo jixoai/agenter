@@ -1,5 +1,15 @@
 <script lang="ts">
-	import type { McpProbeInput, McpProbeOutput } from '@agenter/client-sdk';
+	import type {
+		McpInspectorCloseInput,
+		McpInspectorCloseOutput,
+		McpInspectorEvent,
+		McpInspectorSnapshotOutput,
+		McpInspectorStartInput,
+		McpInspectorStartOutput,
+		McpProbeInput,
+		McpProbeOutput,
+	} from '@agenter/client-sdk';
+	import BugPlayIcon from '@lucide/svelte/icons/bug-play';
 	import HelpCircleIcon from '@lucide/svelte/icons/help-circle';
 	import NetworkIcon from '@lucide/svelte/icons/network';
 	import PlayIcon from '@lucide/svelte/icons/play';
@@ -40,6 +50,7 @@
 		kind: CapabilityKind;
 		items: InspectCapabilityCard[];
 	};
+	type InspectorSubscription = { unsubscribe: () => void };
 	type ProbeOpenParsed = Extract<McpProbeInput, { action: 'open' }> extends never
 		? never
 		: {
@@ -66,11 +77,23 @@
 		pending = false,
 		buildDraft,
 		onProbe,
+		onInspectorStart,
+		onInspectorClose,
+		onInspectorSubscribe,
 	}: {
 		resetKey: string;
 		pending?: boolean;
 		buildDraft: () => McpGlobalConfigDraft;
 		onProbe: (input: McpProbeInput) => Promise<McpProbeOutput>;
+		onInspectorStart?: (input: McpInspectorStartInput) => Promise<McpInspectorStartOutput>;
+		onInspectorClose?: (input: McpInspectorCloseInput) => Promise<McpInspectorCloseOutput>;
+		onInspectorSubscribe?: (
+			input: McpInspectorCloseInput,
+			handlers: {
+				onData: (event: McpInspectorEvent) => void;
+				onError?: () => void;
+			},
+		) => InspectorSubscription;
 	} = $props();
 
 	const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -149,6 +172,37 @@
 		}
 	};
 
+	const formatJson = (value: unknown): string => JSON.stringify(value, null, 2);
+
+	const formatProbeHelp = (input: McpProbeInput | null, output: McpProbeOutput | null = null): string => {
+		if (!input) {
+			return 'mcp probe\n\nstdin: not executed yet';
+		}
+		return [
+			'mcp probe',
+			'',
+			`stdin:\n${formatJson(input)}`,
+			output ? `last exit: ${output.exitCode}` : null,
+			output?.stderr ? `stderr:\n${output.stderr.trim()}` : null,
+		]
+			.filter(Boolean)
+			.join('\n\n');
+	};
+
+	const formatInspectorHelp = (session: McpInspectorSnapshotOutput | null): string => {
+		if (!session) {
+			return 'bunx @modelcontextprotocol/inspector\n\nThe backend will generate a temporary --config file and --server name for the current draft.';
+		}
+		return [
+			`${session.command} ${session.args.map((arg) => JSON.stringify(arg)).join(' ')}`,
+			'',
+			`cwd: ${session.cwd}`,
+			session.url ? `url: ${session.url}` : null,
+		]
+			.filter(Boolean)
+			.join('\n');
+	};
+
 	let projectPath = $state('');
 	let toolName = $state('');
 	let toolArguments = $state('{}');
@@ -160,6 +214,8 @@
 	let probeId = $state<string | null>(null);
 	let probeAvatarNickname = $state<string | null>(null);
 	let lastCliResult = $state<McpProbeOutput | null>(null);
+	let lastOpenProbeInput = $state<McpProbeInput | null>(null);
+	let lastActionProbeInput = $state<McpProbeInput | null>(null);
 	let callResult = $state<unknown | null>(null);
 	let lastResetKey = $state<string | null>(null);
 	let snapshotView = $state<'visual' | 'raw'>('visual');
@@ -173,6 +229,14 @@
 	let activeCapabilityArguments = $state('{}');
 	let activeCapabilityArgumentsDirty = $state(false);
 	let activeCapabilitySchemaKey = $state<string | null>(null);
+	let inspectorDialogOpen = $state(false);
+	let inspectorConfirmCloseOpen = $state(false);
+	let inspectorPending = $state(false);
+	let inspectorReleasePending = $state(false);
+	let inspectorError = $state<string | null>(null);
+	let inspectorAvatarNickname = $state<string | null>(null);
+	let inspectorSession = $state<McpInspectorSnapshotOutput | null>(null);
+	let inspectorSubscription: InspectorSubscription | null = null;
 
 	const toolOptions = $derived.by(() =>
 		(snapshot?.tools ?? []).map((tool, index) => resolveCapabilityProtocolId('tool', tool, `tool_${index + 1}`)),
@@ -280,6 +344,9 @@
 	const activeCapabilityArgumentDraft = $derived.by(() =>
 		activeCapabilitySchema ? stringifySchemaArgumentDraft(activeCapabilitySchema) : '{}',
 	);
+	const inspectHeaderHelp = $derived(formatProbeHelp(lastOpenProbeInput, lastCliResult));
+	const actionHeaderHelp = $derived(formatProbeHelp(lastActionProbeInput, lastCliResult));
+	const inspectorHeaderHelp = $derived(formatInspectorHelp(inspectorSession));
 
 	$effect(() => {
 		if (resetKey === lastResetKey) {
@@ -298,6 +365,8 @@
 		probeId = null;
 		probeAvatarNickname = null;
 		lastCliResult = null;
+		lastOpenProbeInput = null;
+		lastActionProbeInput = null;
 		callResult = null;
 		snapshotView = 'visual';
 		capabilityDialogView = 'call';
@@ -310,6 +379,7 @@
 		activeCapabilityArguments = '{}';
 		activeCapabilityArgumentsDirty = false;
 		activeCapabilitySchemaKey = null;
+		void releaseInspectorSession({ closeDialog: true });
 	});
 
 	$effect(() => {
@@ -358,6 +428,114 @@
 		return trimmed.length > 0 ? trimmed : undefined;
 	};
 
+	const buildOpenProbeInput = (): McpProbeInput => {
+		const draft = buildDraft();
+		return {
+			avatarNickname: draft.avatarNickname,
+			action: 'open',
+			name: draft.name,
+			projectPath: normalizedProjectPath(),
+			transport: draft.transport,
+			env: draft.env,
+		};
+	};
+
+	const buildPingProbeInput = (): McpProbeInput => {
+		if (!probeId || !probeAvatarNickname) {
+			throw new Error('Connect before ping');
+		}
+		return {
+			avatarNickname: probeAvatarNickname,
+			action: 'ping',
+			probeId,
+		};
+	};
+
+	const buildCapabilityProbeInput = (): McpProbeInput => {
+		if (!probeId || !probeAvatarNickname) {
+			throw new Error('Connect before capability actions');
+		}
+		if (!activeCapabilityCanRun || !activeCapability) {
+			throw new Error('Resource templates require a concrete URI before probe can read them');
+		}
+		if (activeCapabilityKind === 'tool') {
+			return {
+				avatarNickname: probeAvatarNickname,
+				action: 'call-tool',
+				probeId,
+				toolName: activeCapability.protocolId,
+				arguments: parseArguments(activeCapabilityArguments),
+			};
+		}
+		if (activeCapabilityKind === 'prompt') {
+			return {
+				avatarNickname: probeAvatarNickname,
+				action: 'get-prompt',
+				probeId,
+				promptName: activeCapability.protocolId,
+				arguments: parseArguments(activeCapabilityArguments),
+			};
+		}
+		return {
+			avatarNickname: probeAvatarNickname,
+			action: 'read-resource',
+			probeId,
+			resourceUri: activeCapability.protocolId,
+		};
+	};
+
+	const activeCapabilityHelp = $derived.by(() => {
+		try {
+			return formatProbeHelp(buildCapabilityProbeInput(), lastCliResult);
+		} catch {
+			return actionHeaderHelp;
+		}
+	});
+
+	const applyInspectorEvent = (event: McpInspectorEvent): void => {
+		inspectorSession = event.session;
+	};
+
+	const clearInspectorSubscription = (): void => {
+		inspectorSubscription?.unsubscribe();
+		inspectorSubscription = null;
+	};
+
+	const releaseInspectorSession = async (options: { closeDialog?: boolean } = {}): Promise<void> => {
+		const session = inspectorSession;
+		const avatarNickname = inspectorAvatarNickname;
+		clearInspectorSubscription();
+		inspectorConfirmCloseOpen = false;
+		if (session && avatarNickname && onInspectorClose) {
+			inspectorReleasePending = true;
+			try {
+				inspectorSession = await onInspectorClose({
+					avatarNickname,
+					sessionId: session.sessionId,
+				});
+			} catch (error) {
+				inspectorError = error instanceof Error ? error.message : String(error);
+				return;
+			} finally {
+				inspectorReleasePending = false;
+			}
+		}
+		inspectorAvatarNickname = null;
+		if (options.closeDialog) {
+			inspectorSession = null;
+			inspectorError = null;
+			inspectorDialogOpen = false;
+		}
+	};
+
+	const requestInspectorDialogClose = (): void => {
+		if (inspectorSession && !inspectorReleasePending) {
+			inspectorConfirmCloseOpen = true;
+			return;
+		}
+		inspectorDialogOpen = false;
+	};
+
 	const closeCurrentProbe = async (): Promise<void> => {
 		const currentProbeId = probeId;
 		const currentAvatarNickname = probeAvatarNickname;
@@ -378,22 +556,16 @@
 		inspectError = null;
 		try {
 			await closeCurrentProbe();
-			const draft = buildDraft();
-			const opened = await onProbe({
-				avatarNickname: draft.avatarNickname,
-				action: 'open',
-				name: draft.name,
-				projectPath: normalizedProjectPath(),
-				transport: draft.transport,
-				env: draft.env,
-			});
+			const openInput = buildOpenProbeInput();
+			lastOpenProbeInput = openInput;
+			const opened = await onProbe(openInput);
 			ensureProbeOk(opened);
 			const openedProbeId = readStringField(opened.parsed, 'probeId');
 			if (!openedProbeId) {
 				throw new Error('mcp probe did not return a probeId');
 			}
 			probeId = openedProbeId;
-			probeAvatarNickname = draft.avatarNickname;
+			probeAvatarNickname = openInput.avatarNickname ?? null;
 			snapshot = parseOpenProbeSnapshot(opened);
 			callResult = null;
 			const nextToolOptions = (snapshot.tools ?? []).map((tool, index) => resolveCapabilityProtocolId('tool', tool, `tool_${index + 1}`));
@@ -411,14 +583,9 @@
 		callPending = true;
 		callError = null;
 		try {
-			if (!probeId || !probeAvatarNickname) {
-				throw new Error('Connect before ping');
-			}
-			const ping = await onProbe({
-				avatarNickname: probeAvatarNickname,
-				action: 'ping',
-				probeId,
-			});
+			const pingInput = buildPingProbeInput();
+			lastActionProbeInput = pingInput;
+			const ping = await onProbe(pingInput);
 			ensureProbeOk(ping);
 			callResult = ping.parsed ?? null;
 		} catch (error) {
@@ -432,36 +599,8 @@
 		callPending = true;
 		callError = null;
 		try {
-			if (!probeId || !probeAvatarNickname) {
-				throw new Error('Connect before capability actions');
-			}
-			const capabilityKind = activeCapabilityKind;
-			if (!activeCapabilityCanRun || !activeCapability) {
-				throw new Error('Resource templates require a concrete URI before probe can read them');
-			}
-			const actionInput =
-				capabilityKind === 'tool'
-					? ({
-							avatarNickname: probeAvatarNickname,
-							action: 'call-tool',
-							probeId,
-							toolName: activeCapability.protocolId,
-							arguments: parseArguments(activeCapabilityArguments),
-						} satisfies McpProbeInput)
-					: capabilityKind === 'prompt'
-						? ({
-								avatarNickname: probeAvatarNickname,
-								action: 'get-prompt',
-								probeId,
-								promptName: activeCapability.protocolId,
-								arguments: parseArguments(activeCapabilityArguments),
-							} satisfies McpProbeInput)
-						: ({
-								avatarNickname: probeAvatarNickname,
-								action: 'read-resource',
-								probeId,
-								resourceUri: activeCapability.protocolId,
-							} satisfies McpProbeInput);
+			const actionInput = buildCapabilityProbeInput();
+			lastActionProbeInput = actionInput;
 			const output = await onProbe(actionInput);
 			ensureProbeOk(output);
 			callResult = output.parsed ?? null;
@@ -508,8 +647,49 @@
 		capabilityDialogOpen = true;
 	};
 
+	const runInspector = async (): Promise<void> => {
+		if (!onInspectorStart) {
+			return;
+		}
+		inspectorPending = true;
+		inspectorError = null;
+		inspectorDialogOpen = true;
+		try {
+			await releaseInspectorSession();
+			const draft = buildDraft();
+			const input = {
+				avatarNickname: draft.avatarNickname,
+				name: draft.name,
+				projectPath: normalizedProjectPath(),
+				transport: draft.transport,
+				env: draft.env,
+			} satisfies McpInspectorStartInput;
+			inspectorAvatarNickname = draft.avatarNickname;
+			inspectorSession = await onInspectorStart(input);
+			if (onInspectorSubscribe) {
+				inspectorSubscription = onInspectorSubscribe(
+					{
+						avatarNickname: draft.avatarNickname,
+						sessionId: inspectorSession.sessionId,
+					},
+					{
+						onData: applyInspectorEvent,
+						onError: () => {
+							inspectorError = 'Inspector event stream closed';
+						},
+					},
+				);
+			}
+		} catch (error) {
+			inspectorError = error instanceof Error ? error.message : String(error);
+		} finally {
+			inspectorPending = false;
+		}
+	};
+
 	onDestroy(() => {
 		void closeCurrentProbe();
+		void releaseInspectorSession();
 	});
 </script>
 
@@ -521,7 +701,7 @@
 				ariaLabel="Inspect draft help"
 				side="bottom"
 				align="start"
-				textContext="Backed by the `mcp probe` JSON command. It starts an isolated MCP client for this draft and does not install, enable, start durable project instances, or persist snapshot/action facts."
+				textContext={inspectHeaderHelp}
 			>
 				<HelpCircleIcon class="size-4 text-muted-foreground" />
 			</HelpHint>
@@ -572,6 +752,27 @@
 				<RefreshCwIcon class="size-4" />
 				Ping
 			</Button>
+			{#if onInspectorStart}
+				<div class="flex items-center gap-1">
+					<Button
+						variant="ghost"
+						disabled={pending || inspectPending || callPending || inspectorPending}
+						onclick={runInspector}
+						data-testid="mcp-config-inspect-inspector"
+					>
+						<BugPlayIcon class="size-4" />
+						Inspector
+					</Button>
+					<HelpHint
+						ariaLabel="MCP Inspector command"
+						side="bottom"
+						align="end"
+						textContext={inspectorHeaderHelp}
+					>
+						<HelpCircleIcon class="size-4 text-muted-foreground" />
+					</HelpHint>
+				</div>
+			{/if}
 		</div>
 	</div>
 
@@ -596,8 +797,18 @@
 					<div class="grid gap-3 md:grid-cols-2">
 						{#each snapshotVisualSections as section (section.title)}
 							<section class="grid gap-2 rounded-lg bg-muted/20 px-3 py-3">
-								<div class="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
-									{section.title}
+								<div class="flex items-center gap-1.5">
+									<div class="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
+										{section.title}
+									</div>
+									<HelpHint
+										ariaLabel={`${section.title} probe command`}
+										side="bottom"
+										align="start"
+										textContext={inspectHeaderHelp}
+									>
+										<HelpCircleIcon class="size-3.5 text-muted-foreground" />
+									</HelpHint>
 								</div>
 								<dl class="grid gap-2 text-sm">
 									{#each section.items as item (item.label)}
@@ -613,8 +824,18 @@
 
 					<section class="grid gap-2">
 						<div class="flex items-center justify-between gap-2">
-							<div class="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
-								Capabilities
+							<div class="flex items-center gap-1.5">
+								<div class="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
+									Capabilities
+								</div>
+								<HelpHint
+									ariaLabel="Capabilities probe command"
+									side="bottom"
+									align="start"
+									textContext={inspectHeaderHelp}
+								>
+									<HelpCircleIcon class="size-3.5 text-muted-foreground" />
+								</HelpHint>
 							</div>
 							<Badge variant="outline">{mixedSnapshotCapabilities.length}</Badge>
 						</div>
@@ -653,6 +874,19 @@
 				</div>
 			{:else}
 				<div class="grid gap-2">
+					<div class="flex items-center gap-1.5">
+						<div class="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
+							Raw Snapshot
+						</div>
+						<HelpHint
+							ariaLabel="Raw snapshot probe command"
+							side="bottom"
+							align="start"
+							textContext={inspectHeaderHelp}
+						>
+							<HelpCircleIcon class="size-3.5 text-muted-foreground" />
+						</HelpHint>
+					</div>
 					{#if lastCliResult}
 						<div
 							class="flex min-w-0 flex-wrap items-center gap-2 rounded-md bg-muted/20 px-2 py-1 font-mono text-[11px] text-muted-foreground"
@@ -714,16 +948,14 @@
 									<label class="grid gap-1.5 text-xs text-muted-foreground">
 										<div class="flex items-center gap-1.5">
 											<span>Arguments</span>
-											{#if activeCapabilitySchema}
-												<HelpHint
-													ariaLabel="Capability input schema"
-													side="bottom"
-													align="start"
-													textContext={`Seeded from inputSchema.\n\n${JSON.stringify(activeCapabilitySchema, null, 2)}`}
-												>
-													<HelpCircleIcon class="size-3.5 text-muted-foreground" />
-												</HelpHint>
-											{/if}
+											<HelpHint
+												ariaLabel="Capability arguments command"
+												side="bottom"
+												align="start"
+												textContext={`${activeCapabilityHelp}\n\nArguments are seeded from inputSchema when present.\n\n${activeCapabilitySchema ? formatJson(activeCapabilitySchema) : 'inputSchema: none'}`}
+											>
+												<HelpCircleIcon class="size-3.5 text-muted-foreground" />
+											</HelpHint>
 										</div>
 										<Textarea
 											value={activeCapabilityArguments}
@@ -765,8 +997,18 @@
 
 						{#if callResult !== null}
 							<div class="grid gap-1.5" data-testid="mcp-config-inspect-result-preview">
-								<div class="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
-									Probe Result
+								<div class="flex items-center gap-1.5">
+									<div class="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
+										Probe Result
+									</div>
+									<HelpHint
+										ariaLabel="Probe result command"
+										side="bottom"
+										align="start"
+										textContext={actionHeaderHelp}
+									>
+										<HelpCircleIcon class="size-3.5 text-muted-foreground" />
+									</HelpHint>
 								</div>
 								{#if lastCliResult}
 									<div
@@ -783,8 +1025,18 @@
 					</div>
 				{:else}
 					<div class="grid gap-1.5">
-						<div class="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
-							Raw Capability
+						<div class="flex items-center gap-1.5">
+							<div class="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
+								Raw Capability
+							</div>
+							<HelpHint
+								ariaLabel="Raw capability probe command"
+								side="bottom"
+								align="start"
+								textContext={inspectHeaderHelp}
+							>
+								<HelpCircleIcon class="size-3.5 text-muted-foreground" />
+							</HelpHint>
 						</div>
 						<StructuredValueViewer value={activeCapability.raw} menuLabel="Capability raw options" class="rounded-lg" />
 					</div>
@@ -799,6 +1051,114 @@
 				onclick={() => (capabilityDialogOpen = false)}
 			>
 				Close
+			</Button>
+		</Dialog.Footer>
+	</Dialog.Content>
+</Dialog.Root>
+
+<Dialog.Root
+	open={inspectorDialogOpen}
+	onOpenChange={(nextOpen) => {
+		if (!nextOpen && inspectorDialogOpen) {
+			requestInspectorDialogClose();
+			return;
+		}
+		inspectorDialogOpen = nextOpen;
+	}}
+>
+	<Dialog.Content
+		class="grid h-[min(86dvh,54rem)] grid-rows-[auto_minmax(0,1fr)_auto] gap-0 p-0 sm:max-w-6xl"
+		data-testid="mcp-config-heavy-inspector-dialog"
+	>
+		<Dialog.Header class="border-b border-border/50 px-4 py-3">
+			<div class="flex min-w-0 items-center justify-between gap-3">
+				<div class="flex min-w-0 items-center gap-2">
+					<Dialog.Title>Inspector</Dialog.Title>
+					<HelpHint
+						ariaLabel="Heavy inspector command"
+						side="bottom"
+						align="start"
+						textContext={inspectorHeaderHelp}
+					>
+						<HelpCircleIcon class="size-4 text-muted-foreground" />
+					</HelpHint>
+				</div>
+				<div class="flex min-w-0 items-center gap-1.5">
+					{#if inspectorSession}
+						<Badge variant={inspectorSession.state === 'failed' ? 'destructive' : 'secondary'}>
+							{inspectorSession.state}
+						</Badge>
+					{/if}
+					{#if inspectorSession?.url}
+						<Badge variant="outline">iframe</Badge>
+					{/if}
+				</div>
+			</div>
+		</Dialog.Header>
+
+		<div class="grid min-h-0 grid-rows-[auto_minmax(0,1fr)]">
+			{#if inspectorError}
+				<div class="border-b border-border/50 px-4 py-3">
+					<NoticeBanner tone="destructive" message={inspectorError} />
+				</div>
+			{/if}
+			{#if inspectorSession?.url}
+				<iframe
+					src={inspectorSession.url}
+					title="MCP Inspector"
+					class="h-full w-full bg-background"
+					data-testid="mcp-config-heavy-inspector-iframe"
+				></iframe>
+			{:else}
+				<div
+					class="min-h-0 overflow-auto bg-muted/20 p-4 font-mono text-xs leading-5 text-muted-foreground"
+					data-testid="mcp-config-heavy-inspector-log"
+				>
+					{#if inspectorSession?.logs.length}
+						{#each inspectorSession.logs as entry (entry.id)}
+							<div class="grid grid-cols-[4.5rem_minmax(0,1fr)] gap-3">
+								<span class={entry.stream === 'stderr' ? 'text-destructive' : 'text-muted-foreground'}>
+									{entry.stream}
+								</span>
+								<span class="whitespace-pre-wrap break-words">{entry.text}</span>
+							</div>
+						{/each}
+					{:else if inspectorPending}
+						<div>starting inspector...</div>
+					{:else}
+						<div>no output</div>
+					{/if}
+				</div>
+			{/if}
+		</div>
+
+		<Dialog.Footer class="border-t border-border/50 px-4 py-3">
+			<Button variant="outline" disabled={inspectorReleasePending} onclick={requestInspectorDialogClose}>
+				Close
+			</Button>
+		</Dialog.Footer>
+	</Dialog.Content>
+</Dialog.Root>
+
+<Dialog.Root bind:open={inspectorConfirmCloseOpen}>
+	<Dialog.Content class="sm:max-w-md" data-testid="mcp-config-heavy-inspector-close-confirm">
+		<Dialog.Header>
+			<Dialog.Title>Release inspector?</Dialog.Title>
+			<Dialog.Description>
+				Closing this dialog stops the spawned inspector process and removes its temporary config.
+			</Dialog.Description>
+		</Dialog.Header>
+		<Dialog.Footer>
+			<Button variant="outline" disabled={inspectorReleasePending} onclick={() => (inspectorConfirmCloseOpen = false)}>
+				Cancel
+			</Button>
+			<Button
+				variant="destructive"
+				disabled={inspectorReleasePending}
+				data-testid="mcp-config-heavy-inspector-release"
+				onclick={() => void releaseInspectorSession({ closeDialog: true })}
+			>
+				{inspectorReleasePending ? 'Releasing' : 'Release'}
 			</Button>
 		</Dialog.Footer>
 	</Dialog.Content>

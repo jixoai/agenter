@@ -28,13 +28,14 @@ const readStringRecord = (value: unknown, label: string): Record<string, string>
   if (!isRecord(value)) {
     throw new Error(`${label} must be an object`);
   }
-  const entries = Object.entries(value);
-  for (const [, entry] of entries) {
+  const result: Record<string, string> = {};
+  for (const [key, entry] of Object.entries(value)) {
     if (typeof entry !== "string") {
       throw new Error(`${label} must contain only string values`);
     }
+    result[key] = entry;
   }
-  return entries.length > 0 ? Object.fromEntries(entries) : undefined;
+  return Object.keys(result).length > 0 ? result : undefined;
 };
 
 const readStringArray = (value: unknown, label: string): string[] => {

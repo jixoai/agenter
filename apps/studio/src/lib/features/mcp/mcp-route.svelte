@@ -351,73 +351,81 @@
 	};
 
 	const handleStartProject = async (row: McpWorkbenchRow): Promise<void> => {
-		if (!selectedCatalogRow || !row.projectPath) {
+		const name = row.name;
+		const projectPath = row.projectPath;
+		if (!selectedCatalogRow || !name || !projectPath) {
 			return;
 		}
 		try {
 			await runMcpMutation(async () =>
 				await controller.runtimeStore.startMcpProject({
 					avatarNickname: selectedCatalogRow.avatarNickname,
-					name: row.name,
-					projectPath: row.projectPath,
+					name,
+					projectPath,
 				}),
 			);
-			selectedProjectPath = row.projectPath;
+			selectedProjectPath = projectPath;
 		} catch {
 			return;
 		}
 	};
 
 	const handleStopProject = async (row: McpWorkbenchRow): Promise<void> => {
-		if (!selectedCatalogRow || !row.projectPath) {
+		const name = row.name;
+		const projectPath = row.projectPath;
+		if (!selectedCatalogRow || !name || !projectPath) {
 			return;
 		}
 		try {
 			await runMcpMutation(async () =>
 				await controller.runtimeStore.stopMcpProject({
 					avatarNickname: selectedCatalogRow.avatarNickname,
-					name: row.name,
-					projectPath: row.projectPath,
+					name,
+					projectPath,
 				}),
 			);
-			selectedProjectPath = row.projectPath;
+			selectedProjectPath = projectPath;
 		} catch {
 			return;
 		}
 	};
 
 	const handleRestartProject = async (row: McpWorkbenchRow): Promise<void> => {
-		if (!selectedCatalogRow || !row.projectPath) {
+		const name = row.name;
+		const projectPath = row.projectPath;
+		if (!selectedCatalogRow || !name || !projectPath) {
 			return;
 		}
 		try {
 			await runMcpMutation(async () =>
 				await controller.runtimeStore.restartMcpProject({
 					avatarNickname: selectedCatalogRow.avatarNickname,
-					name: row.name,
-					projectPath: row.projectPath,
+					name,
+					projectPath,
 				}),
 			);
-			selectedProjectPath = row.projectPath;
+			selectedProjectPath = projectPath;
 		} catch {
 			return;
 		}
 	};
 
 	const handleRemoveProject = async (row: McpWorkbenchRow): Promise<void> => {
-		if (!selectedCatalogRow || !row.projectPath) {
+		const name = row.name;
+		const projectPath = row.projectPath;
+		if (!selectedCatalogRow || !name || !projectPath) {
 			return;
 		}
 		try {
 			await runMcpMutation(async () =>
 				await controller.runtimeStore.disableMcpProject({
 					avatarNickname: selectedCatalogRow.avatarNickname,
-					name: row.name,
-					projectPath: row.projectPath,
+					name,
+					projectPath,
 					stop: true,
 				}),
 			);
-			if (selectedProjectPath === row.projectPath) {
+			if (selectedProjectPath === projectPath) {
 				selectedProjectPath = null;
 			}
 		} catch {
@@ -427,6 +435,14 @@
 
 	const handleProbeDraft = async (input: Parameters<typeof controller.runtimeStore.probeMcp>[0]) =>
 		await controller.runtimeStore.probeMcp(input);
+	const handleInspectorStart = async (input: Parameters<typeof controller.runtimeStore.startMcpInspector>[0]) =>
+		await controller.runtimeStore.startMcpInspector(input);
+	const handleInspectorClose = async (input: Parameters<typeof controller.runtimeStore.closeMcpInspector>[0]) =>
+		await controller.runtimeStore.closeMcpInspector(input);
+	const handleInspectorSubscribe = (
+		input: Parameters<typeof controller.runtimeStore.subscribeMcpInspectorEvents>[0],
+		handlers: Parameters<typeof controller.runtimeStore.subscribeMcpInspectorEvents>[1],
+	) => controller.runtimeStore.subscribeMcpInspectorEvents(input, handlers);
 
 	const handleOpenAvatarConfig = async (row: McpConfigCatalogRow): Promise<void> => {
 		activeView = 'configs';
@@ -615,6 +631,9 @@
 							pending={actionPending}
 							onSubmit={handleGlobalSubmit}
 							onProbe={handleProbeDraft}
+							onInspectorStart={handleInspectorStart}
+							onInspectorClose={handleInspectorClose}
+							onInspectorSubscribe={handleInspectorSubscribe}
 						/>
 					</ScrollView>
 				{:else if selectedCatalogRow}
@@ -630,6 +649,9 @@
 						onRemoveConfig={handleRemoveConfig}
 						onSubmitGlobal={handleGlobalSubmit}
 						onProbe={handleProbeDraft}
+						onInspectorStart={handleInspectorStart}
+						onInspectorClose={handleInspectorClose}
+						onInspectorSubscribe={handleInspectorSubscribe}
 						onAddProject={handleAddProject}
 						onStartProject={handleStartProject}
 						onStopProject={handleStopProject}

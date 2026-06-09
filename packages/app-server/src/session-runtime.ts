@@ -1615,6 +1615,18 @@ const unavailableMcpSystemSurface: McpSystemSurface = {
   probe: async () => {
     throw new Error("mcp system surface unavailable");
   },
+  inspectorStart: async () => {
+    throw new Error("mcp system surface unavailable");
+  },
+  inspectorSnapshot: () => {
+    throw new Error("mcp system surface unavailable");
+  },
+  inspectorClose: async () => {
+    throw new Error("mcp system surface unavailable");
+  },
+  subscribeInspector: () => {
+    throw new Error("mcp system surface unavailable");
+  },
 };
 
 type RuntimeTerminalManageInviteResult = {

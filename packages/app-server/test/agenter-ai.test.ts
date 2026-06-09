@@ -955,6 +955,24 @@ const createRuntimeLocalHandlers = (input: {
     call: async () => {
       throw new Error("mcp call not configured");
     },
+    inspect: async () => {
+      throw new Error("mcp inspect not configured");
+    },
+    probe: async () => {
+      throw new Error("mcp probe not configured");
+    },
+    inspectorStart: async () => {
+      throw new Error("mcp inspector start not configured");
+    },
+    inspectorSnapshot: () => {
+      throw new Error("mcp inspector snapshot not configured");
+    },
+    inspectorClose: async () => {
+      throw new Error("mcp inspector close not configured");
+    },
+    subscribeInspector: () => {
+      throw new Error("mcp inspector events not configured");
+    },
   },
 });
 

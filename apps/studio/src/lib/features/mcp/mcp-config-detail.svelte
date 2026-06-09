@@ -1,5 +1,13 @@
 <script lang="ts">
-	import type { McpProbeInput, McpProbeOutput } from '@agenter/client-sdk';
+	import type {
+		McpInspectorCloseInput,
+		McpInspectorCloseOutput,
+		McpInspectorEvent,
+		McpInspectorStartInput,
+		McpInspectorStartOutput,
+		McpProbeInput,
+		McpProbeOutput,
+	} from '@agenter/client-sdk';
 	import CircleEllipsisIcon from '@lucide/svelte/icons/circle-ellipsis';
 	import HelpCircleIcon from '@lucide/svelte/icons/help-circle';
 	import PlayIcon from '@lucide/svelte/icons/play';
@@ -36,6 +44,9 @@
 		onRemoveConfig,
 		onSubmitGlobal,
 		onProbe,
+		onInspectorStart,
+		onInspectorClose,
+		onInspectorSubscribe,
 		onAddProject,
 		onStartProject,
 		onStopProject,
@@ -53,6 +64,15 @@
 		onRemoveConfig?: (row: McpWorkbenchRow) => Promise<void>;
 		onSubmitGlobal: (draft: McpGlobalConfigDraft, options?: { override?: boolean }) => Promise<void>;
 		onProbe: (input: McpProbeInput) => Promise<McpProbeOutput>;
+		onInspectorStart?: (input: McpInspectorStartInput) => Promise<McpInspectorStartOutput>;
+		onInspectorClose?: (input: McpInspectorCloseInput) => Promise<McpInspectorCloseOutput>;
+		onInspectorSubscribe?: (
+			input: McpInspectorCloseInput,
+			handlers: {
+				onData: (event: McpInspectorEvent) => void;
+				onError?: () => void;
+			},
+		) => { unsubscribe: () => void };
 		onAddProject: (projectPath: string) => Promise<void>;
 		onStartProject: (row: McpWorkbenchRow) => Promise<void>;
 		onStopProject: (row: McpWorkbenchRow) => Promise<void>;
@@ -119,6 +139,9 @@
 			onRemove={onRemoveConfig}
 			onSubmit={onSubmitGlobal}
 			{onProbe}
+			{onInspectorStart}
+			{onInspectorClose}
+			{onInspectorSubscribe}
 		/>
 
 		<section class="grid gap-3 border-t border-border/50 p-4">

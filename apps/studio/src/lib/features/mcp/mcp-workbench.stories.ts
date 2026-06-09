@@ -120,6 +120,33 @@ export const InspectVisualAndRaw = {
   },
 } satisfies Story;
 
+export const HeavyInspectorDialog = {
+  name: "Scenario: Given a draft MCP When heavyweight inspector opens Then logs become an iframe and close requires release confirmation",
+  args: {
+    scenario: "configs-new",
+  },
+  play: async ({ canvasElement, userEvent }) => {
+    const canvas = within(canvasElement);
+    const body = within(document.body);
+
+    await userEvent.click(canvas.getByTestId("mcp-config-inspect-inspector"));
+    const dialog = body.getByTestId("mcp-config-heavy-inspector-dialog");
+    await expect(within(dialog).getByTestId("mcp-config-heavy-inspector-log")).toHaveTextContent(
+      "@modelcontextprotocol/inspector",
+    );
+    await waitFor(() => {
+      expect(within(dialog).getByTestId("mcp-config-heavy-inspector-iframe")).toBeInTheDocument();
+    });
+    await userEvent.click(within(dialog).getByRole("button", { name: "Close" }));
+    await expect(body.getByTestId("mcp-config-heavy-inspector-close-confirm")).toBeInTheDocument();
+    await userEvent.click(body.getByTestId("mcp-config-heavy-inspector-release"));
+    await waitFor(() => {
+      expect(body.queryByTestId("mcp-config-heavy-inspector-dialog")).toBeNull();
+    });
+    await expect(canvas.getByTestId("mcp-story-event")).toHaveTextContent("inspector-close:inspector-story-1");
+  },
+} satisfies Story;
+
 export const ConfigsDuplicateConflict = {
   name: "Scenario: Given one owner Avatar already has the same config id When install is submitted Then Studio asks for override or cancel",
   args: {

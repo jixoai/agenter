@@ -1,6 +1,12 @@
 import { randomUUID } from "node:crypto";
-import { mkdirSync } from "node:fs";
-import { resolve } from "node:path";
+import {
+  spawn,
+  type ChildProcessWithoutNullStreams,
+  type SpawnOptionsWithoutStdio,
+} from "node:child_process";
+import { mkdirSync, unlinkSync, writeFileSync } from "node:fs";
+import { createServer } from "node:net";
+import { dirname, join, resolve } from "node:path";
 
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { SSEClientTransport } from "@modelcontextprotocol/sdk/client/sse.js";
@@ -16,9 +22,16 @@ import type {
   McpCapabilitySnapshot,
   McpDisableInput,
   McpGlobalConfig,
+  McpInspectorCloseInput,
+  McpInspectorEvent,
+  McpInspectorLogEntry,
+  McpInspectorSessionSnapshot,
+  McpInspectorStartInput,
+  McpInspectorState,
   McpInspectInput,
   McpInspectResult,
   McpInstanceRecord,
+  McpJsonObject,
   McpListInput,
   McpProbeCliResult,
   McpProbeInput,
@@ -39,7 +52,14 @@ export interface McpSystemOptions {
   clientName?: string;
   clientVersion?: string;
   transportFactory?: (context: McpTransportStartContext) => Transport;
+  inspectorSpawnFactory?: McpInspectorSpawnFactory;
 }
+
+export type McpInspectorSpawnFactory = (
+  command: string,
+  args: string[],
+  options: SpawnOptionsWithoutStdio,
+) => ChildProcessWithoutNullStreams;
 
 interface McpLiveSession {
   client: Client;
@@ -58,6 +78,26 @@ interface McpProbeSession {
   updatedAt: string;
 }
 
+interface McpInspectorSession {
+  sessionId: string;
+  state: McpInspectorState;
+  child: ChildProcessWithoutNullStreams;
+  configPath: string;
+  url?: string;
+  command: "bunx";
+  args: string[];
+  cwd: string;
+  logs: McpInspectorLogEntry[];
+  exitCode?: number | null;
+  signal?: string | null;
+  error?: string;
+  startedAt: string;
+  updatedAt: string;
+  closedAt?: string;
+  nextLogId: number;
+  closeRequested: boolean;
+}
+
 const actionError = (error: unknown): string => (error instanceof Error ? error.message : String(error));
 
 const instanceKey = (name: string, projectPath: string): string => `${name}\u0000${resolve(projectPath)}`;
@@ -74,6 +114,77 @@ const cloneStringRecord = (input: Record<string, string> | undefined): Record<st
 
 const createHeadersInit = (headers: Record<string, string> | undefined): HeadersInit | undefined =>
   headers ? cloneStringRecord(headers) : undefined;
+
+const createPromptArguments = (argumentsInput: McpJsonObject | undefined): Record<string, string> | undefined => {
+  if (!argumentsInput) {
+    return undefined;
+  }
+  const entries = Object.entries(argumentsInput);
+  if (entries.length === 0) {
+    return undefined;
+  }
+  const promptArguments: Record<string, string> = {};
+  for (const [key, value] of entries) {
+    if (typeof value !== "string") {
+      throw new Error("prompt arguments must contain only string values");
+    }
+    promptArguments[key] = value;
+  }
+  return promptArguments;
+};
+
+const INSPECTOR_LOG_LIMIT = 500;
+
+const stripAnsi = (input: string): string => input.replace(/\u001b\[[0-?]*[ -/]*[@-~]/gu, "");
+
+const inspectorUrlPattern = /\bhttps?:\/\/(?:localhost|127\.0\.0\.1|\[::1\])(?::\d+)?\/[^\s'"<>)]*/giu;
+
+const reserveTcpPort = async (): Promise<number> =>
+  await new Promise((resolvePort, reject) => {
+    const server = createServer();
+    server.unref();
+    server.once("error", reject);
+    server.listen(0, "127.0.0.1", () => {
+      const address = server.address();
+      const port = typeof address === "object" && address ? address.port : 0;
+      server.close((error) => {
+        if (error) {
+          reject(error);
+          return;
+        }
+        resolvePort(port);
+      });
+    });
+  });
+
+type McpInspectorServerConfig =
+  | {
+      type: "stdio";
+      command: string;
+      args?: string[];
+      env?: Record<string, string>;
+    }
+  | {
+      type: "sse" | "streamable-http";
+      url: string;
+      headers?: Record<string, string>;
+    };
+
+const buildInspectorServerConfig = (transport: McpTransportConfig): McpInspectorServerConfig => {
+  if (transport.kind === "stdio") {
+    return {
+      type: "stdio",
+      command: transport.command,
+      args: transport.args ?? [],
+      env: transport.env,
+    };
+  }
+  return {
+    type: transport.kind,
+    url: transport.url,
+    headers: transport.headers,
+  };
+};
 
 export const createMcpSystemTransport = (context: McpTransportStartContext): Transport => {
   const { transport } = context;
@@ -186,8 +297,11 @@ export class McpSystem {
   private readonly clientName: string;
   private readonly clientVersion: string;
   private readonly transportFactory: (context: McpTransportStartContext) => Transport;
+  private readonly inspectorSpawnFactory: McpInspectorSpawnFactory;
   private readonly sessions = new Map<string, McpLiveSession>();
   private readonly probeSessions = new Map<string, McpProbeSession>();
+  private readonly inspectorSessions = new Map<string, McpInspectorSession>();
+  private readonly inspectorListeners = new Map<string, Set<(event: McpInspectorEvent) => void>>();
   private readonly locks = new Map<string, Promise<unknown>>();
   private closed = false;
 
@@ -199,6 +313,7 @@ export class McpSystem {
     this.clientName = options.clientName ?? "agenter-mcp-system";
     this.clientVersion = options.clientVersion ?? "0.0.0";
     this.transportFactory = options.transportFactory ?? createMcpSystemTransport;
+    this.inspectorSpawnFactory = options.inspectorSpawnFactory ?? spawn;
     this.store = new McpSystemStore(options.dbPath);
     this.store.recoverLiveInstancesAsStopped();
   }
@@ -225,6 +340,12 @@ export class McpSystem {
       void session.client.close().catch(() => undefined);
     }
     this.probeSessions.clear();
+    for (const session of this.inspectorSessions.values()) {
+      this.killInspectorProcess(session);
+      this.unlinkInspectorConfig(session);
+    }
+    this.inspectorSessions.clear();
+    this.inspectorListeners.clear();
     this.store.close();
   }
 
@@ -436,7 +557,7 @@ export class McpSystem {
         result = await connection.client.getPrompt(
           {
             name: input.promptName,
-            arguments: input.arguments ?? {},
+            arguments: createPromptArguments(input.arguments),
           },
           {
             signal: options.signal,
@@ -514,7 +635,7 @@ export class McpSystem {
           parsed = await session.client.getPrompt(
             {
               name: input.promptName,
-              arguments: input.arguments ?? {},
+              arguments: createPromptArguments(input.arguments),
             },
             {
               signal: options.signal,
@@ -537,6 +658,124 @@ export class McpSystem {
     } catch (error) {
       return this.formatProbeResult(input, { stderr: `${actionError(error)}\n`, exitCode: 1 });
     }
+  }
+
+  async inspectorStart(input: McpInspectorStartInput): Promise<McpInspectorSessionSnapshot> {
+    const name = input.name?.trim() || "inspector";
+    const projectPath = input.projectPath ? normalizeProjectPath(input.projectPath) : this.rootWorkspacePath;
+    const sessionId = randomUUID();
+    const inspectorServerName = name.replace(/[^a-zA-Z0-9_.-]/gu, "-") || "mcp";
+    const clientPort = await reserveTcpPort();
+    const serverPort = await reserveTcpPort();
+    const configPath = join(this.rootWorkspacePath, "tmp", `mcp-inspector-${sessionId}.json`);
+    mkdirSync(dirname(configPath), { recursive: true });
+    writeFileSync(
+      configPath,
+      JSON.stringify(
+        {
+          mcpServers: {
+            [inspectorServerName]: buildInspectorServerConfig(input.transport),
+          },
+        },
+        null,
+        2,
+      ),
+      "utf8",
+    );
+
+    const args = ["@modelcontextprotocol/inspector", "--config", configPath, "--server", inspectorServerName];
+    const launchEnv = this.resolveLaunchEnv(input.env);
+    const child = this.inspectorSpawnFactory("bunx", args, {
+      cwd: projectPath,
+      env: {
+        ...launchEnv,
+        CLIENT_PORT: String(clientPort),
+        SERVER_PORT: String(serverPort),
+        HOST: "127.0.0.1",
+        MCP_AUTO_OPEN_ENABLED: "false",
+      },
+      detached: process.platform !== "win32",
+    });
+    const now = new Date().toISOString();
+    const session: McpInspectorSession = {
+      sessionId,
+      state: "starting",
+      child,
+      configPath,
+      command: "bunx",
+      args,
+      cwd: projectPath,
+      logs: [],
+      startedAt: now,
+      updatedAt: now,
+      nextLogId: 1,
+      closeRequested: false,
+    };
+    this.inspectorSessions.set(sessionId, session);
+    this.appendInspectorLog(session, "system", `bunx ${args.map((arg) => JSON.stringify(arg)).join(" ")}`);
+    this.emitInspectorSnapshot(session);
+
+    child.stdout.setEncoding("utf8");
+    child.stderr.setEncoding("utf8");
+    child.stdout.on("data", (chunk: string) => {
+      this.appendInspectorLog(session, "stdout", chunk);
+    });
+    child.stderr.on("data", (chunk: string) => {
+      this.appendInspectorLog(session, "stderr", chunk);
+    });
+    child.on("error", (error) => {
+      session.error = error.message;
+      session.state = "failed";
+      session.updatedAt = new Date().toISOString();
+      this.appendInspectorLog(session, "system", error.message);
+      this.emitInspectorSnapshot(session);
+    });
+    child.on("exit", (exitCode, signal) => {
+      session.exitCode = exitCode;
+      session.signal = signal;
+      session.state = session.closeRequested ? "closed" : exitCode === 0 ? "exited" : "failed";
+      session.updatedAt = new Date().toISOString();
+      if (session.closeRequested) {
+        session.closedAt = session.updatedAt;
+      }
+      this.unlinkInspectorConfig(session);
+      this.emitInspectorSnapshot(session);
+    });
+
+    return this.snapshotInspectorSession(session);
+  }
+
+  inspectorSnapshot(input: McpInspectorCloseInput): McpInspectorSessionSnapshot {
+    return this.snapshotInspectorSession(this.requireInspectorSession(input.sessionId));
+  }
+
+  async inspectorClose(input: McpInspectorCloseInput): Promise<McpInspectorSessionSnapshot> {
+    const session = this.requireInspectorSession(input.sessionId);
+    session.closeRequested = true;
+    session.state = "closed";
+    session.closedAt = new Date().toISOString();
+    session.updatedAt = session.closedAt;
+    this.killInspectorProcess(session);
+    this.unlinkInspectorConfig(session);
+    this.appendInspectorLog(session, "system", "inspector session closed");
+    this.emitInspectorSnapshot(session);
+    return this.snapshotInspectorSession(session);
+  }
+
+  subscribeInspector(sessionId: string, listener: (event: McpInspectorEvent) => void): () => void {
+    const listeners = this.inspectorListeners.get(sessionId) ?? new Set<(event: McpInspectorEvent) => void>();
+    listeners.add(listener);
+    this.inspectorListeners.set(sessionId, listeners);
+    const session = this.inspectorSessions.get(sessionId);
+    if (session) {
+      listener({ type: "snapshot", session: this.snapshotInspectorSession(session) });
+    }
+    return () => {
+      listeners.delete(listener);
+      if (listeners.size === 0) {
+        this.inspectorListeners.delete(sessionId);
+      }
+    };
   }
 
   async call(input: McpCallInput, options: { signal?: AbortSignal } = {}): Promise<McpCallResult> {
@@ -732,6 +971,106 @@ export class McpSystem {
       throw new Error(`mcp probe not found: ${probeId}`);
     }
     return session;
+  }
+
+  private requireInspectorSession(sessionId: string): McpInspectorSession {
+    const session = this.inspectorSessions.get(sessionId.trim());
+    if (!session) {
+      throw new Error(`mcp inspector not found: ${sessionId}`);
+    }
+    return session;
+  }
+
+  private snapshotInspectorSession(session: McpInspectorSession): McpInspectorSessionSnapshot {
+    return {
+      sessionId: session.sessionId,
+      state: session.state,
+      url: session.url,
+      command: session.command,
+      args: [...session.args],
+      cwd: session.cwd,
+      logs: session.logs.map((entry) => ({ ...entry })),
+      exitCode: session.exitCode,
+      signal: session.signal,
+      error: session.error,
+      startedAt: session.startedAt,
+      updatedAt: session.updatedAt,
+      closedAt: session.closedAt,
+    };
+  }
+
+  private appendInspectorLog(session: McpInspectorSession, stream: McpInspectorLogEntry["stream"], text: string): void {
+    const cleanText = stripAnsi(text);
+    if (!cleanText) {
+      return;
+    }
+    const entry = {
+      id: session.nextLogId++,
+      stream,
+      text: cleanText,
+      createdAt: new Date().toISOString(),
+    } satisfies McpInspectorLogEntry;
+    session.logs = [...session.logs, entry].slice(-INSPECTOR_LOG_LIMIT);
+    session.updatedAt = entry.createdAt;
+    this.captureInspectorUrl(session, cleanText);
+    this.emitInspectorEvent({
+      type: "log",
+      sessionId: session.sessionId,
+      entry,
+      session: this.snapshotInspectorSession(session),
+    });
+  }
+
+  private captureInspectorUrl(session: McpInspectorSession, text: string): void {
+    const urls = [...text.matchAll(inspectorUrlPattern)].map((match) => match[0]);
+    const preferredUrl =
+      urls.find((url) => url.includes("MCP_PROXY_AUTH_TOKEN")) ??
+      urls.find((url) => url.includes("127.0.0.1") || url.includes("localhost")) ??
+      null;
+    if (!preferredUrl || session.url) {
+      return;
+    }
+    session.url = preferredUrl;
+    session.state = "ready";
+  }
+
+  private emitInspectorSnapshot(session: McpInspectorSession): void {
+    this.emitInspectorEvent({ type: "snapshot", session: this.snapshotInspectorSession(session) });
+  }
+
+  private emitInspectorEvent(event: McpInspectorEvent): void {
+    const listeners = this.inspectorListeners.get(
+      event.type === "snapshot" ? event.session.sessionId : event.sessionId,
+    );
+    if (!listeners) {
+      return;
+    }
+    for (const listener of listeners) {
+      listener(event);
+    }
+  }
+
+  private killInspectorProcess(session: McpInspectorSession): void {
+    if (session.child.exitCode !== null || session.child.killed) {
+      return;
+    }
+    try {
+      if (process.platform !== "win32" && session.child.pid) {
+        process.kill(-session.child.pid, "SIGTERM");
+      } else {
+        session.child.kill("SIGTERM");
+      }
+    } catch {
+      session.child.kill("SIGTERM");
+    }
+  }
+
+  private unlinkInspectorConfig(session: McpInspectorSession): void {
+    try {
+      unlinkSync(session.configPath);
+    } catch {
+      // Temp config cleanup is best-effort; the file lives under the Avatar private tmp directory.
+    }
   }
 
   private formatProbeResult(

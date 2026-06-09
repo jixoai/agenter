@@ -420,7 +420,7 @@ const main = async (): Promise<void> => {
   const mcpSystem = new McpSystem({
     dbPath,
     rootWorkspacePath,
-    runtimeEnv: {
+    baseEnv: {
       AGENTER_MCP_ACCEPTANCE: "1",
     },
   });

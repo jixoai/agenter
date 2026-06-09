@@ -1,14 +1,17 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { mkdtempSync, rmSync } from "node:fs";
+import type { ChildProcessWithoutNullStreams } from "node:child_process";
+import { EventEmitter } from "node:events";
+import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { PassThrough } from "node:stream";
 
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 
 import { McpSystemStore } from "../src/mcp-system/store";
-import { McpSystem } from "../src/mcp-system/system";
+import { McpSystem, type McpInspectorSpawnFactory } from "../src/mcp-system/system";
 import type { McpTransportStartContext } from "../src/mcp-system/types";
 
 const tempRoots: string[] = [];
@@ -24,6 +27,7 @@ const createSystem = (input: {
   dbPath?: string;
   rootWorkspacePath?: string;
   envProvider?: () => Record<string, string>;
+  inspectorSpawnFactory?: McpInspectorSpawnFactory;
 }): McpSystem => {
   const root = mkdtempSync(join(tmpdir(), "agenter-mcp-system-lifecycle-"));
   tempRoots.push(root);
@@ -36,6 +40,7 @@ const createSystem = (input: {
     },
     envProvider: input.envProvider,
     transportFactory: input.transportFactory,
+    inspectorSpawnFactory: input.inspectorSpawnFactory,
   });
 };
 
@@ -139,6 +144,45 @@ const createFixtureTransportFactory = () => {
     return clientTransport;
   };
   return { factory, starts, servers };
+};
+
+const createFakeInspectorProcess = (): ChildProcessWithoutNullStreams & {
+  stdout: PassThrough;
+  stderr: PassThrough;
+  killedSignal: NodeJS.Signals | null;
+} => {
+  const stdout = new PassThrough();
+  const stderr = new PassThrough();
+  const stdin = new PassThrough();
+  const processBase = new EventEmitter() as EventEmitter &
+    Partial<ChildProcessWithoutNullStreams> & {
+      stdout: PassThrough;
+      stderr: PassThrough;
+      stdin: PassThrough;
+      killed: boolean;
+      exitCode: number | null;
+      signalCode: NodeJS.Signals | null;
+      killedSignal: NodeJS.Signals | null;
+      kill: (signal?: NodeJS.Signals | number) => boolean;
+    };
+  processBase.stdout = stdout;
+  processBase.stderr = stderr;
+  processBase.stdin = stdin;
+  processBase.killed = false;
+  processBase.exitCode = null;
+  processBase.signalCode = null;
+  processBase.killedSignal = null;
+  processBase.kill = (signal?: NodeJS.Signals | number): boolean => {
+    processBase.killed = true;
+    processBase.killedSignal = typeof signal === "string" ? signal : null;
+    processBase.signalCode = processBase.killedSignal;
+    return true;
+  };
+  return processBase as unknown as ChildProcessWithoutNullStreams & {
+    stdout: PassThrough;
+    stderr: PassThrough;
+    killedSignal: NodeJS.Signals | null;
+  };
 };
 
 describe("Feature: mcpSystem lifecycle", () => {
@@ -356,6 +400,73 @@ describe("Feature: mcpSystem lifecycle", () => {
           params: { name: "draft-memory" },
         }).rows,
       ).toHaveLength(0);
+    } finally {
+      system.close();
+      await Promise.all(fixture.servers.map((server) => server.close().catch(() => undefined)));
+    }
+  });
+
+  test("Scenario: Given an unsaved MCP draft When inspector starts Then a heavyweight inspector process is isolated and releasable", async () => {
+    const fixture = createFixtureTransportFactory();
+    const fakeInspectorProcess = createFakeInspectorProcess();
+    const spawns: Array<{
+      command: string;
+      args: string[];
+      options: Parameters<McpInspectorSpawnFactory>[2];
+    }> = [];
+    const system = createSystem({
+      transportFactory: fixture.factory,
+      inspectorSpawnFactory: (command, args, options) => {
+        spawns.push({ command, args, options });
+        return fakeInspectorProcess;
+      },
+    });
+    try {
+      const started = await system.inspectorStart({
+        name: "memory",
+        projectPath: "/repo/app",
+        env: { TOKEN: "draft-token" },
+        transport: {
+          kind: "stdio",
+          command: "fixture",
+          args: ["--stdio"],
+          env: { TRANSPORT_ONLY: "transport-env" },
+        },
+      });
+      const events: Array<ReturnType<typeof system.inspectorSnapshot> | unknown> = [];
+      const unsubscribe = system.subscribeInspector(started.sessionId, (event) => events.push(event));
+      const configIndex = started.args.indexOf("--config");
+      const configPath = started.args[configIndex + 1];
+      if (!configPath) {
+        throw new Error("expected inspector config path");
+      }
+      const config = readRecord(JSON.parse(readFileSync(configPath, "utf8")));
+      const mcpServers = readRecord(config.mcpServers);
+      const memoryServer = readRecord(mcpServers.memory);
+
+      fakeInspectorProcess.stdout.write(
+        "MCP Inspector ready at http://127.0.0.1:6274/?MCP_PROXY_AUTH_TOKEN=test-token\n",
+      );
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      const ready = system.inspectorSnapshot({ sessionId: started.sessionId });
+      const closed = await system.inspectorClose({ sessionId: started.sessionId });
+      unsubscribe();
+
+      expect(started.command).toBe("bunx");
+      expect(started.args).toContain("@modelcontextprotocol/inspector");
+      expect(spawns[0]?.command).toBe("bunx");
+      expect(spawns[0]?.options.cwd).toBe("/repo/app");
+      expect(spawns[0]?.options.env?.TOKEN).toBe("draft-token");
+      expect(spawns[0]?.options.env?.MCP_AUTO_OPEN_ENABLED).toBe("false");
+      expect(readString(memoryServer, "type")).toBe("stdio");
+      expect(readString(memoryServer, "command")).toBe("fixture");
+      expect(ready.state).toBe("ready");
+      expect(ready.url).toContain("MCP_PROXY_AUTH_TOKEN=test-token");
+      expect(closed.state).toBe("closed");
+      expect(fakeInspectorProcess.killedSignal).toBe("SIGTERM");
+      expect(existsSync(configPath)).toBe(false);
+      expect(JSON.stringify(events)).toContain("snapshot");
+      expect(JSON.stringify(events)).toContain("log");
     } finally {
       system.close();
       await Promise.all(fixture.servers.map((server) => server.close().catch(() => undefined)));

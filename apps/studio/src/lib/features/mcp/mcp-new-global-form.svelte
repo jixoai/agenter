@@ -1,5 +1,13 @@
 <script lang="ts">
-	import type { McpProbeInput, McpProbeOutput } from '@agenter/client-sdk';
+	import type {
+		McpInspectorCloseInput,
+		McpInspectorCloseOutput,
+		McpInspectorEvent,
+		McpInspectorStartInput,
+		McpInspectorStartOutput,
+		McpProbeInput,
+		McpProbeOutput,
+	} from '@agenter/client-sdk';
 	import HelpCircleIcon from '@lucide/svelte/icons/help-circle';
 	import SaveIcon from '@lucide/svelte/icons/save';
 	import TrashIcon from '@lucide/svelte/icons/trash';
@@ -39,6 +47,9 @@
 		onRemove,
 		onSubmit,
 		onProbe,
+		onInspectorStart,
+		onInspectorClose,
+		onInspectorSubscribe,
 	}: {
 		avatarOptions?: readonly McpAvatarCatalogOption[];
 		knownConfigRows?: readonly McpConfigCatalogRow[];
@@ -50,6 +61,15 @@
 		onRemove?: (row: McpWorkbenchRow) => Promise<void>;
 		onSubmit: (draft: McpGlobalConfigDraft, options?: { override?: boolean }) => Promise<void>;
 		onProbe?: (input: McpProbeInput) => Promise<McpProbeOutput>;
+		onInspectorStart?: (input: McpInspectorStartInput) => Promise<McpInspectorStartOutput>;
+		onInspectorClose?: (input: McpInspectorCloseInput) => Promise<McpInspectorCloseOutput>;
+		onInspectorSubscribe?: (
+			input: McpInspectorCloseInput,
+			handlers: {
+				onData: (event: McpInspectorEvent) => void;
+				onError?: () => void;
+			},
+		) => { unsubscribe: () => void };
 	} = $props();
 
 	const isStringRecord = (value: unknown): value is Record<string, string> =>
@@ -553,7 +573,15 @@
 	</section>
 
 	{#if onProbe}
-		<McpConfigInspectPanel resetKey={formSectionId} {pending} buildDraft={buildDraft} onProbe={onProbe} />
+		<McpConfigInspectPanel
+			resetKey={formSectionId}
+			{pending}
+			buildDraft={buildDraft}
+			onProbe={onProbe}
+			{onInspectorStart}
+			{onInspectorClose}
+			{onInspectorSubscribe}
+		/>
 	{/if}
 </div>
 
