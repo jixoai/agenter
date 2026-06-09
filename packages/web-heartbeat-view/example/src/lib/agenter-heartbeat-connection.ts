@@ -184,10 +184,6 @@ export class ClientSdkAgenterHeartbeatConnection implements AgenterHeartbeatConn
 
   async refreshHeartbeat(target: HeartbeatTargetIdentity): Promise<void> {
     // The adapter stays on existing client-sdk session-scoped reads; no Avatar-specific backend endpoint is introduced here.
-    await this.store.hydrateSessionArtifacts(target.sessionId, {
-      includeChatHistory: false,
-      observabilityMode: "heartbeat",
-    });
     const currentRecordsState = this.store.getState().heartbeatRecordsBySession[target.sessionId];
     const pageSize =
       this.options.preserveHeartbeatRecordPageSizeOnRefresh && currentRecordsState?.data?.pageSize
@@ -198,6 +194,11 @@ export class ClientSdkAgenterHeartbeatConnection implements AgenterHeartbeatConn
         ? currentRecordsState.data.anchor
         : { kind: "latest" as const };
     await this.store.loadHeartbeatRecords(target.sessionId, { pageSize, anchor });
+    this.syncFromRuntimeStore();
+    await this.store.hydrateSessionArtifacts(target.sessionId, {
+      includeChatHistory: false,
+      observabilityMode: "heartbeat",
+    });
     await Promise.all([this.store.loadHeartbeatGroups(target.sessionId), this.refreshConfigBinding(target)]);
     this.state = {
       ...this.state,

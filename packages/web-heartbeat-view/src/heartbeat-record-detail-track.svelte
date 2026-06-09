@@ -2,6 +2,7 @@
   import HeartbeatEntry from "./heartbeat-entry.svelte";
   import HeartbeatRecordChip from "./heartbeat-record-chip.svelte";
   import {
+    buildHeartbeatDetailPartMatchKeys,
     formatHeartbeatRecordPayload,
     type HeartbeatRecordDetailPartRow,
   } from "./heartbeat-record-detail-model";
@@ -28,7 +29,7 @@
     sections?: HeartbeatSubjectSection[];
   } = $props();
 
-  const detailRowTemplate = $derived(timeline.segments.flatMap(() => ["min-content", "minmax(54px, 1fr)"]).join(" "));
+  const detailRowTemplate = $derived(timeline.segments.map(() => "minmax(54px, auto)").join(" "));
 
   const chipKindTitle = (kind: HeartbeatRecordChipModel["kind"]): string => {
     if (kind === "input") {
@@ -52,8 +53,10 @@
     return kind.replaceAll("_", " ");
   };
 
-  const partMatchesChip = (row: HeartbeatRecordDetailPartRow, chip: HeartbeatRecordChipModel): boolean =>
-    chip.parts.some((part) => part.messageId === row.part.messageId && part.partId === String(row.part.partId));
+  const partMatchesChip = (row: HeartbeatRecordDetailPartRow, chip: HeartbeatRecordChipModel): boolean => {
+    const rowKeys = buildHeartbeatDetailPartMatchKeys(row.part);
+    return chip.parts.some((part) => part.messageId === row.part.messageId && rowKeys.includes(part.partId));
+  };
 
   const rowsForChip = (chip: HeartbeatRecordChipModel): HeartbeatRecordDetailPartRow[] =>
     rows.filter((row) => partMatchesChip(row, chip));
@@ -114,9 +117,7 @@
     {@const nextSegment = timeline.segments[index + 1] ?? null}
     {@const nextChip = nextSegment?.chip ?? segment.chip}
     {@const detailRows = rowsForChip(segment.chip)}
-    {@const chipRow = index * 2 + 1}
-    {@const linkRow = chipRow + 1}
-    {@const bridgeRow = index === 0 ? `${chipRow} / span 3` : `${linkRow} / span 2`}
+    {@const stationRow = index + 1}
     {@const style = railStyle(segment.chip, nextChip)}
     {@const bridgeLine = nextSegment?.lineBefore ?? null}
     {@const detailSections = sectionsForRows(detailRows)}
@@ -124,12 +125,13 @@
       class="ag-heartbeat-record-detail-track__station-link station-link"
       href={`#${stationBodyId(segment.chip, index)}`}
       title={segment.chip.title}
-      style={`grid-row:${chipRow};${style}`}
+      style={`grid-row:${stationRow};${style}`}
     >
       <HeartbeatRecordChip
         class="ag-heartbeat-record-detail__step-chip ag-heartbeat-record-detail-track__chip detail-track__chip"
         chip={segment.chip}
         sticky
+        iconOnly
         animated={(record.status === "running" && segment.chip.kind === "pending") || detailRows.some((row) => !row.part.isComplete)}
       />
     </a>
@@ -137,7 +139,7 @@
     <article
       class="ag-heartbeat-record-detail-track__station-body station-body"
       id={stationBodyId(segment.chip, index)}
-      style={`grid-row:${chipRow} / span 2`}
+      style={`grid-row:${stationRow}`}
     >
       <div class="ag-heartbeat-record-detail-track__station-head station-body-head">
         <strong class="station-body-title">{chipKindTitle(segment.chip.kind)}</strong>
@@ -180,38 +182,32 @@
     {#if bridgeLine}
       <span
         class="ag-heartbeat-record-detail__time-label ag-heartbeat-record-detail-track__time-label time-bridge-label"
-        style={`grid-row:${bridgeRow};${style}`}
+        style={`grid-row:${stationRow};${style}`}
         title={bridgeLine.title}
       >
-        {bridgeLine.label}
+        <span class="time-bridge-label__content">{bridgeLine.label}</span>
       </span>
       <span
         class="ag-heartbeat-record-detail__time-bridge ag-heartbeat-record-detail__time-crossline ag-heartbeat-record-detail-track__time-bridge time-bridge"
-        style={`grid-row:${bridgeRow};${style}`}
+        style={`grid-row:${stationRow};${style}`}
+        data-time-bridge-kind={index === 0 ? "first" : "after"}
         aria-hidden="true"
       >
-        <svg class="time-svg" viewBox="0 0 3 100" preserveAspectRatio="none" focusable="false">
-          <defs>
-            <linearGradient id={`ag-heartbeat-time-gradient-${record.id}-${index}`} gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="0" y2="100">
-              <stop offset="0%" style="stop-color:var(--rail-from)"></stop>
-              <stop offset="100%" style="stop-color:var(--rail-to)"></stop>
-            </linearGradient>
-          </defs>
+        <svg class="time-svg" focusable="false">
           <line
             class="ag-heartbeat-record-detail__time-svg-main time-svg-main"
-            x1="0.5"
+            x1="1"
             y1="0"
-            x2="0.5"
-            y2="100"
-            style={`stroke:url(#ag-heartbeat-time-gradient-${record.id}-${index})`}
+            x2="1"
+            y2="100%"
           ></line>
-          <line class="time-svg-tick" x1="0.5" y1="0.5" x2="2.25" y2="0.5" style="stroke:var(--rail-from)"></line>
-          <line class="time-svg-tick" x1="0.5" y1="99.5" x2="2.25" y2="99.5" style="stroke:var(--rail-to)"></line>
+          <line class="time-svg-tick" x1="1" y1="0.5" x2="3" y2="0.5"></line>
+          <line class="time-svg-tick time-svg-tick--end" x1="1" y1="100%" x2="3" y2="100%"></line>
         </svg>
       </span>
       <span
         class="ag-heartbeat-record-detail__chip-link-vertical ag-heartbeat-record-detail-track__chip-link chip-link-vertical"
-        style={`grid-row:${linkRow};${style}`}
+        style={`grid-row:${stationRow};${style}`}
         aria-hidden="true"
       ></span>
     {/if}
@@ -236,9 +232,12 @@
     --kind-unknown: oklch(58% 0.04 250deg);
     --rail-gap-col: 6px;
     --chip-axis-x: 14px;
+    --chip-block-size: 28px;
+    --time-bridge-gap: 2px;
+    --time-chip-offset: var(--chip-block-size);
     display: grid;
     grid-template-columns:
-      max-content 4px 1px var(--rail-gap-col) minmax(min-content, max-content)
+      max-content 4px 0 var(--rail-gap-col) minmax(min-content, max-content)
       minmax(0, 1fr);
     align-items: stretch;
     min-width: 0;
@@ -248,14 +247,25 @@
   .time-bridge {
     --rail-from: var(--tone-accent);
     --rail-to: var(--tone-accent);
-    --bridge-gap: 1px;
     grid-column: 3;
+    align-self: start;
+    justify-self: center;
     position: relative;
     z-index: 0;
-    min-block-size: 1px;
-    padding-block-end: var(--bridge-gap);
+    inline-size: 3px;
+    min-inline-size: 0;
+    min-block-size: 0;
     overflow: visible;
     pointer-events: none;
+  }
+
+  .time-bridge[data-time-bridge-kind="first"] {
+    block-size: calc(100% + var(--time-chip-offset) - var(--time-bridge-gap));
+  }
+
+  .time-bridge[data-time-bridge-kind="after"] {
+    block-size: calc(100% - var(--time-bridge-gap));
+    transform: translateY(var(--time-chip-offset));
   }
 
   .time-bridge-label {
@@ -264,26 +274,48 @@
     grid-column: 1;
     align-self: center;
     justify-self: end;
+    position: relative;
+    inline-size: 0;
+    block-size: 0;
+    min-inline-size: 0;
+    min-block-size: 0;
+    overflow: visible;
+    pointer-events: none;
+  }
+
+  .time-bridge-label__content {
+    position: absolute;
+    inset-block-start: 50%;
+    inset-inline-end: -2px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    aspect-ratio: 1;
+    border-radius: 38%;
+    background: linear-gradient(to bottom, var(--rail-from), var(--rail-to));
+    padding: 2px;
+    color: currentColor;
+    transform: translate(50%, -50%);
+    pointer-events: none;
     max-inline-size: 54px;
     overflow: hidden;
-    color: color-mix(in oklch, var(--rail-from), black 18%);
     font-size: 9px;
     font-weight: 800;
     line-height: 1;
-    pointer-events: none;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
 
   .time-svg {
     display: block;
-    inline-size: 3px;
-    block-size: calc(100% - var(--bridge-gap));
+    inline-size: 100%;
+    block-size: 100%;
     overflow: visible;
   }
 
   .time-svg-main {
     opacity: 0.9;
+    stroke: color-mix(in oklch, var(--rail-from), var(--rail-to) 44%);
     stroke-linecap: butt;
     stroke-width: 1.25px;
     vector-effect: non-scaling-stroke;
@@ -291,19 +323,25 @@
 
   .time-svg-tick {
     opacity: 0.88;
+    stroke: var(--rail-from);
     stroke-linecap: round;
     stroke-width: 1px;
     vector-effect: non-scaling-stroke;
+  }
+
+  .time-svg-tick--end {
+    stroke: var(--rail-to);
   }
 
   .chip-link-vertical {
     --rail-from: var(--tone-accent);
     --rail-to: var(--tone-accent);
     grid-column: 5;
+    align-self: stretch;
     position: relative;
     z-index: 1;
     min-width: 0;
-    min-block-size: 54px;
+    min-block-size: var(--chip-block-size);
     margin-block: -1px;
     pointer-events: none;
   }
@@ -311,7 +349,8 @@
   .chip-link-vertical::before {
     content: "";
     position: absolute;
-    inset-block: 0;
+    inset-block-start: calc(var(--chip-block-size) - 1px);
+    inset-block-end: -1px;
     inset-inline-start: var(--chip-axis-x);
     inline-size: 1.25px;
     margin-block: -1px;
@@ -459,7 +498,7 @@
         minmax(0, 1fr);
     }
 
-    .time-bridge-label {
+    .time-bridge-label__content {
       max-inline-size: 46px;
       font-size: 8.5px;
     }

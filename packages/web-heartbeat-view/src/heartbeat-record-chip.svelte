@@ -18,6 +18,7 @@
     class: className = "",
     animated = false,
     sticky = false,
+    iconOnly = false,
     size = 14,
     density = "full",
   }: {
@@ -28,6 +29,7 @@
     class?: string;
     animated?: boolean;
     sticky?: boolean;
+    iconOnly?: boolean;
     size?: number;
     density?: HeartbeatRecordDensity;
   } = $props();
@@ -45,6 +47,9 @@
   ];
 
   const visualTokens = $derived.by(() => {
+    if (iconOnly) {
+      return fallbackTokens(visualKind, "", visualTitle);
+    }
     if (chip) {
       return buildHeartbeatRecordChipTokens(chip, density);
     }
@@ -57,7 +62,7 @@
   });
 
   const toneStyle = $derived(buildHeartbeatRecordChipToneStyle(toneKinds));
-  const iconOnly = $derived(visualTokens.length === 1 && visualTokens[0]?.label.length === 0);
+  const isIconOnly = $derived(visualTokens.length === 1 && visualTokens[0]?.label.length === 0);
 </script>
 
 <span
@@ -67,7 +72,7 @@
   class:ag-heartbeat-record-chip--error={visualKind === "error"}
   class:ag-heartbeat-record-chip--animated={animated}
   class:ag-heartbeat-record-chip--sticky={sticky}
-  class:ag-heartbeat-record-chip--icon-only={iconOnly}
+  class:ag-heartbeat-record-chip--icon-only={isIconOnly}
   data-chip-kind={visualKind}
   data-chip-density={density}
   style={toneStyle}

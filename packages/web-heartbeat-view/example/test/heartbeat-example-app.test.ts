@@ -729,6 +729,9 @@ const waitForConnectionButton = async (): Promise<HTMLElement> => {
   throw new Error(`Connection button not found\nBody: ${document.body.innerHTML}`);
 };
 
+const findTabByText = (root: ParentNode | null | undefined, text: string): HTMLElement | undefined =>
+  Array.from(root?.querySelectorAll<HTMLElement>('[role="tab"]') ?? []).find((tab) => tab.textContent?.includes(text));
+
 const waitForConnectionPhase = async (phase: string): Promise<void> => {
   for (let attempt = 0; attempt < 50; attempt += 1) {
     if (connectionSheet()?.dataset.connectionPhase === phase) {
@@ -853,9 +856,7 @@ describe("Feature: Web heartbeat view example route flow", () => {
     expect(subnavbar?.textContent).toContain("Old Context");
     expect(subnavbar?.textContent).not.toContain("Record #2");
 
-    const oldTab = Array.from(subnavbar?.querySelectorAll<HTMLButtonElement>("button") ?? []).find((button) =>
-      button.textContent?.includes("Old Context"),
-    );
+    const oldTab = findTabByText(subnavbar, "Old Context");
     oldTab?.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
     await waitForText("Old context snapshot.");
   });
@@ -883,14 +884,10 @@ describe("Feature: Web heartbeat view example route flow", () => {
     expect(subnavbar?.textContent).toContain("Old Config");
     expect(subnavbar?.textContent).not.toContain("Record #3");
 
-    const newTab = Array.from(subnavbar?.querySelectorAll<HTMLButtonElement>("button") ?? []).find((button) =>
-      button.textContent?.includes("New Config"),
-    );
+    const newTab = findTabByText(subnavbar, "New Config");
     newTab?.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
     await waitForText("thinking: auto");
-    const oldTab = Array.from(subnavbar?.querySelectorAll<HTMLButtonElement>("button") ?? []).find((button) =>
-      button.textContent?.includes("Old Config"),
-    );
+    const oldTab = findTabByText(subnavbar, "Old Config");
     oldTab?.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
     await waitForText("thinking: false");
   });

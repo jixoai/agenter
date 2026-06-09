@@ -54,8 +54,8 @@
   type ConfigSyntaxLine = {
     kind: "meta" | "remove" | "add" | "context";
     raw: string;
-    key: string | null;
-    value: string | null;
+    icon: ConfigControlIcon | null;
+    className: string | null;
   };
 
   const formatControlScalar = (value: unknown): string => formatHeartbeatRecordPayload(value).replaceAll(/\s+/gu, " ").trim();
@@ -185,6 +185,25 @@
       ...prefixDiffLines("+", splitPayloadLines(newValue)),
     ].join("\n");
   };
+  const normalizeConfigKey = (key: string): string => key.trim().replace(/^['"]|['"]$/gu, "").toLowerCase();
+  const readConfigLineKey = (line: string): string | null => {
+    const source =
+      detailTab === "diff" && (line.startsWith("+") || line.startsWith("-")) ? line.slice(1) : line;
+    const match = /^\s*([-\w.]+):/u.exec(source);
+    return match ? normalizeConfigKey(match[1]) : null;
+  };
+  const findConfigControlDefinition = (key: string | null): ConfigControlDefinition | null => {
+    if (key === null) {
+      return null;
+    }
+    return (
+      configControlDefinitions.find(
+        (definition) =>
+          normalizeConfigKey(definition.key) === key ||
+          definition.keys.some((candidate) => normalizeConfigKey(candidate) === key),
+      ) ?? null
+    );
+  };
 
   const providerLabel = $derived.by(() => {
     const provider = readHeartbeatRecordPayloadValue(payload, ["provider", "modelProvider", "providerLabel"]);
@@ -253,16 +272,32 @@
             : detailTab === "diff" && line.startsWith("+")
               ? "add"
               : "context";
-      const yamlKeyMatch = detailTab === "diff" ? null : /^(\s*[-\w.]+:)(.*)$/u.exec(line);
+      const definition = findConfigControlDefinition(kind === "meta" ? null : readConfigLineKey(line));
       return {
         kind,
         raw: line,
-        key: yamlKeyMatch?.[1] ?? null,
-        value: yamlKeyMatch?.[2] ?? null,
+        icon: definition?.icon ?? null,
+        className: definition?.className ?? null,
       };
     }),
   );
 </script>
+
+{#snippet configControlIcon(icon: ConfigControlIcon, size: number)}
+  {#if icon === "temperature"}
+    <Thermometer {size} aria-hidden="true" />
+  {:else if icon === "topK"}
+    <SlidersHorizontal {size} aria-hidden="true" />
+  {:else if icon === "maxToken"}
+    <Binary {size} aria-hidden="true" />
+  {:else if icon === "thinking"}
+    <Brain {size} aria-hidden="true" />
+  {:else if icon === "budget"}
+    <Hourglass {size} aria-hidden="true" />
+  {:else}
+    <FileText {size} aria-hidden="true" />
+  {/if}
+{/snippet}
 
 {#snippet configControlField(control: ConfigControlEntry)}
   <span
@@ -270,19 +305,7 @@
     title={control.title}
   >
     <span class="ag-heartbeat-record-config__field-label">
-      {#if control.icon === "temperature"}
-        <Thermometer size={14} aria-hidden="true" />
-      {:else if control.icon === "topK"}
-        <SlidersHorizontal size={14} aria-hidden="true" />
-      {:else if control.icon === "maxToken"}
-        <Binary size={14} aria-hidden="true" />
-      {:else if control.icon === "thinking"}
-        <Brain size={14} aria-hidden="true" />
-      {:else if control.icon === "budget"}
-        <Hourglass size={14} aria-hidden="true" />
-      {:else}
-        <FileText size={14} aria-hidden="true" />
-      {/if}
+      {@render configControlIcon(control.icon, 14)}
       <span>{control.label}</span>
     </span>
     <span class="ag-heartbeat-record-config__field-value">{control.value}</span>
@@ -308,25 +331,6 @@
   </div>
 {:else}
   <div class="ag-heartbeat-record-config-detail" data-record-body="config">
-    <div class="ag-heartbeat-record-config-detail__object" data-object-kind="config" aria-label="Changed config controls">
-      <div class="ag-heartbeat-record-config" data-state={stateLabel}>
-        <div class="ag-heartbeat-record-config__topline">
-          <span class="ag-heartbeat-record-config__provider-pill" title={`Active provider and model · ${scopeLabel}`}>
-            <SlidersHorizontal size={14} aria-hidden="true" />
-            <span>{providerLabel}</span>
-          </span>
-        </div>
-
-        {#if configControls.length > 0}
-          <div class="ag-heartbeat-record-config__field-grid">
-            {#each configControls as control (control.key)}
-              {@render configControlField(control)}
-            {/each}
-          </div>
-        {/if}
-      </div>
-    </div>
-
     <div
       id={tabPanelId}
       class="ag-heartbeat-record-config-detail__panel"
@@ -334,7 +338,7 @@
       aria-labelledby={tabPanelLabelledBy}
     >
       {#if configSource}
-        <pre class="ag-heartbeat-record-config-detail__source" data-language={detailTab === "diff" ? "diff" : "yaml"}>{#each configSyntaxLines as line, index (`${index}:${line.raw}`)}<span class={`ag-heartbeat-record-config-detail__syntax-line ag-heartbeat-record-config-detail__syntax-line--${line.kind}`}>{#if line.key !== null}<span class="ag-heartbeat-record-config-detail__syntax-key">{line.key}</span><span class="ag-heartbeat-record-config-detail__syntax-value">{line.value}</span>{:else}{line.raw || " "}{/if}</span>{/each}</pre>
+        <pre class="ag-heartbeat-record-config-detail__source" data-language={detailTab === "diff" ? "diff" : "yaml"}>{#each configSyntaxLines as line, index (`${index}:${line.raw}`)}<span class={`ag-heartbeat-record-config-detail__syntax-line ag-heartbeat-record-config-detail__syntax-line--${line.kind}`} data-control={line.className ?? undefined}>{#if line.icon}<span class="ag-heartbeat-record-config-detail__syntax-icon">{@render configControlIcon(line.icon, 13)}</span>{:else}<span class="ag-heartbeat-record-config-detail__syntax-icon" aria-hidden="true"></span>{/if}<span class="ag-heartbeat-record-config-detail__syntax-text">{line.raw || " "}</span></span>{/each}</pre>
       {:else}
         <div class="ag-heartbeat-record-config-detail__empty">No config snapshot</div>
       {/if}
@@ -467,27 +471,7 @@
 
   .ag-heartbeat-record-config-detail {
     display: grid;
-    gap: 10px;
     min-inline-size: 0;
-  }
-
-  .ag-heartbeat-record-config-detail__object {
-    min-inline-size: 0;
-  }
-
-  :global(.ag-heartbeat-record-config-detail__tabs) {
-    inline-size: 100%;
-  }
-
-  :global(.ag-heartbeat-record-config-detail__tabs .button) {
-    min-inline-size: 0;
-    font: 600 11px/1.1 system-ui, sans-serif;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  :global(.ag-heartbeat-record-config-detail__tabs .button-active) {
-    color: color-mix(in oklab, var(--tone-accent, #2563eb), black 15%);
   }
 
   .ag-heartbeat-record-config-detail__source {
@@ -499,15 +483,17 @@
     border-radius: 12px;
     margin: 0;
     background: color-mix(in srgb, Canvas, currentColor 3%);
-    padding: 10px;
+    padding: 8px 0;
     font: 11.5px/1.55 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
     white-space: pre;
   }
 
   .ag-heartbeat-record-config-detail__syntax-line {
-    display: block;
+    display: grid;
+    grid-template-columns: 22px minmax(0, max-content);
+    align-items: start;
     min-inline-size: max-content;
-    padding-inline: 2px;
+    padding-inline: 8px 12px;
   }
 
   .ag-heartbeat-record-config-detail__syntax-line--meta {
@@ -524,13 +510,22 @@
     color: color-mix(in oklab, var(--kind-text, #2563eb), black 12%);
   }
 
-  .ag-heartbeat-record-config-detail__syntax-key {
-    color: color-mix(in oklab, var(--kind-config, #9333ea), black 6%);
-    font-weight: 760;
+  .ag-heartbeat-record-config-detail__syntax-icon {
+    display: inline-grid;
+    place-items: center;
+    min-inline-size: 16px;
+    block-size: 1.55em;
+    color: currentColor;
   }
 
-  .ag-heartbeat-record-config-detail__syntax-value {
-    color: #31445d;
+  .ag-heartbeat-record-config-detail__syntax-icon :global(svg) {
+    block-size: 13px;
+    inline-size: 13px;
+  }
+
+  .ag-heartbeat-record-config-detail__syntax-text {
+    min-inline-size: 0;
+    color: currentColor;
   }
 
   .ag-heartbeat-record-config-detail__empty {

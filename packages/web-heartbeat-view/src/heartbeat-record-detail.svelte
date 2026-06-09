@@ -41,6 +41,7 @@
 
   const partSummaryById = $derived.by(() => {
     const entries = record.summary.parts.flatMap((part) => [
+      [part.partId, part] as const,
       [`${part.messageId}:${part.partId}`, part] as const,
       [`${part.messageId}:${part.type}:${part.startedAt}`, part] as const,
     ]);
@@ -109,6 +110,7 @@
       <HeartbeatRecordCompactBody
         {record}
         payload={compactPayload}
+        sections={detailSections}
         variant="detail"
         title={meta.title}
         detailTab={compactTab}

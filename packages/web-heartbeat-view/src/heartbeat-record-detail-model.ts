@@ -45,6 +45,22 @@ export const collectHeartbeatRecordParts = (
   partTypes: readonly string[],
 ): HeartbeatPart[] => messages.flatMap((message) => message.parts.filter((part) => partTypes.includes(part.partType)));
 
+export const buildHeartbeatDetailPartStableRef = (
+  part: Pick<HeartbeatPart, "messageId" | "partIndex">,
+): string => `${part.messageId}:${part.partIndex}`;
+
+export const buildHeartbeatDetailPartMatchKeys = (part: HeartbeatPart): readonly string[] => {
+  const partId = String(part.partId);
+  const stableRef = buildHeartbeatDetailPartStableRef(part);
+  const keys = new Set<string>([
+    partId,
+    `${part.messageId}:${partId}`,
+    stableRef,
+    `${part.messageId}:${part.partType}:${part.createdAt}`,
+  ]);
+  return [...keys];
+};
+
 export const indentHeartbeatYaml = (value: string): string =>
   value
     .split("\n")
@@ -57,10 +73,9 @@ export const buildHeartbeatRecordDetailRows = (
 ): HeartbeatRecordDetailPartRow[] =>
   messages.flatMap((message) =>
     message.parts.map((part) => {
-      const summary =
-        summaries.get(`${part.messageId}:${part.partId}`) ??
-        summaries.get(`${part.messageId}:${part.partType}:${part.createdAt}`) ??
-        null;
+      const summary = buildHeartbeatDetailPartMatchKeys(part)
+        .map((key) => summaries.get(key) ?? null)
+        .find((candidate): candidate is HeartbeatRecordPartSummary => candidate !== null) ?? null;
       const completedAt = summary?.completedAt ?? (part.isComplete ? part.updatedAt : null);
       const startedAt = summary?.startedAt ?? part.createdAt;
       return {

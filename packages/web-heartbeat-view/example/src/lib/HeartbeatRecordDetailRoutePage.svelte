@@ -30,11 +30,17 @@
         recordId?: string;
       };
     };
+    f7router?: {
+      back?: (url?: string, options?: { animate?: boolean; force?: boolean }) => void;
+    };
     runtimeId?: string;
     recordId?: string | number;
   };
 
-  let { runtimeId: runtimeIdProp, recordId: recordIdProp, f7route }: Framework7RouteProps = $props();
+  let { runtimeId: runtimeIdProp, recordId: recordIdProp, f7route, f7router }: Framework7RouteProps = $props();
+  type PreventableFramework7MouseEvent = MouseEvent & {
+    preventF7Router?: boolean;
+  };
 
   type CompactDetailTab = "new" | "old";
   type ConfigDetailTab = "diff" | "new" | "old";
@@ -86,6 +92,19 @@
   let configTab = $state<ConfigDetailTab>("diff");
   let loadedDetailKey = $state("");
 
+  const handleBackClick = (event?: PreventableFramework7MouseEvent): void => {
+    event?.preventDefault();
+    event?.stopPropagation();
+    if (event) {
+      event.preventF7Router = true;
+    }
+    if (f7router?.back) {
+      f7router.back(backHref, { animate: true, force: true });
+      return;
+    }
+    window.location.assign(backHref);
+  };
+
   onMount(() => {
     if (runtimeId) {
       void exampleState.openRuntimeId(runtimeId);
@@ -108,7 +127,16 @@
 
 <Page name="heartbeat-record-detail" pageContent={false} withSubnavbar={hasDetailTabs}>
   <Navbar>
-    <NavLeft backLink={true} backLinkUrl={backHref} backLinkShowText={false} />
+    <NavLeft
+      backLink={true}
+      backLinkUrl={backHref}
+      backLinkForce={true}
+      backLinkShowText={false}
+      onClickBack={handleBackClick}
+      onBackClick={handleBackClick}
+      onclickback={handleBackClick}
+      onbackclick={handleBackClick}
+    />
     <NavTitle>
       <span class="heartbeat-example-record-navbar-title">
         {#if exampleState.selectedTarget}
@@ -136,11 +164,11 @@
       </Link>
     </NavRight>
     {#if detailRecord?.kind === "compact"}
-      <Subnavbar inner={false} class="heartbeat-example-record-detail-tabs">
-        <Segmented strong role="tablist" aria-label="Compact detail tabs">
+      <Subnavbar >
+        <Segmented strong round small role="tablist" aria-label="Compact detail tabs">
           <Button
+            round small
             id={compactTabIds.new}
-            type="button"
             role="tab"
             active={compactTab === "new"}
             aria-selected={compactTab === "new"}
@@ -150,8 +178,8 @@
             onClick={() => (compactTab = "new")}
           />
           <Button
+            round small
             id={compactTabIds.old}
-            type="button"
             role="tab"
             active={compactTab === "old"}
             aria-selected={compactTab === "old"}
@@ -163,11 +191,11 @@
         </Segmented>
       </Subnavbar>
     {:else if detailRecord?.kind === "config"}
-      <Subnavbar inner={false} class="heartbeat-example-record-detail-tabs">
-        <Segmented strong role="tablist" aria-label="Config detail tabs">
+      <Subnavbar>
+        <Segmented strong round small role="tablist" aria-label="Config detail tabs">
           <Button
+            round small
             id={configTabIds.diff}
-            type="button"
             role="tab"
             active={configTab === "diff"}
             aria-selected={configTab === "diff"}
@@ -177,8 +205,8 @@
             onClick={() => (configTab = "diff")}
           />
           <Button
+            round small
             id={configTabIds.new}
-            type="button"
             role="tab"
             active={configTab === "new"}
             aria-selected={configTab === "new"}
@@ -188,8 +216,8 @@
             onClick={() => (configTab = "new")}
           />
           <Button
+            round small
             id={configTabIds.old}
-            type="button"
             role="tab"
             active={configTab === "old"}
             aria-selected={configTab === "old"}
@@ -242,28 +270,6 @@
 
   .heartbeat-example-record-navbar-title > span:last-child {
     overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  :global(.heartbeat-example-record-detail-tabs) {
-    --f7-subnavbar-height: 44px;
-  }
-
-  :global(.heartbeat-example-record-detail-tabs .subnavbar-inner) {
-    box-sizing: border-box;
-    min-width: 0;
-    padding: 6px 10px;
-  }
-
-  :global(.heartbeat-example-record-detail-tabs .segmented) {
-    width: 100%;
-    min-width: 0;
-  }
-
-  :global(.heartbeat-example-record-detail-tabs .button) {
-    min-width: 0;
-    font: 600 11px/1.1 system-ui, sans-serif;
     text-overflow: ellipsis;
     white-space: nowrap;
   }

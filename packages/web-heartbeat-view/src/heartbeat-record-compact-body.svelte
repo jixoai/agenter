@@ -1,6 +1,8 @@
 <script lang="ts">
+  import HeartbeatEntry from "./heartbeat-entry.svelte";
   import HeartbeatRecordIcon from "./heartbeat-record-icon.svelte";
   import { formatHeartbeatRecordPayload, readHeartbeatRecordPayloadValue } from "./heartbeat-record-detail-model";
+  import { getHeartbeatGroupLabel, type HeartbeatSubjectSection } from "./heartbeat-parts";
   import type { HeartbeatRecordItem } from "./types";
 
   type CompactTab = "new" | "old";
@@ -8,6 +10,7 @@
   let {
     record,
     payload = null,
+    sections = [],
     variant = "card",
     title,
     detailTab = "new",
@@ -16,6 +19,7 @@
   }: {
     record: HeartbeatRecordItem;
     payload?: unknown;
+    sections?: HeartbeatSubjectSection[];
     variant?: "card" | "detail";
     title: string;
     detailTab?: CompactTab;
@@ -38,8 +42,6 @@
   );
   const normalizePercent = (value: number): number => (Math.abs(value) <= 1 ? value * 100 : value);
   const clampPercent = (value: number): number => Math.min(100, Math.max(0, normalizePercent(value)));
-  const beforeWidth = $derived(beforeValue === null ? 100 : clampPercent(beforeValue));
-  const afterWidth = $derived(afterValue === null ? 0 : clampPercent(afterValue));
   const compactError = $derived(readHeartbeatRecordPayloadValue(payload, ["error", "message"]) ?? null);
   const newContext = $derived(
     readHeartbeatRecordPayloadValue(payload, ["newContext", "new", "after", "context", "text", "content"]) ??
@@ -55,6 +57,19 @@
   const compactState = $derived(
     record.status === "error" ? "error" : record.status === "running" ? "running" : "completed",
   );
+  const beforeWidth = $derived(beforeValue === null ? 100 : clampPercent(beforeValue));
+  const afterWidth = $derived.by(() => {
+    if (afterValue !== null) {
+      return clampPercent(afterValue);
+    }
+    if (compactState === "error") {
+      return beforeWidth;
+    }
+    if (compactState === "running") {
+      return 42;
+    }
+    return 34;
+  });
   const formatUsageValue = (value: number): string => `${normalizePercent(value).toFixed(1)}%`;
   const coreText = $derived.by(() => {
     if (beforeValue !== null && afterValue !== null) {
@@ -66,8 +81,20 @@
     if (compactState === "running") {
       return "streaming";
     }
-    return "compact";
+    return "rebuilt";
   });
+  const compactGroupLabel = $derived(
+    getHeartbeatGroupLabel({
+      id: record.id,
+      groupId: record.recordKey,
+      kind: "compact",
+      aiCallId: record.primaryAiCallId,
+      createdAt: record.startedAt,
+      updatedAt: record.updatedAt,
+      isComplete: record.isComplete,
+      items: sections.flatMap((section) => section.entries),
+    }),
+  );
 </script>
 
 {#if variant === "card"}
@@ -119,7 +146,19 @@
         <div class="ag-heartbeat-record-compact-detail__streaming">streaming</div>
       {/if}
 
-      {#if compactSource}
+      {#if detailTab === "new" && sections.length > 0}
+        <div class="ag-heartbeat-record-compact-detail__entries">
+          {#each sections as section (section.key)}
+            <HeartbeatEntry
+              {section}
+              layoutMode="detailed"
+              groupLabel={compactGroupLabel}
+              groupTimestamp={record.startedAt}
+              presentation="compact-special"
+            />
+          {/each}
+        </div>
+      {:else if compactSource}
         <pre class="ag-heartbeat-record-compact-detail__source">{compactSource}</pre>
       {:else}
         <div class="ag-heartbeat-record-compact-detail__empty ag-heartbeat-record-compact-detail__empty--pulse">
@@ -249,6 +288,12 @@
     color: color-mix(in srgb, currentColor, transparent 34%);
     font: 700 0.72rem/1.15 system-ui, sans-serif;
     animation: ag-heartbeat-record-compact-breathe 1.6s ease-in-out infinite;
+  }
+
+  .ag-heartbeat-record-compact-detail__entries {
+    display: grid;
+    min-inline-size: 0;
+    gap: 8px;
   }
 
   .ag-heartbeat-record-compact-detail__source {

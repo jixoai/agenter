@@ -493,7 +493,7 @@ describe("Feature: HeartbeatView DOM capability contract", () => {
       parts: [
         recordPart({
           messageId: "record-user-101",
-          partId: "1",
+          partId: "record-user-101:1",
           role: "user",
           type: "text",
           startedAt: 1_780_000_000_000,
@@ -502,7 +502,7 @@ describe("Feature: HeartbeatView DOM capability contract", () => {
         }),
         recordPart({
           messageId: "record-thinking-101",
-          partId: "2",
+          partId: "record-thinking-101:2",
           role: "assistant",
           type: "thinking",
           startedAt: 1_780_000_000_050,
@@ -511,7 +511,7 @@ describe("Feature: HeartbeatView DOM capability contract", () => {
         }),
         recordPart({
           messageId: "record-tool-101",
-          partId: "3",
+          partId: "record-tool-101:3",
           role: "assistant",
           type: "tool_call",
           startedAt: 1_780_000_000_650,
@@ -520,7 +520,7 @@ describe("Feature: HeartbeatView DOM capability contract", () => {
         }),
         recordPart({
           messageId: "record-tool-result-101",
-          partId: "4",
+          partId: "record-tool-result-101:4",
           role: "user",
           type: "tool_result",
           startedAt: 1_780_000_000_900,
@@ -529,7 +529,7 @@ describe("Feature: HeartbeatView DOM capability contract", () => {
         }),
         recordPart({
           messageId: "record-text-101",
-          partId: "5",
+          partId: "record-text-101:5",
           role: "assistant",
           type: "text",
           startedAt: 1_780_000_001_000,
@@ -608,11 +608,28 @@ describe("Feature: HeartbeatView DOM capability contract", () => {
     expect(document.body.textContent).toContain("shell.exec");
     expect(document.querySelector(".station-heartbeat-entries .ag-heartbeat-entry")).not.toBeNull();
     expect(document.querySelector(".station-payload")).toBeNull();
+    const detailTrack = document.querySelector<HTMLElement>('[data-testid="heartbeat-record-detail-track"]');
+    expect(detailTrack?.style.gridTemplateRows).not.toContain("1fr");
+    expect(detailTrack?.style.gridTemplateRows).not.toContain("min-content");
+    expect(document.querySelector<HTMLElement>(".ag-heartbeat-record-detail__chip-link-vertical")?.style.gridRow).toBe(
+      document.querySelector<HTMLElement>(".ag-heartbeat-record-detail-track__station-link")?.style.gridRow,
+    );
+    const detailInputChip = document.querySelector<HTMLElement>(
+      '[data-testid="heartbeat-record-detail-track"] [data-chip-kind="input"]',
+    );
+    expect(detailInputChip?.querySelectorAll(".ag-heartbeat-record-chip__token").length).toBe(1);
+    expect(detailInputChip?.querySelector(".ag-heartbeat-record-chip__label")).toBeNull();
     expect(document.querySelector(".ag-heartbeat-record-detail__time-label")).not.toBeNull();
+    expect(document.querySelector(".ag-heartbeat-record-detail__time-label .time-bridge-label__content")).not.toBeNull();
     expect(document.querySelector(".ag-heartbeat-record-detail__time-crossline")).not.toBeNull();
     expect(
       document.querySelector(".ag-heartbeat-record-detail__time-bridge .ag-heartbeat-record-detail__time-svg-main"),
     ).not.toBeNull();
+    expect(
+      document.querySelector(".ag-heartbeat-record-detail__time-bridge .time-svg")?.getAttribute("viewBox"),
+    ).toBeNull();
+    expect(document.querySelector<HTMLElement>('[data-time-bridge-kind="first"]')?.style.gridRow).toBe("1");
+    expect(document.querySelector('[data-time-bridge-kind="after"]')).not.toBeNull();
     expect(document.querySelector(".ag-heartbeat-record-detail__chip-link-vertical")).not.toBeNull();
     expect(
       getComputedStyle(document.querySelector<HTMLElement>(".ag-heartbeat-record-detail__step-chip")!).position,
@@ -747,6 +764,22 @@ describe("Feature: HeartbeatView DOM capability contract", () => {
             [compactRecord.id]: completeLoadedResource(
               recordDetail(compactRecord, [
                 heartbeatEntry({
+                  id: 1010,
+                  messageId: "record-compact-prompt-102",
+                  scope: "request_aux",
+                  role: "system",
+                  parts: [
+                    heartbeatPart({
+                      partId: 10,
+                      messageId: "record-compact-prompt-102",
+                      scope: "request_aux",
+                      role: "system",
+                      partType: "text",
+                      payload: { text: "Old prompt fact folded into compact." },
+                    }),
+                  ],
+                }),
+                heartbeatEntry({
                   id: 102,
                   messageId: "record-compact-102",
                   parts: [
@@ -754,11 +787,7 @@ describe("Feature: HeartbeatView DOM capability contract", () => {
                       partId: 1,
                       messageId: "record-compact-102",
                       partType: "compact",
-                      payload: {
-                        newContext: "New compact context is streaming.",
-                        oldContext: "Old context snapshot.",
-                        error: "Partial compact warning",
-                      },
+                      payload: { text: "New compact context is streaming." },
                     }),
                   ],
                 }),
@@ -775,9 +804,10 @@ describe("Feature: HeartbeatView DOM capability contract", () => {
     await waitForDocumentText("New compact context is streaming.");
     expect(document.querySelector(".ag-heartbeat-record-compact-detail__tabs.segmented")).toBeNull();
     expect(document.body.textContent).not.toContain("Old context snapshot.");
-    expect(document.querySelectorAll('[data-object-kind="compact"]').length).toBeGreaterThanOrEqual(2);
+    expect(document.querySelector('[data-testid="heartbeat-record-detail"] [data-object-kind="compact"]')).not.toBeNull();
+    expect(document.querySelector(".ag-heartbeat-record-compact-detail__entries .ag-heartbeat-entry")).not.toBeNull();
+    expect(document.body.textContent).toContain("Compact prompt facts");
     expect(document.body.textContent).toContain("streaming");
-    expect(document.body.textContent).toContain("Partial compact warning");
   });
 
   test("Scenario: Given config record detail When rendered inline Then YAML diff is first and tabs stay host-owned", async () => {
@@ -836,14 +866,15 @@ describe("Feature: HeartbeatView DOM capability contract", () => {
     document.querySelector<HTMLElement>('[data-testid="heartbeat-record-103"]')?.click();
     await waitForDocumentText("Diff Config");
     expect(document.querySelector(".ag-heartbeat-record-config-detail__tabs.segmented")).toBeNull();
-    expect(document.querySelectorAll('[data-object-kind="config"]').length).toBeGreaterThanOrEqual(2);
-    expect(document.querySelector(".ag-heartbeat-record-config__field--thinking")).not.toBeNull();
-    expect(document.querySelector(".ag-heartbeat-record-config__field--maxtoken")).not.toBeNull();
+    expect(document.querySelector('[data-testid="heartbeat-record-detail"] [data-object-kind="config"]')).toBeNull();
+    expect(document.querySelector(".ag-heartbeat-record-config-detail__syntax-line[data-control='thinking']")).not.toBeNull();
+    expect(document.querySelector(".ag-heartbeat-record-config-detail__syntax-line[data-control='maxtoken']")).not.toBeNull();
+    expect(document.querySelector(".ag-heartbeat-record-config-detail__syntax-icon svg")).not.toBeNull();
     expect(document.body.textContent).toContain("auto");
     expect(document.body.textContent).toContain("adaptive");
     expect(document.body.textContent).not.toContain("0t");
-    expect(document.querySelector(".ag-heartbeat-record-config__field--topk")).toBeNull();
-    expect(document.querySelector(".ag-heartbeat-record-config__field--budget")).toBeNull();
+    expect(document.querySelector(".ag-heartbeat-record-config-detail__syntax-line[data-control='topk']")).toBeNull();
+    expect(document.querySelector(".ag-heartbeat-record-config-detail__syntax-line[data-control='budget']")).toBeNull();
     expect(document.body.textContent).toContain("--- old-config");
     expect(document.body.textContent).toContain("+++ new-config");
     expect(document.body.textContent).toContain("-null");
