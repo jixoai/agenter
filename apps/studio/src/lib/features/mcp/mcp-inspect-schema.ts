@@ -190,11 +190,9 @@ export const resolveCapabilityDescription = (value: unknown): string => {
 	if (!isRecord(value)) {
 		return '';
 	}
-	for (const key of ['description', 'title'] as const) {
-		const candidate = value[key];
-		if (typeof candidate === 'string' && candidate.trim().length > 0) {
-			return candidate.trim();
-		}
+	const candidate = value.description;
+	if (typeof candidate === 'string' && candidate.trim().length > 0) {
+		return candidate.trim();
 	}
 	return '';
 };

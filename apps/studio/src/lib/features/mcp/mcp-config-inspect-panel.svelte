@@ -29,6 +29,7 @@
 	import { Textarea } from '$lib/components/ui/textarea/index.js';
 	import { cn } from '$lib/utils.js';
 
+	import McpAppResourcePreview from './mcp-app-resource-preview.svelte';
 	import McpHelpHint from './mcp-help-hint.svelte';
 	import type { McpGlobalConfigDraft } from './mcp-workbench-state';
 	import {
@@ -52,6 +53,10 @@
 		title: string;
 		kind: CapabilityKind;
 		items: InspectCapabilityCard[];
+	};
+	type McpAppToolCallRequest = {
+		name: string;
+		arguments?: Record<string, unknown>;
 	};
 	type InspectorSocketState = 'idle' | 'connecting' | 'open' | 'closed' | 'error';
 	type InspectorSocketEventMap = {
@@ -154,9 +159,18 @@
 			return readStringField(value, 'title') ?? readStringField(value, 'name') ?? resolveCapabilityProtocolId(kind, value, fallback);
 		}
 		if (kind === 'app') {
-			return readStringField(value, 'title') ?? readStringField(value, 'toolName') ?? readStringField(value, 'resourceUri') ?? fallback;
+			const resource = isRecord(value) ? value.resource : null;
+			const tool = isRecord(value) ? value.tool : null;
+			return (
+				readStringField(value, 'title') ??
+				readStringField(resource, 'title') ??
+				readStringField(tool, 'title') ??
+				readStringField(value, 'toolName') ??
+				readStringField(value, 'resourceUri') ??
+				fallback
+			);
 		}
-		return readStringField(value, 'name') ?? readStringField(value, 'title') ?? fallback;
+		return readStringField(value, 'title') ?? readStringField(value, 'name') ?? fallback;
 	};
 
 	const buildCapabilityCard = (kind: CapabilityKind, value: unknown, fallback: string): InspectCapabilityCard => ({
@@ -171,7 +185,7 @@
 			kind === 'app' && isRecord(value)
 				? resolveCapabilityIcon(value.resource) || resolveCapabilityIcon(value.tool) || resolveCapabilityIcon(value)
 				: resolveCapabilityIcon(value),
-		schema: resolveToolInputSchema(value),
+		schema: kind === 'app' && isRecord(value) ? resolveToolInputSchema(value.tool) : resolveToolInputSchema(value),
 		raw: value,
 	});
 
@@ -190,6 +204,66 @@
 	};
 
 	const formatJson = (value: unknown): string => JSON.stringify(value, null, 2);
+	const quoteShellArg = (value: string): string => JSON.stringify(value);
+	const redactStringRecord = (value: Record<string, string> | undefined): Record<string, string> | undefined => {
+		if (!value || Object.keys(value).length === 0) {
+			return undefined;
+		}
+		return Object.fromEntries(Object.keys(value).map((key) => [key, '<redacted>']));
+	};
+	const buildInspectorServerName = (name: string): string => name.replace(/[^a-zA-Z0-9_.-]/gu, '-') || 'mcp';
+	const buildInspectorEnvArgs = (draft: McpGlobalConfigDraft): string[] => {
+		const transportEnvKeys = draft.transport.kind === 'stdio' ? Object.keys(draft.transport.env ?? {}) : [];
+		return [...new Set([...Object.keys(draft.env ?? {}), ...transportEnvKeys])].flatMap((key) => [
+			'-e',
+			`${key}=<redacted>`,
+		]);
+	};
+	const buildInspectorConfigPreview = (draft: McpGlobalConfigDraft): Record<string, unknown> => ({
+		mcpServers: {
+			[buildInspectorServerName(draft.name.trim() || 'inspector')]:
+				draft.transport.kind === 'stdio'
+					? {
+							type: 'stdio',
+							command: draft.transport.command,
+							args: draft.transport.args,
+							env: redactStringRecord(draft.transport.env),
+						}
+					: {
+							type: draft.transport.kind,
+							url: draft.transport.url,
+							headers: redactStringRecord(draft.transport.headers),
+						},
+		},
+	});
+	const formatInspectorDirectCommand = (draft: McpGlobalConfigDraft): string => {
+		if (draft.transport.kind === 'stdio') {
+			return [
+				'bunx',
+				'@modelcontextprotocol/inspector',
+				...buildInspectorEnvArgs(draft),
+				'--',
+				draft.transport.command,
+				...draft.transport.args,
+			]
+				.map(quoteShellArg)
+				.join(' ');
+		}
+		const transport = draft.transport.kind === 'streamable-http' ? 'http' : draft.transport.kind;
+		const headerArgs = Object.keys(draft.transport.headers ?? {}).flatMap((key) => ['--header', `${key}: <redacted>`]);
+		return [
+			'bunx',
+			'@modelcontextprotocol/inspector',
+			...buildInspectorEnvArgs(draft),
+			'--transport',
+			transport,
+			'--server-url',
+			draft.transport.url,
+			...headerArgs,
+		]
+			.map(quoteShellArg)
+			.join(' ');
+	};
 
 	const formatProbeHelp = (input: McpProbeInput | null, output: McpProbeOutput | null = null): string => {
 		if (!input) {
@@ -206,9 +280,21 @@
 			.join('\n\n');
 	};
 
-	const formatInspectorHelp = (session: McpInspectorSnapshotOutput | null): string => {
+	const formatInspectorHelp = (
+		session: McpInspectorSnapshotOutput | null,
+		draft: McpGlobalConfigDraft | null,
+	): string => {
 		if (!session) {
-			return 'bunx @modelcontextprotocol/inspector\n\nThe backend will generate a temporary --config file and --server name for the current draft.';
+			if (!draft) {
+				return 'bunx @modelcontextprotocol/inspector --config <avatar-tmp-config.json> --server <server-name>\n\nThe backend launches the inspector through a temporary config file.';
+			}
+			return [
+				`bunx ${quoteShellArg('@modelcontextprotocol/inspector')} --config <avatar-tmp-config.json> --server ${quoteShellArg(buildInspectorServerName(draft.name.trim() || 'inspector'))}`,
+				'',
+				`tmp config preview:\n${formatJson(buildInspectorConfigPreview(draft))}`,
+				'',
+				`equivalent direct shape:\n${formatInspectorDirectCommand(draft)}`,
+			].join('\n');
 		}
 		return [
 			`${session.command} ${session.args.map((arg) => JSON.stringify(arg)).join(' ')}`,
@@ -234,6 +320,7 @@
 	let lastOpenProbeInput = $state<McpProbeInput | null>(null);
 	let lastActionProbeInput = $state<McpProbeInput | null>(null);
 	let callResult = $state<unknown | null>(null);
+	let appToolResult = $state<unknown | null>(null);
 	let lastResetKey = $state<string | null>(null);
 	let snapshotView = $state<'visual' | 'raw'>('visual');
 	let capabilityDialogView = $state<'call' | 'raw'>('call');
@@ -346,7 +433,10 @@
 			) ?? null,
 	);
 	const activeCapabilityActionLabel = $derived.by(() => {
-		if (activeCapabilityKind === 'resource' || activeCapabilityKind === 'app') {
+		if (activeCapabilityKind === 'app') {
+			return 'Open';
+		}
+		if (activeCapabilityKind === 'resource') {
 			return 'Read';
 		}
 		if (activeCapabilityKind === 'prompt') {
@@ -358,8 +448,10 @@
 		return 'Call';
 	});
 	const activeCapabilityCanRun = $derived.by(() => activeCapabilityKind !== 'template');
-	const activeCapabilitySupportsArguments = $derived.by(() => activeCapabilityKind === 'tool' || activeCapabilityKind === 'prompt');
 	const activeCapabilitySchema = $derived.by(() => (activeCapabilityKind === 'tool' ? selectedToolSchema : activeCapability?.schema ?? null));
+	const activeCapabilitySupportsArguments = $derived.by(
+		() => activeCapabilityKind === 'tool' || activeCapabilityKind === 'prompt' || (activeCapabilityKind === 'app' && activeCapabilitySchema !== null),
+	);
 	const activeCapabilityDescription = $derived.by(
 		() => (activeCapabilityKind === 'tool' ? selectedToolDescription : activeCapability?.description ?? ''),
 	);
@@ -368,7 +460,14 @@
 	);
 	const inspectHeaderHelp = $derived(formatProbeHelp(lastOpenProbeInput, lastCliResult));
 	const actionHeaderHelp = $derived(formatProbeHelp(lastActionProbeInput, lastCliResult));
-	const inspectorHeaderHelp = $derived(formatInspectorHelp(inspectorSession));
+	const inspectorDraftPreview = $derived.by(() => {
+		try {
+			return buildDraft();
+		} catch {
+			return null;
+		}
+	});
+	const inspectorHeaderHelp = $derived(formatInspectorHelp(inspectorSession, inspectorDraftPreview));
 	const inspectorFullscreen = $derived(inspectorCompactViewport || inspectorFullscreenRequested);
 	const inspectorFullscreenToggleLabel = $derived(
 		inspectorFullscreen ? 'Exit full screen inspector' : 'Expand inspector',
@@ -400,6 +499,7 @@
 		lastOpenProbeInput = null;
 		lastActionProbeInput = null;
 		callResult = null;
+		appToolResult = null;
 		snapshotView = 'visual';
 		capabilityDialogView = 'call';
 		toolArgumentsDirty = false;
@@ -483,41 +583,69 @@
 		};
 	};
 
-	const buildCapabilityProbeInput = (): McpProbeInput => {
+	const requireProbeContext = (): { avatarNickname: string; probeId: string } => {
 		if (!probeId || !probeAvatarNickname) {
 			throw new Error('Connect before capability actions');
 		}
+		return { avatarNickname: probeAvatarNickname, probeId };
+	};
+
+	const buildToolProbeInput = (toolProtocolId: string, argumentsInput: Record<string, unknown>): McpProbeInput => {
+		const context = requireProbeContext();
+		return {
+			avatarNickname: context.avatarNickname,
+			action: 'call-tool',
+			probeId: context.probeId,
+			toolName: toolProtocolId,
+			arguments: argumentsInput,
+		};
+	};
+
+	const buildReadResourceProbeInput = (resourceUri: string): McpProbeInput => {
+		const context = requireProbeContext();
+		return {
+			avatarNickname: context.avatarNickname,
+			action: 'read-resource',
+			probeId: context.probeId,
+			resourceUri,
+		};
+	};
+
+	const buildCapabilityProbeInput = (): McpProbeInput => {
+		const context = requireProbeContext();
 		if (!activeCapabilityCanRun || !activeCapability) {
 			throw new Error('Resource templates require a concrete URI before probe can read them');
 		}
 		if (activeCapabilityKind === 'tool') {
-			return {
-				avatarNickname: probeAvatarNickname,
-				action: 'call-tool',
-				probeId,
-				toolName: activeCapability.protocolId,
-				arguments: parseArguments(activeCapabilityArguments),
-			};
+			return buildToolProbeInput(activeCapability.protocolId, parseArguments(activeCapabilityArguments));
 		}
 		if (activeCapabilityKind === 'prompt') {
 			return {
-				avatarNickname: probeAvatarNickname,
+				avatarNickname: context.avatarNickname,
 				action: 'get-prompt',
-				probeId,
+				probeId: context.probeId,
 				promptName: activeCapability.protocolId,
 				arguments: parseArguments(activeCapabilityArguments),
 			};
 		}
-		return {
-			avatarNickname: probeAvatarNickname,
-			action: 'read-resource',
-			probeId,
-			resourceUri: activeCapability.protocolId,
-		};
+		return buildReadResourceProbeInput(activeCapability.protocolId);
 	};
 
 	const activeCapabilityHelp = $derived.by(() => {
 		try {
+			if (activeCapabilityKind === 'app' && activeCapability) {
+				const toolProtocolId = readStringField(activeCapability.raw, 'toolName');
+				const inputs = [
+					toolProtocolId
+						? buildToolProbeInput(
+								toolProtocolId,
+								activeCapabilitySupportsArguments ? parseArguments(activeCapabilityArguments) : {},
+							)
+						: null,
+					buildReadResourceProbeInput(activeCapability.protocolId),
+				].filter((entry): entry is McpProbeInput => entry !== null);
+				return inputs.map((input) => formatProbeHelp(input, lastCliResult)).join('\n\n---\n\n');
+			}
 			return formatProbeHelp(buildCapabilityProbeInput(), lastCliResult);
 		} catch {
 			return actionHeaderHelp;
@@ -776,6 +904,26 @@
 		callPending = true;
 		callError = null;
 		try {
+			appToolResult = null;
+			if (activeCapabilityKind === 'app' && activeCapability) {
+				const toolProtocolId = readStringField(activeCapability.raw, 'toolName');
+				if (toolProtocolId) {
+					const toolInput = buildToolProbeInput(
+						toolProtocolId,
+						activeCapabilitySupportsArguments ? parseArguments(activeCapabilityArguments) : {},
+					);
+					lastActionProbeInput = toolInput;
+					const toolOutput = await onProbe(toolInput);
+					ensureProbeOk(toolOutput);
+					appToolResult = toolOutput.parsed ?? null;
+				}
+				const readInput = buildReadResourceProbeInput(activeCapability.protocolId);
+				lastActionProbeInput = readInput;
+				const resourceOutput = await onProbe(readInput);
+				ensureProbeOk(resourceOutput);
+				callResult = resourceOutput.parsed ?? null;
+				return;
+			}
 			const actionInput = buildCapabilityProbeInput();
 			lastActionProbeInput = actionInput;
 			const output = await onProbe(actionInput);
@@ -813,6 +961,7 @@
 		activeCapabilityProtocolId = item.protocolId;
 		callError = null;
 		callResult = null;
+		appToolResult = null;
 		if (item.kind === 'tool') {
 			handleToolChange(item.protocolId);
 			capabilityDialogView = 'call';
@@ -822,6 +971,15 @@
 			capabilityDialogView = 'call';
 		}
 		capabilityDialogOpen = true;
+	};
+
+	const callMcpAppTool = async (input: McpAppToolCallRequest): Promise<unknown> => {
+		const toolInput = buildToolProbeInput(input.name, input.arguments ?? {});
+		lastActionProbeInput = toolInput;
+		const output = await onProbe(toolInput);
+		ensureProbeOk(output);
+		appToolResult = output.parsed ?? null;
+		return output.parsed ?? {};
 	};
 
 	const runInspector = async (): Promise<void> => {
@@ -1038,16 +1196,16 @@
 							<div class="rounded-lg bg-muted/20 px-3 py-3 text-sm text-muted-foreground">None</div>
 						{:else}
 							<div class="mcp-inspect-capability-grid" data-testid="mcp-config-inspect-capability-grid">
-								{#each mixedSnapshotCapabilities as item (`${item.kind}:${item.name}`)}
+								{#each mixedSnapshotCapabilities as item (`${item.kind}:${item.protocolId}`)}
 									<button
 										type="button"
 										class="grid gap-2 rounded-lg bg-muted/20 px-3 py-3 text-left transition-colors hover:bg-muted/35"
-										data-testid={`mcp-config-inspect-${item.kind}-card:${item.name}`}
+										data-testid={`mcp-config-inspect-${item.kind}-card:${item.protocolId}`}
 										onclick={() => openCapabilityDialog(item)}
 									>
 										<div class="flex items-start justify-between gap-2">
-											<div class="flex min-w-0 items-start gap-2">
-												<div class="mcp-inspect-capability-icon" data-testid={`mcp-config-inspect-${item.kind}-icon:${item.name}`}>
+											<div class="flex min-w-0 flex-1 items-start gap-2">
+												<div class="mcp-inspect-capability-icon" data-testid={`mcp-config-inspect-${item.kind}-icon:${item.protocolId}`}>
 													{#if item.icon}
 														<img src={item.icon} alt="" class="size-5 object-contain" />
 													{:else}
@@ -1055,17 +1213,17 @@
 													{/if}
 												</div>
 												<div
-													class="min-w-0 truncate text-sm font-medium text-foreground"
-													data-testid={`mcp-config-inspect-${item.kind}-title:${item.name}`}
+													class="line-clamp-2 min-w-0 break-words text-sm font-medium text-foreground"
+													data-testid={`mcp-config-inspect-${item.kind}-title:${item.protocolId}`}
 												>
 													{item.name}
 												</div>
 											</div>
-											<Badge variant="outline">{item.kind}</Badge>
+											<Badge variant="outline" class="shrink-0">{item.kind}</Badge>
 										</div>
 										<p
 											class="line-clamp-3 text-xs text-muted-foreground"
-											data-testid={`mcp-config-inspect-${item.kind}-description:${item.name}`}
+											data-testid={`mcp-config-inspect-${item.kind}-description:${item.protocolId}`}
 										>
 											{item.description || 'No description'}
 										</p>
@@ -1219,6 +1377,12 @@
 										<span>exit {lastCliResult.exitCode}</span>
 									</div>
 								{/if}
+								<McpAppResourcePreview
+									resourceResult={callResult}
+									toolResult={appToolResult}
+									title={activeCapability.name}
+									callTool={callMcpAppTool}
+								/>
 								<StructuredValueViewer value={callResult} menuLabel="Inspect tool result options" class="rounded-lg" />
 							</div>
 						{/if}

@@ -27,6 +27,7 @@ describe("Feature: Studio MCP route contract", () => {
     const configDetailSource = readSource("mcp-config-detail.svelte");
     const newFormSource = readSource("mcp-new-global-form.svelte");
     const inspectSource = readSource("mcp-config-inspect-panel.svelte");
+    const appPreviewSource = readSource("mcp-app-resource-preview.svelte");
     const stateSource = readSource("mcp-workbench-state.ts");
 
     expect(routeSource).toContain("mcp_installed");
@@ -51,6 +52,12 @@ describe("Feature: Studio MCP route contract", () => {
     expect(inspectSource).toContain("action: 'open'");
     expect(inspectSource).toContain("action: 'ping'");
     expect(inspectSource).toContain("action: 'read-resource'");
+    expect(inspectSource).toContain("McpAppResourcePreview");
+    expect(inspectSource).toContain("line-clamp-2 min-w-0 break-words");
+    expect(appPreviewSource).toContain("profile=mcp-app");
+    expect(appPreviewSource).toContain("ui/initialize");
+    expect(appPreviewSource).toContain("tools/call");
+    expect(appPreviewSource).toContain("ui/notifications/tool-result");
     expect(inspectSource).toContain("protocolId");
     expect(inspectSource).toContain("Arguments");
     expect(inspectSource).toContain("Inspect capability dialog view");
@@ -66,6 +73,8 @@ describe("Feature: Studio MCP route contract", () => {
     expect(inspectSource).toContain("mcp-config-heavy-inspector-close");
     expect(inspectSource).not.toContain("onInspectorSubscribe");
     expect(inspectSource).toContain("bunx @modelcontextprotocol/inspector");
+    expect(inspectSource).toContain("--config <avatar-tmp-config.json>");
+    expect(inspectSource).toContain("equivalent direct shape");
     expect(inspectSource).toContain("seeded from inputSchema");
     expect(inspectSource).toContain("McpHelpHint");
     expect(inspectSource).not.toContain("HelpCircleIcon");

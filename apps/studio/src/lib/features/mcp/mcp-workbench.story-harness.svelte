@@ -152,7 +152,7 @@
 		tools: [
 			{
 				name: 'echo',
-				title: 'Echo one message back through the fixture transport.',
+				title: 'Echo',
 				description: 'Echo one message back through the fixture transport.',
 				icons: [
 					{
@@ -231,6 +231,14 @@
 				type: 'app',
 				toolName: 'playground-link',
 				resourceUri: 'ui://svelte/playground-link',
+				tool: {
+					name: 'playground-link',
+					title: 'Playground Link UI',
+					description: 'Returns a UI resource for playground links.',
+					_meta: {
+						'openai/outputTemplate': 'ui://svelte/playground-link',
+					},
+				},
 				resource: {
 					uri: 'ui://svelte/playground-link',
 					title: 'UI resource for the Svelte Playground widget',
@@ -253,6 +261,26 @@
 		exitCode,
 		parsed,
 	});
+
+	const buildMcpAppHtml = (): string =>
+		[
+			'<!doctype html>',
+			'<html><body style="margin:0;font:13px system-ui;background:#fff;color:#111">',
+			'<main style="display:grid;min-height:100vh;place-items:center;padding:16px">',
+			'<div id="status">Waiting for tool output</div>',
+			'</main>',
+			'<script>',
+			'const status = document.getElementById("status");',
+			'window.addEventListener("message", (event) => {',
+			'  const message = event.data || {};',
+			'  if (message.method === "ui/notifications/tool-result") {',
+			'    status.textContent = message.params?.structuredContent?.url || "tool output received";',
+			'  }',
+			'});',
+			'window.parent.postMessage({ jsonrpc: "2.0", id: 1, method: "ui/initialize", params: {} }, "*");',
+			'</scr' + 'ipt>',
+			'</body></html>',
+		].join('\n');
 
 	const buildInspectorSession = (
 		state: McpInspectorSnapshotOutput['state'],
@@ -326,26 +354,33 @@
 		}
 		const result =
 			input.action === 'read-resource'
-				? {
-						contents: [
-							{
-								uri: input.resourceUri,
-								mimeType: 'application/json',
-								text: JSON.stringify(
-									{
-										title:
-											input.resourceUri === 'ui://svelte/playground-link'
-												? 'UI resource for the Svelte Playground widget'
-												: 'Workspace Memory',
-										workspace: 'fixture',
-										projectPath: '/repo/app',
-									},
-									null,
-									2,
-								),
-							},
-						],
-					}
+				? input.resourceUri === 'ui://svelte/playground-link'
+					? {
+							contents: [
+								{
+									uri: input.resourceUri,
+									mimeType: 'text/html;profile=mcp-app',
+									text: buildMcpAppHtml(),
+								},
+							],
+						}
+					: {
+							contents: [
+								{
+									uri: input.resourceUri,
+									mimeType: 'application/json',
+									text: JSON.stringify(
+										{
+											title: 'Workspace Memory',
+											workspace: 'fixture',
+											projectPath: '/repo/app',
+										},
+										null,
+										2,
+									),
+								},
+							],
+						}
 				: input.action === 'get-prompt'
 					? {
 							description: 'Fixture summarize prompt.',
@@ -360,13 +395,20 @@
 							],
 						}
 					: input.action === 'call-tool'
-						? {
-								content: [{ type: 'text', text: 'ok' }],
-								structuredContent: {
-									ok: true,
-									received: input.arguments ?? {},
-								},
-							}
+						? input.toolName === 'playground-link'
+							? {
+									content: [{ type: 'text', text: 'playground link ready' }],
+									structuredContent: {
+										url: 'https://svelte.dev/playground/hello-world',
+									},
+								}
+							: {
+									content: [{ type: 'text', text: 'ok' }],
+									structuredContent: {
+										ok: true,
+										received: input.arguments ?? {},
+									},
+								}
 						: undefined;
 		return buildProbeOutput(input, result ?? {});
 	};

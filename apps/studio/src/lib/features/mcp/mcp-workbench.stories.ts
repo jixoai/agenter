@@ -73,14 +73,14 @@ export const InspectVisualAndRaw = {
     await expect(canvas.getByTestId("mcp-story-event")).toHaveTextContent("probe:ping:probe-story-1");
     await expect(canvas.getByTestId("mcp-config-inspect-capability-grid")).toBeInTheDocument();
     await expect(canvas.getByTestId("mcp-config-inspect-tool-card:echo")).toBeInTheDocument();
-    await expect(canvas.getByTestId("mcp-config-inspect-tool-title:echo")).toHaveTextContent("echo");
+    await expect(canvas.getByTestId("mcp-config-inspect-tool-title:echo")).toHaveTextContent("Echo");
     await expect(canvas.getByTestId("mcp-config-inspect-tool-description:echo")).toHaveTextContent(
       "Echo one message back through the fixture transport.",
     );
     await expect(canvas.getByTestId("mcp-config-inspect-tool-icon:echo")).toBeInTheDocument();
-    await expect(canvas.getByTestId("mcp-config-inspect-resource-card:Workspace Memory")).toBeInTheDocument();
-    await expect(canvas.getByTestId("mcp-config-inspect-template-card:Workspace Memory Template")).toBeInTheDocument();
-    await expect(canvas.getByTestId("mcp-config-inspect-app-card:playground-link")).toBeInTheDocument();
+    await expect(canvas.getByTestId("mcp-config-inspect-resource-card:memory://workspace")).toBeInTheDocument();
+    await expect(canvas.getByTestId("mcp-config-inspect-template-card:memory://workspace/{name}")).toBeInTheDocument();
+    await expect(canvas.getByTestId("mcp-config-inspect-app-card:ui://svelte/playground-link")).toBeInTheDocument();
     await expect(canvas.getByTestId("mcp-config-inspect-prompt-card:summarize")).toBeInTheDocument();
     await userEvent.click(canvas.getByRole("tab", { name: "Raw" }));
     await expect(canvas.getByText(/serverName/u)).toBeInTheDocument();
@@ -104,7 +104,7 @@ export const InspectVisualAndRaw = {
     await expect(within(dialog).getByText(/inputSchema/u)).toBeInTheDocument();
 
     await userEvent.click(within(dialog).getByTestId("mcp-config-inspect-capability-dialog-close"));
-    await userEvent.click(await waitForCapabilityCard("mcp-config-inspect-resource-card:Workspace Memory"));
+    await userEvent.click(await waitForCapabilityCard("mcp-config-inspect-resource-card:memory://workspace"));
     const resourceDialog = body.getByTestId("mcp-config-inspect-capability-dialog");
     await expect(within(resourceDialog).getByRole("tab", { name: "Read" })).toBeInTheDocument();
     await userEvent.click(within(resourceDialog).getByRole("button", { name: "Read" }));
@@ -113,6 +113,16 @@ export const InspectVisualAndRaw = {
     await expect(within(resourceDialog).getByTestId("mcp-config-inspect-result-preview")).toHaveTextContent('"workspace": "fixture"');
 
     await userEvent.click(within(resourceDialog).getByTestId("mcp-config-inspect-capability-dialog-close"));
+    await userEvent.click(await waitForCapabilityCard("mcp-config-inspect-app-card:ui://svelte/playground-link"));
+    const appDialog = body.getByTestId("mcp-config-inspect-capability-dialog");
+    await expect(within(appDialog).getByRole("tab", { name: "Open" })).toBeInTheDocument();
+    await userEvent.click(within(appDialog).getByRole("button", { name: "Open" }));
+    await expect(within(appDialog).getByTestId("mcp-config-inspect-app-preview")).toHaveTextContent("mcp-app");
+    await expect(within(appDialog).getByTestId("mcp-config-inspect-result-preview")).toHaveTextContent(
+      "text/html;profile=mcp-app",
+    );
+
+    await userEvent.click(within(appDialog).getByTestId("mcp-config-inspect-capability-dialog-close"));
     await userEvent.click(await waitForCapabilityCard("mcp-config-inspect-prompt-card:summarize"));
     const promptDialog = body.getByTestId("mcp-config-inspect-capability-dialog");
     await expect(within(promptDialog).getByRole("tab", { name: "Get" })).toBeInTheDocument();

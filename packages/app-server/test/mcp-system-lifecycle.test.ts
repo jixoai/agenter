@@ -454,11 +454,13 @@ describe("Feature: mcpSystem lifecycle", () => {
 
       expect(started.command).toBe("bunx");
       expect(started.leaseId).toMatch(/^[0-9a-f-]+$/u);
-      expect(started.args).toContain("@modelcontextprotocol/inspector");
+      expect(started.args).toEqual(["@modelcontextprotocol/inspector", "--config", configPath, "--server", "memory"]);
       expect(spawns[0]?.command).toBe("bunx");
+      expect(spawns[0]?.args).toEqual(started.args);
       expect(spawns[0]?.options.cwd).toBe("/repo/app");
       expect(spawns[0]?.options.env?.TOKEN).toBe("draft-token");
       expect(spawns[0]?.options.env?.MCP_AUTO_OPEN_ENABLED).toBe("false");
+      expect(JSON.stringify(started.args)).not.toContain("draft-token");
       expect(readString(memoryServer, "type")).toBe("stdio");
       expect(readString(memoryServer, "command")).toBe("fixture");
       expect(ready.state).toBe("ready");
