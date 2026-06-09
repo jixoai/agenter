@@ -184,15 +184,13 @@ export class ClientSdkAgenterHeartbeatConnection implements AgenterHeartbeatConn
       autoStart: input.autoStart ?? false,
     };
     const endOpenAvatar = heartbeatPerfLog.start("avatar.open", openFields);
-    const endCreateSession = heartbeatPerfLog.start("avatar.open.createSession", openFields);
-    const session = await this.store.createSession({
-      cwd: input.avatar.globalPath,
-      avatar: input.avatar.nickname,
-      autoStart: input.autoStart ?? false,
-      hydrationMode: "none",
-      refreshWorkspaces: false,
+    const existingSession = this.findAvatarSession(input.avatar, this.store.getState().sessions);
+    const session = existingSession ?? (await this.createAvatarSession(input.avatar, input.autoStart ?? false));
+    heartbeatPerfLog.mark("avatar.open.sessionTarget", {
+      ...openFields,
+      sessionId: session.id,
+      source: existingSession ? "existing" : "created",
     });
-    endCreateSession({ sessionId: session.id });
     const avatarPrincipalId = input.avatar.avatarPrincipalId ?? null;
     const target: HeartbeatTargetIdentity = {
       avatar: input.avatar.nickname,
@@ -213,6 +211,27 @@ export class ClientSdkAgenterHeartbeatConnection implements AgenterHeartbeatConn
     await this.refreshHeartbeat(target);
     endOpenAvatar({ sessionId: session.id });
     return target;
+  }
+
+  private async createAvatarSession(
+    avatar: GlobalAvatarCatalogEntry,
+    autoStart: boolean,
+  ): Promise<SessionEntry> {
+    const fields = {
+      runtimeId: avatar.runtimeId,
+      avatar: avatar.nickname,
+      autoStart,
+    };
+    const endCreateSession = heartbeatPerfLog.start("avatar.open.createSession", fields);
+    const session = await this.store.createSession({
+      cwd: avatar.globalPath,
+      avatar: avatar.nickname,
+      autoStart,
+      hydrationMode: "none",
+      refreshWorkspaces: false,
+    });
+    endCreateSession({ sessionId: session.id });
+    return session;
   }
 
   async refreshHeartbeat(target: HeartbeatTargetIdentity): Promise<void> {

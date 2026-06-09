@@ -333,6 +333,7 @@ const mockSdk = vi.hoisted(() => {
   let createSessionRequests: unknown[] = [];
   let hydrateSessionArtifactsRequests: unknown[] = [];
   let sessionStatus: SessionEntry["status"] = "stopped";
+  let seedExistingStoppedSession = false;
   let authToken: string | null = null;
   let connectDelayMs = 0;
   let state = createInitialState();
@@ -355,6 +356,7 @@ const mockSdk = vi.hoisted(() => {
     createSessionRequests = [];
     hydrateSessionArtifactsRequests = [];
     sessionStatus = "stopped";
+    seedExistingStoppedSession = false;
     authToken = null;
     connectDelayMs = 0;
     state = createInitialState();
@@ -394,7 +396,7 @@ const mockSdk = vi.hoisted(() => {
         throw new Error("auth token missing");
       }
       const connectedSessions: SessionEntry[] =
-        sessionStatus === "running"
+        sessionStatus === "running" || seedExistingStoppedSession
           ? [
               {
                 id: avatar.runtimeId,
@@ -650,6 +652,9 @@ const mockSdk = vi.hoisted(() => {
     useRunningSession() {
       sessionStatus = "running";
     },
+    seedExistingStoppedSession() {
+      seedExistingStoppedSession = true;
+    },
     delayConnect(ms: number) {
       connectDelayMs = ms;
     },
@@ -841,6 +846,7 @@ describe("Feature: Web heartbeat view example route flow", () => {
   });
 
   test("Scenario: Given a direct Heartbeat record URL When connection hydrates Then the example opens a dedicated record detail route", async () => {
+    mockSdk.seedExistingStoppedSession();
     component = mount(HeartbeatExampleApp, {
       target: document.body,
       props: {
@@ -859,6 +865,7 @@ describe("Feature: Web heartbeat view example route flow", () => {
     expect(location.search).toContain("pageSize=2");
     expect(mockSdk.heartbeatRecordPageRequests.at(-1)?.input?.pageSize).toBe(2);
     expect(mockSdk.heartbeatRecordPageRequests).toHaveLength(1);
+    expect(mockSdk.createSessionRequests).toHaveLength(0);
   });
 
   test("Scenario: Given a Compact record detail route When tabs switch Then Framework7 subnavbar owns the context tabs", async () => {
