@@ -25,6 +25,7 @@ export const HELP_HINT_PARTS = {
 
 const VIEWPORT_PADDING = 8;
 const HIDDEN_POSITION = -10_000;
+const TRANSIENT_CLOSE_DELAY_MS = 100;
 const HIDDEN_POPUP_STYLE = {
   "--help-hint-popover-left": `${HIDDEN_POSITION}px`,
   "--help-hint-popover-top": `${HIDDEN_POSITION}px`,
@@ -92,7 +93,10 @@ export class HelpHintElement extends LitElement {
       font-weight: 700;
       line-height: 1;
       box-shadow: 0 1px 2px rgba(15, 23, 42, 0.05);
-      transition: background-color 140ms ease, color 140ms ease, border-color 140ms ease;
+      transition:
+        background-color 140ms ease,
+        color 140ms ease,
+        border-color 140ms ease;
     }
 
     .trigger[data-popup-open] {
@@ -141,44 +145,58 @@ export class HelpHintElement extends LitElement {
       margin: 0;
     }
 
-    @supports (position-anchor: --agenter-help-hint-trigger) and (position-area: top center) {
+    @supports (position-anchor: --agenter-help-hint-trigger) and (position-area: top) {
       @position-try --agenter-help-hint-top {
-        position-area: top center;
+        position-area: top;
+        justify-self: anchor-center;
+        align-self: anchor-center;
       }
 
       @position-try --agenter-help-hint-right {
-        position-area: right center;
+        position-area: right;
+        justify-self: anchor-center;
+        align-self: anchor-center;
       }
 
       @position-try --agenter-help-hint-bottom {
-        position-area: bottom center;
+        position-area: bottom;
+        justify-self: anchor-center;
+        align-self: anchor-center;
       }
 
       @position-try --agenter-help-hint-left {
-        position-area: left center;
+        position-area: left;
+        justify-self: anchor-center;
+        align-self: anchor-center;
       }
 
       .popup[data-native-popover="true"] {
         inset: auto;
         position-anchor: --agenter-help-hint-trigger;
-        position-area: top center;
+        position-area: top;
+        justify-self: anchor-center;
+        align-self: anchor-center;
         position-try-fallbacks: --agenter-help-hint-bottom, --agenter-help-hint-right, --agenter-help-hint-left;
+        position-try: --agenter-help-hint-bottom, --agenter-help-hint-right, --agenter-help-hint-left;
         margin: var(--help-hint-side-offset, 8px);
       }
 
       .popup[data-native-popover="true"][data-side="right"] {
-        position-area: right center;
+        position-area: right;
         position-try-fallbacks: --agenter-help-hint-left, --agenter-help-hint-bottom, --agenter-help-hint-top;
+        position-try: --agenter-help-hint-left, --agenter-help-hint-bottom, --agenter-help-hint-top;
       }
 
       .popup[data-native-popover="true"][data-side="bottom"] {
-        position-area: bottom center;
+        position-area: bottom;
         position-try-fallbacks: --agenter-help-hint-top, --agenter-help-hint-right, --agenter-help-hint-left;
+        position-try: --agenter-help-hint-top, --agenter-help-hint-right, --agenter-help-hint-left;
       }
 
       .popup[data-native-popover="true"][data-side="left"] {
-        position-area: left center;
+        position-area: left;
         position-try-fallbacks: --agenter-help-hint-right, --agenter-help-hint-bottom, --agenter-help-hint-top;
+        position-try: --agenter-help-hint-right, --agenter-help-hint-bottom, --agenter-help-hint-top;
       }
     }
 
@@ -216,6 +234,7 @@ export class HelpHintElement extends LitElement {
   };
 
   private frameHandle: number | null = null;
+  private transientCloseHandle: number | null = null;
   private popupStyleResetQueued = false;
   private unregisterRuntimeHandle: (() => void) | null = null;
   private readonly popupId = `help-hint-${crypto.randomUUID()}`;
@@ -255,6 +274,7 @@ export class HelpHintElement extends LitElement {
       window.cancelAnimationFrame(this.frameHandle);
       this.frameHandle = null;
     }
+    this.clearTransientClose();
     super.disconnectedCallback();
   }
 
@@ -269,6 +289,7 @@ export class HelpHintElement extends LitElement {
       void this.syncPersistence();
     }
     if (this.displayState.kind === "closed") {
+      this.clearTransientClose();
       this.scheduleHiddenPopupReset();
       this.syncNativePopover();
       return;
@@ -384,7 +405,10 @@ export class HelpHintElement extends LitElement {
     let top = 0;
     let left = 0;
     if (this.side === "top" || this.side === "bottom") {
-      top = this.side === "top" ? triggerRect.top - popupRect.height - this.sideOffset : triggerRect.bottom + this.sideOffset;
+      top =
+        this.side === "top"
+          ? triggerRect.top - popupRect.height - this.sideOffset
+          : triggerRect.bottom + this.sideOffset;
       left = resolveAlignedOffset({
         align: this.align,
         anchorStart: triggerRect.left,
@@ -392,7 +416,10 @@ export class HelpHintElement extends LitElement {
         popupSize: popupRect.width,
       });
     } else {
-      left = this.side === "left" ? triggerRect.left - popupRect.width - this.sideOffset : triggerRect.right + this.sideOffset;
+      left =
+        this.side === "left"
+          ? triggerRect.left - popupRect.width - this.sideOffset
+          : triggerRect.right + this.sideOffset;
       top = resolveAlignedOffset({
         align: this.align,
         anchorStart: triggerRect.top,
@@ -462,6 +489,7 @@ export class HelpHintElement extends LitElement {
   };
 
   private openTransientHint(): void {
+    this.clearTransientClose();
     if (this.displayState.kind !== "closed") {
       return;
     }
@@ -469,9 +497,31 @@ export class HelpHintElement extends LitElement {
   }
 
   private closeTransientHint(): void {
+    this.clearTransientClose();
     if (this.isTransientActive) {
       this.displayState = createClosedState();
     }
+  }
+
+  private scheduleTransientClose(): void {
+    if (!this.isTransientActive) {
+      return;
+    }
+    this.clearTransientClose();
+    this.transientCloseHandle = window.setTimeout(() => {
+      this.transientCloseHandle = null;
+      if (this.isTransientActive) {
+        this.displayState = createClosedState();
+      }
+    }, TRANSIENT_CLOSE_DELAY_MS);
+  }
+
+  private clearTransientClose(): void {
+    if (this.transientCloseHandle === null) {
+      return;
+    }
+    window.clearTimeout(this.transientCloseHandle);
+    this.transientCloseHandle = null;
   }
 
   private handleTriggerClick(): void {
@@ -505,7 +555,7 @@ export class HelpHintElement extends LitElement {
         @focus=${() => this.openTransientHint()}
         @blur=${() => this.closeTransientHint()}
         @mouseenter=${() => this.openTransientHint()}
-        @mouseleave=${() => this.closeTransientHint()}
+        @mouseleave=${() => this.scheduleTransientClose()}
       >
         <span part=${HELP_HINT_PARTS.triggerLabel}>?</span>
       </button>
@@ -525,8 +575,14 @@ export class HelpHintElement extends LitElement {
         @click=${() => {
           if (this.isOnboardingPassive) {
             void this.dismissOnboardingHint();
+            return;
+          }
+          if (this.isTransientActive) {
+            this.displayState = createActiveState("manual-click");
           }
         }}
+        @mouseenter=${() => this.openTransientHint()}
+        @mouseleave=${() => this.scheduleTransientClose()}
       >
         <div part=${HELP_HINT_PARTS.content}>
           <slot></slot>

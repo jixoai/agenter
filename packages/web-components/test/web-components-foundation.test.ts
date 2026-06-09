@@ -218,11 +218,78 @@ describe("Feature: web-components foundation", () => {
     expect(element.getAttribute("data-presentation")).toBe("active-open");
     expect(element.hasAttribute("open")).toBe(true);
     const helpHintDefinition = customElements.get(HELP_HINT_TAG) as { styles?: unknown } | undefined;
-    expect(String(helpHintDefinition?.styles ?? "")).toContain(":host([open])");
-    expect(String(helpHintDefinition?.styles ?? "")).toContain("z-index: 80");
-    expect(String(helpHintDefinition?.styles ?? "")).toContain("position-anchor");
-    expect(String(helpHintDefinition?.styles ?? "")).toContain("@position-try");
+    const helpHintStyles = String(helpHintDefinition?.styles ?? "");
+    expect(helpHintStyles).toContain(":host([open])");
+    expect(helpHintStyles).toContain("z-index: 80");
+    expect(helpHintStyles).toContain("position-anchor");
+    expect(helpHintStyles).toContain("@position-try");
+    expect(helpHintStyles).toContain("position-area: top;");
+    expect(helpHintStyles).toContain("justify-self: anchor-center;");
+    expect(helpHintStyles).toContain("position-try-fallbacks: --agenter-help-hint-bottom");
+    expect(helpHintStyles).toContain("position-try: --agenter-help-hint-bottom");
+    expect(helpHintStyles).not.toContain("position-area: top center");
     expect(popup?.getAttribute("data-native-popover")).toBe("false");
+    expect(popup?.hasAttribute("data-anchor-positioning")).toBe(false);
+  });
+
+  test("Scenario: Given a hover-open help hint When pointer crosses into the popup and clicks it Then hover remains stable and popup click pins the surface", async () => {
+    vi.useFakeTimers();
+    try {
+      defineHelpHint();
+
+      const element = document.createElement(HELP_HINT_TAG) as HTMLElement & {
+        helpId: string;
+        textContext: string;
+        updateComplete?: Promise<unknown>;
+        shadowRoot: ShadowRoot | null;
+      };
+      element.helpId = `help-hint-hover-region-${crypto.randomUUID()}`;
+      element.textContext = "hover region behavior";
+      document.body.append(element);
+
+      await element.updateComplete;
+
+      const trigger = element.shadowRoot?.querySelector<HTMLButtonElement>(".trigger");
+      const popup = element.shadowRoot?.querySelector<HTMLDivElement>(".popup");
+      expect(trigger).not.toBeNull();
+      expect(popup).not.toBeNull();
+
+      trigger?.dispatchEvent(new MouseEvent("mouseenter", { composed: true }));
+      await element.updateComplete;
+
+      expect(element.getAttribute("data-presentation")).toBe("active-open");
+      expect(element.hasAttribute("open")).toBe(true);
+
+      trigger?.dispatchEvent(new MouseEvent("mouseleave", { composed: true }));
+      vi.advanceTimersByTime(150);
+      await element.updateComplete;
+
+      expect(element.getAttribute("data-presentation")).toBe("closed");
+      expect(element.hasAttribute("open")).toBe(false);
+
+      trigger?.dispatchEvent(new MouseEvent("mouseenter", { composed: true }));
+      await element.updateComplete;
+      trigger?.dispatchEvent(new MouseEvent("mouseleave", { composed: true }));
+      popup?.dispatchEvent(new MouseEvent("mouseenter", { composed: true }));
+      vi.advanceTimersByTime(150);
+      await element.updateComplete;
+
+      expect(element.getAttribute("data-presentation")).toBe("active-open");
+      expect(element.hasAttribute("open")).toBe(true);
+
+      popup?.click();
+      await element.updateComplete;
+
+      popup?.dispatchEvent(new MouseEvent("mouseleave", { composed: true }));
+      trigger?.dispatchEvent(new MouseEvent("mouseleave", { composed: true }));
+      vi.advanceTimersByTime(150);
+      await element.updateComplete;
+
+      expect(element.getAttribute("data-presentation")).toBe("active-open");
+      expect(element.hasAttribute("open")).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   test("Scenario: Given a fresh help hint without onboarding opt-in When it first renders Then it stays closed until explicit user intent", async () => {
