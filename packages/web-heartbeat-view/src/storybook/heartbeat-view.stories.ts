@@ -33,7 +33,7 @@ export const ReadonlyMobile = {
     await expect(canvas.getByTestId("heartbeat-view")).toHaveAttribute("data-mode", "readonly");
     await expect(canvas.getByText("Model run")).toBeInTheDocument();
     await expect(canvasElement.querySelector('[data-chip-kind="input"]')).toBeInTheDocument();
-    await expect(canvasElement.querySelector('[data-chip-kind="tool"]')).toBeInTheDocument();
+    await expect(canvasElement.querySelector('[data-chip-kind="tool"], [data-chip-kind="combo"]')).toBeInTheDocument();
     await expect(canvas.queryByTitle("Request compact")).not.toBeInTheDocument();
     await expect(canvas.queryByTitle("Configure next call")).not.toBeInTheDocument();
   },

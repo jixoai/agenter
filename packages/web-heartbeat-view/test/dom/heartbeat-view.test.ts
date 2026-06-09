@@ -109,7 +109,8 @@ const heartbeatRecord = (input: {
 const recordsPage = (records: HeartbeatRecordItem[]): HeartbeatRecordPage => ({
   records,
   pageIndex: 0,
-  pageSize: 20,
+  pageSize: 5,
+  pageCount: 2,
   totalRecords: records.length,
   totalPages: records.length > 0 ? 1 : 0,
   windowTotalRecords: records.length,

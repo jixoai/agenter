@@ -241,13 +241,14 @@ describe("Feature: session-system AI-call ledger persistence", () => {
 
       const latest = db.pageHeartbeatRecords({ pageSize: 2, anchor: { kind: "latest" } });
       expect(latest.pageIndex).toBe(2);
-      expect(latest.records.map((record) => record.previewText)).toEqual(["record 4", "record 5"]);
+      expect(latest.pageCount).toBe(2);
+      expect(latest.records.map((record) => record.previewText)).toEqual(["record 3", "record 4", "record 5"]);
 
       const fixed = db.pageHeartbeatRecords({
         pageSize: 2,
-        anchor: { kind: "fixed", pageIndex: 1, latestRecordId: latest.latestRecordId },
+        anchor: { kind: "fixed", pageIndex: 0, latestRecordId: latest.latestRecordId },
       });
-      expect(fixed.records.map((record) => record.previewText)).toEqual(["record 3", "record 4"]);
+      expect(fixed.records.map((record) => record.previewText)).toEqual(["record 1", "record 2"]);
       expect(fixed.newRecordsAvailable).toBe(false);
 
       const sixth = db.appendAiCall({
@@ -278,13 +279,69 @@ describe("Feature: session-system AI-call ledger persistence", () => {
 
       const fixedAfterInsert = db.pageHeartbeatRecords({
         pageSize: 2,
-        anchor: { kind: "fixed", pageIndex: 1, latestRecordId: latest.latestRecordId },
+        anchor: { kind: "fixed", pageIndex: 0, latestRecordId: latest.latestRecordId },
       });
-      expect(fixedAfterInsert.records.map((record) => record.previewText)).toEqual(["record 3", "record 4"]);
+      expect(fixedAfterInsert.records.map((record) => record.previewText)).toEqual(["record 1", "record 2"]);
       expect(fixedAfterInsert.newRecordsAvailable).toBe(true);
 
       const latestAfterInsert = db.pageHeartbeatRecords({ pageSize: 2, anchor: { kind: "latest" } });
-      expect(latestAfterInsert.records.map((record) => record.previewText)).toEqual(["record 5", "record 6"]);
+      expect(latestAfterInsert.records.map((record) => record.previewText)).toEqual(["record 3", "record 4", "record 5", "record 6"]);
+    } finally {
+      db.close();
+    }
+  });
+
+  test("Scenario: Given five-record pages and a two-page latest window When total records grow Then the visible count follows the latest two pages", () => {
+    const db = createDb();
+    const appendRecord = (index: number): void => {
+      const call = db.appendAiCall({
+        roundIndex: index,
+        kind: "chat",
+        status: "done",
+        provider: "openai",
+        model: "gpt-5.1",
+        requestUrl: "https://api.example.test/v1/responses",
+        requestBody: { model: "gpt-5.1" },
+        createdAt: index * 100,
+        updatedAt: index * 100 + 20,
+        completedAt: index * 100 + 20,
+        isComplete: true,
+      });
+      db.upsertMessage({
+        messageId: `latest-window-response-${index}`,
+        aiCallId: call.id,
+        roundIndex: index,
+        scope: "heartbeat_part",
+        role: "assistant",
+        createdAt: index * 100 + 10,
+        updatedAt: index * 100 + 20,
+        parts: [{ partType: "text", payload: { content: `record ${index}` } }],
+      });
+      db.updateAiCall(call.id, { responseMessageIds: [`latest-window-response-${index}`] });
+    };
+
+    try {
+      for (let index = 1; index <= 11; index += 1) {
+        appendRecord(index);
+        db.rebuildHeartbeatRecords();
+        if ([5, 6, 10, 11].includes(index)) {
+          const page = db.pageHeartbeatRecords({ pageSize: 5, pageCount: 2, anchor: { kind: "latest" } });
+          const expectedCount = index === 11 ? 6 : index;
+          expect(page.records).toHaveLength(expectedCount);
+          expect(page.pageSize).toBe(5);
+          expect(page.pageCount).toBe(2);
+        }
+      }
+
+      const latest = db.pageHeartbeatRecords({ pageSize: 5, pageCount: 2, anchor: { kind: "latest" } });
+      expect(latest.records.map((record) => record.previewText)).toEqual([
+        "record 6",
+        "record 7",
+        "record 8",
+        "record 9",
+        "record 10",
+        "record 11",
+      ]);
     } finally {
       db.close();
     }

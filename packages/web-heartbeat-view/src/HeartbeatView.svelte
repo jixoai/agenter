@@ -153,7 +153,7 @@
             onclick={() =>
               void loadRecordPage({
                 kind: "fixed",
-                pageIndex: Math.max(0, recordsPage.pageIndex - 1),
+                pageIndex: Math.max(0, recordsPage.pageIndex - recordsPage.pageCount),
                 latestRecordId: recordsPage.latestRecordId,
               })}
           >

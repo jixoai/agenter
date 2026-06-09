@@ -222,6 +222,7 @@ export type HeartbeatRecordPageAnchor =
 
 export interface HeartbeatRecordPageInput {
   pageSize: number;
+  pageCount?: number;
   anchor: HeartbeatRecordPageAnchor;
 }
 
@@ -229,6 +230,7 @@ export interface HeartbeatRecordPage {
   records: HeartbeatRecord[];
   pageIndex: number;
   pageSize: number;
+  pageCount: number;
   totalRecords: number;
   totalPages: number;
   windowTotalRecords: number;

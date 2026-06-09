@@ -50,7 +50,8 @@ export class HeartbeatExampleState {
   mode = $state<HeartbeatCapabilityMode>("readonly");
   initialRuntimeId = $state<string | null>(null);
   initialRecordId = $state<string | number | null>(null);
-  recordPageSize = $state(20);
+  recordPageSize = $state(5);
+  recordPageCount = $state(2);
   silentConnect = $state(false);
   connection = $state<ClientSdkAgenterHeartbeatConnection | null>(null);
   connectionState = $state<AgenterHeartbeatConnectionState>(createInitialConnectionState());
@@ -276,7 +277,7 @@ export class HeartbeatExampleState {
       silentConnect: this.silentConnect ? "true" : "false",
       wsUrl: this.wsUrl,
     });
-    if (this.recordPageSize !== 20) {
+    if (this.recordPageSize !== 5) {
       query.set("pageSize", String(this.recordPageSize));
     }
     return query.toString();
@@ -411,6 +412,7 @@ export class HeartbeatExampleState {
       wsUrl: this.wsUrl,
       authToken: this.authToken,
       recordPageSize: this.recordPageSize,
+      recordPageCount: this.recordPageCount,
       preserveHeartbeatRecordPageSizeOnRefresh: this.initialRecordId === null,
     });
     this.connection = next;

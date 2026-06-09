@@ -225,6 +225,7 @@ const createHeartbeatRecordPage = (
   records,
   pageIndex: input.pageIndex ?? 0,
   pageSize: input.pageSize ?? records.length,
+  pageCount: input.pageCount ?? 1,
   totalRecords: input.totalRecords ?? records.length,
   totalPages: input.totalPages ?? (records.length === 0 ? 0 : 1),
   windowTotalRecords: input.windowTotalRecords ?? input.totalRecords ?? records.length,
@@ -1264,6 +1265,7 @@ const createMockClient = (input: {
   heartbeatRecordPageQuery?: (input: {
     sessionId: string;
     pageSize?: number;
+    pageCount?: number;
     anchor?: HeartbeatRecordPageAnchorInput;
   }) => Promise<HeartbeatRecordsPageOutput>;
   heartbeatRecordDetailQuery?: (input: { sessionId: string; recordId: number }) => Promise<HeartbeatRecordDetailOutput>;
@@ -1534,11 +1536,17 @@ const createMockClient = (input: {
               : { items: [], nextBefore: null, hasMoreBefore: false },
         },
         heartbeatRecordPage: {
-          query: async (payload: { sessionId: string; pageSize?: number; anchor?: HeartbeatRecordPageAnchorInput }) =>
+          query: async (payload: {
+            sessionId: string;
+            pageSize?: number;
+            pageCount?: number;
+            anchor?: HeartbeatRecordPageAnchorInput;
+          }) =>
             input.heartbeatRecordPageQuery
               ? await input.heartbeatRecordPageQuery(payload)
               : createHeartbeatRecordPage([], {
-                  pageSize: payload.pageSize ?? 20,
+                  pageSize: payload.pageSize ?? 5,
+                  pageCount: payload.pageCount ?? 2,
                   anchor: payload.anchor ?? { kind: "latest" },
                 }),
         },
@@ -5381,6 +5389,7 @@ describe("Feature: runtime store synchronization", () => {
     const pageQueries: Array<{
       sessionId: string;
       pageSize?: number;
+      pageCount?: number;
       anchor?: HeartbeatRecordPageAnchorInput;
     }> = [];
     const detailQueries: Array<{ sessionId: string; recordId: number }> = [];
@@ -5390,7 +5399,8 @@ describe("Feature: runtime store synchronization", () => {
         pageQueries.push(input);
         return createHeartbeatRecordPage([record], {
           pageIndex: 2,
-          pageSize: input.pageSize ?? 20,
+          pageSize: input.pageSize ?? 5,
+          pageCount: input.pageCount ?? 2,
           totalRecords: 12,
           totalPages: 3,
           windowTotalRecords: 10,
@@ -5439,13 +5449,14 @@ describe("Feature: runtime store synchronization", () => {
     await store.loadHeartbeatRecords("i-1", { pageSize: 4, anchor: fixedAnchor });
     await store.loadHeartbeatRecordDetail("i-1", record.id);
 
-    expect(pageQueries).toEqual([{ sessionId: "i-1", pageSize: 4, anchor: fixedAnchor }]);
+    expect(pageQueries).toEqual([{ sessionId: "i-1", pageSize: 4, pageCount: 2, anchor: fixedAnchor }]);
     expect(detailQueries).toEqual([{ sessionId: "i-1", recordId: record.id }]);
     expect(store.getState().heartbeatRecordsBySession["i-1"]).toMatchObject({
       loaded: true,
       data: {
         pageIndex: 2,
         pageSize: 4,
+        pageCount: 2,
         latestRecordId: 612,
         anchor: fixedAnchor,
         newRecordsAvailable: true,

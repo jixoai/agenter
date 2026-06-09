@@ -17,7 +17,7 @@ export const normalizeSilentConnect = (value: boolean | string | null | undefine
 export const normalizeRecordPageSize = (value: string | number | null | undefined): number => {
   const parsed = typeof value === "number" ? value : Number.parseInt(value ?? "", 10);
   if (!Number.isFinite(parsed)) {
-    return 20;
+    return 5;
   }
   return Math.max(1, Math.min(200, parsed));
 };

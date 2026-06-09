@@ -255,7 +255,7 @@ const mockSdk = vi.hoisted(() => {
 
   const recordsPageFromGroups = (
     items: HeartbeatGroupItem[],
-    pageSize = 20,
+    pageSize = 5,
     anchor: HeartbeatRecordPage["anchor"] = { kind: "latest" },
   ): HeartbeatRecordPage => {
     const records = items.map(recordFromGroup);
@@ -263,11 +263,12 @@ const mockSdk = vi.hoisted(() => {
       records,
       pageIndex: 0,
       pageSize,
+      pageCount: 2,
       totalRecords: records.length,
       totalPages: records.length > 0 ? Math.ceil(records.length / pageSize) : 0,
       windowTotalRecords: records.length,
       windowTotalPages: records.length > 0 ? Math.ceil(records.length / pageSize) : 0,
-      latestRecordId: records[0]?.id ?? null,
+      latestRecordId: records.at(-1)?.id ?? null,
       anchor,
       hasOlder: false,
       hasNewer: false,
@@ -328,7 +329,7 @@ const mockSdk = vi.hoisted(() => {
   let heartbeatGroups: HeartbeatGroupItem[] = [group];
   let heartbeatRecordPageRequests: Array<{
     sessionId: string;
-    input?: { pageSize?: number; anchor?: HeartbeatRecordPage["anchor"] | null };
+    input?: { pageSize?: number; pageCount?: number; anchor?: HeartbeatRecordPage["anchor"] | null };
   }> = [];
   let createSessionRequests: unknown[] = [];
   let hydrateSessionArtifactsRequests: unknown[] = [];
@@ -533,10 +534,10 @@ const mockSdk = vi.hoisted(() => {
     },
     async loadHeartbeatRecords(
       sessionId: string,
-      input?: { pageSize?: number; anchor?: HeartbeatRecordPage["anchor"] | null },
+      input?: { pageSize?: number; pageCount?: number; anchor?: HeartbeatRecordPage["anchor"] | null },
     ) {
       heartbeatRecordPageRequests.push({ sessionId, input });
-      const pageSize = input?.pageSize ?? 20;
+      const pageSize = input?.pageSize ?? 5;
       const anchor = input?.anchor ?? { kind: "latest" };
       state = {
         ...state,

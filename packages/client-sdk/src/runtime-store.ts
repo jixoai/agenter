@@ -247,7 +247,8 @@ const sortSessions = (sessions: SessionEntry[]): SessionEntry[] => {
 const LOOPBUS_LRU_LIMIT = 100;
 const HEARTBEAT_GROUP_PAGE_LIMIT = 5;
 const HEARTBEAT_GROUP_LRU_LIMIT = HEARTBEAT_GROUP_PAGE_LIMIT * 3;
-const HEARTBEAT_RECORD_PAGE_LIMIT = 20;
+const HEARTBEAT_RECORD_PAGE_LIMIT = 5;
+const HEARTBEAT_RECORD_PAGE_COUNT = 2;
 const MODEL_CALL_DELTA_LRU_LIMIT = 400;
 const DEFAULT_GLOBAL_TERMINAL_ACTIVITY_LIMIT = 20;
 const TERMINAL_ACTIVITY_PREVIEW_MAX_CHARS = 4_000;
@@ -6887,10 +6888,11 @@ export class RuntimeStore {
 
   async loadHeartbeatRecords(
     sessionId: string,
-    input?: { pageSize?: number; anchor?: HeartbeatRecordPageAnchorInput | null },
+    input?: { pageSize?: number; pageCount?: number; anchor?: HeartbeatRecordPageAnchorInput | null },
   ): Promise<void> {
     const current = this.ensureHeartbeatRecordsState(sessionId);
     const pageSize = input?.pageSize ?? current.data?.pageSize ?? HEARTBEAT_RECORD_PAGE_LIMIT;
+    const pageCount = input?.pageCount ?? current.data?.pageCount ?? HEARTBEAT_RECORD_PAGE_COUNT;
     const anchor = input?.anchor ?? current.data?.anchor ?? { kind: "latest" as const };
     this.setHeartbeatRecordsState(sessionId, (resource) => ({
       ...resource,
@@ -6901,7 +6903,7 @@ export class RuntimeStore {
     this.emit();
 
     try {
-      const output = await this.client.trpc.runtime.heartbeatRecordPage.query({ sessionId, pageSize, anchor });
+      const output = await this.client.trpc.runtime.heartbeatRecordPage.query({ sessionId, pageSize, pageCount, anchor });
       this.setHeartbeatRecordsState(sessionId, (resource) => ({
         ...resource,
         data: output,
@@ -7152,6 +7154,7 @@ export class RuntimeStore {
       const current = this.ensureHeartbeatRecordsState(sessionId);
       await this.loadHeartbeatRecords(sessionId, {
         pageSize: current.data?.pageSize ?? HEARTBEAT_RECORD_PAGE_LIMIT,
+        pageCount: current.data?.pageCount ?? HEARTBEAT_RECORD_PAGE_COUNT,
         anchor: current.data?.anchor ?? { kind: "latest" },
       });
       await Promise.all(
@@ -8270,6 +8273,7 @@ export class RuntimeStore {
       includeHeartbeatRecords
         ? this.loadHeartbeatRecords(sessionId, {
             pageSize: HEARTBEAT_RECORD_PAGE_LIMIT,
+            pageCount: HEARTBEAT_RECORD_PAGE_COUNT,
             anchor: { kind: "latest" },
           })
         : Promise.resolve(null),

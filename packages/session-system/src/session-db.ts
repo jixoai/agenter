@@ -58,6 +58,8 @@ const parseJson = <T>(value: string | null, fallback: T): T => {
 const toJson = (value: unknown): string => JSON.stringify(value ?? null);
 
 const resolvePageLimit = (limit: number | undefined, max = 1_000): number => Math.max(1, Math.min(limit ?? 200, max));
+const resolveHeartbeatRecordPageCount = (pageCount: number | undefined): number =>
+  Math.max(1, Math.min(pageCount ?? 2, 5));
 
 const createId = (): string => `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
 
@@ -1596,6 +1598,7 @@ export class SessionDb {
 
   pageHeartbeatRecords(input: HeartbeatRecordPageInput): HeartbeatRecordPage {
     const pageSize = resolvePageLimit(input.pageSize, 200);
+    const pageCount = resolveHeartbeatRecordPageCount(input.pageCount);
     const totalRecords = this.countHeartbeatRecords();
     const totalPages = totalRecords === 0 ? 0 : Math.ceil(totalRecords / pageSize);
     const latestRecord = this.getLatestHeartbeatRecord();
@@ -1614,10 +1617,11 @@ export class SessionDb {
       input.anchor.kind === "latest"
         ? Math.max(0, totalPages - 1)
         : Math.max(0, Math.min(fixedAnchor?.pageIndex ?? 0, Math.max(0, windowTotalPages - 1)));
-    const offset =
-      input.anchor.kind === "latest" ? Math.max(0, totalRecords - pageSize) : Math.max(0, pageIndex * pageSize);
+    const startPageIndex = Math.max(0, pageIndex - pageCount + 1);
+    const windowLimit = pageSize * Math.max(1, pageIndex - startPageIndex + 1);
+    const offset = Math.max(0, startPageIndex * pageSize);
     const records = this.listHeartbeatRecordWindow({
-      limit: pageSize,
+      limit: windowLimit,
       offset,
       through: fixedLatest,
     });
@@ -1625,6 +1629,7 @@ export class SessionDb {
       records,
       pageIndex,
       pageSize,
+      pageCount,
       totalRecords,
       totalPages,
       windowTotalRecords,

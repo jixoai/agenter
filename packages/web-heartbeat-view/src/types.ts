@@ -155,6 +155,7 @@ export interface HeartbeatRecordPage {
   records: HeartbeatRecordItem[];
   pageIndex: number;
   pageSize: number;
+  pageCount: number;
   totalRecords: number;
   totalPages: number;
   windowTotalRecords: number;

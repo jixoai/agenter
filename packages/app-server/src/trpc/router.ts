@@ -57,6 +57,7 @@ const heartbeatRecordAnchorSchema = z.discriminatedUnion("kind", [
 const heartbeatRecordPageInput = z.object({
   sessionId: z.string().min(1),
   pageSize: z.number().int().positive().max(200).optional(),
+  pageCount: z.number().int().positive().max(5).optional(),
   anchor: heartbeatRecordAnchorSchema.optional(),
 });
 const heartbeatRecordDetailInput = z.object({
@@ -2336,7 +2337,8 @@ export const appRouter = t.router({
       ),
     heartbeatRecordPage: superadminProcedure.input(heartbeatRecordPageInput).query(({ ctx, input }) =>
       ctx.kernel.pageHeartbeatRecords(input.sessionId, {
-        pageSize: input.pageSize ?? 20,
+        pageSize: input.pageSize ?? 5,
+        pageCount: input.pageCount ?? 2,
         anchor: input.anchor ?? { kind: "latest" },
       }),
     ),

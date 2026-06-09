@@ -85,7 +85,7 @@ export interface RuntimeStore {
   loadMoreHeartbeatGroups(sessionId: string): Promise<{ items: number; hasMore: boolean }>;
   loadHeartbeatRecords(
     sessionId: string,
-    input?: { pageSize?: number; anchor?: HeartbeatRecordPageAnchor | null },
+    input?: { pageSize?: number; pageCount?: number; anchor?: HeartbeatRecordPageAnchor | null },
   ): Promise<void>;
   loadHeartbeatRecordDetail(sessionId: string, recordId: number): Promise<void>;
   requestRuntimeCompact(sessionId: string): Promise<{ ok: boolean }>;

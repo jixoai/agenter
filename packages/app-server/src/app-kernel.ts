@@ -585,6 +585,7 @@ const emptyHeartbeatRecordPage = (input: HeartbeatRecordPageInput): HeartbeatRec
   records: [],
   pageIndex: 0,
   pageSize: input.pageSize,
+  pageCount: input.pageCount ?? 2,
   totalRecords: 0,
   totalPages: 0,
   windowTotalRecords: 0,

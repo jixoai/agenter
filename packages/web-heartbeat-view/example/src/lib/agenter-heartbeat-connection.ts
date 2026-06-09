@@ -24,6 +24,7 @@ type ConnectionOptions = {
   wsUrl: string;
   authToken?: string | null;
   recordPageSize?: number;
+  recordPageCount?: number;
   preserveHeartbeatRecordPageSizeOnRefresh?: boolean;
 };
 
@@ -245,11 +246,15 @@ export class ClientSdkAgenterHeartbeatConnection implements AgenterHeartbeatConn
       this.options.preserveHeartbeatRecordPageSizeOnRefresh && currentRecordsState?.data?.pageSize
         ? currentRecordsState.data.pageSize
         : this.options.recordPageSize;
+    const pageCount =
+      this.options.preserveHeartbeatRecordPageSizeOnRefresh && currentRecordsState?.data?.pageCount
+        ? currentRecordsState.data.pageCount
+        : this.options.recordPageCount;
     const anchor =
       this.options.preserveHeartbeatRecordPageSizeOnRefresh && currentRecordsState?.data?.anchor
         ? currentRecordsState.data.anchor
         : { kind: "latest" as const };
-    await this.store.loadHeartbeatRecords(target.sessionId, { pageSize, anchor });
+    await this.store.loadHeartbeatRecords(target.sessionId, { pageSize, pageCount, anchor });
     this.syncFromRuntimeStore();
     const recordsState = this.store.getState().heartbeatRecordsBySession[target.sessionId];
     endRefresh({
@@ -343,6 +348,7 @@ export class ClientSdkAgenterHeartbeatConnection implements AgenterHeartbeatConn
     });
     await this.store.loadHeartbeatRecords(target.sessionId, {
       pageSize: this.options.recordPageSize,
+      pageCount: this.options.recordPageCount,
       anchor,
     });
     this.syncFromRuntimeStore();
