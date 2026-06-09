@@ -23,18 +23,18 @@ const createSystem = (input: {
   transportFactory: (context: McpTransportStartContext) => InMemoryTransport;
   dbPath?: string;
   rootWorkspacePath?: string;
-  runtimeEnvProvider?: () => Record<string, string>;
+  envProvider?: () => Record<string, string>;
 }): McpSystem => {
   const root = mkdtempSync(join(tmpdir(), "agenter-mcp-system-lifecycle-"));
   tempRoots.push(root);
   return new McpSystem({
     dbPath: input.dbPath ?? join(root, "mcp-system.sqlite"),
     rootWorkspacePath: input.rootWorkspacePath ?? join(root, "root-workspace"),
-    runtimeEnv: {
+    baseEnv: {
       ROOT_ONLY: "root-env",
       TOKEN: "root-token",
     },
-    runtimeEnvProvider: input.runtimeEnvProvider,
+    envProvider: input.envProvider,
     transportFactory: input.transportFactory,
   });
 };
@@ -51,6 +51,21 @@ const addMemoryGlobal = (system: McpSystem, name = "memory") =>
       env: { TRANSPORT_ONLY: "transport-env" },
     },
   });
+
+const readRecord = (value: unknown): Record<string, unknown> => {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    throw new Error("expected object value");
+  }
+  return value as Record<string, unknown>;
+};
+
+const readString = (value: unknown, key: string): string => {
+  const candidate = readRecord(value)[key];
+  if (typeof candidate !== "string") {
+    throw new Error(`expected string field: ${key}`);
+  }
+  return candidate;
+};
 
 const createFixtureTransportFactory = () => {
   const starts: McpTransportStartContext[] = [];
@@ -72,6 +87,51 @@ const createFixtureTransportFactory = () => {
       },
       ({ message }) => ({
         content: [{ type: "text", text: `${context.projectPath}:${message}` }],
+      }),
+    );
+    server.registerResource(
+      "workspace-memory",
+      "memory://workspace",
+      {
+        title: "Workspace Memory",
+        description: "Fixture resource catalogue",
+      },
+      async (uri) => ({
+        contents: [
+          {
+            uri: uri.href,
+            mimeType: "application/json",
+            text: JSON.stringify(
+              {
+                projectPath: context.projectPath,
+                workspace: "fixture",
+              },
+              null,
+              2,
+            ),
+          },
+        ],
+      }),
+    );
+    server.registerPrompt(
+      "summarize",
+      {
+        title: "Summarize",
+        description: "Fixture summarize prompt",
+        argsSchema: {
+          topic: z.string(),
+        },
+      },
+      ({ topic }) => ({
+        messages: [
+          {
+            role: "user",
+            content: {
+              type: "text",
+              text: `Summarize ${topic} for ${context.projectPath}.`,
+            },
+          },
+        ],
       }),
     );
     servers.push(server);
@@ -158,6 +218,144 @@ describe("Feature: mcpSystem lifecycle", () => {
       expect(result.instance.lifecycle).toBe("running");
       expect(system.store.requireEnabledProject("memory", "/repo/app").enabled).toBeTrue();
       expect(fixture.starts).toHaveLength(1);
+    } finally {
+      system.close();
+      await Promise.all(fixture.servers.map((server) => server.close().catch(() => undefined)));
+    }
+  });
+
+  test("Scenario: Given an unsaved MCP draft When inspect runs Then connection and capability actions stay ephemeral", async () => {
+    const fixture = createFixtureTransportFactory();
+    const system = createSystem({ transportFactory: fixture.factory });
+    try {
+      const inspectedTool = await system.inspect({
+        name: "draft-memory",
+        projectPath: "/repo/app",
+        env: { TOKEN: "draft-token" },
+        transport: {
+          kind: "stdio",
+          command: "fixture",
+          env: { TRANSPORT_ONLY: "transport-env" },
+        },
+        capabilityKind: "tool",
+        toolName: "echo",
+        arguments: { message: "hello" },
+      });
+      const inspectedResource = await system.inspect({
+        name: "draft-memory",
+        projectPath: "/repo/app",
+        env: { TOKEN: "draft-token" },
+        transport: {
+          kind: "stdio",
+          command: "fixture",
+          env: { TRANSPORT_ONLY: "transport-env" },
+        },
+        capabilityKind: "resource",
+        resourceUri: "memory://workspace",
+      });
+      const inspectedPrompt = await system.inspect({
+        name: "draft-memory",
+        projectPath: "/repo/app",
+        env: { TOKEN: "draft-token" },
+        transport: {
+          kind: "stdio",
+          command: "fixture",
+          env: { TRANSPORT_ONLY: "transport-env" },
+        },
+        capabilityKind: "prompt",
+        promptName: "summarize",
+        arguments: { topic: "workspace" },
+      });
+
+      expect(inspectedTool.snapshot.serverName).toBe("fixture-draft-memory");
+      expect(JSON.stringify(inspectedTool.snapshot.tools)).toContain("echo");
+      expect(JSON.stringify(inspectedTool.snapshot.resources)).toContain("memory://workspace");
+      expect(JSON.stringify(inspectedTool.snapshot.prompts)).toContain("summarize");
+      expect(JSON.stringify(inspectedTool.result)).toContain("/repo/app:hello");
+      expect(JSON.stringify(inspectedResource.result)).toContain('\\"workspace\\": \\"fixture\\"');
+      expect(JSON.stringify(inspectedPrompt.result)).toContain("Summarize workspace for /repo/app.");
+      expect(fixture.starts).toHaveLength(3);
+      expect(fixture.starts[0]?.env.TOKEN).toBe("draft-token");
+      expect(fixture.starts[0]?.env.ROOT_ONLY).toBe("root-env");
+      expect(system.store.getInstance("draft-memory", "/repo/app")).toBeNull();
+      expect(
+        system.query({
+          projectPath: "/repo/app",
+          sql: "select name from mcp_enabled where name = $name",
+          params: { name: "draft-memory" },
+        }).rows,
+      ).toHaveLength(0);
+    } finally {
+      system.close();
+      await Promise.all(fixture.servers.map((server) => server.close().catch(() => undefined)));
+    }
+  });
+
+  test("Scenario: Given an unsaved MCP draft When probe opens and uses capabilities Then one isolated client is reused without durable facts", async () => {
+    const fixture = createFixtureTransportFactory();
+    const system = createSystem({ transportFactory: fixture.factory });
+    try {
+      const open = await system.probe({
+        action: "open",
+        name: "draft-memory",
+        projectPath: "/repo/app",
+        env: { TOKEN: "draft-token" },
+        transport: {
+          kind: "stdio",
+          command: "fixture",
+          env: { TRANSPORT_ONLY: "transport-env" },
+        },
+      });
+      const probeId = readString(open.parsed, "probeId");
+
+      const ping = await system.probe({ action: "ping", probeId });
+      const tool = await system.probe({
+        action: "call-tool",
+        probeId,
+        toolName: "echo",
+        arguments: { message: "hello" },
+      });
+      const resource = await system.probe({
+        action: "read-resource",
+        probeId,
+        resourceUri: "memory://workspace",
+      });
+      const prompt = await system.probe({
+        action: "get-prompt",
+        probeId,
+        promptName: "summarize",
+        arguments: { topic: "workspace" },
+      });
+      const closed = await system.probe({ action: "close", probeId });
+      const afterClose = await system.probe({ action: "ping", probeId });
+
+      expect(open.command).toBe("mcp probe");
+      expect(open.stdin).toContain('"action": "open"');
+      expect(open.stdout).toContain('"probeId"');
+      expect(open.stdout).toContain('"serverName": "fixture-draft-memory"');
+      expect(ping.exitCode).toBe(0);
+      expect(JSON.stringify(tool.parsed)).toContain("/repo/app:hello");
+      expect(JSON.stringify(resource.parsed)).toContain('\\"workspace\\": \\"fixture\\"');
+      expect(JSON.stringify(prompt.parsed)).toContain("Summarize workspace for /repo/app.");
+      expect(closed.parsed).toEqual({ probeId, closed: true });
+      expect(afterClose.exitCode).toBe(1);
+      expect(afterClose.stderr).toContain("mcp probe not found");
+      expect(fixture.starts).toHaveLength(1);
+      expect(fixture.starts[0]?.env.TOKEN).toBe("draft-token");
+      expect(system.store.getInstance("draft-memory", "/repo/app")).toBeNull();
+      expect(
+        system.query({
+          projectPath: "/repo/app",
+          sql: "select name from mcp_enabled where name = $name",
+          params: { name: "draft-memory" },
+        }).rows,
+      ).toHaveLength(0);
+      expect(
+        system.query({
+          sql: "select name from mcp_installed where name = $name",
+          params: { name: "draft-memory" },
+        }).rows,
+      ).toHaveLength(0);
     } finally {
       system.close();
       await Promise.all(fixture.servers.map((server) => server.close().catch(() => undefined)));
@@ -278,12 +476,12 @@ describe("Feature: mcpSystem lifecycle", () => {
     }
   });
 
-  test("Scenario: Given runtime env changes after construction When an MCP starts Then it uses the latest env provider values", async () => {
+  test("Scenario: Given launch env changes after construction When an MCP starts Then it uses the latest env provider values", async () => {
     const fixture = createFixtureTransportFactory();
     let apiBaseUrl = "http://127.0.0.1:4100";
     const system = createSystem({
       transportFactory: fixture.factory,
-      runtimeEnvProvider: () => ({
+      envProvider: () => ({
         AGENTER_ATTENTION_API_BASE_URL: apiBaseUrl,
       }),
     });

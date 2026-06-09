@@ -18,6 +18,7 @@ import type {
   McpCallInput,
   McpDisableInput,
   McpListInput,
+  McpProbeInput,
   McpProjectInput,
   McpQueryInput,
   McpRemoveInput,
@@ -823,6 +824,80 @@ const mcpCallSchema = mcpProjectSchema.extend({
   autoEnable: z.boolean().optional(),
 });
 
+const mcpProbeRefSchema = z.union([
+  z.object({
+    type: z.literal("ref/prompt"),
+    name: z.string().trim().min(1),
+  }),
+  z.object({
+    type: z.literal("ref/resource"),
+    uri: z.string().trim().min(1),
+  }),
+]);
+
+const mcpProbeSchema = z.discriminatedUnion("action", [
+  z
+    .object({
+      action: z.literal("open"),
+      name: z.string().trim().min(1).optional(),
+      projectPath: z.string().trim().min(1).optional(),
+      transport: mcpTransportSchema,
+      env: mcpEnvRecordSchema.optional(),
+    })
+    .strict(),
+  z
+    .object({
+      action: z.literal("ping"),
+      probeId: z.string().trim().min(1),
+    })
+    .strict(),
+  z
+    .object({
+      action: z.literal("call-tool"),
+      probeId: z.string().trim().min(1),
+      toolName: z.string().trim().min(1),
+      arguments: z.record(z.string(), z.unknown()).optional(),
+    })
+    .strict(),
+  z
+    .object({
+      action: z.literal("read-resource"),
+      probeId: z.string().trim().min(1),
+      resourceUri: z.string().trim().min(1),
+    })
+    .strict(),
+  z
+    .object({
+      action: z.literal("get-prompt"),
+      probeId: z.string().trim().min(1),
+      promptName: z.string().trim().min(1),
+      arguments: z.record(z.string(), z.unknown()).optional(),
+    })
+    .strict(),
+  z
+    .object({
+      action: z.literal("complete"),
+      probeId: z.string().trim().min(1),
+      ref: mcpProbeRefSchema,
+      argument: z.object({
+        name: z.string().trim().min(1),
+        value: z.string(),
+      }),
+      context: z
+        .object({
+          arguments: mcpEnvRecordSchema.optional(),
+        })
+        .optional(),
+    })
+    .strict(),
+  z
+    .object({
+      action: z.literal("close"),
+      probeId: z.string().trim().min(1),
+    })
+    .strict(),
+]);
+
 const defineRuntimeToolDescriptor = <TInput extends ZodTypeAny>(
   descriptor: RuntimeToolDescriptor<TInput>,
 ): RuntimeToolDescriptor<TInput> => descriptor;
@@ -1486,6 +1561,82 @@ export const runtimeToolDescriptors = [
     ],
     handler: async (input, handlers, context) => ({
       result: await handlers.mcp.call(input satisfies McpCallInput, { signal: context?.signal }),
+    }),
+  }),
+  defineRuntimeToolDescriptor({
+    namespace: "mcp",
+    name: "probe",
+    route: "/v1/mcp/probe",
+    description:
+      "Open or use an isolated MCP probe session for a draft config. It mirrors the lightweight Studio inspect surface and never installs, enables, starts a durable project instance, saves snapshots, or appends action facts.",
+    helpNotes: [
+      "`action:\"open\"` starts one isolated MCP client and returns a probeId plus discovery snapshot.",
+      "Reuse the returned probeId for `ping`, `call-tool`, `read-resource`, `get-prompt`, or `complete`; finish with `close`.",
+      "The result is CLI-shaped: stdin, stdout, stderr, exitCode, and parsed JSON. GUI inspect should not invent actions that this command cannot express.",
+    ],
+    inputSchema: mcpProbeSchema,
+    examples: [
+      {
+        kind: "stdin",
+        payload: {
+          action: "open",
+          name: "draft-thinking",
+          projectPath: "/repo/app",
+          transport: {
+            kind: "stdio",
+            command: "npx",
+            args: ["-y", "@modelcontextprotocol/server-sequential-thinking"],
+          },
+        },
+      },
+      {
+        kind: "stdin",
+        payload: {
+          action: "ping",
+          probeId: "returned-probe-id",
+        },
+      },
+      {
+        kind: "stdin",
+        payload: {
+          action: "call-tool",
+          probeId: "returned-probe-id",
+          toolName: "sequentialthinking",
+          arguments: {
+            thought: "Check one thing.",
+            nextThoughtNeeded: false,
+            thoughtNumber: 1,
+            totalThoughts: 1,
+          },
+        },
+      },
+      {
+        kind: "stdin",
+        payload: {
+          action: "read-resource",
+          probeId: "returned-probe-id",
+          resourceUri: "file:///repo/app/README.md",
+        },
+      },
+      {
+        kind: "stdin",
+        payload: {
+          action: "get-prompt",
+          probeId: "returned-probe-id",
+          promptName: "summarize",
+          arguments: { topic: "workspace" },
+        },
+      },
+      {
+        kind: "stdin",
+        payload: {
+          action: "close",
+          probeId: "returned-probe-id",
+        },
+      },
+    ],
+    handler: async (input, handlers, context) => ({
+      result: await handlers.mcp.probe(input satisfies McpProbeInput, { signal: context?.signal }),
     }),
   }),
   defineRuntimeToolDescriptor({

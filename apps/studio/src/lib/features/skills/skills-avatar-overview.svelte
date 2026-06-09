@@ -8,6 +8,7 @@ import { ScrollView } from '@agenter/svelte-components';
 	import { Badge } from '$lib/components/ui/badge/index.js';
 	import { Button } from '$lib/components/ui/button/index.js';
 	import NoticeBanner from '$lib/components/ui/notice-banner.svelte';
+	import { resolveAvatarDisplayName, resolveAvatarHandle } from '$lib/features/avatars/avatar-identity-presentation';
 	import WorkbenchDetailDrawer from '$lib/features/navigation/workbench-detail-drawer.svelte';
 	import WorkbenchPageContent from '$lib/features/navigation/workbench-page-content.svelte';
 	import { cn } from '$lib/utils.js';
@@ -131,13 +132,15 @@ import { ScrollView } from '@agenter/svelte-components';
 								}}
 							>
 								<ProfileAvatar
-									label={entry.displayName ?? entry.nickname}
+									label={resolveAvatarDisplayName(entry)}
 									src={entry.iconUrl}
 									class="size-9 rounded-xl border-border/65 bg-background/70"
 								/>
 								<div class="grid min-w-0 gap-0.5">
-									<div class="truncate text-sm font-semibold">{entry.displayName ?? entry.nickname}</div>
-									<div class="truncate text-[11px] leading-5 text-muted-foreground">@{entry.nickname}</div>
+									<div class="truncate text-sm font-semibold">{resolveAvatarDisplayName(entry)}</div>
+									<div class="truncate text-[11px] leading-5 text-muted-foreground">
+										{resolveAvatarHandle(entry)}
+									</div>
 								</div>
 								<div class="flex items-center gap-2">
 									<Badge variant="outline">{entry.groups.length} workspaces</Badge>
@@ -156,7 +159,7 @@ import { ScrollView } from '@agenter/svelte-components';
 			>
 				{#snippet summary()}
 					{#if selectedEntry}
-						<div>Avatar: @{selectedEntry.nickname}</div>
+						<div>Handle: {resolveAvatarHandle(selectedEntry)}</div>
 						<div>Runtime: {selectedEntry.runtimeId}</div>
 						<div>Groups: {selectedEntry.groups.length}</div>
 					{:else}

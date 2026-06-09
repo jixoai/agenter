@@ -20,6 +20,7 @@ import type {
   McpDisableOutput,
   McpEnableOutput,
   McpListOutput,
+  McpProbeOutput,
   McpRestartOutput,
   McpStopOutput,
   ModelCallItem,
@@ -631,6 +632,8 @@ const createMockClient = (input: {
   mcpStopMutation?: (input: unknown) => Promise<unknown>;
   mcpRestartMutation?: (input: unknown) => Promise<unknown>;
   mcpCallMutation?: (input: unknown) => Promise<unknown>;
+  mcpInspectMutation?: (input: unknown) => Promise<unknown>;
+  mcpProbeMutation?: (input: unknown) => Promise<unknown>;
   noteCatalogQuery?: (input: { avatarNickname?: string; limit?: number }) => Promise<unknown>;
   noteNotebooksQuery?: (input: { avatarNickname?: string; cursor?: string; limit?: number }) => Promise<unknown>;
   noteSectionsQuery?: (input: {
@@ -2470,6 +2473,36 @@ const createMockClient = (input: {
                     createdAt: "2026-06-07T00:00:00.000Z",
                     updatedAt: "2026-06-07T00:00:00.000Z",
                   },
+                },
+        },
+        inspect: {
+          mutate: async (payload: unknown) =>
+            input.mcpInspectMutation
+              ? await input.mcpInspectMutation(payload)
+              : {
+                  snapshot: {
+                    name: "memory",
+                    projectPath: "/repo/app",
+                    serverName: "fixture-memory",
+                    tools: [],
+                    resources: [],
+                    prompts: [],
+                    snapshot: { capabilities: {} },
+                    snapshotAt: "2026-06-07T00:00:00.000Z",
+                  },
+                },
+        },
+        probe: {
+          mutate: async (payload: unknown) =>
+            input.mcpProbeMutation
+              ? await input.mcpProbeMutation(payload)
+              : {
+                  command: "mcp probe",
+                  stdin: JSON.stringify(payload, null, 2),
+                  stdout: "{}\n",
+                  stderr: "",
+                  exitCode: 0,
+                  parsed: {},
                 },
         },
       },
@@ -11600,6 +11633,14 @@ describe("Feature: runtime store synchronization", () => {
       snapshot: { tools: [{ name: "read_memory" }] },
       snapshotAt: "2026-06-07T00:01:00.000Z",
     } satisfies McpRestartOutput["snapshot"];
+    const probeOutput = {
+      command: "mcp probe",
+      stdin: '{\n  "action": "ping",\n  "probeId": "probe-1"\n}',
+      stdout: "{}\n",
+      stderr: "",
+      exitCode: 0,
+      parsed: {},
+    } satisfies McpProbeOutput;
     const rows = [
       {
         name: "memory",
@@ -11673,50 +11714,74 @@ describe("Feature: runtime store synchronization", () => {
             instance: runningInstance,
           };
         },
+        mcpInspectMutation: async (input) => {
+          calls.push(["inspect", input]);
+          return {
+            snapshot: {
+              name: "memory",
+              projectPath: "/repo/app",
+              serverName: "fixture-memory",
+              tools: [{ name: "read_memory" }],
+              resources: [],
+              prompts: [],
+              snapshot: { capabilities: { tools: true } },
+              snapshotAt: "2026-06-07T00:00:00.000Z",
+            },
+            result: {
+              content: [{ type: "text", text: "preview ok" }],
+            },
+          };
+        },
+        mcpProbeMutation: async (input) => {
+          calls.push(["probe", input]);
+          return probeOutput;
+        },
       }),
     );
 
     await expect(
       store.addMcpGlobal({
-        sessionId: "s-1",
+        avatarNickname: "default",
         name: "memory",
         title: "Memory",
         description: "Project memory tools",
         transport: { kind: "stdio", command: "memory-mcp", args: ["--stdio"] },
       }),
     ).resolves.toEqual(globalConfig);
-    await expect(store.removeMcpGlobal({ sessionId: "s-1", name: "memory" })).resolves.toEqual({
+    await expect(store.removeMcpGlobal({ avatarNickname: "default", name: "memory" })).resolves.toEqual({
       removed: false,
       blockedProjects: ["/repo/app"],
     });
-    await expect(store.enableMcpProject({ sessionId: "s-1", name: "memory", projectPath: "/repo/app" })).resolves.toEqual(
-      projectEnablement,
-    );
     await expect(
-      store.disableMcpProject({ sessionId: "s-1", name: "memory", projectPath: "/repo/app" }),
+      store.enableMcpProject({ avatarNickname: "default", name: "memory", projectPath: "/repo/app" }),
+    ).resolves.toEqual(projectEnablement);
+    await expect(
+      store.disableMcpProject({ avatarNickname: "default", name: "memory", projectPath: "/repo/app" }),
     ).resolves.toEqual(stoppedEnablement);
     await expect(
-      store.listMcpProject({ sessionId: "s-1", projectPath: "/repo/app", includeSnapshots: true }),
+      store.listMcpProject({ avatarNickname: "default", projectPath: "/repo/app", includeSnapshots: true }),
     ).resolves.toEqual(rows);
     await expect(
       store.queryMcp({
-        sessionId: "s-1",
+        avatarNickname: "default",
         projectPath: "/repo/app",
         sql: "select name, enabled, lifecycle from mcp_enabled order by name",
       }),
     ).resolves.toEqual({ rows: [{ name: "memory", enabled: 0, lifecycle: null }] });
-    await expect(store.startMcpProject({ sessionId: "s-1", name: "memory", projectPath: "/repo/app" })).rejects.toThrow(
-      "stdio launch failed",
-    );
-    await expect(store.stopMcpProject({ sessionId: "s-1", name: "memory", projectPath: "/repo/app" })).resolves.toEqual({
+    await expect(
+      store.startMcpProject({ avatarNickname: "default", name: "memory", projectPath: "/repo/app" }),
+    ).rejects.toThrow("stdio launch failed");
+    await expect(
+      store.stopMcpProject({ avatarNickname: "default", name: "memory", projectPath: "/repo/app" }),
+    ).resolves.toEqual({
       instance: stoppedInstance,
     });
     await expect(
-      store.restartMcpProject({ sessionId: "s-1", name: "memory", projectPath: "/repo/app" }),
+      store.restartMcpProject({ avatarNickname: "default", name: "memory", projectPath: "/repo/app" }),
     ).resolves.toEqual({ instance: runningInstance, snapshot });
     await expect(
       store.callMcpTool({
-        sessionId: "s-1",
+        avatarNickname: "default",
         name: "memory",
         projectPath: "/repo/app",
         toolName: "read_memory",
@@ -11729,17 +11794,67 @@ describe("Feature: runtime store synchronization", () => {
       },
       instance: runningInstance,
     });
+    await expect(
+      store.inspectMcp({
+        avatarNickname: "default",
+        name: "memory",
+        projectPath: "/repo/app",
+        transport: { kind: "stdio", command: "memory-mcp", args: ["--stdio"] },
+        toolName: "read_memory",
+        arguments: { key: "scope" },
+      }),
+    ).resolves.toEqual({
+      snapshot: {
+        name: "memory",
+        projectPath: "/repo/app",
+        serverName: "fixture-memory",
+        tools: [{ name: "read_memory" }],
+        resources: [],
+        prompts: [],
+        snapshot: { capabilities: { tools: true } },
+        snapshotAt: "2026-06-07T00:00:00.000Z",
+      },
+      result: {
+        content: [{ type: "text", text: "preview ok" }],
+      },
+    });
+    await expect(
+      store.probeMcp({
+        avatarNickname: "default",
+        action: "ping",
+        probeId: "probe-1",
+      }),
+    ).resolves.toEqual(probeOutput);
 
-    expect(calls).toContainEqual(["remove", { sessionId: "s-1", name: "memory" }]);
-    expect(calls).toContainEqual(["disable", { sessionId: "s-1", name: "memory", projectPath: "/repo/app" }]);
+    expect(calls).toContainEqual(["remove", { avatarNickname: "default", name: "memory" }]);
+    expect(calls).toContainEqual(["disable", { avatarNickname: "default", name: "memory", projectPath: "/repo/app" }]);
     expect(calls).toContainEqual([
       "call",
       {
-        sessionId: "s-1",
+        avatarNickname: "default",
         name: "memory",
         projectPath: "/repo/app",
         toolName: "read_memory",
         arguments: { key: "scope" },
+      },
+    ]);
+    expect(calls).toContainEqual([
+      "inspect",
+      {
+        avatarNickname: "default",
+        name: "memory",
+        projectPath: "/repo/app",
+        transport: { kind: "stdio", command: "memory-mcp", args: ["--stdio"] },
+        toolName: "read_memory",
+        arguments: { key: "scope" },
+      },
+    ]);
+    expect(calls).toContainEqual([
+      "probe",
+      {
+        avatarNickname: "default",
+        action: "ping",
+        probeId: "probe-1",
       },
     ]);
   });

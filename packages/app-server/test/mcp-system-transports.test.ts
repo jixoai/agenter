@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
-import { createServer, type Server as HttpServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { mkdtempSync, rmSync } from "node:fs";
+import { createServer, type Server as HttpServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -43,7 +43,7 @@ const createSystem = (): McpSystem => {
   return new McpSystem({
     dbPath: join(root, "mcp-system.sqlite"),
     rootWorkspacePath: join(root, "root-workspace"),
-    runtimeEnv: {
+    baseEnv: {
       AGENTER_MCP_FIXTURE_MODE: "root-env",
     },
   });

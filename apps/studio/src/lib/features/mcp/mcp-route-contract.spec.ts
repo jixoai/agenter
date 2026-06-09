@@ -6,7 +6,7 @@ import { describe, expect, test } from "vitest";
 const readSource = (relativePath: string): string => readFileSync(resolve(import.meta.dirname, relativePath), "utf8");
 
 describe("Feature: Studio MCP route contract", () => {
-  test("Scenario: Given the first MCP page slice When reading feature sources Then the page uses Studio workbench primitives", () => {
+  test("Scenario: Given the MCP route When reading feature sources Then page tabs express configs and avatars", () => {
     const routeSource = readSource("mcp-route.svelte");
     const layoutSource = readSource("mcp-workbench-layout.svelte");
 
@@ -15,85 +15,96 @@ describe("Feature: Studio MCP route contract", () => {
     expect(routeSource).toContain("WorkbenchPageToolbar");
     expect(routeSource).toContain("WorkbenchPageTabs");
     expect(routeSource).toContain("WorkbenchPageContent");
-    expect(routeSource).toContain("getAppControllerContext");
-    expect(routeSource).toContain("McpServerList");
-    expect(routeSource).toContain("McpServerDetail");
-    expect(routeSource).toContain("McpNewGlobalForm");
-    expect(routeSource).toContain("controller.runtimeStore.queryMcp");
-    expect(routeSource).toContain("label: 'List'");
-    expect(routeSource).toContain("label: 'New'");
-    expect(routeSource).toContain("Runtime authority");
-    expect(routeSource).toContain("No running AvatarRuntime");
-    expect(routeSource).toContain("Exact-project projection");
+    expect(routeSource).toContain("McpConfigList");
+    expect(routeSource).toContain("McpAvatarOverview");
+    expect(routeSource).toContain("label: 'Configs'");
+    expect(routeSource).toContain("label: 'Avatars'");
   });
 
-  test("Scenario: Given MCP global and project ownership When reading feature sources Then the surface keeps those projections visible", () => {
+  test("Scenario: Given config ownership When reading feature sources Then install and exact-project actions stay on separate surfaces", () => {
     const routeSource = readSource("mcp-route.svelte");
-    const listSource = readSource("mcp-server-list.svelte");
-    const detailSource = readSource("mcp-server-detail.svelte");
+    const configListSource = readSource("mcp-config-list.svelte");
+    const configDetailSource = readSource("mcp-config-detail.svelte");
     const newFormSource = readSource("mcp-new-global-form.svelte");
+    const inspectSource = readSource("mcp-config-inspect-panel.svelte");
+    const stateSource = readSource("mcp-workbench-state.ts");
 
-    expect(routeSource).toContain("Exact-project projection");
-    expect(routeSource).toContain("Global-only");
-    expect(routeSource).toContain("mapInstalledMcpRows");
-    expect(routeSource).toContain("mapEnabledMcpRows");
     expect(routeSource).toContain("mcp_installed");
     expect(routeSource).toContain("mcp_enabled");
-    expect(listSource).toContain("Global config");
-    expect(listSource).toContain("Exact-project projection");
-    expect(listSource).toContain("Latest fact");
-    expect(detailSource).toContain("Global config");
-    expect(detailSource).toContain("Runtime projection matrix");
-    expect(detailSource).toContain("Exact-project projection");
-    expect(newFormSource).toContain("New global config");
-    expect(newFormSource).toContain("Project availability");
-    expect(newFormSource).toContain("01 Global config");
-    expect(newFormSource).toContain("02 Project availability");
-    expect(newFormSource).toContain("03 Project runtime");
-    expect(newFormSource).toContain("mcp add");
-    expect(newFormSource).toContain("mcp enable");
-    expect(newFormSource).toContain("mcp start");
-    expect(newFormSource).toContain("Start after install");
-    expect(newFormSource).toContain("onSubmit");
+    expect(routeSource).toContain("buildMcpConfigCatalogRows");
+    expect(routeSource).toContain("buildMcpConfigSelectionKey");
+    expect(routeSource).toContain("listMcpConfigProjectRows");
+    expect(configListSource).toContain("New config");
+    expect(configListSource).toContain("ProfileAvatar");
+    expect(configListSource).toContain("onOpenAvatar");
+    expect(configDetailSource).toContain("Config");
+    expect(configDetailSource).toContain("Instances");
+    expect(newFormSource).toContain("Edit config");
+    expect(newFormSource).toContain("Owner Avatar");
+    expect(newFormSource).toContain("Form");
+    expect(newFormSource).toContain("Code");
+    expect(newFormSource).toContain("Inspect");
+    expect(inspectSource).toContain("Visual");
+    expect(inspectSource).toContain("Raw");
+    expect(inspectSource).toContain("mcp probe");
+    expect(inspectSource).toContain("action: 'open'");
+    expect(inspectSource).toContain("action: 'ping'");
+    expect(inspectSource).toContain("action: 'read-resource'");
+    expect(inspectSource).toContain("protocolId");
+    expect(inspectSource).toContain("Arguments");
+    expect(inspectSource).toContain("Inspect capability dialog view");
+    expect(inspectSource).toContain("mcp-inspect-capability-grid");
+    expect(inspectSource).toContain("mcp-config-inspect-capability-dialog");
+    expect(inspectSource).toContain("Seeded from inputSchema.");
+    expect(newFormSource).toContain("Override existing config?");
+    expect(newFormSource).toContain("Install requires explicit override");
+    expect(configDetailSource).toContain("Add project instance");
+    expect(configDetailSource).toContain("onAddProject");
+    expect(configDetailSource).toContain("onStartProject");
+    expect(configDetailSource).toContain("onStopProject");
+    expect(stateSource).toContain("McpConfigCatalogRow");
   });
 
-  test("Scenario: Given MCP actions When reading feature sources Then lifecycle remove and test-call flows stay explicit", () => {
+  test("Scenario: Given Avatar-owned MCP When reading feature sources Then avatars tab stays a read-only ownership projection with jump affordances", () => {
     const routeSource = readSource("mcp-route.svelte");
-    const detailSource = readSource("mcp-server-detail.svelte");
+    const avatarSource = readSource("mcp-avatar-overview.svelte");
+    const configListSource = readSource("mcp-config-list.svelte");
+    const newFormSource = readSource("mcp-new-global-form.svelte");
 
-    expect(routeSource).toContain("addMcpGlobal");
-    expect(routeSource).toContain("enableMcpProject");
-    expect(routeSource).toContain("disableMcpProject");
-    expect(routeSource).toContain("startMcpProject");
-    expect(routeSource).toContain("stopMcpProject");
-    expect(routeSource).toContain("restartMcpProject");
-    expect(routeSource).toContain("removeMcpGlobal");
-    expect(routeSource).toContain("callMcpTool");
-    expect(detailSource).toContain("Stop running project instances before removing");
-    expect(detailSource).toContain("autoEnable is off unless explicitly selected");
-    expect(detailSource).toContain("StructuredValueViewer");
+    expect(routeSource).toContain("avatar ownership overview");
+    expect(routeSource).toContain("handleOpenAvatar");
+    expect(avatarSource).toContain("Avatar ownership");
+    expect(avatarSource).toContain("ProfileAvatar");
+    expect(avatarSource).toContain("Configs");
+    expect(avatarSource).toContain("Instances");
+    expect(avatarSource).toContain("onOpenConfig");
+    expect(avatarSource).toContain("onOpenProject");
+    expect(configListSource).toContain("Open Avatar");
+    expect(newFormSource).toContain("Open Avatar");
+    expect(avatarSource).not.toContain("Start");
+    expect(avatarSource).not.toContain("Stop");
   });
 
-  test("Scenario: Given low-noise operator intent When reading MCP sources Then explanatory MCP law is collapsed into contextual help", () => {
+  test("Scenario: Given low-noise operator intent When reading MCP sources Then explanatory law stays behind contextual help", () => {
     const routeSource = readSource("mcp-route.svelte");
-    const detailSource = readSource("mcp-server-detail.svelte");
+    const configDetailSource = readSource("mcp-config-detail.svelte");
     const newFormSource = readSource("mcp-new-global-form.svelte");
 
     expect(routeSource).toContain("HelpHint");
-    expect(detailSource).toContain("HelpHint");
+    expect(configDetailSource).toContain("HelpHint");
     expect(newFormSource).toContain("HelpHint");
+    expect(routeSource).not.toContain("Avatar authority");
     expect(routeSource).not.toContain("What is MCP");
-    expect(detailSource).not.toContain("What is MCP");
-    expect(newFormSource).not.toContain("What is MCP");
-    expect(detailSource).not.toContain("Introduction");
+    expect(configDetailSource).not.toContain("Introduction");
     expect(newFormSource).not.toContain("Introduction");
   });
 
-  test("Scenario: Given Studio projects runtime MCP facts When reading MCP sources Then app-server internals stay out of the browser route", () => {
+  test("Scenario: Given Studio projects Avatar-owned MCP facts When reading MCP sources Then app-server internals stay out of the browser route", () => {
     for (const source of [
       readSource("mcp-route.svelte"),
-      readSource("mcp-server-list.svelte"),
-      readSource("mcp-server-detail.svelte"),
+      readSource("mcp-config-list.svelte"),
+      readSource("mcp-config-detail.svelte"),
+      readSource("mcp-avatar-overview.svelte"),
       readSource("mcp-new-global-form.svelte"),
       readSource("mcp-workbench-state.ts"),
     ]) {

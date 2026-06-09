@@ -180,16 +180,7 @@ import {
   type LoopTerminalSourceRef,
 } from "./loopbus-plugin-runtime";
 import { type ManagedTerminalSnapshot, type TerminalRuntime } from "./managed-terminal";
-import { McpSystem } from "./mcp-system/system";
-import type {
-  McpAddInput,
-  McpCallInput,
-  McpDisableInput,
-  McpListInput,
-  McpProjectInput,
-  McpQueryInput,
-  McpRemoveInput,
-} from "./mcp-system/types";
+import type { McpSystemSurface } from "./mcp-system/types";
 import { summarizeMessageChannelPresence } from "./message-channel-presence";
 import { resolveModelCapabilities } from "./model-capabilities";
 import {
@@ -1587,6 +1578,45 @@ type RemoteTerminalSeatAccess = {
   endpoint: ManagedSeatAuthorityEndpoint;
 };
 
+const unavailableMcpSystemSurface: McpSystemSurface = {
+  add: () => {
+    throw new Error("mcp system surface unavailable");
+  },
+  remove: async () => {
+    throw new Error("mcp system surface unavailable");
+  },
+  enable: () => {
+    throw new Error("mcp system surface unavailable");
+  },
+  disable: async () => {
+    throw new Error("mcp system surface unavailable");
+  },
+  list: () => {
+    throw new Error("mcp system surface unavailable");
+  },
+  query: () => {
+    throw new Error("mcp system surface unavailable");
+  },
+  start: async () => {
+    throw new Error("mcp system surface unavailable");
+  },
+  stop: async () => {
+    throw new Error("mcp system surface unavailable");
+  },
+  restart: async () => {
+    throw new Error("mcp system surface unavailable");
+  },
+  call: async () => {
+    throw new Error("mcp system surface unavailable");
+  },
+  inspect: async () => {
+    throw new Error("mcp system surface unavailable");
+  },
+  probe: async () => {
+    throw new Error("mcp system surface unavailable");
+  },
+};
+
 type RuntimeTerminalManageInviteResult = {
   invitation: TerminalInvitationRecord;
 };
@@ -1764,6 +1794,7 @@ export interface SessionRuntimeOptions {
   messageContactId?: MessageContactId;
   terminalSystem: TerminalControlPlane;
   terminalActorId?: TerminalActorId;
+  mcpSurface?: McpSystemSurface;
   resolveRuntimeTerminalCwd?: (input: {
     sessionId: string;
     cwd?: string;
@@ -1870,7 +1901,6 @@ export class SessionRuntime {
   private agent: AgenterAI | null = null;
   private promptStore: FilePromptStore | null = null;
   private runtimeLocalApi: RuntimeLocalApiHandle | null = null;
-  private mcpSystem: McpSystem | null = null;
   private runtimeSkillSystem: RuntimeSkillSystem | null = null;
   private rootWorkspaceShellWorld: RootWorkspaceShellWorld | null = null;
   private readonly terminalControlPlane: TerminalControlPlane;
@@ -2398,66 +2428,6 @@ export class SessionRuntime {
       },
     });
     return this.runtimeSkillSystem;
-  }
-
-  private ensureMcpSystem(): McpSystem {
-    if (this.mcpSystem) {
-      return this.mcpSystem;
-    }
-    this.mcpSystem = new McpSystem({
-      dbPath: join(this.options.sessionRoot, "mcp-system", "mcp-system.sqlite"),
-      rootWorkspacePath: this.getRootWorkspacePath(),
-      runtimeEnvProvider: () => buildRootWorkspaceShellEnvironment({
-        rootWorkspacePath: this.getRootWorkspacePath(),
-        homeDir: this.getHomeDir(),
-        apiBaseUrl: this.runtimeLocalApi?.baseUrl ?? "",
-        managedSeatAuthorityUrl: this.options.managedSeatAuthorityUrl,
-        privateKey: this.options.avatarPrivateKey ?? "",
-        principalId: this.options.avatarPrincipalId,
-        env: this.getRootWorkspaceCapabilityEnv(),
-      }),
-    });
-    return this.mcpSystem;
-  }
-
-  mcpAdd(input: McpAddInput): ReturnType<McpSystem["add"]> {
-    return this.ensureMcpSystem().add(input);
-  }
-
-  async mcpRemove(input: McpRemoveInput): Promise<Awaited<ReturnType<McpSystem["remove"]>>> {
-    return await this.ensureMcpSystem().remove(input);
-  }
-
-  mcpEnable(input: McpProjectInput): ReturnType<McpSystem["enable"]> {
-    return this.ensureMcpSystem().enable(input);
-  }
-
-  async mcpDisable(input: McpDisableInput): Promise<Awaited<ReturnType<McpSystem["disable"]>>> {
-    return await this.ensureMcpSystem().disable(input);
-  }
-
-  mcpList(input: McpListInput): ReturnType<McpSystem["list"]> {
-    return this.ensureMcpSystem().list(input);
-  }
-
-  mcpQuery(input: McpQueryInput): ReturnType<McpSystem["query"]> {
-    return this.ensureMcpSystem().query(input);
-  }
-
-  async mcpStart(input: McpProjectInput): Promise<Awaited<ReturnType<McpSystem["start"]>>> {
-    return await this.ensureMcpSystem().start(input);
-  }
-
-  async mcpStop(input: McpProjectInput): Promise<Awaited<ReturnType<McpSystem["stop"]>>> {
-    return await this.ensureMcpSystem().stop(input);
-  }
-
-  async mcpRestart(input: McpProjectInput): Promise<Awaited<ReturnType<McpSystem["restart"]>>> {
-    return await this.ensureMcpSystem().restart(input);
-  }
-
-  async mcpCall(input: McpCallInput, options: { signal?: AbortSignal } = {}): Promise<Awaited<ReturnType<McpSystem["call"]>>> {
-    return await this.ensureMcpSystem().call(input, options);
   }
 
   private getAttentionContextMatch(contextId: string): AttentionActiveContextMatch | null {
@@ -5012,7 +4982,6 @@ export class SessionRuntime {
       throw new Error("runtime avatar private key missing");
     }
     const runtimeSkillSystem = this.ensureRuntimeSkillSystem();
-    const mcpSystem = this.ensureMcpSystem();
     this.runtimeLocalApi = await startRuntimeLocalApi({
       expectedPrincipalId: this.options.avatarPrincipalId,
       handlers: {
@@ -5165,7 +5134,7 @@ export class SessionRuntime {
             ...applied,
           });
         },
-        mcp: mcpSystem,
+        mcp: this.options.mcpSurface ?? unavailableMcpSystemSurface,
       },
     });
   }
@@ -7607,8 +7576,6 @@ export class SessionRuntime {
       this.terminalControlPlane.setActorPresence(this.terminalActorId, false);
       this.releaseFollowUpSink();
       this.runtimeSkillSystem?.dispose();
-      this.mcpSystem?.close();
-      this.mcpSystem = null;
     }
     this.sessionStore?.setLifecycle({ status });
   }
@@ -7652,8 +7619,6 @@ export class SessionRuntime {
     this.runtimeKernelHost.dispose();
     await this.runtimeLocalApi?.stop().catch(() => {});
     this.runtimeLocalApi = null;
-    this.mcpSystem?.close();
-    this.mcpSystem = null;
     this.runtimeSkillSystem?.dispose();
     this.runtimeSkillSystem = null;
     this.skillKernelAdapter.reset();

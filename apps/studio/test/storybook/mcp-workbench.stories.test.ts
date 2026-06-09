@@ -1,42 +1,42 @@
-import { describe, test } from 'vitest';
+import { describe, test } from "vitest";
 
-import * as stories from '../../src/lib/features/mcp/mcp-workbench.stories';
-import { getPortableStory } from './portable-stories';
+import * as stories from "../../src/lib/features/mcp/mcp-workbench.stories";
+import { getPortableStory } from "./portable-stories";
 
-const NoRuntimeState = getPortableStory(stories, 'NoRuntimeState');
-const GlobalOnlyNewConfig = getPortableStory(stories, 'GlobalOnlyNewConfig');
-const DefaultDisabledProject = getPortableStory(stories, 'DefaultDisabledProject');
-const EnabledStoppedProject = getPortableStory(stories, 'EnabledStoppedProject');
-const RunningProjectTestCall = getPortableStory(stories, 'RunningProjectTestCall');
-const FailedProject = getPortableStory(stories, 'FailedProject');
-const BlockedRemove = getPortableStory(stories, 'BlockedRemove');
+const AvatarAuthorityWithoutRunningRuntime = getPortableStory(stories, "AvatarAuthorityWithoutRunningRuntime");
+const ConfigsNewDraft = getPortableStory(stories, "ConfigsNewDraft");
+const ConfigsDuplicateConflict = getPortableStory(stories, "ConfigsDuplicateConflict");
+const ConfigDetailEdit = getPortableStory(stories, "ConfigDetailEdit");
+const ConfigRunningSummary = getPortableStory(stories, "ConfigRunningSummary");
+const InspectVisualAndRaw = getPortableStory(stories, "InspectVisualAndRaw");
+const AvatarsOverview = getPortableStory(stories, "AvatarsOverview");
 
-describe('Feature: Storybook DOM contract for MCP workbench states', () => {
-	test('Scenario: Given no running runtime When MCP opens Then runtime authority is required before actions', async () => {
-		await NoRuntimeState.run();
-	});
+describe("Feature: Storybook DOM contract for MCP workbench states", () => {
+  test("Scenario: Given no running AvatarRuntime When configs opens Then new config still chooses one owner Avatar", async () => {
+    await AvatarAuthorityWithoutRunningRuntime.run();
+  });
 
-	test('Scenario: Given global-only mode When New is visible Then global add can explicitly enable and start one project', async () => {
-		await GlobalOnlyNewConfig.run();
-	});
+  test("Scenario: Given configs tab When new draft is selected Then one detail form can switch between form and code and inspect the draft", async () => {
+    await ConfigsNewDraft.run();
+  });
 
-	test('Scenario: Given default-disabled projection When row is selected Then lifecycle controls stay gated', async () => {
-		await DefaultDisabledProject.run();
-	});
+  test("Scenario: Given inspect connects When snapshot and tool call render Then visual and raw tabs both stay available", async () => {
+    await InspectVisualAndRaw.run();
+  });
 
-	test('Scenario: Given enabled stopped projection When lifecycle controls render Then start and restart are available', async () => {
-		await EnabledStoppedProject.run();
-	});
+  test("Scenario: Given one owner Avatar already has the same config id When install is submitted Then Studio asks for override or cancel", async () => {
+    await ConfigsDuplicateConflict.run();
+  });
 
-	test('Scenario: Given running projection When a tool test call runs Then autoEnable remains explicit and result is structured', async () => {
-		await RunningProjectTestCall.run();
-	});
+  test("Scenario: Given one config row When it is selected Then edit detail, inspect, and instance actions stay together", async () => {
+    await ConfigDetailEdit.run();
+  });
 
-	test('Scenario: Given failed projection When detail renders Then latest error and failed state stay visible', async () => {
-		await FailedProject.run();
-	});
+  test("Scenario: Given one config has running rows When detail renders Then config and instance summary stay separate", async () => {
+    await ConfigRunningSummary.run();
+  });
 
-	test('Scenario: Given running projects block remove When remove is attempted Then blocked paths remain visible until stop is explicit', async () => {
-		await BlockedRemove.run();
-	});
+  test("Scenario: Given MCP is Avatar-owned When avatars tab opens Then each Avatar shows configs and project instances", async () => {
+    await AvatarsOverview.run();
+  });
 });

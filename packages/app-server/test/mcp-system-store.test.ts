@@ -80,6 +80,52 @@ describe("Feature: mcpSystem durable store", () => {
     }
   });
 
+  test("Scenario: Given an MCP global id already exists When addGlobal omits override Then the store rejects silent replacement", () => {
+    const store = createStore();
+    try {
+      addSequentialThinking(store);
+
+      expect(() =>
+        store.addGlobal({
+          name: "thinking",
+          title: "Replacement",
+          transport: { kind: "stdio", command: "node", args: ["replacement.js"] },
+        }),
+      ).toThrow("mcp global already exists: thinking; pass override true to replace");
+    } finally {
+      store.close();
+    }
+  });
+
+  test("Scenario: Given an MCP global id already exists When addGlobal passes override Then the store replaces the config and preserves identity", () => {
+    const store = createStore();
+    try {
+      const first = addSequentialThinking(store);
+
+      const replaced = store.addGlobal({
+        name: "thinking",
+        title: "Replacement",
+        description: "Replacement transport",
+        transport: { kind: "stdio", command: "node", args: ["replacement.js"] },
+        override: true,
+      });
+
+      expect(replaced.name).toBe("thinking");
+      expect(replaced.title).toBe("Replacement");
+      expect(replaced.description).toBe("Replacement transport");
+      expect(replaced.transport).toEqual({
+        kind: "stdio",
+        command: "node",
+        args: ["replacement.js"],
+        env: {},
+      });
+      expect(replaced.createdAt).toBe(first.createdAt);
+      expect(replaced.updatedAt).not.toBe(first.updatedAt);
+    } finally {
+      store.close();
+    }
+  });
+
   test("Scenario: Given a project enables an MCP When listing the project Then only enabled rows with global overview are returned", () => {
     const store = createStore();
     try {

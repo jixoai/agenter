@@ -787,6 +787,25 @@ describe("Feature: runtime descriptor CLI", () => {
     expect(api.getRequests()).toHaveLength(0);
   });
 
+  test("Scenario: Given MCP descriptor help probes When mcp probe --help runs Then isolated probe semantics are documented locally", async () => {
+    const api = await startMockRuntimeApi();
+    const mcp = createRuntimeCommand(api.baseUrl, "mcp");
+
+    const result = await mcp.execute(["probe", "--help"], createCommandContext());
+
+    expect(result.exitCode).toBe(0);
+    expect(result.stdout).toContain("Open or use an isolated MCP probe session");
+    expect(result.stdout).toContain("never installs, enables, starts a durable project instance");
+    expect(result.stdout).toContain('`action:"open"`');
+    expect(result.stdout).toContain("ping");
+    expect(result.stdout).toContain("read-resource");
+    expect(result.stdout).toContain("get-prompt");
+    expect(result.stdout).toContain("call-tool");
+    expect(result.stdout).toContain("stdin, stdout, stderr, exitCode");
+    expect(result.stdout).toContain("command: `mcp probe`");
+    expect(api.getRequests()).toHaveLength(0);
+  });
+
   test("Scenario: Given MCP CLI commands When add and call execute Then they post descriptor-backed JSON to runtime API", async () => {
     const api = await startMockRuntimeApi({
       "/v1/mcp/add": {
@@ -860,6 +879,41 @@ describe("Feature: runtime descriptor CLI", () => {
         thoughtNumber: 1,
         totalThoughts: 1,
       },
+    });
+  });
+
+  test("Scenario: Given MCP CLI probe input When probe executes Then it posts descriptor-backed JSON to runtime API", async () => {
+    const api = await startMockRuntimeApi({
+      "/v1/mcp/probe": {
+        result: {
+          command: "mcp probe",
+          stdin: '{\n  "action": "ping",\n  "probeId": "probe-1"\n}',
+          stdout: "{}\n",
+          stderr: "",
+          exitCode: 0,
+          parsed: {},
+        },
+      },
+    });
+    const mcp = createRuntimeCommand(api.baseUrl, "mcp");
+
+    const result = await mcp.execute(
+      ["probe"],
+      createCommandContext(
+        JSON.stringify({
+          action: "ping",
+          probeId: "probe-1",
+        }),
+      ),
+    );
+
+    expect(result.exitCode).toBe(0);
+    expect(result.stdout).toContain('"command": "mcp probe"');
+    expect(result.stdout).toContain('"stdout": "{}\\n"');
+    expect(api.getRequests().map((request) => request.url)).toEqual(["/v1/mcp/probe"]);
+    expect(api.getRequests()[0]?.body).toEqual({
+      action: "ping",
+      probeId: "probe-1",
     });
   });
 

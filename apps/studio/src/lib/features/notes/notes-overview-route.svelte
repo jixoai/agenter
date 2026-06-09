@@ -12,6 +12,7 @@
 	import { Badge } from '$lib/components/ui/badge/index.js';
 	import { Button } from '$lib/components/ui/button/index.js';
 	import NoticeBanner from '$lib/components/ui/notice-banner.svelte';
+	import { resolveAvatarDisplayName, resolveAvatarHandle } from '$lib/features/avatars/avatar-identity-presentation';
 	import WorkbenchDetailDrawer from '$lib/features/navigation/workbench-detail-drawer.svelte';
 	import WorkbenchPageContent from '$lib/features/navigation/workbench-page-content.svelte';
 	import WorkbenchPageToolbar from '$lib/features/navigation/workbench-page-toolbar.svelte';
@@ -211,15 +212,17 @@
 									selectAvatar(entry.nickname);
 								}}
 							>
-								<ProfileAvatar
-									label={entry.displayName ?? entry.nickname}
-									src={entry.iconUrl}
-									class="size-9 rounded-xl border-border/65 bg-background/70"
-								/>
-								<div class="grid min-w-0 gap-0.5">
-									<div class="truncate text-sm font-semibold">{entry.displayName ?? entry.nickname}</div>
-									<div class="truncate text-[11px] leading-5 text-muted-foreground">@{entry.nickname}</div>
-								</div>
+									<ProfileAvatar
+										label={resolveAvatarDisplayName(entry)}
+										src={entry.iconUrl}
+										class="size-9 rounded-xl border-border/65 bg-background/70"
+									/>
+									<div class="grid min-w-0 gap-0.5">
+										<div class="truncate text-sm font-semibold">{resolveAvatarDisplayName(entry)}</div>
+										<div class="truncate text-[11px] leading-5 text-muted-foreground">
+											{resolveAvatarHandle(entry)}
+										</div>
+									</div>
 								<div class="flex items-center gap-2">
 									{#if loadingCatalogs && !catalog}
 										<Badge variant="outline">loading</Badge>
@@ -243,7 +246,7 @@
 			>
 				{#snippet summary()}
 					{#if selectedEntry}
-						<div>Avatar: @{selectedEntry.nickname}</div>
+						<div>Handle: {resolveAvatarHandle(selectedEntry)}</div>
 						<div>NoteSystem: {selectedCatalog?.capability.available ? 'available' : 'unavailable'}</div>
 						<div>Pages: {selectedCatalog?.totalPages ?? 0}</div>
 					{:else}
@@ -256,12 +259,12 @@
 				{:else}
 					<div class="grid gap-4">
 						<div class="flex items-center justify-between gap-3">
-							<div class="grid gap-1">
-								<div class="text-sm font-semibold">NoteSystem scope</div>
-								<div class="text-sm text-muted-foreground">
-									This opens one tab for @{selectedEntry.nickname}. It will not switch roles from inside the page body.
+								<div class="grid gap-1">
+									<div class="text-sm font-semibold">NoteSystem scope</div>
+									<div class="text-sm text-muted-foreground">
+										This opens one tab for {resolveAvatarDisplayName(selectedEntry)}. It will not switch roles from inside the page body.
+									</div>
 								</div>
-							</div>
 							<Button size="sm" onclick={() => void openAvatar(selectedEntry.nickname)}>
 								<PlusIcon class="size-4" />
 								Open tab
@@ -271,13 +274,13 @@
 						<div class="grid gap-3 rounded-[0.95rem] border border-border/60 bg-background/70 p-3">
 							<div class="flex flex-wrap items-center gap-2">
 								<ProfileAvatar
-									label={selectedEntry.displayName ?? selectedEntry.nickname}
+									label={resolveAvatarDisplayName(selectedEntry)}
 									src={selectedEntry.iconUrl}
 									class="size-10 rounded-xl border-border/65 bg-background/70"
 								/>
 								<div class="grid min-w-0 gap-0.5">
-									<div class="truncate text-sm font-semibold">{selectedEntry.displayName ?? selectedEntry.nickname}</div>
-									<div class="truncate text-xs text-muted-foreground">@{selectedEntry.nickname}</div>
+									<div class="truncate text-sm font-semibold">{resolveAvatarDisplayName(selectedEntry)}</div>
+									<div class="truncate text-xs text-muted-foreground">{resolveAvatarHandle(selectedEntry)}</div>
 								</div>
 							</div>
 							{#if selectedCatalog?.capability.available}

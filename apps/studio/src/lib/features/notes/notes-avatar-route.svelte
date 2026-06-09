@@ -23,6 +23,7 @@
 	import WorkbenchToolbarStatus from '$lib/features/navigation/workbench-toolbar-status.svelte';
 	import type { WorkbenchToolbarRenderState } from '$lib/features/navigation/workbench-toolbar.types';
 	import { cn } from '$lib/utils.js';
+	import { resolveAvatarDisplayName, resolveAvatarHandle } from '$lib/features/avatars/avatar-identity-presentation';
 	import NotesBrowseMode from './notes-browse-mode.svelte';
 	import NotesPageDetailDrawer from './notes-page-detail-drawer.svelte';
 	import NotesQueryMode from './notes-query-mode.svelte';
@@ -88,6 +89,7 @@
 	const avatars = $derived(controller.runtimeState.globalAvatarCatalog.data);
 	const avatarEntry = $derived(avatars.find((avatar) => avatar.nickname === avatarNickname) ?? null);
 	const avatarLabel = $derived(avatarEntry?.displayName ?? avatarNickname);
+	const avatarHandle = $derived(avatarEntry ? resolveAvatarHandle(avatarEntry) : `@${avatarNickname}`);
 	const searchRows = $derived(mapNoteSearchRows(searchOutput?.results ?? []));
 	const sqlResultItems = $derived(mapNoteSqlResultItems(sqlOutput));
 	const tagRows = $derived(tagsOutput?.tags ?? []);
@@ -564,13 +566,15 @@
 	/>
 {/snippet}
 
-{#snippet notesToolbarIdentityTitle(_toolbarState: WorkbenchToolbarRenderState)}
-	<span class="truncate">@{avatarNickname}</span>
-{/snippet}
+	{#snippet notesToolbarIdentityTitle(_toolbarState: WorkbenchToolbarRenderState)}
+		<span class="truncate">
+			{avatarEntry ? resolveAvatarDisplayName(avatarEntry, avatarNickname) : avatarNickname}
+		</span>
+	{/snippet}
 
-{#snippet notesToolbarIdentitySubtitle(_toolbarState: WorkbenchToolbarRenderState)}
-	<span class="truncate">{sourceRootSummary}</span>
-{/snippet}
+	{#snippet notesToolbarIdentitySubtitle(_toolbarState: WorkbenchToolbarRenderState)}
+		<span class="truncate">{avatarHandle ? `${avatarHandle} · ${sourceRootSummary}` : sourceRootSummary}</span>
+	{/snippet}
 
 {#snippet notesToolbarStatus(toolbarState: WorkbenchToolbarRenderState)}
 	<div class={cn('flex min-w-0 flex-wrap items-center gap-1', toolbarState.placement === 'overflow' && 'justify-start')}>

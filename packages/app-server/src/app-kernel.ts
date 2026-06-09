@@ -178,14 +178,18 @@ import { pageHeartbeatGroupsFromDb } from "./heartbeat-groups-page";
 import { HEARTBEAT_INSPECTION_SCOPES, HEARTBEAT_MESSAGE_PART_SCOPE } from "./heartbeat-message-parts";
 import { materializeBuiltinPromptDocs } from "./i18n";
 import { readLocalEnvValue, resolveLocalEnvPath, writeLocalEnvValue } from "./local-env";
+import { McpSystem } from "./mcp-system/system";
 import type {
   McpAddInput,
   McpCallInput,
   McpDisableInput,
+  McpInspectInput,
   McpListInput,
+  McpProbeInput,
   McpProjectInput,
   McpQueryInput,
   McpRemoveInput,
+  McpSystemSurface,
 } from "./mcp-system/types";
 import { resolveModelCapabilities } from "./model-capabilities";
 import {
@@ -202,6 +206,7 @@ import type {
   RuntimeLoopStateLogRecord,
   RuntimeTerminalActivityRecord,
 } from "./runtime-history-records";
+import { buildRootWorkspaceShellEnvironment } from "./runtime-shell-bin";
 import { projectRuntimeTerminalConfigMutation, type RuntimeMessageSendResult } from "./runtime-tool-views";
 import { SessionCatalog, type SessionMeta } from "./session-catalog";
 import { resolveSessionRoomActorId } from "./session-chat-projection";
@@ -256,6 +261,8 @@ import {
   resolveWorkspaceGrantModeFromAbsolutePath,
   resolveWorkspacePublicAssetRoot,
   serializeEnvAvatarHome,
+  serializeEnvSkillsHome,
+  SKILLS_HOME_ENV,
   WorkspaceSystemStore,
   type WorkspaceAssetRoots,
   type WorkspaceBashExecResult,
@@ -892,6 +899,7 @@ export class AppKernel {
   private readonly messageControlPlane: MessageControlPlane;
   private readonly terminalControlPlane: TerminalControlPlane;
   private readonly roomAssets: RoomAssetStore;
+  private readonly mcpSystems = new Map<string, McpSystem>();
   private readonly runtimes = new Map<string, SessionRuntime>();
   private readonly runtimeStopListeners = new Map<string, () => void>();
   private readonly listeners = new Set<KernelListener>();
@@ -1325,6 +1333,10 @@ export class AppKernel {
     }
     this.runtimes.clear();
     this.runtimeStopListeners.clear();
+    for (const system of this.mcpSystems.values()) {
+      system.close();
+    }
+    this.mcpSystems.clear();
     if (this.avatarCatalogInvalidationTimer) {
       clearTimeout(this.avatarCatalogInvalidationTimer);
       this.avatarCatalogInvalidationTimer = null;
@@ -2008,6 +2020,74 @@ export class AppKernel {
       principalId,
       avatarHome,
     };
+  }
+
+  private ensureAvatarPrivateRootWorkspace(input: { avatarPrincipalId: string }): string {
+    const rootWorkspacePath = resolveGlobalAvatarCanonicalRoot(input.avatarPrincipalId, this.getHomeDir());
+    mkdirSync(rootWorkspacePath, { recursive: true });
+    for (const directory of ["skills", "memories", "tools", "tmp"]) {
+      mkdirSync(join(rootWorkspacePath, directory), { recursive: true });
+    }
+    return rootWorkspacePath;
+  }
+
+  private async resolveMcpAvatarAuthority(input: { avatarNickname?: string | null } = {}): Promise<{
+    nickname: string;
+    principalId: string;
+    privateKey: string;
+    rootWorkspacePath: string;
+    system: McpSystem;
+  }> {
+    const nickname = normalizeAvatarNickname(input.avatarNickname ?? defaultAvatarNickname());
+    const principal = await this.ensureRuntimeAvatarPrincipal(nickname);
+    const rootWorkspacePath = this.ensureAvatarPrivateRootWorkspace({
+      avatarPrincipalId: principal.principalId,
+    });
+    const existing = this.mcpSystems.get(principal.principalId);
+    if (existing) {
+      return {
+        nickname,
+        principalId: principal.principalId,
+        privateKey: principal.privateKey,
+        rootWorkspacePath,
+        system: existing,
+      };
+    }
+
+    const avatarHome = [rootWorkspacePath];
+    const skillHomeRoots = deriveEnvSkillsHome({
+      pwd: rootWorkspacePath,
+      avatarHome,
+    });
+    const system = new McpSystem({
+      dbPath: join(rootWorkspacePath, "mcp-system", "mcp-system.sqlite"),
+      rootWorkspacePath,
+      envProvider: () =>
+        buildRootWorkspaceShellEnvironment({
+          rootWorkspacePath,
+          homeDir: this.getHomeDir(),
+          apiBaseUrl: "",
+          managedSeatAuthorityUrl: this.getManagedSeatAuthorityUrl() ?? undefined,
+          privateKey: principal.privateKey,
+          principalId: principal.principalId,
+          env: {
+            [AVATAR_HOME_ENV]: serializeEnvAvatarHome(avatarHome),
+            [SKILLS_HOME_ENV]: serializeEnvSkillsHome(skillHomeRoots),
+          },
+        }),
+    });
+    this.mcpSystems.set(principal.principalId, system);
+    return {
+      nickname,
+      principalId: principal.principalId,
+      privateKey: principal.privateKey,
+      rootWorkspacePath,
+      system,
+    };
+  }
+
+  private async resolveMcpSurface(input: { avatarNickname?: string | null } = {}): Promise<McpSystemSurface> {
+    return (await this.resolveMcpAvatarAuthority(input)).system;
   }
 
   async listNoteCatalog(input: { avatarNickname?: string | null; limit?: number } = {}): Promise<
@@ -2811,11 +2891,9 @@ export class AppKernel {
   }
 
   private ensureRuntimeAvatarRootWorkspace(input: { runtimeId: string; avatarPrincipalId: string }): string {
-    const rootWorkspacePath = resolveGlobalAvatarCanonicalRoot(input.avatarPrincipalId, this.getHomeDir());
-    mkdirSync(rootWorkspacePath, { recursive: true });
-    for (const directory of ["skills", "memories", "tools", "tmp"]) {
-      mkdirSync(join(rootWorkspacePath, directory), { recursive: true });
-    }
+    const rootWorkspacePath = this.ensureAvatarPrivateRootWorkspace({
+      avatarPrincipalId: input.avatarPrincipalId,
+    });
     this.workspaceSystem.attachRuntime({
       runtimeId: input.runtimeId,
       workspacePath: rootWorkspacePath,
@@ -3270,6 +3348,7 @@ export class AppKernel {
     }
 
     this.sessions.update(sessionId, { status: "starting", lastError: undefined });
+    const mcpSurface = await this.resolveMcpSurface({ avatarNickname: meta.avatar });
     // Session bootstrap anchors attention/workspace truth only.
     // Message and terminal routing rehydrate later from explicit external-system facts.
     const runtime = new SessionRuntime({
@@ -3297,6 +3376,7 @@ export class AppKernel {
       messageContactId: this.resolveSessionMessageContactId(meta),
       terminalSystem: this.terminalControlPlane,
       terminalActorId: this.resolveSessionTerminalActorId(meta),
+      mcpSurface,
       resolveRuntimeTerminalCwd: async (input) =>
         this.resolveRuntimeTerminalCwd({
           runtimeId: meta.id,
@@ -6067,64 +6147,86 @@ export class AppKernel {
     return await editor.save(kind, input.content, input.baseMtimeMs);
   }
 
-  mcpAdd(input: { sessionId: string } & McpAddInput): ReturnType<SessionRuntime["mcpAdd"]> {
-    const { sessionId, ...mcpInput } = input;
-    return this.getRunningRuntimeOrThrow(sessionId).mcpAdd(mcpInput);
+  async mcpAdd(input: { avatarNickname?: string | null } & McpAddInput): Promise<ReturnType<McpSystemSurface["add"]>> {
+    const { avatarNickname, ...mcpInput } = input;
+    return (await this.resolveMcpSurface({ avatarNickname })).add(mcpInput);
   }
 
   async mcpRemove(
-    input: { sessionId: string } & McpRemoveInput,
-  ): Promise<Awaited<ReturnType<SessionRuntime["mcpRemove"]>>> {
-    const { sessionId, ...mcpInput } = input;
-    return await this.getRunningRuntimeOrThrow(sessionId).mcpRemove(mcpInput);
+    input: { avatarNickname?: string | null } & McpRemoveInput,
+  ): Promise<Awaited<ReturnType<McpSystemSurface["remove"]>>> {
+    const { avatarNickname, ...mcpInput } = input;
+    return await (await this.resolveMcpSurface({ avatarNickname })).remove(mcpInput);
   }
 
-  mcpEnable(input: { sessionId: string } & McpProjectInput): ReturnType<SessionRuntime["mcpEnable"]> {
-    const { sessionId, ...mcpInput } = input;
-    return this.getRunningRuntimeOrThrow(sessionId).mcpEnable(mcpInput);
+  async mcpEnable(
+    input: { avatarNickname?: string | null } & McpProjectInput,
+  ): Promise<ReturnType<McpSystemSurface["enable"]>> {
+    const { avatarNickname, ...mcpInput } = input;
+    return (await this.resolveMcpSurface({ avatarNickname })).enable(mcpInput);
   }
 
   async mcpDisable(
-    input: { sessionId: string } & McpDisableInput,
-  ): Promise<Awaited<ReturnType<SessionRuntime["mcpDisable"]>>> {
-    const { sessionId, ...mcpInput } = input;
-    return await this.getRunningRuntimeOrThrow(sessionId).mcpDisable(mcpInput);
+    input: { avatarNickname?: string | null } & McpDisableInput,
+  ): Promise<Awaited<ReturnType<McpSystemSurface["disable"]>>> {
+    const { avatarNickname, ...mcpInput } = input;
+    return await (await this.resolveMcpSurface({ avatarNickname })).disable(mcpInput);
   }
 
-  mcpList(input: { sessionId: string } & McpListInput): ReturnType<SessionRuntime["mcpList"]> {
-    const { sessionId, ...mcpInput } = input;
-    return this.getRunningRuntimeOrThrow(sessionId).mcpList(mcpInput);
+  async mcpList(
+    input: { avatarNickname?: string | null } & McpListInput,
+  ): Promise<ReturnType<McpSystemSurface["list"]>> {
+    const { avatarNickname, ...mcpInput } = input;
+    return (await this.resolveMcpSurface({ avatarNickname })).list(mcpInput);
   }
 
-  mcpQuery(input: { sessionId: string } & McpQueryInput): ReturnType<SessionRuntime["mcpQuery"]> {
-    const { sessionId, ...mcpInput } = input;
-    return this.getRunningRuntimeOrThrow(sessionId).mcpQuery(mcpInput);
+  async mcpQuery(
+    input: { avatarNickname?: string | null } & McpQueryInput,
+  ): Promise<ReturnType<McpSystemSurface["query"]>> {
+    const { avatarNickname, ...mcpInput } = input;
+    return (await this.resolveMcpSurface({ avatarNickname })).query(mcpInput);
   }
 
   async mcpStart(
-    input: { sessionId: string } & McpProjectInput,
-  ): Promise<Awaited<ReturnType<SessionRuntime["mcpStart"]>>> {
-    const { sessionId, ...mcpInput } = input;
-    return await this.getRunningRuntimeOrThrow(sessionId).mcpStart(mcpInput);
+    input: { avatarNickname?: string | null } & McpProjectInput,
+  ): Promise<Awaited<ReturnType<McpSystemSurface["start"]>>> {
+    const { avatarNickname, ...mcpInput } = input;
+    return await (await this.resolveMcpSurface({ avatarNickname })).start(mcpInput);
   }
 
   async mcpStop(
-    input: { sessionId: string } & McpProjectInput,
-  ): Promise<Awaited<ReturnType<SessionRuntime["mcpStop"]>>> {
-    const { sessionId, ...mcpInput } = input;
-    return await this.getRunningRuntimeOrThrow(sessionId).mcpStop(mcpInput);
+    input: { avatarNickname?: string | null } & McpProjectInput,
+  ): Promise<Awaited<ReturnType<McpSystemSurface["stop"]>>> {
+    const { avatarNickname, ...mcpInput } = input;
+    return await (await this.resolveMcpSurface({ avatarNickname })).stop(mcpInput);
   }
 
   async mcpRestart(
-    input: { sessionId: string } & McpProjectInput,
-  ): Promise<Awaited<ReturnType<SessionRuntime["mcpRestart"]>>> {
-    const { sessionId, ...mcpInput } = input;
-    return await this.getRunningRuntimeOrThrow(sessionId).mcpRestart(mcpInput);
+    input: { avatarNickname?: string | null } & McpProjectInput,
+  ): Promise<Awaited<ReturnType<McpSystemSurface["restart"]>>> {
+    const { avatarNickname, ...mcpInput } = input;
+    return await (await this.resolveMcpSurface({ avatarNickname })).restart(mcpInput);
   }
 
-  async mcpCall(input: { sessionId: string } & McpCallInput): Promise<Awaited<ReturnType<SessionRuntime["mcpCall"]>>> {
-    const { sessionId, ...mcpInput } = input;
-    return await this.getRunningRuntimeOrThrow(sessionId).mcpCall(mcpInput);
+  async mcpCall(
+    input: { avatarNickname?: string | null } & McpCallInput,
+  ): Promise<Awaited<ReturnType<McpSystemSurface["call"]>>> {
+    const { avatarNickname, ...mcpInput } = input;
+    return await (await this.resolveMcpSurface({ avatarNickname })).call(mcpInput);
+  }
+
+  async mcpInspect(
+    input: { avatarNickname?: string | null } & McpInspectInput,
+  ): Promise<Awaited<ReturnType<McpSystemSurface["inspect"]>>> {
+    const { avatarNickname, ...mcpInput } = input;
+    return await (await this.resolveMcpSurface({ avatarNickname })).inspect(mcpInput);
+  }
+
+  async mcpProbe(
+    input: { avatarNickname?: string | null } & McpProbeInput,
+  ): Promise<Awaited<ReturnType<McpSystemSurface["probe"]>>> {
+    const { avatarNickname, ...mcpInput } = input;
+    return await (await this.resolveMcpSurface({ avatarNickname })).probe(mcpInput);
   }
 
   private async refreshRuntimesForWorkspaceSettingsSave(input: {

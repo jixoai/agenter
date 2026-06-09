@@ -2,6 +2,7 @@
 import { getAppControllerContext } from '$lib/app/controller-context';
 import ProfileAvatar from '$lib/components/profile-avatar.svelte';
 import NoticeBanner from '$lib/components/ui/notice-banner.svelte';
+import { resolveAvatarDisplayName, resolveAvatarHandle } from '$lib/features/avatars/avatar-identity-presentation';
 import WorkbenchPageToolbar from '$lib/features/navigation/workbench-page-toolbar.svelte';
 import WorkbenchToolbar from '$lib/features/navigation/workbench-toolbar.svelte';
 	import WorkbenchToolbarStatus from '$lib/features/navigation/workbench-toolbar-status.svelte';
@@ -56,18 +57,18 @@ import WorkbenchToolbar from '$lib/features/navigation/workbench-toolbar.svelte'
 
 {#snippet avatarToolbarIdentityLeading(_toolbarState: WorkbenchToolbarRenderState)}
 	<ProfileAvatar
-		label={selectedEntry?.displayName ?? selectedEntry?.nickname ?? avatarNickname}
+		label={selectedEntry ? resolveAvatarDisplayName(selectedEntry) : avatarNickname}
 		src={selectedEntry?.iconUrl ?? null}
 		class="size-6 rounded-md border-border/65 bg-background/70"
 	/>
 {/snippet}
 
 {#snippet avatarToolbarIdentityTitle(_toolbarState: WorkbenchToolbarRenderState)}
-	<span class="truncate">@{selectedEntry?.nickname ?? avatarNickname}</span>
+	<span class="truncate">{selectedEntry ? resolveAvatarDisplayName(selectedEntry) : avatarNickname}</span>
 {/snippet}
 
 {#snippet avatarToolbarIdentitySubtitle(_toolbarState: WorkbenchToolbarRenderState)}
-	<span class="truncate">Workspace-grouped avatar skill browser</span>
+	<span class="truncate">{selectedEntry ? resolveAvatarHandle(selectedEntry) : `@${avatarNickname}`}</span>
 {/snippet}
 
 {#snippet avatarToolbarStatus(toolbarState: WorkbenchToolbarRenderState)}

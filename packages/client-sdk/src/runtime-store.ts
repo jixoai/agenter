@@ -42,9 +42,6 @@ import type {
   HeartbeatRecordsPageOutput,
   HistoryPageCursor,
   JsonValue,
-  MessageChannelEntry,
-  MessageChannelGrantEntry,
-  MessageSendSuccessOutput,
   McpAddInput,
   McpAddOutput,
   McpCallInput,
@@ -53,8 +50,12 @@ import type {
   McpDisableOutput,
   McpEnableInput,
   McpEnableOutput,
+  McpInspectInput,
+  McpInspectOutput,
   McpListInput,
   McpListOutput,
+  McpProbeInput,
+  McpProbeOutput,
   McpQueryInput,
   McpQueryOutput,
   McpRemoveInput,
@@ -65,6 +66,9 @@ import type {
   McpStartOutput,
   McpStopInput,
   McpStopOutput,
+  MessageChannelEntry,
+  MessageChannelGrantEntry,
+  MessageSendSuccessOutput,
   ModelCallItem,
   NoteCatalogOutput,
   NoteListSort,
@@ -4243,6 +4247,14 @@ export class RuntimeStore {
 
   async callMcpTool(input: McpCallInput): Promise<McpCallOutput> {
     return await this.client.trpc.mcp.invoke.mutate(input);
+  }
+
+  async inspectMcp(input: McpInspectInput): Promise<McpInspectOutput> {
+    return await this.client.trpc.mcp.inspect.mutate(input);
+  }
+
+  async probeMcp(input: McpProbeInput): Promise<McpProbeOutput> {
+    return await this.client.trpc.mcp.probe.mutate(input);
   }
 
   async listNoteCatalog(input: { avatarNickname?: string; limit?: number } = {}): Promise<NoteCatalogOutput> {

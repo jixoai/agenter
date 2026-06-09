@@ -150,10 +150,14 @@ export class McpSystemStore {
     description?: string;
     transport: McpTransportConfig;
     env?: Record<string, string>;
+    override?: boolean;
   }): McpGlobalConfig {
     const name = normalizeName(input.name);
     const now = nowIso();
     const existing = this.getGlobal(name);
+    if (existing && input.override !== true) {
+      throw new Error(`mcp global already exists: ${name}; pass override true to replace`);
+    }
     const createdAt = existing?.createdAt ?? now;
     const transport = input.transport;
     this.db

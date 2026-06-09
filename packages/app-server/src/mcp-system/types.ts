@@ -52,7 +52,9 @@ export interface McpCapabilitySnapshot {
   protocolVersion?: string;
   tools: unknown[];
   resources: unknown[];
+  resourceTemplates?: unknown[];
   prompts: unknown[];
+  apps?: unknown[];
   snapshot: McpJsonObject;
   snapshotAt: string;
 }
@@ -125,6 +127,7 @@ export interface McpAddInput {
   title?: string;
   description?: string;
   env?: Record<string, string>;
+  override?: boolean;
 }
 
 export interface McpRemoveInput {
@@ -151,6 +154,68 @@ export interface McpCallInput extends McpProjectInput {
   arguments?: McpJsonObject;
   autoStart?: boolean;
   autoEnable?: boolean;
+}
+
+export interface McpInspectInput {
+  name?: string;
+  projectPath?: string;
+  transport: McpTransportConfig;
+  env?: Record<string, string>;
+  capabilityKind?: "tool" | "resource" | "prompt";
+  toolName?: string;
+  resourceUri?: string;
+  promptName?: string;
+  arguments?: McpJsonObject;
+}
+
+export type McpProbeInput =
+  | {
+      action: "open";
+      name?: string;
+      projectPath?: string;
+      transport: McpTransportConfig;
+      env?: Record<string, string>;
+    }
+  | {
+      action: "ping";
+      probeId: string;
+    }
+  | {
+      action: "call-tool";
+      probeId: string;
+      toolName: string;
+      arguments?: McpJsonObject;
+    }
+  | {
+      action: "read-resource";
+      probeId: string;
+      resourceUri: string;
+    }
+  | {
+      action: "get-prompt";
+      probeId: string;
+      promptName: string;
+      arguments?: McpJsonObject;
+    }
+  | {
+      action: "complete";
+      probeId: string;
+      ref: { type: "ref/prompt"; name: string } | { type: "ref/resource"; uri: string };
+      argument: { name: string; value: string };
+      context?: { arguments?: Record<string, string> };
+    }
+  | {
+      action: "close";
+      probeId: string;
+    };
+
+export interface McpProbeCliResult {
+  command: "mcp probe";
+  stdin: string;
+  stdout: string;
+  stderr: string;
+  exitCode: number;
+  parsed?: unknown;
 }
 
 export interface McpTransportStartContext {
@@ -182,9 +247,16 @@ export interface McpCallResult {
   instance: McpInstanceRecord;
 }
 
+export interface McpInspectResult {
+  snapshot: McpCapabilitySnapshot;
+  result?: unknown;
+}
+
 export interface McpSystemSurface {
   add: (input: McpAddInput) => McpGlobalConfig;
-  remove: (input: McpRemoveInput) => Promise<{ removed: boolean; blockedProjects: string[] }> | { removed: boolean; blockedProjects: string[] };
+  remove: (
+    input: McpRemoveInput,
+  ) => Promise<{ removed: boolean; blockedProjects: string[] }> | { removed: boolean; blockedProjects: string[] };
   enable: (input: McpProjectInput) => McpProjectEnablement;
   disable: (input: McpDisableInput) => Promise<McpProjectEnablement> | McpProjectEnablement;
   list: (input: McpListInput) => McpEnabledRow[];
@@ -193,4 +265,6 @@ export interface McpSystemSurface {
   stop: (input: McpProjectInput) => Promise<{ instance: McpInstanceRecord }>;
   restart: (input: McpProjectInput) => Promise<McpStartResult>;
   call: (input: McpCallInput, options?: { signal?: AbortSignal }) => Promise<McpCallResult>;
+  inspect: (input: McpInspectInput, options?: { signal?: AbortSignal }) => Promise<McpInspectResult>;
+  probe: (input: McpProbeInput, options?: { signal?: AbortSignal }) => Promise<McpProbeCliResult>;
 }

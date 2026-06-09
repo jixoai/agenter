@@ -44,7 +44,7 @@
 	} = $props();
 
 	const helpText =
-		'Globals are inert configs. Project enablement, lifecycle, snapshots, calls, mcp_installed, and mcp_enabled are exact-runtime facts projected for one project path.';
+		'Globals are inert Avatar-owned configs. Project enablement, lifecycle, snapshots, calls, mcp_installed, and mcp_enabled are exact-project facts.';
 
 	const isRecord = (value: unknown): value is Record<string, unknown> =>
 		typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -157,7 +157,7 @@
 
 		<section class="grid gap-3 border-b border-border/50 p-4">
 			<div class="flex items-center justify-between gap-3">
-				<div class="text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground">Runtime projection matrix</div>
+				<div class="text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground">Project projection matrix</div>
 				<HelpHint ariaLabel="MCP scope law" side="bottom" align="end" textContext={helpText}>
 					<HelpCircleIcon class="size-4 text-muted-foreground" />
 				</HelpHint>

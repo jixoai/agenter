@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { mkdirSync } from "node:fs";
 import { resolve } from "node:path";
 
@@ -15,8 +16,12 @@ import type {
   McpCapabilitySnapshot,
   McpDisableInput,
   McpGlobalConfig,
+  McpInspectInput,
+  McpInspectResult,
   McpInstanceRecord,
   McpListInput,
+  McpProbeCliResult,
+  McpProbeInput,
   McpProjectEnablement,
   McpProjectInput,
   McpQueryInput,
@@ -29,8 +34,8 @@ import type {
 export interface McpSystemOptions {
   dbPath: string;
   rootWorkspacePath: string;
-  runtimeEnv?: Record<string, string>;
-  runtimeEnvProvider?: () => Record<string, string>;
+  baseEnv?: Record<string, string>;
+  envProvider?: () => Record<string, string>;
   clientName?: string;
   clientVersion?: string;
   transportFactory?: (context: McpTransportStartContext) => Transport;
@@ -41,6 +46,16 @@ interface McpLiveSession {
   transport: Transport;
   instance: McpInstanceRecord;
   snapshot: McpCapabilitySnapshot;
+}
+
+interface McpProbeSession {
+  client: Client;
+  transport: Transport;
+  name: string;
+  projectPath: string;
+  snapshot: McpCapabilitySnapshot;
+  createdAt: string;
+  updatedAt: string;
 }
 
 const actionError = (error: unknown): string => (error instanceof Error ? error.message : String(error));
@@ -108,24 +123,79 @@ const safeList = async <T>(operation: () => Promise<{ [key: string]: unknown }>,
   }
 };
 
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === "object" && value !== null && !Array.isArray(value);
+
+const readString = (value: unknown, key: string): string | null => {
+  if (!isRecord(value)) {
+    return null;
+  }
+  const candidate = value[key];
+  return typeof candidate === "string" && candidate.trim().length > 0 ? candidate.trim() : null;
+};
+
+const resolveMcpAppResourceUri = (tool: unknown): string | null => {
+  if (!isRecord(tool) || !isRecord(tool._meta)) {
+    return null;
+  }
+  const nestedUi = isRecord(tool._meta.ui) ? readString(tool._meta.ui, "resourceUri") : null;
+  return nestedUi ?? readString(tool._meta, "ui/resourceUri") ?? readString(tool._meta, "openai/outputTemplate");
+};
+
+const extractMcpApps = (input: {
+  tools: unknown[];
+  resources: unknown[];
+  resourceTemplates: unknown[];
+}): unknown[] => {
+  const resourcesByUri = new Map(
+    input.resources.flatMap((resource) => {
+      const uri = readString(resource, "uri");
+      return uri ? [[uri, resource] as const] : [];
+    }),
+  );
+  const templatesByUri = new Map(
+    input.resourceTemplates.flatMap((template) => {
+      const uriTemplate = readString(template, "uriTemplate");
+      return uriTemplate ? [[uriTemplate, template] as const] : [];
+    }),
+  );
+  return input.tools.flatMap((tool) => {
+    const resourceUri = resolveMcpAppResourceUri(tool);
+    const toolName = readString(tool, "name");
+    if (!resourceUri || !toolName) {
+      return [];
+    }
+    return [
+      {
+        type: "app",
+        toolName,
+        resourceUri,
+        tool,
+        resource: resourcesByUri.get(resourceUri) ?? templatesByUri.get(resourceUri) ?? null,
+      },
+    ];
+  });
+};
+
 export class McpSystem {
   readonly store: McpSystemStore;
 
   private readonly rootWorkspacePath: string;
-  private readonly runtimeEnv: Record<string, string>;
-  private readonly runtimeEnvProvider?: () => Record<string, string>;
+  private readonly baseEnv: Record<string, string>;
+  private readonly envProvider?: () => Record<string, string>;
   private readonly clientName: string;
   private readonly clientVersion: string;
   private readonly transportFactory: (context: McpTransportStartContext) => Transport;
   private readonly sessions = new Map<string, McpLiveSession>();
+  private readonly probeSessions = new Map<string, McpProbeSession>();
   private readonly locks = new Map<string, Promise<unknown>>();
   private closed = false;
 
   constructor(options: McpSystemOptions) {
     this.rootWorkspacePath = resolve(options.rootWorkspacePath);
     mkdirSync(this.rootWorkspacePath, { recursive: true });
-    this.runtimeEnv = cloneStringRecord(options.runtimeEnv);
-    this.runtimeEnvProvider = options.runtimeEnvProvider;
+    this.baseEnv = cloneStringRecord(options.baseEnv);
+    this.envProvider = options.envProvider;
     this.clientName = options.clientName ?? "agenter-mcp-system";
     this.clientVersion = options.clientVersion ?? "0.0.0";
     this.transportFactory = options.transportFactory ?? createMcpSystemTransport;
@@ -151,6 +221,10 @@ export class McpSystem {
       void session.client.close().catch(() => undefined);
     }
     this.sessions.clear();
+    for (const session of this.probeSessions.values()) {
+      void session.client.close().catch(() => undefined);
+    }
+    this.probeSessions.clear();
     this.store.close();
   }
 
@@ -313,6 +387,158 @@ export class McpSystem {
     return await this.start(input);
   }
 
+  async inspect(input: McpInspectInput, options: { signal?: AbortSignal } = {}): Promise<McpInspectResult> {
+    const name = input.name?.trim() || "inspect";
+    const projectPath = input.projectPath ? normalizeProjectPath(input.projectPath) : this.rootWorkspacePath;
+    const connection = await this.connectEphemeral({
+      name,
+      projectPath,
+      transport: input.transport,
+      env: input.env,
+    });
+    try {
+      if (!input.capabilityKind && !input.toolName && !input.resourceUri && !input.promptName) {
+        return { snapshot: connection.snapshot };
+      }
+
+      let result: unknown;
+      const capabilityKind = input.capabilityKind ?? (input.toolName ? "tool" : input.resourceUri ? "resource" : "prompt");
+      if (capabilityKind === "tool") {
+        if (!input.toolName?.trim()) {
+          throw new Error("toolName is required for tool inspect calls");
+        }
+        result = await connection.client.callTool(
+          {
+            name: input.toolName,
+            arguments: input.arguments ?? {},
+          },
+          undefined,
+          {
+            signal: options.signal,
+          },
+        );
+      } else if (capabilityKind === "resource") {
+        if (!input.resourceUri?.trim()) {
+          throw new Error("resourceUri is required for resource inspect reads");
+        }
+        result = await connection.client.readResource(
+          {
+            uri: input.resourceUri,
+          },
+          {
+            signal: options.signal,
+          },
+        );
+      } else {
+        if (!input.promptName?.trim()) {
+          throw new Error("promptName is required for prompt inspect gets");
+        }
+        result = await connection.client.getPrompt(
+          {
+            name: input.promptName,
+            arguments: input.arguments ?? {},
+          },
+          {
+            signal: options.signal,
+          },
+        );
+      }
+
+      return {
+        snapshot: connection.snapshot,
+        result,
+      };
+    } finally {
+      await connection.client.close().catch(() => undefined);
+    }
+  }
+
+  async probe(input: McpProbeInput, options: { signal?: AbortSignal } = {}): Promise<McpProbeCliResult> {
+    try {
+      let parsed: unknown;
+      if (input.action === "open") {
+        const name = input.name?.trim() || "probe";
+        const projectPath = input.projectPath ? normalizeProjectPath(input.projectPath) : this.rootWorkspacePath;
+        const connection = await this.connectEphemeral({
+          name,
+          projectPath,
+          transport: input.transport,
+          env: input.env,
+        });
+        const probeId = randomUUID();
+        const now = new Date().toISOString();
+        this.probeSessions.set(probeId, {
+          client: connection.client,
+          transport: connection.transport,
+          name,
+          projectPath,
+          snapshot: connection.snapshot,
+          createdAt: now,
+          updatedAt: now,
+        });
+        parsed = {
+          probeId,
+          snapshot: connection.snapshot,
+        };
+      } else if (input.action === "close") {
+        const session = this.requireProbeSession(input.probeId);
+        this.probeSessions.delete(input.probeId);
+        await session.client.close().catch(() => undefined);
+        parsed = { probeId: input.probeId, closed: true };
+      } else {
+        const session = this.requireProbeSession(input.probeId);
+        session.updatedAt = new Date().toISOString();
+        if (input.action === "ping") {
+          parsed = await session.client.ping({ signal: options.signal });
+        } else if (input.action === "call-tool") {
+          parsed = await session.client.callTool(
+            {
+              name: input.toolName,
+              arguments: input.arguments ?? {},
+            },
+            undefined,
+            {
+              signal: options.signal,
+            },
+          );
+        } else if (input.action === "read-resource") {
+          parsed = await session.client.readResource(
+            {
+              uri: input.resourceUri,
+            },
+            {
+              signal: options.signal,
+            },
+          );
+        } else if (input.action === "get-prompt") {
+          parsed = await session.client.getPrompt(
+            {
+              name: input.promptName,
+              arguments: input.arguments ?? {},
+            },
+            {
+              signal: options.signal,
+            },
+          );
+        } else {
+          parsed = await session.client.complete(
+            {
+              ref: input.ref,
+              argument: input.argument,
+              context: input.context,
+            },
+            {
+              signal: options.signal,
+            },
+          );
+        }
+      }
+      return this.formatProbeResult(input, { parsed, exitCode: 0 });
+    } catch (error) {
+      return this.formatProbeResult(input, { stderr: `${actionError(error)}\n`, exitCode: 1 });
+    }
+  }
+
   async call(input: McpCallInput, options: { signal?: AbortSignal } = {}): Promise<McpCallResult> {
     const name = input.name;
     const projectPath = normalizeProjectPath(input.projectPath);
@@ -396,12 +622,46 @@ export class McpSystem {
   }
 
   private resolveEnv(global: McpGlobalConfig): Record<string, string> {
+    return this.resolveLaunchEnv(global.env);
+  }
+
+  private resolveLaunchEnv(globalEnv: Record<string, string> | undefined): Record<string, string> {
     return {
       ...process.env,
       HOME: this.rootWorkspacePath,
-      ...this.runtimeEnv,
-      ...(this.runtimeEnvProvider?.() ?? {}),
-      ...(global.env ?? {}),
+      ...this.baseEnv,
+      ...(this.envProvider?.() ?? {}),
+      ...(globalEnv ?? {}),
+    };
+  }
+
+  private async connectEphemeral(input: {
+    name: string;
+    projectPath: string;
+    transport: McpTransportConfig;
+    env?: Record<string, string>;
+  }): Promise<{ client: Client; transport: Transport; snapshot: McpCapabilitySnapshot }> {
+    const client = new Client({
+      name: this.clientName,
+      version: this.clientVersion,
+    });
+    const transport = this.transportFactory({
+      name: input.name,
+      projectPath: input.projectPath,
+      transport: input.transport,
+      env: this.resolveLaunchEnv(input.env),
+    });
+    await client.connect(transport);
+    const snapshot = await this.discover({
+      client,
+      name: input.name,
+      projectPath: input.projectPath,
+      transport: input.transport,
+    });
+    return {
+      client,
+      transport,
+      snapshot,
     };
   }
 
@@ -418,22 +678,30 @@ export class McpSystem {
     const resources = capabilities?.resources
       ? await safeList<unknown>(() => input.client.listResources(undefined, { timeout: 30_000 }), "resources")
       : [];
+    const resourceTemplates = capabilities?.resources
+      ? await safeList<unknown>(() => input.client.listResourceTemplates(undefined, { timeout: 30_000 }), "resourceTemplates")
+      : [];
     const prompts = capabilities?.prompts
       ? await safeList<unknown>(() => input.client.listPrompts(undefined, { timeout: 30_000 }), "prompts")
       : [];
+    const apps = extractMcpApps({ tools, resources, resourceTemplates });
     const server = input.client.getServerVersion();
     const snapshotAt = new Date().toISOString();
     return {
       name: input.name,
       projectPath: input.projectPath,
-    serverName: server?.name,
-    serverVersion: server?.version,
+      serverName: server?.name,
+      serverVersion: server?.version,
       tools,
       resources,
+      resourceTemplates,
       prompts,
+      apps,
       snapshot: {
         server,
         capabilities,
+        apps,
+        resourceTemplates,
         transportKind: input.transport.kind,
         instructions: input.client.getInstructions(),
       },
@@ -456,5 +724,28 @@ export class McpSystem {
         this.locks.delete(key);
       }
     }
+  }
+
+  private requireProbeSession(probeId: string): McpProbeSession {
+    const session = this.probeSessions.get(probeId.trim());
+    if (!session) {
+      throw new Error(`mcp probe not found: ${probeId}`);
+    }
+    return session;
+  }
+
+  private formatProbeResult(
+    input: McpProbeInput,
+    result: { parsed?: unknown; stderr?: string; exitCode: number },
+  ): McpProbeCliResult {
+    const stdout = result.exitCode === 0 ? `${JSON.stringify(result.parsed ?? {}, null, 2)}\n` : "";
+    return {
+      command: "mcp probe",
+      stdin: JSON.stringify(input, null, 2),
+      stdout,
+      stderr: result.stderr ?? "",
+      exitCode: result.exitCode,
+      parsed: result.parsed,
+    };
   }
 }

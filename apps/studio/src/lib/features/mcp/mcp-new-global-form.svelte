@@ -1,35 +1,55 @@
 <script lang="ts">
-	import { ScrollView } from '@agenter/svelte-components';
-	import ArrowLeftIcon from '@lucide/svelte/icons/arrow-left';
-	import CheckIcon from '@lucide/svelte/icons/check';
+	import type { McpProbeInput, McpProbeOutput } from '@agenter/client-sdk';
 	import HelpCircleIcon from '@lucide/svelte/icons/help-circle';
-	import PlayIcon from '@lucide/svelte/icons/play';
 	import SaveIcon from '@lucide/svelte/icons/save';
+	import TrashIcon from '@lucide/svelte/icons/trash';
 
-	import { Badge } from '$lib/components/ui/badge/index.js';
+	import ProfileAvatar from '$lib/components/profile-avatar.svelte';
 	import { Button } from '$lib/components/ui/button/index.js';
-	import { Checkbox } from '$lib/components/ui/checkbox/index.js';
+	import * as Dialog from '$lib/components/ui/dialog/index.js';
 	import { Input } from '$lib/components/ui/input/index.js';
 	import * as NativeSelect from '$lib/components/ui/native-select/index.js';
+	import NoticeBanner from '$lib/components/ui/notice-banner.svelte';
 	import { Textarea } from '$lib/components/ui/textarea/index.js';
 	import HelpHint from '$lib/components/web-components/help-hint.svelte';
+	import { resolveAvatarHandle } from '$lib/features/avatars/avatar-identity-presentation';
+	import ActorSelect from '$lib/features/collaboration/actor-select.svelte';
+	import type { ActorSelectItem } from '$lib/features/collaboration/actor-select.types';
 
-	import type { McpGlobalConfigDraft, McpTransportKind, McpWorkbenchRow } from './mcp-workbench-state';
+	import McpConfigInspectPanel from './mcp-config-inspect-panel.svelte';
+	import { parseMcpDraftJson, serializeMcpDraft } from './mcp-draft-codec';
+	import type {
+		McpAvatarCatalogOption,
+		McpConfigCatalogRow,
+		McpGlobalConfigDraft,
+		McpTransportKind,
+		McpWorkbenchRow,
+	} from './mcp-workbench-state';
+
+	type EditorMode = 'form' | 'code';
 
 	let {
-		projectPath = $bindable(''),
-		runtimeLabel,
+		avatarOptions = [],
+		knownConfigRows = [],
+		ownerAvatarNickname = $bindable('default'),
 		initialRow = null,
 		pending = false,
 		onBack,
+		onOpenAvatar,
+		onRemove,
 		onSubmit,
+		onProbe,
 	}: {
-		projectPath: string;
-		runtimeLabel: string;
+		avatarOptions?: readonly McpAvatarCatalogOption[];
+		knownConfigRows?: readonly McpConfigCatalogRow[];
+		ownerAvatarNickname?: string;
 		initialRow?: McpWorkbenchRow | null;
 		pending?: boolean;
-		onBack: () => void;
-		onSubmit: (draft: McpGlobalConfigDraft) => Promise<void>;
+		onBack?: () => void;
+		onOpenAvatar?: (avatarNickname: string) => void;
+		onRemove?: (row: McpWorkbenchRow) => Promise<void>;
+		onSubmit: (draft: McpGlobalConfigDraft, options?: { override?: boolean }) => Promise<void>;
+		onProbe?: (input: McpProbeInput) => Promise<McpProbeOutput>;
 	} = $props();
 
 	const isStringRecord = (value: unknown): value is Record<string, string> =>
@@ -65,77 +85,90 @@
 	let headers = $state('');
 	let globalEnv = $state('');
 	let transportEnv = $state('{\n  "BROWSER_PROFILE": "default"\n}');
-	let enableCurrentProject = $state(false);
-	let startCurrentProject = $state(false);
+	let editorMode = $state<EditorMode>('form');
+	let codeText = $state('');
 	let formError = $state<string | null>(null);
 	let lastInitialName = $state<string | null>(null);
+	let overrideDialogOpen = $state(false);
+	let pendingOverrideDraft = $state<McpGlobalConfigDraft | null>(null);
 
-	const modeLabel = $derived(initialRow ? 'Edit global config' : 'New global config');
-	const submitLabel = $derived(startCurrentProject ? (initialRow ? 'Update & start' : 'Install & start') : initialRow ? 'Update' : 'Install');
-	const startLabel = $derived(initialRow ? 'Start after update' : 'Start after install');
-
-	$effect(() => {
-		const nextInitialName = initialRow?.name ?? null;
-		if (nextInitialName === lastInitialName) {
-			return;
+	const modeLabel = $derived(initialRow ? 'Edit config' : 'New config');
+	const submitLabel = $derived(initialRow ? 'Update' : 'Install');
+	const formSectionId = $derived(initialRow ? `mcp-config:${initialRow.name}` : '__new__');
+	const selectedOwnerAvatar = $derived.by(() => {
+		const owner = avatarOptions.find((avatar) => avatar.nickname === ownerAvatarNickname);
+		if (owner) {
+			return owner;
 		}
-		lastInitialName = nextInitialName;
-		formError = null;
-		if (!initialRow) {
-			name = 'browser-tools';
-			title = 'Browser Tools';
-			description = 'Authenticated browser automation.';
-			transport = 'stdio';
-			command = 'bunx';
-			args = '@agent/browser-mcp';
+		if (avatarOptions[0]) {
+			return avatarOptions[0];
+		}
+		return {
+			nickname: ownerAvatarNickname || 'default',
+			label: ownerAvatarNickname || 'default',
+			principalId: ownerAvatarNickname || 'default',
+			iconUrl: null,
+		} satisfies McpAvatarCatalogOption;
+	});
+	const ownerAvatarItems = $derived.by(
+		(): ActorSelectItem[] =>
+			avatarOptions.length === 0
+				? [
+						{
+							value: selectedOwnerAvatar.nickname,
+							label: selectedOwnerAvatar.label,
+							subtitle: resolveAvatarHandle(selectedOwnerAvatar) ?? `@${selectedOwnerAvatar.nickname}`,
+							iconUrl: selectedOwnerAvatar.iconUrl ?? null,
+						},
+					]
+				: avatarOptions.map((avatar) => ({
+						value: avatar.nickname,
+						label: avatar.label,
+						subtitle: resolveAvatarHandle(avatar) ?? `@${avatar.nickname}`,
+						iconUrl: avatar.iconUrl ?? null,
+					})),
+	);
+	const selectedOwnerAvatarItem = $derived.by(
+		(): ActorSelectItem | null =>
+			ownerAvatarItems.find((item) => item.value === selectedOwnerAvatar.nickname) ?? null,
+	);
+	const isNameConflictError = (error: unknown): boolean =>
+		(error instanceof Error ? error.message : String(error)).includes('mcp global already exists:');
+
+	const applyDraft = (draft: McpGlobalConfigDraft): void => {
+		ownerAvatarNickname = draft.avatarNickname;
+		name = draft.name;
+		title = draft.title ?? '';
+		description = draft.description ?? '';
+		transport = draft.transport.kind;
+		if (draft.transport.kind === 'stdio') {
+			command = draft.transport.command;
+			args = serializeArgs(draft.transport.args);
+			transportEnv = serializeRecord(draft.transport.env);
 			url = 'https://mcp.example.com/messages';
 			headers = '';
-			globalEnv = '';
+		} else {
+			url = draft.transport.url;
+			headers = serializeRecord(draft.transport.headers);
+			command = 'bunx';
+			args = '@agent/browser-mcp';
 			transportEnv = '{\n  "BROWSER_PROFILE": "default"\n}';
-			enableCurrentProject = false;
-			startCurrentProject = false;
-			return;
 		}
-		name = initialRow.name;
-		title = initialRow.title;
-		description = initialRow.description === 'No description' ? '' : initialRow.description;
-		transport = initialRow.transportSummary.kind;
-		command = initialRow.transportSummary.command ?? '';
-		args = serializeArgs(initialRow.transportSummary.args);
-		url = initialRow.transportSummary.url ?? '';
-		headers = serializeRecord(initialRow.transportSummary.headers);
-		globalEnv = '';
-		transportEnv = serializeRecord(initialRow.transportSummary.env);
-		enableCurrentProject = false;
-		startCurrentProject = false;
-	});
+		globalEnv = serializeRecord(draft.env);
+		codeText = serializeMcpDraft(draft);
+	};
 
-	$effect(() => {
-		if (startCurrentProject && !enableCurrentProject) {
-			enableCurrentProject = true;
-		}
-		if (!enableCurrentProject && startCurrentProject) {
-			startCurrentProject = false;
-		}
-	});
-
-	const buildDraft = (): McpGlobalConfigDraft => {
+	const buildFormDraft = (): McpGlobalConfigDraft => {
 		const trimmedName = name.trim();
 		if (!trimmedName) {
 			throw new Error('Name is required');
 		}
-		const trimmedTitle = title.trim();
-		const trimmedDescription = description.trim();
-		const exactProjectPath = projectPath.trim();
-		const globalEnvRecord = parseOptionalStringRecord(globalEnv, 'Global env');
-		if ((enableCurrentProject || startCurrentProject) && !exactProjectPath) {
-			throw new Error('Exact project path is required for project actions');
-		}
 
 		const draft: McpGlobalConfigDraft = {
+			avatarNickname: selectedOwnerAvatar.nickname,
 			name: trimmedName,
-			title: trimmedTitle || undefined,
-			description: trimmedDescription || undefined,
+			title: title.trim() || undefined,
+			description: description.trim() || undefined,
 			transport:
 				transport === 'stdio'
 					? {
@@ -151,246 +184,402 @@
 							kind: transport,
 							url: url.trim(),
 							headers: parseOptionalStringRecord(headers, 'Headers'),
-					},
-			env: globalEnvRecord,
-			enableProjectPath: enableCurrentProject || startCurrentProject ? exactProjectPath : undefined,
-			startProjectPath: startCurrentProject ? exactProjectPath : undefined,
+						},
+			env: parseOptionalStringRecord(globalEnv, 'Global env'),
 		};
+
 		if (draft.transport.kind === 'stdio' && !draft.transport.command) {
 			throw new Error('Command is required for stdio transport');
 		}
 		if (draft.transport.kind !== 'stdio' && !draft.transport.url) {
 			throw new Error('URL is required for remote transport');
 		}
+
 		return draft;
 	};
 
-	const submit = async (): Promise<void> => {
-		formError = null;
-		try {
-			await onSubmit(buildDraft());
-		} catch (error) {
-			formError = error instanceof Error ? error.message : String(error);
-		}
-	};
+	const buildDraft = (): McpGlobalConfigDraft =>
+		editorMode === 'code'
+			? parseMcpDraftJson(codeText, {
+					defaultAvatarNickname: selectedOwnerAvatar.nickname,
+					immutableName: initialRow?.name ?? null,
+				})
+			: buildFormDraft();
 
-	const addPayload = $derived.by(() => {
+	const draftPreview = $derived.by(() => {
 		try {
-			const draft = buildDraft();
-			const { enableProjectPath: _enableProjectPath, startProjectPath: _startProjectPath, ...globalDraft } = draft;
-			return globalDraft;
+			return buildDraft();
 		} catch {
 			return null;
 		}
 	});
 
-	const enablePayload = $derived({
-		name: name.trim(),
-		projectPath,
+	const matchingConfigRow = $derived.by(() => {
+		if (initialRow || !draftPreview) {
+			return null;
+		}
+		return (
+			knownConfigRows.find(
+				(row) => row.avatarNickname === draftPreview.avatarNickname && row.name === draftPreview.name,
+			) ?? null
+		);
 	});
 
-	const startPayload = $derived({
-		name: name.trim(),
-		projectPath,
+	$effect(() => {
+		const nextInitialName = initialRow?.name ?? null;
+		if (nextInitialName === lastInitialName) {
+			return;
+		}
+		lastInitialName = nextInitialName;
+		formError = null;
+		overrideDialogOpen = false;
+		pendingOverrideDraft = null;
+		editorMode = 'form';
+		if (!initialRow) {
+			applyDraft({
+				avatarNickname: avatarOptions[0]?.nickname ?? ownerAvatarNickname ?? 'default',
+				name: 'browser-tools',
+				title: 'Browser Tools',
+				description: 'Authenticated browser automation.',
+				transport: {
+					kind: 'stdio',
+					command: 'bunx',
+					args: ['@agent/browser-mcp'],
+					env: {
+						BROWSER_PROFILE: 'default',
+					},
+				},
+			});
+			return;
+		}
+		applyDraft({
+			avatarNickname: selectedOwnerAvatar.nickname,
+			name: initialRow.name,
+			title: initialRow.title,
+			description: initialRow.description === 'No description' ? undefined : initialRow.description,
+			transport:
+				initialRow.transportSummary.kind === 'stdio'
+					? {
+							kind: 'stdio',
+							command: initialRow.transportSummary.command ?? '',
+							args: initialRow.transportSummary.args ?? [],
+							env: initialRow.transportSummary.env,
+						}
+					: {
+							kind: initialRow.transportSummary.kind,
+							url: initialRow.transportSummary.url ?? '',
+							headers: initialRow.transportSummary.headers,
+						},
+		});
 	});
+
+	$effect(() => {
+		if (initialRow) {
+			return;
+		}
+		if (!avatarOptions.some((avatar) => avatar.nickname === ownerAvatarNickname)) {
+			ownerAvatarNickname = avatarOptions[0]?.nickname ?? ownerAvatarNickname ?? 'default';
+		}
+	});
+
+	const setEditorMode = (nextMode: EditorMode): void => {
+		if (nextMode === editorMode) {
+			return;
+		}
+		try {
+			if (nextMode === 'code') {
+				codeText = serializeMcpDraft(buildFormDraft());
+			} else {
+				applyDraft(
+					parseMcpDraftJson(codeText, {
+						defaultAvatarNickname: selectedOwnerAvatar.nickname,
+						immutableName: initialRow?.name ?? null,
+					}),
+				);
+			}
+			formError = null;
+			editorMode = nextMode;
+		} catch (error) {
+			formError = error instanceof Error ? error.message : String(error);
+		}
+	};
+
+	const performSubmit = async (
+		draft: McpGlobalConfigDraft,
+		options: { override?: boolean } = {},
+	): Promise<void> => {
+		formError = null;
+		try {
+			await onSubmit(draft, options);
+			overrideDialogOpen = false;
+			pendingOverrideDraft = null;
+		} catch (error) {
+			if (!options.override && isNameConflictError(error)) {
+				pendingOverrideDraft = draft;
+				overrideDialogOpen = true;
+				return;
+			}
+			formError = error instanceof Error ? error.message : String(error);
+		}
+	};
+
+	const submit = async (): Promise<void> => {
+		const draft = buildDraft();
+		if (initialRow) {
+			await performSubmit(draft, { override: true });
+			return;
+		}
+		if (matchingConfigRow) {
+			formError = null;
+			pendingOverrideDraft = draft;
+			overrideDialogOpen = true;
+			return;
+		}
+		await performSubmit(draft);
+	};
+
+	const confirmOverride = async (): Promise<void> => {
+		if (!pendingOverrideDraft) {
+			return;
+		}
+		await performSubmit(pendingOverrideDraft, { override: true });
+	};
 </script>
 
-<ScrollView class="h-full" contentClass="grid gap-0">
-	<div class="grid min-h-full grid-rows-[auto_minmax(0,1fr)]" data-testid="mcp-new-global-form">
-		<div class="flex min-w-0 items-center justify-between gap-3 border-b border-border/50 px-3 py-3 md:px-5">
-			<div class="flex min-w-0 items-center gap-2">
-				<div class="truncate text-sm font-semibold">{modeLabel}</div>
-				<HelpHint
-					ariaLabel="New MCP config help"
-					side="bottom"
-					align="start"
-					textContext="mcp add persists an inert global config. Project enablement is a second exact-path fact; it does not inherit across directories."
+<div class="grid gap-0" data-testid="mcp-new-global-form">
+	<div class="flex min-w-0 items-center justify-between gap-3 border-b border-border/50 px-3 py-3 md:px-5">
+		<div class="flex min-w-0 items-center gap-2">
+			<div class="truncate text-sm font-semibold">{modeLabel}</div>
+			<HelpHint
+				ariaLabel="New MCP config help"
+				side="bottom"
+				align="start"
+				textContext="Global config is durable truth. Install updates only the owner Avatar config."
+			>
+				<HelpCircleIcon class="size-4 text-muted-foreground" />
+			</HelpHint>
+		</div>
+		<div class="flex items-center gap-2">
+			<div class="inline-flex rounded-lg border border-border/60 bg-muted/35 p-0.5">
+				<button
+					type="button"
+					class={`rounded-md px-2.5 py-1 text-xs font-medium transition-colors ${editorMode === 'form' ? 'bg-background text-foreground shadow-xs' : 'text-muted-foreground hover:text-foreground'}`}
+					aria-pressed={editorMode === 'form'}
+					onclick={() => setEditorMode('form')}
 				>
-					<HelpCircleIcon class="size-4 text-muted-foreground" />
-				</HelpHint>
+					Form
+				</button>
+				<button
+					type="button"
+					class={`rounded-md px-2.5 py-1 text-xs font-medium transition-colors ${editorMode === 'code' ? 'bg-background text-foreground shadow-xs' : 'text-muted-foreground hover:text-foreground'}`}
+					aria-pressed={editorMode === 'code'}
+					onclick={() => setEditorMode('code')}
+				>
+					Code
+				</button>
 			</div>
-			<div class="flex items-center gap-2">
+			{#if onBack}
 				<Button variant="outline" size="sm" onclick={onBack}>
-					<ArrowLeftIcon class="size-4" />
-					List
+					Back
 				</Button>
-				<Button variant="outline" size="sm" disabled={pending} onclick={submit}>
-					<SaveIcon class="size-4" />
-					{pending ? 'Saving' : submitLabel}
+			{/if}
+			{#if initialRow && onRemove}
+				<Button variant="destructive" size="sm" disabled={pending} onclick={() => void onRemove(initialRow)}>
+					<TrashIcon class="size-4" />
+					Remove
 				</Button>
-			</div>
+			{/if}
+			<Button variant="outline" size="sm" disabled={pending} onclick={submit}>
+				<SaveIcon class="size-4" />
+				{pending ? 'Saving' : submitLabel}
+			</Button>
+		</div>
+	</div>
+
+	{#if formError}
+		<div
+			class="border-b border-border/50 bg-destructive/8 px-3 py-2 text-sm text-destructive md:px-5"
+			data-testid="mcp-config-form-error"
+		>
+			{formError}
+		</div>
+	{/if}
+
+	<section class="grid gap-3 border-b border-border/50 px-3 py-4 md:px-5">
+		<div class="flex min-w-0 items-center gap-2">
+			<div class="text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground">Global</div>
+			<HelpHint
+				ariaLabel="Global MCP help"
+				side="bottom"
+				align="start"
+				textContext="Global config belongs to one Avatar. Project rows live in config detail."
+			>
+				<HelpCircleIcon class="size-4 text-muted-foreground" />
+			</HelpHint>
 		</div>
 
-		<div class="grid divide-y divide-border/45 border-b border-border/50 md:grid-cols-3 md:divide-x md:divide-y-0">
-			<section class="grid gap-1 px-3 py-3 md:px-5">
-				<div class="text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground">01 Global config</div>
-				<div class="flex min-w-0 flex-wrap items-center gap-1.5">
-					<Badge variant="secondary">mcp add</Badge>
-					<Badge variant="outline">inert</Badge>
+		{#if editorMode === 'form'}
+			<div class="grid gap-3 md:grid-cols-[minmax(12rem,0.72fr)_minmax(0,1fr)_minmax(0,1fr)]">
+				<div class="grid gap-1.5 text-xs text-muted-foreground" data-testid="mcp-config-owner">
+					Avatar
 					{#if initialRow}
-						<Badge variant="secondary">upsert</Badge>
+						<button
+							type="button"
+							class="flex h-8 min-w-0 items-center gap-2 rounded-md border border-border/50 px-2.5 text-left transition-colors hover:bg-muted/22"
+							data-testid="mcp-config-owner-readonly"
+							aria-label={`Open Avatar ${selectedOwnerAvatar.label}`}
+							onclick={() => onOpenAvatar?.(selectedOwnerAvatar.nickname)}
+						>
+							<ProfileAvatar
+								label={selectedOwnerAvatar.label}
+								src={selectedOwnerAvatar.iconUrl ?? null}
+								class="size-6 rounded-lg"
+							/>
+							<div class="min-w-0 truncate text-sm text-foreground">{selectedOwnerAvatar.label}</div>
+						</button>
+					{:else}
+						<ActorSelect
+							ariaLabel="Owner Avatar"
+							items={ownerAvatarItems}
+							value={selectedOwnerAvatar.nickname}
+							selectedItem={selectedOwnerAvatarItem}
+							density="detail"
+							chrome="field"
+							class="w-full"
+							onValueChange={(value) => {
+								ownerAvatarNickname = value;
+							}}
+						/>
 					{/if}
 				</div>
-			</section>
-			<section class="grid gap-1 px-3 py-3 md:px-5">
-				<div class="text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground">02 Project availability</div>
-				<div class="flex min-w-0 flex-wrap items-center gap-1.5">
-					<Badge variant={enableCurrentProject ? 'outline' : 'secondary'}>
-						{enableCurrentProject ? 'mcp enable' : 'not enabled'}
-					</Badge>
-					<Badge variant="secondary">exact path</Badge>
-				</div>
-			</section>
-			<section class="grid gap-1 px-3 py-3 md:px-5">
-				<div class="text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground">03 Project runtime</div>
-				<div class="flex min-w-0 flex-wrap items-center gap-1.5">
-					<Badge variant={startCurrentProject ? 'outline' : 'secondary'}>
-						{startCurrentProject ? 'mcp start' : 'not started'}
-					</Badge>
-					<Badge variant="secondary">manual</Badge>
-				</div>
-			</section>
-		</div>
 
-		{#if formError}
-			<div class="border-b border-border/50 bg-destructive/8 px-3 py-2 text-sm text-destructive md:px-5" data-testid="mcp-config-form-error">
-				{formError}
+				<label class="grid gap-1.5 text-xs text-muted-foreground">
+					Name
+					<Input
+						bind:value={name}
+						class="h-8 text-sm text-foreground"
+						autocomplete="off"
+						disabled={Boolean(initialRow)}
+					/>
+				</label>
+
+				<label class="grid gap-1.5 text-xs text-muted-foreground">
+					Title
+					<Input bind:value={title} class="h-8 text-sm text-foreground" autocomplete="off" />
+				</label>
+			</div>
+
+			<label class="grid gap-1.5 text-xs text-muted-foreground">
+				Description
+				<Input bind:value={description} class="h-8 text-sm text-foreground" autocomplete="off" />
+			</label>
+
+			<div class="grid gap-3 md:grid-cols-[12rem_minmax(0,1fr)]">
+				<label class="grid gap-1.5 text-xs text-muted-foreground">
+					Transport
+					<NativeSelect.NativeSelect
+						bind:value={transport}
+						class="h-8 text-sm text-foreground"
+						wrapperClass="w-full"
+					>
+						<option value="stdio">stdio</option>
+						<option value="streamable-http">streamable-http</option>
+						<option value="sse">sse</option>
+					</NativeSelect.NativeSelect>
+				</label>
+
+				{#if transport === 'stdio'}
+					<div class="grid gap-3 md:grid-cols-[minmax(10rem,0.35fr)_minmax(0,1fr)]">
+						<label class="grid gap-1.5 text-xs text-muted-foreground">
+							Command
+							<Input bind:value={command} class="h-8 text-sm text-foreground" autocomplete="off" />
+						</label>
+
+						<label class="grid gap-1.5 text-xs text-muted-foreground">
+							Args
+							<Input bind:value={args} class="h-8 text-sm text-foreground" autocomplete="off" />
+						</label>
+					</div>
+				{:else}
+					<label class="grid gap-1.5 text-xs text-muted-foreground">
+						URL
+						<Input bind:value={url} class="h-8 text-sm text-foreground" autocomplete="off" />
+					</label>
+				{/if}
+			</div>
+
+			<div class="grid gap-3 md:grid-cols-2">
+				<label class="grid gap-1.5 text-xs text-muted-foreground">
+					Global env
+					<Textarea bind:value={globalEnv} class="min-h-20 font-mono text-xs text-foreground" spellcheck="false" />
+				</label>
+
+				{#if transport === 'stdio'}
+					<label class="grid gap-1.5 text-xs text-muted-foreground">
+						Transport env
+						<Textarea
+							bind:value={transportEnv}
+							class="min-h-20 font-mono text-xs text-foreground"
+							spellcheck="false"
+						/>
+					</label>
+				{:else}
+					<label class="grid gap-1.5 text-xs text-muted-foreground">
+						Headers
+						<Textarea bind:value={headers} class="min-h-20 font-mono text-xs text-foreground" spellcheck="false" />
+					</label>
+				{/if}
+			</div>
+		{:else}
+			<div class="grid gap-1.5 text-xs text-muted-foreground">
+				Config JSON
+				<Textarea
+					bind:value={codeText}
+					class="min-h-[26rem] font-mono text-xs text-foreground"
+					spellcheck="false"
+					data-testid="mcp-config-code-textarea"
+				/>
 			</div>
 		{/if}
 
-		<div class="grid gap-0 lg:grid-cols-[minmax(0,1fr)_minmax(22rem,0.42fr)]">
-			<div class="grid content-start gap-0">
-				<section class="grid gap-3 border-b border-border/50 px-3 py-4 md:px-5">
-					<div class="flex min-w-0 items-center justify-between gap-3">
-						<div class="text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground">Global config</div>
-						<Badge variant="secondary">{runtimeLabel}</Badge>
-					</div>
-					<div class="grid gap-3 md:grid-cols-2">
-						<label class="grid gap-1.5 text-xs text-muted-foreground">
-							Name
-							<Input bind:value={name} class="h-8 text-sm" autocomplete="off" disabled={Boolean(initialRow)} />
-						</label>
-						<label class="grid gap-1.5 text-xs text-muted-foreground">
-							Title
-							<Input bind:value={title} class="h-8 text-sm" autocomplete="off" />
-						</label>
-					</div>
-					<label class="grid gap-1.5 text-xs text-muted-foreground">
-						Description
-						<Input bind:value={description} class="h-8 text-sm" autocomplete="off" />
-					</label>
-					<label class="grid gap-1.5 text-xs text-muted-foreground">
-						Global env
-						<Textarea bind:value={globalEnv} class="min-h-20 font-mono text-xs" spellcheck="false" />
-					</label>
-				</section>
-
-				<section class="grid gap-3 border-b border-border/50 px-3 py-4 md:px-5">
-					<div class="text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground">Transport</div>
-					<div class="grid gap-3 md:grid-cols-[12rem_minmax(0,1fr)]">
-						<label class="grid gap-1.5 text-xs text-muted-foreground">
-							Kind
-							<NativeSelect.NativeSelect bind:value={transport} class="h-8 text-sm" wrapperClass="w-full">
-								<option value="stdio">stdio</option>
-								<option value="streamable-http">streamable-http</option>
-								<option value="sse">sse</option>
-							</NativeSelect.NativeSelect>
-						</label>
-						{#if transport === 'stdio'}
-							<div class="grid gap-3 md:grid-cols-[minmax(10rem,0.35fr)_minmax(0,1fr)]">
-								<label class="grid gap-1.5 text-xs text-muted-foreground">
-									Command
-									<Input bind:value={command} class="h-8 text-sm" autocomplete="off" />
-								</label>
-								<label class="grid gap-1.5 text-xs text-muted-foreground">
-									Args
-									<Input bind:value={args} class="h-8 text-sm" autocomplete="off" />
-								</label>
-							</div>
-						{:else}
-							<label class="grid gap-1.5 text-xs text-muted-foreground">
-								URL
-								<Input bind:value={url} class="h-8 text-sm" autocomplete="off" />
-							</label>
-						{/if}
-					</div>
-					{#if transport === 'stdio'}
-						<label class="grid gap-1.5 text-xs text-muted-foreground">
-							Transport env
-							<Textarea bind:value={transportEnv} class="min-h-24 font-mono text-xs" spellcheck="false" />
-						</label>
-					{:else}
-						<label class="grid gap-1.5 text-xs text-muted-foreground">
-							Headers
-							<Textarea bind:value={headers} class="min-h-24 font-mono text-xs" spellcheck="false" />
-						</label>
-					{/if}
-				</section>
-
-				<section class="grid gap-3 px-3 py-4 md:px-5">
-					<div class="flex items-center justify-between gap-3">
-						<div class="text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground">Project availability</div>
-						<Badge variant={enableCurrentProject ? 'outline' : 'secondary'}>
-							{enableCurrentProject ? 'explicit enable' : 'inert global'}
-						</Badge>
-					</div>
-					<label class="grid gap-2 text-sm">
-						<span class="flex items-center gap-2">
-							<Checkbox bind:checked={enableCurrentProject} />
-							Enable for current project
-						</span>
-						<Input bind:value={projectPath} class="h-8 text-xs" aria-label="Exact project path for enablement" />
-					</label>
-					<label class="grid gap-2 text-sm">
-						<span class="flex items-center gap-2">
-							<Checkbox bind:checked={startCurrentProject} />
-							{startLabel}
-						</span>
-						<span class="text-xs text-muted-foreground">
-							<PlayIcon class="mr-1 inline size-3.5 align-[-0.125rem]" />
-							Requires explicit enablement for the same exact path.
-						</span>
-					</label>
-				</section>
+		{#if matchingConfigRow}
+			<div data-testid="mcp-config-name-conflict">
+				<NoticeBanner
+					tone="warning"
+					message={`Config id "${matchingConfigRow.name}" already exists under @${matchingConfigRow.avatarNickname}. Install requires explicit override.`}
+				/>
 			</div>
+		{/if}
+	</section>
 
-			<aside class="grid content-start gap-3 border-t border-border/50 px-3 py-4 lg:border-l lg:border-t-0 md:px-5">
-				<div class="flex items-center justify-between gap-3">
-					<div class="text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground">Command projection</div>
-					<Badge variant="secondary">preview</Badge>
-				</div>
-				<div class="grid gap-2">
-					<div class="flex items-center gap-2 text-sm font-semibold">
-						<CheckIcon class="size-4 text-muted-foreground" />
-						mcp add
-					</div>
-					<ScrollView class="max-h-72 rounded-md bg-muted/45" contentClass="p-3">
-						<pre class="whitespace-pre-wrap break-words text-xs leading-5 text-foreground">{JSON.stringify(addPayload, null, 2)}</pre>
-					</ScrollView>
-				</div>
-				{#if enableCurrentProject}
-					<div class="grid gap-2">
-						<div class="flex items-center gap-2 text-sm font-semibold">
-							<CheckIcon class="size-4 text-muted-foreground" />
-							mcp enable
-						</div>
-						<ScrollView class="max-h-48 rounded-md bg-muted/45" contentClass="p-3">
-							<pre class="whitespace-pre-wrap break-words text-xs leading-5 text-foreground">{JSON.stringify(enablePayload, null, 2)}</pre>
-						</ScrollView>
-					</div>
+	{#if onProbe}
+		<McpConfigInspectPanel resetKey={formSectionId} {pending} buildDraft={buildDraft} onProbe={onProbe} />
+	{/if}
+</div>
+
+<Dialog.Root bind:open={overrideDialogOpen}>
+	<Dialog.Content class="sm:max-w-md" data-testid="mcp-config-override-dialog">
+		<Dialog.Header>
+			<Dialog.Title>Override existing config?</Dialog.Title>
+			<Dialog.Description>
+				{#if pendingOverrideDraft}
+					The id "{pendingOverrideDraft.name}" already exists under @{pendingOverrideDraft.avatarNickname}. Override replaces the global config bound to this id.
+				{:else}
+					This config id already exists. Override replaces the current global config.
 				{/if}
-				{#if startCurrentProject}
-					<div class="grid gap-2">
-						<div class="flex items-center gap-2 text-sm font-semibold">
-							<CheckIcon class="size-4 text-muted-foreground" />
-							mcp start
-						</div>
-						<ScrollView class="max-h-48 rounded-md bg-muted/45" contentClass="p-3">
-							<pre class="whitespace-pre-wrap break-words text-xs leading-5 text-foreground">{JSON.stringify(startPayload, null, 2)}</pre>
-						</ScrollView>
-					</div>
-				{/if}
-			</aside>
-		</div>
-	</div>
-</ScrollView>
+			</Dialog.Description>
+		</Dialog.Header>
+		<Dialog.Footer>
+			<Button
+				variant="outline"
+				onclick={() => {
+					overrideDialogOpen = false;
+					pendingOverrideDraft = null;
+				}}
+			>
+				Cancel
+			</Button>
+			<Button variant="destructive" disabled={pending} onclick={confirmOverride}>Override</Button>
+		</Dialog.Footer>
+	</Dialog.Content>
+</Dialog.Root>

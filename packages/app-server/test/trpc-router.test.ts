@@ -2,6 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
 
 import { resolveGlobalAvatarCanonicalRoot } from "@agenter/avatar";
@@ -63,6 +64,22 @@ afterEach(async () => {
 });
 
 const ROOT_AUTH_PRIVATE_KEY = "0x59c6995e998f97a5a0044966f094538c5f1b6f6db1d4c4a2a2d5f6b7c8d9e0f1";
+const mcpStdioFixturePath = fileURLToPath(new URL("./fixtures/mcp-stdio-fixture-server.ts", import.meta.url));
+
+const readRecord = (value: unknown): Record<string, unknown> => {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    throw new Error("expected object value");
+  }
+  return value as Record<string, unknown>;
+};
+
+const readString = (value: unknown, key: string): string => {
+  const candidate = readRecord(value)[key];
+  if (typeof candidate !== "string") {
+    throw new Error(`expected string field: ${key}`);
+  }
+  return candidate;
+};
 
 const createRootSuperadminCaller = async (kernel: AppKernel) => {
   const anonymousCaller = appRouter.createCaller(await createTrpcContext(kernel));
@@ -117,6 +134,285 @@ type TestObservable<T> = {
 };
 
 describe("Feature: app-server trpc procedures", () => {
+  test("Scenario: Given no AvatarRuntime is running When Avatar-owned MCP is added enabled started and stopped Then lifecycle facts stay under MCP authority", async () => {
+    const root = makeTempDir();
+    const projectPath = join(root, "project");
+    mkdirSync(projectPath, { recursive: true });
+    const kernel = new AppKernel({
+      globalSessionRoot: join(root, "sessions"),
+      archiveSessionRoot: join(root, "archive", "sessions"),
+      workspacesPath: join(root, "workspaces.yaml"),
+      homeDir: join(root, "home"),
+    });
+    await kernel.start();
+    try {
+      const { caller } = await createRootSuperadminCaller(kernel);
+      await caller.mcp.add({
+        avatarNickname: "default",
+        name: "stdio-fixture",
+        title: "Stdio Fixture",
+        transport: {
+          kind: "stdio",
+          command: "bun",
+          args: ["run", mcpStdioFixturePath],
+          env: {
+            AGENTER_MCP_FIXTURE_MODE: "avatar-owned",
+          },
+        },
+      });
+      await caller.mcp.enable({
+        avatarNickname: "default",
+        name: "stdio-fixture",
+        projectPath,
+      });
+
+      const started = await caller.mcp.start({
+        avatarNickname: "default",
+        name: "stdio-fixture",
+        projectPath,
+      });
+      const listed = await caller.mcp.list({
+        avatarNickname: "default",
+        projectPath,
+        includeSnapshots: true,
+      });
+      const stopped = await caller.mcp.stop({
+        avatarNickname: "default",
+        name: "stdio-fixture",
+        projectPath,
+      });
+
+      expect(kernel.listSessions()).toHaveLength(0);
+      expect(started.snapshot?.serverName).toBe("agenter-stdio-fixture");
+      expect(JSON.stringify(started.snapshot?.tools)).toContain("fixture_echo");
+      expect(listed[0]?.lifecycle).toBe("running");
+      expect(stopped.instance.lifecycle).toBe("stopped");
+    } finally {
+      await kernel.stop();
+    }
+  });
+
+  test("Scenario: Given an unsaved MCP draft When caller.mcp.inspect runs Then Studio can test capability actions without persisting config truth", async () => {
+    const root = makeTempDir();
+    const projectPath = join(root, "project");
+    mkdirSync(projectPath, { recursive: true });
+    const kernel = new AppKernel({
+      globalSessionRoot: join(root, "sessions"),
+      archiveSessionRoot: join(root, "archive", "sessions"),
+      workspacesPath: join(root, "workspaces.yaml"),
+      homeDir: join(root, "home"),
+    });
+    await kernel.start();
+    try {
+      const { caller } = await createRootSuperadminCaller(kernel);
+      const inspectedTool = await caller.mcp.inspect({
+        avatarNickname: "default",
+        name: "draft-fixture",
+        projectPath,
+        transport: {
+          kind: "stdio",
+          command: "bun",
+          args: ["run", mcpStdioFixturePath],
+          env: {
+            AGENTER_MCP_FIXTURE_MODE: "draft-inspect",
+          },
+        },
+        capabilityKind: "tool",
+        toolName: "fixture_echo",
+        arguments: { message: "hello" },
+      });
+      const inspectedResource = await caller.mcp.inspect({
+        avatarNickname: "default",
+        name: "draft-fixture",
+        projectPath,
+        transport: {
+          kind: "stdio",
+          command: "bun",
+          args: ["run", mcpStdioFixturePath],
+          env: {
+            AGENTER_MCP_FIXTURE_MODE: "draft-inspect",
+          },
+        },
+        capabilityKind: "resource",
+        resourceUri: "fixture://workspace/readme",
+      });
+      const inspectedPrompt = await caller.mcp.inspect({
+        avatarNickname: "default",
+        name: "draft-fixture",
+        projectPath,
+        transport: {
+          kind: "stdio",
+          command: "bun",
+          args: ["run", mcpStdioFixturePath],
+          env: {
+            AGENTER_MCP_FIXTURE_MODE: "draft-inspect",
+          },
+        },
+        capabilityKind: "prompt",
+        promptName: "fixture_summarize",
+        arguments: { topic: "workspace" },
+      });
+
+      expect(inspectedTool.snapshot.serverName).toBe("agenter-stdio-fixture");
+      expect(JSON.stringify(inspectedTool.snapshot.tools)).toContain("fixture_echo");
+      expect(JSON.stringify(inspectedTool.snapshot.resources)).toContain("fixture://workspace/readme");
+      expect(JSON.stringify(inspectedTool.snapshot.prompts)).toContain("fixture_summarize");
+      expect(JSON.stringify(inspectedTool.result)).toContain(`${projectPath}:draft-inspect:hello`);
+      expect(JSON.stringify(inspectedResource.result)).toContain("fixture://workspace/readme");
+      expect(JSON.stringify(inspectedPrompt.result)).toContain("workspace");
+      expect(
+        await caller.mcp.query({
+          avatarNickname: "default",
+          projectPath,
+          sql: "select name from mcp_installed where name = $name",
+          params: { name: "draft-fixture" },
+        }),
+      ).toEqual({ rows: [] });
+    } finally {
+      await kernel.stop();
+    }
+  });
+
+  test("Scenario: Given an unsaved MCP draft When caller.mcp.probe runs Then Studio uses a CLI-shaped isolated session without durable writes", async () => {
+    const root = makeTempDir();
+    const projectPath = join(root, "project");
+    mkdirSync(projectPath, { recursive: true });
+    const kernel = new AppKernel({
+      globalSessionRoot: join(root, "sessions"),
+      archiveSessionRoot: join(root, "archive", "sessions"),
+      workspacesPath: join(root, "workspaces.yaml"),
+      homeDir: join(root, "home"),
+    });
+    await kernel.start();
+    try {
+      const { caller } = await createRootSuperadminCaller(kernel);
+      const open = await caller.mcp.probe({
+        avatarNickname: "default",
+        action: "open",
+        name: "draft-fixture",
+        projectPath,
+        transport: {
+          kind: "stdio",
+          command: "bun",
+          args: ["run", mcpStdioFixturePath],
+          env: {
+            AGENTER_MCP_FIXTURE_MODE: "draft-probe",
+          },
+        },
+      });
+      const probeId = readString(open.parsed, "probeId");
+      const ping = await caller.mcp.probe({
+        avatarNickname: "default",
+        action: "ping",
+        probeId,
+      });
+      const tool = await caller.mcp.probe({
+        avatarNickname: "default",
+        action: "call-tool",
+        probeId,
+        toolName: "fixture_echo",
+        arguments: { message: "hello" },
+      });
+      const resource = await caller.mcp.probe({
+        avatarNickname: "default",
+        action: "read-resource",
+        probeId,
+        resourceUri: "fixture://workspace/readme",
+      });
+      const prompt = await caller.mcp.probe({
+        avatarNickname: "default",
+        action: "get-prompt",
+        probeId,
+        promptName: "fixture_summarize",
+        arguments: { topic: "workspace" },
+      });
+      const close = await caller.mcp.probe({
+        avatarNickname: "default",
+        action: "close",
+        probeId,
+      });
+
+      expect(open.command).toBe("mcp probe");
+      expect(open.stdout).toContain('"probeId"');
+      expect(open.stdout).toContain("agenter-stdio-fixture");
+      expect(ping.exitCode).toBe(0);
+      expect(JSON.stringify(tool.parsed)).toContain(`${projectPath}:draft-probe:hello`);
+      expect(JSON.stringify(resource.parsed)).toContain("fixture://workspace/readme");
+      expect(JSON.stringify(prompt.parsed)).toContain("workspace");
+      expect(close.parsed).toEqual({ probeId, closed: true });
+      expect(kernel.listSessions()).toHaveLength(0);
+      expect(
+        await caller.mcp.query({
+          avatarNickname: "default",
+          projectPath,
+          sql: "select name from mcp_installed where name = $name",
+          params: { name: "draft-fixture" },
+        }),
+      ).toEqual({ rows: [] });
+    } finally {
+      await kernel.stop();
+    }
+  });
+
+  test("Scenario: Given one Avatar already owns an MCP id When mcp.add repeats the id Then override must be explicit", async () => {
+    const root = makeTempDir();
+    const kernel = new AppKernel({
+      globalSessionRoot: join(root, "sessions"),
+      archiveSessionRoot: join(root, "archive", "sessions"),
+      workspacesPath: join(root, "workspaces.yaml"),
+      homeDir: join(root, "home"),
+    });
+    await kernel.start();
+    try {
+      const { caller } = await createRootSuperadminCaller(kernel);
+      await caller.mcp.add({
+        avatarNickname: "default",
+        name: "stdio-fixture",
+        title: "First",
+        transport: {
+          kind: "stdio",
+          command: "bun",
+          args: ["run", mcpStdioFixturePath],
+        },
+      });
+
+      await expect(
+        caller.mcp.add({
+          avatarNickname: "default",
+          name: "stdio-fixture",
+          title: "Second",
+          transport: {
+            kind: "stdio",
+            command: "node",
+            args: ["replacement.js"],
+          },
+        }),
+      ).rejects.toThrow("mcp global already exists: stdio-fixture; pass override true to replace");
+
+      const replaced = await caller.mcp.add({
+        avatarNickname: "default",
+        name: "stdio-fixture",
+        title: "Second",
+        transport: {
+          kind: "stdio",
+          command: "node",
+          args: ["replacement.js"],
+        },
+        override: true,
+      });
+
+      expect(replaced.title).toBe("Second");
+      expect(replaced.transport).toEqual({
+        kind: "stdio",
+        command: "node",
+        args: ["replacement.js"],
+        env: {},
+      });
+    } finally {
+      await kernel.stop();
+    }
+  });
+
   test("Scenario: Given avatar notes exist When NoteSystem TRPC catalog page and search are requested Then typed projections hide filesystem reads behind the backend contract", async () => {
     const root = makeTempDir();
     const homeDir = join(root, "home");

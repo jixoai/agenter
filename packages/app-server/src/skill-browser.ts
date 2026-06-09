@@ -78,6 +78,7 @@ export interface SkillBrowserAvatarWorkspaceGroup {
 export interface SkillBrowserAvatarCatalogEntry {
   nickname: string;
   displayName: string | null;
+  avatarPrincipalId: string | null;
   iconUrl: string | null;
   runtimeId: string;
   defaultAvatar: boolean;
@@ -316,6 +317,7 @@ export const listSkillBrowserAvatarCatalog = (input: {
     return {
       nickname: avatar.nickname,
       displayName: avatar.displayName,
+      avatarPrincipalId: avatar.avatarPrincipalId,
       iconUrl: avatar.iconUrl,
       runtimeId: avatar.runtimeId,
       defaultAvatar: avatar.defaultAvatar,
