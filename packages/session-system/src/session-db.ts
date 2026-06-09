@@ -1583,6 +1583,17 @@ export class SessionDb {
     }
   }
 
+  ensureHeartbeatRecordsFresh(): void {
+    const source = this.getHeartbeatRecordSourceFreshness();
+    const projection = this.getHeartbeatRecordProjectionFreshness();
+    if (
+      projection.count !== source.count ||
+      (source.maxUpdatedAt !== null && (projection.maxUpdatedAt === null || projection.maxUpdatedAt < source.maxUpdatedAt))
+    ) {
+      this.rebuildHeartbeatRecords();
+    }
+  }
+
   pageHeartbeatRecords(input: HeartbeatRecordPageInput): HeartbeatRecordPage {
     const pageSize = resolvePageLimit(input.pageSize, 200);
     const totalRecords = this.countHeartbeatRecords();
@@ -1668,6 +1679,41 @@ export class SessionDb {
       }
       return left.recordKey.localeCompare(right.recordKey);
     });
+  }
+
+  private getHeartbeatRecordSourceFreshness(): { count: number; maxUpdatedAt: number | null } {
+    const row = this.db
+      .query(
+        `select
+           (select count(*) from ai_call) +
+           (select count(distinct message_id)
+              from message_part
+              where scope = 'request_aux' and part_type = 'config') as count,
+           max(
+             coalesce((select max(updated_at) from ai_call), 0),
+             coalesce((
+               select max(updated_at)
+               from message_part
+               where ai_call_id is not null or (scope = 'request_aux' and part_type = 'config')
+             ), 0)
+           ) as max_updated_at`,
+      )
+      .get() as { count: number; max_updated_at: number | null } | null;
+    const maxUpdatedAt = row?.max_updated_at && row.max_updated_at > 0 ? row.max_updated_at : null;
+    return {
+      count: row?.count ?? 0,
+      maxUpdatedAt,
+    };
+  }
+
+  private getHeartbeatRecordProjectionFreshness(): { count: number; maxUpdatedAt: number | null } {
+    const row = this.db
+      .query(`select count(*) as count, max(updated_at) as max_updated_at from heartbeat_record`)
+      .get() as { count: number; max_updated_at: number | null } | null;
+    return {
+      count: row?.count ?? 0,
+      maxUpdatedAt: row?.max_updated_at ?? null,
+    };
   }
 
   private buildAiCallHeartbeatProjection(call: SessionAiCallRecord): HeartbeatRecordProjection {

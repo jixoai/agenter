@@ -6934,7 +6934,7 @@ export class AppKernel {
     }
     const db = new SessionDb(dbPath);
     try {
-      db.rebuildHeartbeatRecords();
+      db.ensureHeartbeatRecordsFresh();
       return db.pageHeartbeatRecords(input);
     } finally {
       db.close();
@@ -6948,7 +6948,7 @@ export class AppKernel {
     }
     const db = new SessionDb(dbPath);
     try {
-      db.rebuildHeartbeatRecords();
+      db.ensureHeartbeatRecordsFresh();
       return db.getHeartbeatRecordDetail(recordId);
     } finally {
       db.close();

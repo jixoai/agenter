@@ -138,6 +138,76 @@ describe("Feature: session-system AI-call ledger persistence", () => {
     }
   });
 
+  test("Scenario: Given heartbeat record projection exists When source facts are unchanged Then the record page reads the materialized table without forced rebuild", () => {
+    const db = createDb();
+    try {
+      const call = db.appendAiCall({
+        roundIndex: 1,
+        kind: "chat",
+        status: "done",
+        provider: "openai",
+        model: "gpt-5.1",
+        requestUrl: "https://api.example.test/v1/responses",
+        requestBody: { model: "gpt-5.1" },
+        createdAt: 100,
+        updatedAt: 140,
+        completedAt: 140,
+        isComplete: true,
+      });
+      db.upsertMessage({
+        messageId: "response-freshness",
+        aiCallId: call.id,
+        roundIndex: 1,
+        scope: "heartbeat_part",
+        role: "assistant",
+        createdAt: 120,
+        updatedAt: 140,
+        parts: [{ partType: "text", payload: { content: "Initial projection text." } }],
+      });
+      db.updateAiCall(call.id, { responseMessageIds: ["response-freshness"] });
+
+      expect(db.pageHeartbeatRecords({ pageSize: 10, anchor: { kind: "latest" } }).totalRecords).toBe(0);
+      db.ensureHeartbeatRecordsFresh();
+
+      const initial = db.pageHeartbeatRecords({ pageSize: 10, anchor: { kind: "latest" } });
+      expect(initial.totalRecords).toBe(1);
+      expect(initial.records[0]).toMatchObject({
+        id: 1,
+        previewText: "Initial projection text.",
+        updatedAt: 140,
+      });
+
+      db.ensureHeartbeatRecordsFresh();
+      const unchanged = db.pageHeartbeatRecords({ pageSize: 10, anchor: { kind: "latest" } });
+      expect(unchanged.records[0]).toMatchObject({
+        id: 1,
+        previewText: "Initial projection text.",
+        updatedAt: 140,
+      });
+
+      db.upsertMessage({
+        messageId: "response-freshness",
+        aiCallId: call.id,
+        roundIndex: 1,
+        scope: "heartbeat_part",
+        role: "assistant",
+        createdAt: 120,
+        updatedAt: 200,
+        parts: [{ partType: "text", payload: { content: "Updated projection text." } }],
+      });
+      db.ensureHeartbeatRecordsFresh();
+
+      const refreshed = db.pageHeartbeatRecords({ pageSize: 10, anchor: { kind: "latest" } });
+      expect(refreshed.records[0]).toMatchObject({
+        id: 1,
+        previewText: "Updated projection text.",
+        updatedAt: 200,
+      });
+    } finally {
+      db.close();
+    }
+  });
+
   test("Scenario: Given latest and fixed page-window anchors When newer records arrive Then latest windows advance fixed windows stay pinned and newRecordsAvailable is visible", () => {
     const db = createDb();
     try {
