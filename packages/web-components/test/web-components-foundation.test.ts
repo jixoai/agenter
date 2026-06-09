@@ -3,14 +3,14 @@ import { describe, expect, test, vi } from "vitest";
 import {
   ADAPTIVE_ICON_BUTTON_PARTS,
   ADAPTIVE_ICON_BUTTON_TAG,
-  ASYNC_SURFACE_TAG,
   ASYNC_SURFACE_PARTS,
+  ASYNC_SURFACE_TAG,
   DEFAULT_JSON_VIEWER_MODE,
   HELP_HINT_PARTS,
   HELP_HINT_TAG,
+  JSON_VIEWER_GLOBAL_MODE_STORAGE_KEY,
   JSON_VIEWER_PARTS,
   JSON_VIEWER_TAG,
-  JSON_VIEWER_GLOBAL_MODE_STORAGE_KEY,
   MARKDOWN_DOCUMENT_PARTS,
   MARKDOWN_DOCUMENT_TAG,
   TOOL_INVOCATION_CARD_PARTS,
@@ -45,7 +45,9 @@ describe("Feature: web-components foundation", () => {
     setGlobalJsonViewerMode("fmt-highlight-json");
     expect(window.localStorage.getItem(JSON_VIEWER_GLOBAL_MODE_STORAGE_KEY)).toBe("fmt-highlight-json");
     expect(resolveJsonViewerMode({ localMode: null, globalMode: "fmt-highlight-json" })).toBe("fmt-highlight-json");
-    expect(resolveJsonViewerMode({ localMode: "highlight-yaml", globalMode: "fmt-highlight-json" })).toBe("highlight-yaml");
+    expect(resolveJsonViewerMode({ localMode: "highlight-yaml", globalMode: "fmt-highlight-json" })).toBe(
+      "highlight-yaml",
+    );
     expect(resolveJsonViewerMode({ localMode: "invalid" as never, globalMode: null })).toBe(DEFAULT_JSON_VIEWER_MODE);
   });
 
@@ -120,6 +122,60 @@ describe("Feature: web-components foundation", () => {
         (node) => node.nodeType === Node.TEXT_NODE && (node.textContent ?? "").trim().length === 0,
       );
       expect(whitespaceTextNodes).toHaveLength(0);
+    } finally {
+      setGlobalJsonViewerMode(previousMode);
+    }
+  });
+
+  test("Scenario: Given raw and highlighted structured facts When whitespace controls render Then raw payloads stay unwrapped and highlighted modes can opt out of soft wrapping", async () => {
+    defineJsonViewer();
+
+    const previousMode = getGlobalJsonViewerModeSnapshot();
+    setGlobalJsonViewerMode("raw-text-json");
+    try {
+      const element = document.createElement(JSON_VIEWER_TAG) as HTMLElement & {
+        value: unknown;
+        rawText: string;
+        updateComplete?: Promise<unknown>;
+        shadowRoot: ShadowRoot | null;
+      };
+      element.value = {
+        long: "A very long string that should keep its exact horizontal shape in raw mode.",
+      };
+      element.rawText = '{"long":"A very long string that should keep its exact horizontal shape in raw mode."}';
+      document.body.append(element);
+
+      await element.updateComplete;
+
+      const root = element.shadowRoot?.querySelector<HTMLElement>(".root");
+      const rawContent = element.shadowRoot?.querySelector<HTMLPreElement>(".content-plain");
+      const wrapToggle = element.shadowRoot?.querySelector<HTMLButtonElement>(".wrap-toggle");
+      expect(element.getAttribute("data-wrap")).toBe("nowrap");
+      expect(root?.getAttribute("data-wrap")).toBe("nowrap");
+      expect(rawContent?.textContent).toBe(element.rawText);
+      expect(wrapToggle?.disabled).toBe(true);
+      expect(wrapToggle?.getAttribute("data-state")).toBe("off");
+      expect(wrapToggle?.textContent?.trim()).toBe("wrap");
+      expect(wrapToggle?.querySelector(".wrap-toggle-icon")).not.toBeNull();
+
+      setGlobalJsonViewerMode("fmt-highlight-json");
+      await element.updateComplete;
+
+      expect(element.getAttribute("data-wrap")).toBe("wrap");
+      expect(root?.getAttribute("data-wrap")).toBe("wrap");
+      expect(wrapToggle?.disabled).toBe(false);
+      expect(wrapToggle?.getAttribute("aria-pressed")).toBe("true");
+      expect(wrapToggle?.getAttribute("data-state")).toBe("on");
+      expect(wrapToggle?.textContent?.trim()).toBe("wrap");
+
+      wrapToggle?.click();
+      await element.updateComplete;
+
+      expect(element.getAttribute("data-wrap")).toBe("nowrap");
+      expect(root?.getAttribute("data-wrap")).toBe("nowrap");
+      expect(wrapToggle?.getAttribute("aria-pressed")).toBe("false");
+      expect(wrapToggle?.getAttribute("data-state")).toBe("off");
+      expect(wrapToggle?.textContent?.trim()).toBe("wrap");
     } finally {
       setGlobalJsonViewerMode(previousMode);
     }
@@ -302,7 +358,12 @@ describe("Feature: web-components foundation", () => {
     expect(jsonViewer.hasAttribute("menu-open")).toBe(true);
     expect(jsonViewer.shadowRoot?.querySelector(".root")?.getAttribute("part")).toBe(JSON_VIEWER_PARTS.root);
     expect(menuTrigger?.getAttribute("part")).toBe(JSON_VIEWER_PARTS.menuTrigger);
-    expect(jsonViewer.shadowRoot?.querySelector(".menu")?.getAttribute("part")).toBe(JSON_VIEWER_PARTS.menu);
+    const jsonViewerMenu = jsonViewer.shadowRoot?.querySelector<HTMLElement>(".menu");
+    expect(jsonViewerMenu?.getAttribute("part")).toBe(JSON_VIEWER_PARTS.menu);
+    expect(jsonViewerMenu?.getAttribute("popover")).toBe("auto");
+    expect(jsonViewer.shadowRoot?.querySelector(".wrap-toggle")?.getAttribute("part")).toBe(
+      JSON_VIEWER_PARTS.wrapToggle,
+    );
     expect(jsonViewer.shadowRoot?.querySelector(".content")?.getAttribute("part")).toBe(JSON_VIEWER_PARTS.content);
 
     const markdown = document.createElement(MARKDOWN_DOCUMENT_TAG) as HTMLElement & {
@@ -320,8 +381,12 @@ describe("Feature: web-components foundation", () => {
     expect(markdown.getAttribute("data-mode")).toBe("raw");
     expect(markdown.getAttribute("data-surface")).toBe("muted");
     expect(markdown.shadowRoot?.querySelector(".surface")?.getAttribute("part")).toBe(MARKDOWN_DOCUMENT_PARTS.root);
-    expect(markdown.shadowRoot?.querySelector(".viewport")?.getAttribute("part")).toContain(MARKDOWN_DOCUMENT_PARTS.viewport);
-    expect(markdown.shadowRoot?.querySelector(".viewport")?.getAttribute("part")).toContain(MARKDOWN_DOCUMENT_PARTS.rawContent);
+    expect(markdown.shadowRoot?.querySelector(".viewport")?.getAttribute("part")).toContain(
+      MARKDOWN_DOCUMENT_PARTS.viewport,
+    );
+    expect(markdown.shadowRoot?.querySelector(".viewport")?.getAttribute("part")).toContain(
+      MARKDOWN_DOCUMENT_PARTS.rawContent,
+    );
 
     const toolCard = document.createElement(TOOL_INVOCATION_CARD_TAG) as HTMLElement & {
       invocation: unknown;
@@ -339,8 +404,12 @@ describe("Feature: web-components foundation", () => {
     expect(toolCard.getAttribute("data-status")).toBe("running");
     expect(toolCard.shadowRoot?.querySelector(".card")?.getAttribute("part")).toBe(TOOL_INVOCATION_CARD_PARTS.card);
     expect(toolCard.shadowRoot?.querySelector(".header")?.getAttribute("part")).toBe(TOOL_INVOCATION_CARD_PARTS.header);
-    expect(toolCard.shadowRoot?.querySelector(".badge")?.getAttribute("part")).toBe(TOOL_INVOCATION_CARD_PARTS.statusBadge);
-    expect(toolCard.shadowRoot?.querySelector(".section")?.getAttribute("part")).toContain(TOOL_INVOCATION_CARD_PARTS.section);
+    expect(toolCard.shadowRoot?.querySelector(".badge")?.getAttribute("part")).toBe(
+      TOOL_INVOCATION_CARD_PARTS.statusBadge,
+    );
+    expect(toolCard.shadowRoot?.querySelector(".section")?.getAttribute("part")).toContain(
+      TOOL_INVOCATION_CARD_PARTS.section,
+    );
   });
 
   test("Scenario: Given an auto adaptive icon button When measurement collapses it to icon-only Then the element avoids change-in-update warnings", async () => {

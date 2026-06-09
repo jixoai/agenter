@@ -92,9 +92,7 @@ markdownIt.validateLink = (url: string): boolean => {
 
 const linkOpen = markdownIt.renderer.rules.link_open;
 type LinkOpenRendererRule = NonNullable<typeof linkOpen>;
-markdownIt.renderer.rules.link_open = (
-  ...args: Parameters<LinkOpenRendererRule>
-): string => {
+markdownIt.renderer.rules.link_open = (...args: Parameters<LinkOpenRendererRule>): string => {
   const [tokens, index, options, env, self] = args;
   const token = tokens[index];
   token?.attrSet("target", "_blank");
@@ -197,7 +195,8 @@ export class MarkdownDocumentElement extends LitElement {
     }
 
     .markdown :where(code:not(pre code)) {
-      display: inline-block;
+      display: inline;
+      word-break: break-all;
       border-radius: 0.45rem;
       padding: 0.1rem 0.35rem;
       background: color-mix(in srgb, currentColor 7%, transparent);
@@ -333,11 +332,13 @@ export class MarkdownDocumentElement extends LitElement {
   private resolveProfile() {
     return resolveMarkdownDocumentProfile({
       usage: this.usage,
-      surface: (this.surface || legacySurface(this.chrome || undefined)) || undefined,
+      surface: this.surface || legacySurface(this.chrome || undefined) || undefined,
       overflow: this.overflow || undefined,
       density: this.density || undefined,
       padding:
-        this.padding === "default" || this.padding === "none" ? (this.padding as MarkdownDocumentPadding) : this.padding,
+        this.padding === "default" || this.padding === "none"
+          ? (this.padding as MarkdownDocumentPadding)
+          : this.padding,
       syntaxTone: this.syntaxTone || undefined,
       maxHeight: this.maxHeight > 0 ? this.maxHeight : undefined,
     });

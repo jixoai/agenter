@@ -5,11 +5,11 @@ import { defineElement } from "./custom-element";
 import {
   DEFAULT_JSON_VIEWER_MODE,
   JSON_VIEWER_MODE_OPTIONS,
-  type JsonViewerMode,
   getGlobalJsonViewerModeSnapshot,
   resolveJsonViewerMode,
   setGlobalJsonViewerMode,
   subscribeGlobalJsonViewerMode,
+  type JsonViewerMode,
 } from "./json-viewer-store";
 
 export const JSON_VIEWER_TAG = "agenter-json-viewer";
@@ -20,6 +20,7 @@ export const JSON_VIEWER_PARTS = {
   menu: "menu",
   menuLabel: "menu-label",
   menuOption: "menu-option",
+  wrapToggle: "wrap-toggle",
   content: "content",
   rawContent: "raw-content",
   line: "line",
@@ -31,6 +32,16 @@ const JSON_STRING_CLASS_NAME = "string";
 const JSON_NUMBER_CLASS_NAME = "number";
 const JSON_BOOLEAN_CLASS_NAME = "boolean";
 const JSON_NULL_CLASS_NAME = "nullish";
+type JsonViewerLineWrap = "wrap" | "nowrap";
+
+interface PopoverToggleEvent extends Event {
+  newState?: "open" | "closed";
+}
+
+interface NativePopoverElement extends HTMLElement {
+  showPopover(): void;
+  hidePopover(): void;
+}
 
 interface ParsedYamlMappingLine {
   indent: string;
@@ -219,6 +230,24 @@ const modeLabel = (mode: JsonViewerMode): string => {
   return JSON_VIEWER_MODE_OPTIONS.find((option) => option.mode === mode)?.label ?? mode;
 };
 
+const renderTextWrapIcon = () => html`
+  <svg
+    class="wrap-toggle-icon"
+    aria-hidden="true"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+    stroke-width="2"
+  >
+    <path d="m16 16-3 3 3 3"></path>
+    <path d="M3 12h14.5a1 1 0 0 1 0 7H13"></path>
+    <path d="M3 19h6"></path>
+    <path d="M3 5h18"></path>
+  </svg>
+`;
+
 export class JsonViewerElement extends LitElement {
   static properties = {
     value: { attribute: false },
@@ -227,6 +256,7 @@ export class JsonViewerElement extends LitElement {
     localMode: { attribute: false, state: true },
     globalMode: { attribute: false, state: true },
     menuOpen: { state: true },
+    lineWrap: { attribute: false, state: true },
   };
 
   static styles = css`
@@ -252,6 +282,14 @@ export class JsonViewerElement extends LitElement {
       border-bottom: 1px solid color-mix(in srgb, hsl(var(--border, 214 32% 91%)) 80%, transparent);
     }
 
+    .toolbar-actions {
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 0.375rem;
+      min-width: 0;
+    }
+
     .menu-trigger {
       border: 1px solid color-mix(in srgb, hsl(var(--border, 214 32% 91%)) 80%, transparent);
       border-radius: 999px;
@@ -267,16 +305,25 @@ export class JsonViewerElement extends LitElement {
     }
 
     .menu {
-      position: absolute;
-      top: 2.75rem;
-      left: 0.75rem;
-      z-index: 1;
-      width: min(18rem, calc(100% - 1.5rem));
+      position: fixed;
+      inset: var(--menu-popover-top, 0.75rem) auto auto var(--menu-popover-left, 0.75rem);
+      z-index: 10;
+      width: min(18rem, var(--menu-popover-max-width, calc(100vw - 1rem)));
+      margin: 0;
       border: 1px solid hsl(var(--border, 214 32% 91%));
       border-radius: 1rem;
       background: hsl(var(--background, 0 0% 100%));
+      color: hsl(var(--foreground, 222 47% 11%));
       box-shadow: 0 1rem 2.5rem rgba(15, 23, 42, 0.14);
       padding: 0.5rem;
+    }
+
+    .menu[data-native-popover="false"][data-open="false"] {
+      display: none;
+    }
+
+    .menu:popover-open {
+      display: block;
     }
 
     .menu-label {
@@ -318,6 +365,54 @@ export class JsonViewerElement extends LitElement {
       line-height: 1.4;
     }
 
+    .wrap-toggle {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.375rem;
+      min-inline-size: 4.25rem;
+      justify-content: center;
+      border: 1px solid color-mix(in srgb, hsl(var(--border, 214 32% 91%)) 80%, transparent);
+      border-radius: 0.5rem;
+      background: transparent;
+      color: hsl(var(--foreground, 222 47% 11%));
+      cursor: pointer;
+      font: inherit;
+      font-size: 0.625rem;
+      font-weight: 700;
+      line-height: 1;
+      padding: 0.4rem 0.55rem;
+      text-transform: lowercase;
+      transition:
+        background 120ms ease,
+        border-color 120ms ease,
+        color 120ms ease;
+    }
+
+    .wrap-toggle:hover {
+      background: color-mix(in srgb, hsl(var(--muted, 210 40% 96%)) 62%, transparent);
+    }
+
+    .wrap-toggle[data-state="on"] {
+      border-color: color-mix(in srgb, hsl(var(--border, 214 32% 91%)) 92%, hsl(var(--foreground, 222 47% 11%)) 8%);
+      background: color-mix(in srgb, hsl(var(--muted, 210 40% 96%)) 82%, transparent);
+      color: hsl(var(--foreground, 222 47% 11%));
+    }
+
+    .wrap-toggle:disabled {
+      cursor: default;
+      opacity: 0.55;
+    }
+
+    .wrap-toggle:disabled:hover {
+      background: transparent;
+    }
+
+    .wrap-toggle-icon {
+      inline-size: 0.875rem;
+      block-size: 0.875rem;
+      flex: 0 0 auto;
+    }
+
     .content {
       overflow: auto;
       max-width: 100%;
@@ -331,14 +426,24 @@ export class JsonViewerElement extends LitElement {
 
     .content-plain {
       margin: 0;
-      white-space: pre-wrap;
-      word-break: break-word;
     }
 
     .line {
       display: block;
+    }
+
+    .root[data-wrap="wrap"] .content-plain,
+    .root[data-wrap="wrap"] .line {
       white-space: pre-wrap;
-      word-break: break-word;
+      overflow-wrap: anywhere;
+      word-break: normal;
+    }
+
+    .root[data-wrap="nowrap"] .content-plain,
+    .root[data-wrap="nowrap"] .line {
+      white-space: pre;
+      overflow-wrap: normal;
+      word-break: normal;
     }
 
     .indent {
@@ -387,6 +492,8 @@ export class JsonViewerElement extends LitElement {
 
   private menuOpen = false;
 
+  private lineWrap: JsonViewerLineWrap = "wrap";
+
   private unsubscribeGlobalMode: (() => void) | null = null;
 
   connectedCallback(): void {
@@ -395,38 +502,98 @@ export class JsonViewerElement extends LitElement {
     this.unsubscribeGlobalMode = subscribeGlobalJsonViewerMode(() => {
       this.globalMode = getGlobalJsonViewerModeSnapshot();
     });
-    document.addEventListener("pointerdown", this.handleDocumentPointerDown, true);
-    document.addEventListener("keydown", this.handleDocumentKeyDown, true);
   }
 
   disconnectedCallback(): void {
     this.unsubscribeGlobalMode?.();
     this.unsubscribeGlobalMode = null;
-    document.removeEventListener("pointerdown", this.handleDocumentPointerDown, true);
-    document.removeEventListener("keydown", this.handleDocumentKeyDown, true);
     super.disconnectedCallback();
   }
 
   protected updated(): void {
     const activeMode = this.resolveActiveMode();
+    const effectiveWrap = this.resolveEffectiveWrap(activeMode);
     this.setAttribute("data-mode", activeMode);
+    this.setAttribute("data-wrap", effectiveWrap);
     this.toggleAttribute("menu-open", this.menuOpen);
   }
 
-  private readonly handleDocumentPointerDown = (event: PointerEvent): void => {
-    if (!this.menuOpen) {
+  private isNativePopover(menu: HTMLElement): menu is NativePopoverElement {
+    return typeof menu.showPopover === "function" && typeof menu.hidePopover === "function";
+  }
+
+  private supportsNativePopover(): boolean {
+    return (
+      typeof HTMLElement !== "undefined" &&
+      "showPopover" in HTMLElement.prototype &&
+      "hidePopover" in HTMLElement.prototype
+    );
+  }
+
+  private getMenuElement(): HTMLElement | null {
+    return this.renderRoot.querySelector<HTMLElement>(".menu");
+  }
+
+  private isMenuPopoverOpen(menu: HTMLElement): boolean {
+    try {
+      return menu.matches(":popover-open");
+    } catch {
+      return this.menuOpen;
+    }
+  }
+
+  private positionMenuPopover(menu: HTMLElement): void {
+    const trigger = this.renderRoot.querySelector<HTMLElement>(".menu-trigger");
+    if (!trigger || typeof window === "undefined") {
       return;
     }
-    const path = event.composedPath();
-    if (path.includes(this)) {
+    const rect = trigger.getBoundingClientRect();
+    const gap = 6;
+    const viewportPadding = 8;
+    const menuWidth = Math.min(288, Math.max(160, window.innerWidth - viewportPadding * 2));
+    const left = Math.min(
+      Math.max(viewportPadding, rect.left),
+      Math.max(viewportPadding, window.innerWidth - menuWidth - viewportPadding),
+    );
+    const top = Math.min(rect.bottom + gap, Math.max(viewportPadding, window.innerHeight - viewportPadding));
+    menu.style.setProperty("--menu-popover-left", `${left}px`);
+    menu.style.setProperty("--menu-popover-top", `${top}px`);
+    menu.style.setProperty("--menu-popover-max-width", `${menuWidth}px`);
+  }
+
+  private toggleMenuPopover(): void {
+    const menu = this.getMenuElement();
+    if (!menu || !this.isNativePopover(menu)) {
+      this.menuOpen = !this.menuOpen;
       return;
+    }
+    this.positionMenuPopover(menu);
+    if (this.isMenuPopoverOpen(menu)) {
+      menu.hidePopover();
+      this.menuOpen = false;
+      return;
+    }
+    this.menuOpen = true;
+    menu.showPopover();
+  }
+
+  private closeMenuPopover(): void {
+    const menu = this.getMenuElement();
+    if (menu && this.isNativePopover(menu) && this.isMenuPopoverOpen(menu)) {
+      menu.hidePopover();
     }
     this.menuOpen = false;
-  };
+  }
 
-  private readonly handleDocumentKeyDown = (event: KeyboardEvent): void => {
-    if (event.key === "Escape" && this.menuOpen) {
-      this.menuOpen = false;
+  private readonly handleMenuToggle = (event: Event): void => {
+    const toggleEvent = event as PopoverToggleEvent;
+    if (toggleEvent.newState) {
+      this.menuOpen = toggleEvent.newState === "open";
+      return;
+    }
+    const currentTarget = event.currentTarget;
+    if (currentTarget instanceof HTMLElement) {
+      this.menuOpen = this.isMenuPopoverOpen(currentTarget);
     }
   };
 
@@ -436,7 +603,7 @@ export class JsonViewerElement extends LitElement {
     } else {
       setGlobalJsonViewerMode(mode);
     }
-    this.menuOpen = false;
+    this.closeMenuPopover();
   }
 
   private resolveActiveMode(): JsonViewerMode {
@@ -446,8 +613,18 @@ export class JsonViewerElement extends LitElement {
     });
   }
 
+  private resolveEffectiveWrap(mode: JsonViewerMode): JsonViewerLineWrap {
+    return mode === "raw-text-json" ? "nowrap" : this.lineWrap;
+  }
+
+  private toggleLineWrap(): void {
+    this.lineWrap = this.lineWrap === "wrap" ? "nowrap" : "wrap";
+  }
+
   render() {
     const activeMode = this.resolveActiveMode();
+    const effectiveWrap = this.resolveEffectiveWrap(activeMode);
+    const nativePopover = this.supportsNativePopover();
     const jsonText = serializeJson(this.value);
     const yamlText = serializeYaml(this.value);
     const rawJsonText = this.rawText || jsonText;
@@ -455,7 +632,7 @@ export class JsonViewerElement extends LitElement {
       activeMode === "highlight-yaml" ? yamlText : activeMode === "fmt-highlight-json" ? jsonText : rawJsonText;
 
     return html`
-      <div class="root" part=${JSON_VIEWER_PARTS.root} data-json-viewer-mode=${activeMode}>
+      <div class="root" part=${JSON_VIEWER_PARTS.root} data-json-viewer-mode=${activeMode} data-wrap=${effectiveWrap}>
         <div class="toolbar" part=${JSON_VIEWER_PARTS.toolbar}>
           <button
             class="menu-trigger"
@@ -463,54 +640,76 @@ export class JsonViewerElement extends LitElement {
             type="button"
             aria-label=${this.menuLabel}
             aria-expanded=${this.menuOpen ? "true" : "false"}
-            @click=${() => {
-              this.menuOpen = !this.menuOpen;
-            }}
+            @click=${() => this.toggleMenuPopover()}
           >
             ${modeLabel(activeMode)}
           </button>
+          <div class="toolbar-actions">
+            <button
+              class="wrap-toggle"
+              part=${JSON_VIEWER_PARTS.wrapToggle}
+              type="button"
+              aria-label=${effectiveWrap === "wrap" ? "Disable line wrapping" : "Enable line wrapping"}
+              aria-pressed=${effectiveWrap === "wrap" ? "true" : "false"}
+              title=${activeMode === "raw-text-json"
+                ? "Raw JSON is always unwrapped"
+                : effectiveWrap === "wrap"
+                  ? "Disable line wrapping"
+                  : "Enable line wrapping"}
+              data-state=${effectiveWrap === "wrap" ? "on" : "off"}
+              ?disabled=${activeMode === "raw-text-json"}
+              @click=${() => this.toggleLineWrap()}
+            >
+              ${renderTextWrapIcon()}
+              <span>wrap</span>
+            </button>
+          </div>
         </div>
 
-        ${this.menuOpen
-          ? html`
-              <div class="menu" part=${JSON_VIEWER_PARTS.menu} role="menu">
-                <div class="menu-label" part=${JSON_VIEWER_PARTS.menuLabel}>This viewer</div>
-                ${JSON_VIEWER_MODE_OPTIONS.map(
-                  (option) => html`
-                    <button
-                      class="menu-option"
-                      part=${activeMode === option.mode
-                        ? `${JSON_VIEWER_PARTS.menuOption} active-option`
-                        : JSON_VIEWER_PARTS.menuOption}
-                      type="button"
-                      data-active=${activeMode === option.mode ? "true" : "false"}
-                      @click=${() => this.setViewerMode("local", option.mode)}
-                    >
-                      <span class="menu-option-title">${option.label}</span>
-                      <span class="menu-option-description">${option.description}</span>
-                    </button>
-                  `,
-                )}
-                <div class="menu-label" part=${JSON_VIEWER_PARTS.menuLabel}>All JSON viewers</div>
-                ${JSON_VIEWER_MODE_OPTIONS.map(
-                  (option) => html`
-                    <button
-                      class="menu-option"
-                      part=${this.globalMode === option.mode
-                        ? `${JSON_VIEWER_PARTS.menuOption} global-active-option`
-                        : JSON_VIEWER_PARTS.menuOption}
-                      type="button"
-                      data-active=${this.globalMode === option.mode ? "true" : "false"}
-                      @click=${() => this.setViewerMode("global", option.mode)}
-                    >
-                      <span class="menu-option-title">${option.label}</span>
-                      <span class="menu-option-description">${option.description}</span>
-                    </button>
-                  `,
-                )}
-              </div>
-            `
-          : null}
+        <div
+          class="menu"
+          part=${JSON_VIEWER_PARTS.menu}
+          role="menu"
+          popover="auto"
+          data-open=${this.menuOpen ? "true" : "false"}
+          data-native-popover=${nativePopover ? "true" : "false"}
+          @toggle=${this.handleMenuToggle}
+        >
+          <div class="menu-label" part=${JSON_VIEWER_PARTS.menuLabel}>This viewer</div>
+          ${JSON_VIEWER_MODE_OPTIONS.map(
+            (option) => html`
+              <button
+                class="menu-option"
+                part=${activeMode === option.mode
+                  ? `${JSON_VIEWER_PARTS.menuOption} active-option`
+                  : JSON_VIEWER_PARTS.menuOption}
+                type="button"
+                data-active=${activeMode === option.mode ? "true" : "false"}
+                @click=${() => this.setViewerMode("local", option.mode)}
+              >
+                <span class="menu-option-title">${option.label}</span>
+                <span class="menu-option-description">${option.description}</span>
+              </button>
+            `,
+          )}
+          <div class="menu-label" part=${JSON_VIEWER_PARTS.menuLabel}>All JSON viewers</div>
+          ${JSON_VIEWER_MODE_OPTIONS.map(
+            (option) => html`
+              <button
+                class="menu-option"
+                part=${this.globalMode === option.mode
+                  ? `${JSON_VIEWER_PARTS.menuOption} global-active-option`
+                  : JSON_VIEWER_PARTS.menuOption}
+                type="button"
+                data-active=${this.globalMode === option.mode ? "true" : "false"}
+                @click=${() => this.setViewerMode("global", option.mode)}
+              >
+                <span class="menu-option-title">${option.label}</span>
+                <span class="menu-option-description">${option.description}</span>
+              </button>
+            `,
+          )}
+        </div>
 
         <div class="content" part=${JSON_VIEWER_PARTS.content}>
           ${activeMode === "raw-text-json"
