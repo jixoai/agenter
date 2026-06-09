@@ -11,14 +11,14 @@
 
 - [x] 1.1 Add browser-facing MCP input/view types to `@agenter/client-sdk` without importing app-server MCP internals.
 - [x] 1.2 Add runtime-store MCP facade methods for global/project projections, add/remove, enable/disable, start/stop/restart, query, and call.
-- [x] 1.3 Add daemon/tRPC or descriptor-backed browser routes that forward typed MCP requests to the selected AvatarRuntime's `McpSystemSurface`.
+- [x] 1.3 Add daemon/tRPC or descriptor-backed browser routes that forward typed MCP requests to the selected Avatar-owned `McpSystemSurface`.
 - [x] 1.4 Add BDD tests proving runtime-store methods preserve MCP defaults and return blocked remove, lifecycle error, and structured call outcomes.
 
 ## 2. Studio Workbench Shell
 
 - [x] 2.1 Add `/mcp` route and app-shell `MCP` navigation item with active state for nested MCP routes.
 - [x] 2.2 Create `apps/studio/src/lib/features/mcp/` module structure for state, mocked fixtures, workbench layout, list, detail, dialogs, and tests.
-- [x] 2.3 Implement runtime selector and no-runtime empty state so MCP facts are always scoped to an explicit runtime authority.
+- [x] 2.3 Implement Avatar selector so MCP facts are always scoped to explicit Avatar authority and remain available without running AvatarRuntime.
 - [x] 2.4 Implement project path filter/search with global-only and exact-project projection modes.
 - [x] 2.5 Keep the normal `/mcp` surface low-noise: no persistent MCP tutorial copy, no nested card stack, and no repeated borders beyond real shell/detail/row boundaries.
 
@@ -34,9 +34,11 @@
 
 ## 4. Verification
 
-- [x] 4.1 Add Storybook DOM stories/tests for no-runtime, global-only, default-disabled project, enabled stopped, running, failed, blocked-remove, and test-call states.
+- [x] 4.1 Add Storybook DOM stories/tests for no-running-AvatarRuntime Avatar authority, global-only, default-disabled project, enabled stopped, running, failed, blocked-remove, and test-call states.
 - [x] 4.2 Add route-level smoke tests for `/mcp` desktop and iPhone 14 compact navigation reachability.
 - [x] 4.3 Run `bun run --filter 'agenter-app-studio' test:unit`, `bun run --filter 'agenter-app-studio' test:dom`, and focused client-sdk/app-server tests. Focused MCP/client/app-server tests passed; full Studio unit/dom were run and currently fail on unrelated runtime/notes/message/terminal stories.
 - [x] 4.4 Update `openspec/specs/studio-product/spec.md`, `openspec/specs/client-runtime-store/spec.md`, and package-level durable docs before archive.
 - [x] 4.5 Run `bun run openspec:vision -- validate add-studio-mcp-system-ui` and `openspec validate --specs --strict`.
 - [x] 4.6 Update `New` to support explicit add + enable + start for the selected exact project without changing global default-disabled semantics.
+- [x] 4.7 Correct MCP ownership to Avatar-owned durable authority, remove SessionRuntime-owned MCP system coupling, and verify add/enable/start/stop works without any running AvatarRuntime.
+- [x] 4.8 Align lightweight `Inspect` with runtime `mcp probe`: add isolated probe session API/CLI/tRPC/runtime-store support, render CLI envelope in Studio, and cover ping/tool/resource/prompt/template/app behavior without durable writes.

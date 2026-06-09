@@ -1,8 +1,8 @@
 ## Context
 
-`mcpSystem` is already a runtime-owned system atom. It stores reusable global MCP configs, exact-project enablement, project-scoped live instances, discovery snapshots, action facts, SQL query projections, and MCP tool calls under Avatar runtime authority. The current operator gap is that Studio has no first-class surface for this system, while the only complete control surface is the root-workspace `mcp` CLI/API.
+`mcpSystem` is an Avatar-owned durable system atom. It stores reusable global MCP configs, exact-project enablement, project-scoped live instances, discovery snapshots, action facts, SQL query projections, and MCP tool calls under Avatar principal authority. The current operator gap is that Studio has no first-class surface for this system, while CLI/API access is only a projection surface when a shell or daemon endpoint exposes it.
 
-The closest existing Studio app is Skills: both are catalogs of runtime abilities, both need list-detail inspection, and both should stay inside Studio workbench navigation. MCP is simpler than Skills in UI shape because there is no filesystem tree or file preview. The important MCP-specific interaction is the two-layer model: installed globals are inert, then exact projects enable and run them.
+The closest existing Studio app is Skills: both are catalogs of Avatar-scoped abilities, both need list-detail inspection, and both should stay inside Studio workbench navigation. MCP is simpler than Skills in UI shape because there is no filesystem tree or file preview. The important MCP-specific interaction is the two-layer model: installed globals are inert, then exact projects enable and run them.
 
 ## Goals / Non-Goals
 
@@ -12,7 +12,7 @@ The closest existing Studio app is Skills: both are catalogs of runtime abilitie
 - Let an operator inspect and manage MCP globals, project enablement, project-local lifecycle, latest snapshots, latest errors, and action facts.
 - Keep the UI simpler than Skills: list, project filter, detail pane, and focused dialogs rather than tree/file-preview navigation.
 - Add a typed client runtime-store MCP facade so Studio consumes daemon/client-sdk contracts.
-- Preserve all existing MCP laws: global configs are separate from project enablement, project paths are exact, snapshots are project-local, lifecycle is project-scoped, disabled globals are inert, and MCP tools stay behind runtime-local APIs.
+- Preserve all existing MCP laws: global configs are separate from project enablement, project paths are exact, snapshots are project-local, lifecycle is project-scoped, disabled globals are inert, and runtime-local APIs are only optional projections of Avatar-owned MCP truth.
 
 **Non-Goals:**
 
@@ -27,15 +27,15 @@ The closest existing Studio app is Skills: both are catalogs of runtime abilitie
 
 ### Decision 1: `/mcp` is a Studio workbench, not a settings subpage
 
-MCP is a runtime system with live instances and action history, not only static configuration. It belongs beside Skills, Terminals, Workspaces, Messages, and Avatars in the app shell. The sidebar adds one `MCP` item and routes to `/mcp`.
+MCP is a durable system with live process lifecycle and action history, not only static configuration. It belongs beside Skills, Terminals, Workspaces, Messages, and Avatars in the app shell. The sidebar adds one `MCP` item and routes to `/mcp`.
 
 Alternative considered: put MCP under Settings or Skills. That hides lifecycle and exact-project enablement, and it makes MCP look like a file catalog or preference group instead of a runtime system.
 
-### Decision 2: UI story starts from an AvatarRuntime scope
+### Decision 2: UI story starts from Avatar authority
 
-The operator first needs a runtime/Avatar authority. The workbench therefore has a runtime scope selector derived from running Avatar sessions or a persisted last-used runtime. All MCP reads and writes are routed through that runtime's MCP surface.
+The operator first needs an Avatar authority. The workbench therefore has an Avatar selector derived from the global Avatar catalog, not from running Avatar sessions. All MCP reads and writes are routed through the selected Avatar-owned MCP surface.
 
-This keeps the MCP DB ownership truthful: Studio does not own MCP facts; it projects one runtime's `mcpSystem` facts.
+This keeps the MCP DB ownership truthful: Studio does not own MCP facts; it projects one Avatar's `mcpSystem` facts. A running AvatarRuntime may expose a CLI/API projection, but it is not required for add/remove/start/stop.
 
 ### Decision 3: Main layout is project-filtered list-detail
 
@@ -43,7 +43,7 @@ The primary screen is:
 
 ```text
 MCP workbench
-Toolbar: [Runtime] [Project path] [Search] [Add server] [Refresh]
+Toolbar: [Avatar] [Project path] [Search] [Add server] [Refresh]
 
 Left list:
   name / transport / enabled-for-project / lifecycle / tool count / last error marker
@@ -96,7 +96,7 @@ Route-level browser acceptance can be added after the workbench is wired to a re
 
 ## Risks / Trade-offs
 
-- Runtime scope confusion → The toolbar must visibly show the selected runtime/Avatar authority and settle into an explicit no-runtime state when none exists.
+- Avatar scope confusion → The toolbar must visibly show the selected Avatar authority and keep MCP available even when no AvatarRuntime is running.
 - Accidental project enablement → Add global and tool-call flows must not enable a project unless the user explicitly toggles enablement or confirms `autoEnable`.
 - Running process deletion risk → Remove default remains non-destructive. `stop:true` is only available from a blocked-removal confirmation showing affected project paths.
 - Snapshot staleness → The detail panel labels snapshots as project-local and includes lifecycle/snapshot time so stale stopped snapshots are not mistaken for live truth.
@@ -105,7 +105,7 @@ Route-level browser acceptance can be added after the workbench is wired to a re
 ## Migration Plan
 
 1. Add client-sdk MCP input/view types and runtime-store facade methods.
-2. Add daemon/browser routes that call the owning runtime's MCP surface.
+2. Add daemon/browser routes that call the selected Avatar's MCP surface.
 3. Add `/mcp` route, app-shell navigation item, workbench layout, and mocked Storybook states.
 4. Wire real runtime-store data and mutations.
 5. Add DOM contract tests and route-level smoke tests for desktop and mobile.

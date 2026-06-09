@@ -58,41 +58,47 @@ Studio SHALL expose an app-shell navigation item named `MCP` that opens `/mcp` a
 - **THEN** it imports MCP data through Studio app controller and client-runtime-store facades
 - **AND** it does not import `packages/app-server/src/mcp-system/*`, runtime internals, or cli-shell modules
 
-### Requirement: MCP workbench SHALL expose global registry and exact-project projection separately
+### Requirement: MCP workbench SHALL separate config truth from Avatar ownership projection
 
-The MCP workbench SHALL make the selected AvatarRuntime authority explicit before reading or mutating MCP state. It SHALL present global MCP configs separately from exact-project enablement, lifecycle, project-local snapshots, and action outcomes. Viewing or creating a global config SHALL NOT imply project enablement or start any MCP server unless the operator explicitly opts into one exact-project enable/start action.
+The MCP workbench SHALL present durable global MCP configs separately from Avatar-owned exact-project instances and ownership facts. `Configs` SHALL stay config-first across Avatars, with owner Avatar expressed as part of each config row and detail state. Viewing or creating a global config SHALL NOT imply project enablement or start any MCP server unless the operator explicitly opts into one exact-project enable/start action.
 
-#### Scenario: MCP home separates list and new config work
+#### Scenario: MCP home exposes configs and avatars tabs
 
 - **WHEN** the operator opens `/mcp`
-- **THEN** the page toolbar exposes `List` and `New` tabs
-- **AND** `List` shows installed global configs with the selected exact-project projection
-- **AND** `New` creates an inert global config by default, while allowing an explicit same-form enable and start for one exact project path
-- **AND** the default page does not merge global creation into the project lifecycle/detail surface
+- **THEN** the page toolbar exposes `Configs` and `Avatars` tabs
+- **AND** `Configs` is a config-first list-detail surface
+- **AND** `Avatars` is a read-only Avatar ownership overview
 
-#### Scenario: New can explicitly start the current project MCP
+#### Scenario: Config owner is expressed per row and detail
 
-- **WHEN** the operator creates a global MCP config from `New`
-- **AND** opts into current-project enablement and start
+- **WHEN** the operator opens `Configs`
+- **THEN** the list shows each config together with its owner Avatar
+- **AND** `New config` chooses one owner Avatar inside detail instead of through a page-level Avatar selector
+- **AND** edit detail keeps owner Avatar visible as read-only config truth
+
+#### Scenario: Configs uses one list-detail atom for new and edit
+
+- **WHEN** the operator opens `Configs`
+- **THEN** the left list starts with one `New config` item followed by installed global configs
+- **AND** selecting `New config` renders the config form in create mode
+- **AND** selecting an installed config renders the same form in edit mode plus a read-only exact-project instance list
+- **AND** the page does not split config creation into a separate top-level route or tab
+
+#### Scenario: New can explicitly start one exact project MCP
+
+- **WHEN** the operator creates a global MCP config from `Configs`
+- **AND** opts into exact-project enablement and start
 - **THEN** Studio calls the typed runtime-store MCP facade in add, enable, then start order
-- **AND** the project runtime step remains visible before submission
+- **AND** the start step remains explicit before submission
 - **AND** other projects remain disabled by default
 
-#### Scenario: No runtime selected
+#### Scenario: Avatars tab stays read-only ownership projection
 
-- **WHEN** the operator opens `/mcp` without a selectable runtime authority
-- **THEN** the workbench renders an explicit no-runtime state
-- **AND** add, enable, lifecycle, and call actions are disabled
+- **WHEN** the operator opens `Avatars`
+- **THEN** each Avatar row summarizes owned configs, exact-project rows, and running or failed instances
+- **AND** the detail pane expands those ownership facts without introducing config mutation controls
+- **AND** the list and detail use the standard avatar affordance for owner identity
 - **AND** no Studio-local MCP database is created
-
-#### Scenario: Project filter shows default-disabled globals
-
-- **GIVEN** global MCP `fs` exists
-- **AND** project `/repo/app` has not enabled `fs`
-- **WHEN** the operator filters the workbench to exact project path `/repo/app`
-- **THEN** the row for `fs` is visible as disabled by default
-- **AND** lifecycle controls for `fs` are disabled until project enablement is explicit
-- **AND** no live MCP session is started by viewing the row
 
 ### Requirement: MCP workbench SHALL preserve a low-noise operator surface
 
