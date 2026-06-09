@@ -806,6 +806,7 @@ describe("Feature: HeartbeatView DOM capability contract", () => {
     expect(document.body.textContent).not.toContain("Old context snapshot.");
     expect(document.querySelector('[data-testid="heartbeat-record-detail"] [data-object-kind="compact"]')).not.toBeNull();
     expect(document.querySelector(".ag-heartbeat-record-compact-detail__entries .ag-heartbeat-entry")).not.toBeNull();
+    expect(document.querySelector('[data-testid="heartbeat-record-detail"] .ag-heartbeat-entry__footer')).toBeNull();
     expect(document.body.textContent).toContain("Compact prompt facts");
     expect(document.body.textContent).toContain("streaming");
   });

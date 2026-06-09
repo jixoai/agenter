@@ -9,26 +9,19 @@
   let {
     record,
     selected = false,
+    href,
     selectRecord,
   }: {
     record: HeartbeatRecordItem;
     selected?: boolean;
+    href?: string;
     selectRecord?: (recordId: number) => void;
   } = $props();
 
   const meta = $derived(getHeartbeatRecordCardMeta(record));
 </script>
 
-<button
-  type="button"
-  class="ag-heartbeat-record-card"
-  class:ag-heartbeat-record-card--selected={selected}
-  data-kind={record.kind}
-  data-status={record.status}
-  aria-pressed={selected}
-  onclick={() => selectRecord?.(record.id)}
-  title={meta.title}
->
+{#snippet cardBody()}
   <HeartbeatRecordBasicCard {record} {selected}>
     {#if record.kind === "model_call"}
       <HeartbeatRecordModelRunBody {record} title={meta.title} />
@@ -38,7 +31,41 @@
       <HeartbeatRecordConfigBody {record} title={meta.title} />
     {/if}
   </HeartbeatRecordBasicCard>
-</button>
+{/snippet}
+
+{#if href}
+  <a
+    {href}
+    class="link ag-heartbeat-record-card"
+    class:ag-heartbeat-record-card--selected={selected}
+    data-kind={record.kind}
+    data-status={record.status}
+    aria-current={selected ? "true" : undefined}
+    onclick={(event) => {
+      if (!selectRecord) {
+        return;
+      }
+      event.preventDefault();
+      selectRecord(record.id);
+    }}
+    title={meta.title}
+  >
+    {@render cardBody()}
+  </a>
+{:else}
+  <button
+    type="button"
+    class="ag-heartbeat-record-card"
+    class:ag-heartbeat-record-card--selected={selected}
+    data-kind={record.kind}
+    data-status={record.status}
+    aria-pressed={selected}
+    onclick={() => selectRecord?.(record.id)}
+    title={meta.title}
+  >
+    {@render cardBody()}
+  </button>
+{/if}
 
 <style>
   .ag-heartbeat-record-card {
@@ -51,6 +78,8 @@
     border: 0;
     background: none;
     text-align: left;
+    text-decoration: none;
+    color: inherit;
     cursor: pointer;
     border-radius: 18px;
   }

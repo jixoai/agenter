@@ -171,10 +171,12 @@
       {#if records.length > 0}
         <div class="ag-heartbeat-record-list" data-testid="heartbeat-record-list">
           {#each records as record (record.id)}
+            {@const recordHref = callbacks.recordDetailHref?.(record.id)}
             <HeartbeatRecordCard
               {record}
               selected={record.id === selectedRecordId}
-              selectRecord={(recordId) => void selectRecord(recordId)}
+              href={recordHref}
+              selectRecord={callbacks.onOpenRecordDetail || !recordHref ? (recordId) => void selectRecord(recordId) : undefined}
             />
           {/each}
         </div>

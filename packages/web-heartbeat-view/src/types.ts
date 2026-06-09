@@ -336,6 +336,7 @@ export interface HeartbeatViewCallbacks {
   onLoadRecordPage?: (anchor: HeartbeatRecordPageAnchor) => Promise<void>;
   onLoadRecordDetail?: (recordId: number) => Promise<void>;
   onOpenRecordDetail?: (recordId: number) => void | Promise<void>;
+  recordDetailHref?: (recordId: number) => string;
   actions?: HeartbeatConfigActions;
   runtimeActions?: HeartbeatRuntimeActions;
 }

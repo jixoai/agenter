@@ -111,7 +111,6 @@
     <NavLeft
       backLink={true}
       backLinkUrl={backHref}
-      backLinkForce={true}
       backLinkShowText={false}
     />
     <NavTitle>

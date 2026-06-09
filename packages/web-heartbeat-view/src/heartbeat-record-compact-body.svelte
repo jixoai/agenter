@@ -155,6 +155,7 @@
               groupLabel={compactGroupLabel}
               groupTimestamp={record.startedAt}
               presentation="compact-special"
+              allowLayoutModeSwitch={false}
             />
           {/each}
         </div>

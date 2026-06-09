@@ -57,6 +57,10 @@
 
   const routes: Framework7Route[] = [
     {
+      path: "/",
+      component: HeartbeatAvatarDirectoryPage as Component<Record<string, unknown>>,
+    },
+    {
       path: "/heartbeat/:runtimeId/records/:recordId",
       component: HeartbeatRecordDetailRoutePage as Component<Record<string, unknown>>,
     },
@@ -82,10 +86,15 @@
     initialRouteApplied = true;
     await tick();
     const recordId = initialRecordId === null || initialRecordId === undefined ? "" : String(initialRecordId);
-    const href = recordId
-      ? `${exampleState.buildHeartbeatRecordHref(initialRuntimeId, recordId)}`
-      : exampleState.buildHeartbeatListHref(initialRuntimeId);
-    mainView.router.navigate(href, {
+    const listHref = exampleState.buildHeartbeatListHref(initialRuntimeId);
+    mainView.router.navigate(listHref, {
+      animate: false,
+    });
+    if (!recordId) {
+      return;
+    }
+    await tick();
+    mainView.router.navigate(exampleState.buildHeartbeatRecordHref(initialRuntimeId, recordId), {
       animate: false,
     });
   };
@@ -101,12 +110,9 @@
     class="safe-areas"
     url="/"
     {routes}
-    browserHistory={true}
-    browserHistoryRoot=""
-    browserHistorySeparator=""
-    browserHistoryAnimate={false}
     onViewInit={(view: Framework7View) => {
       mainView = view;
+      exampleState.setRouter(view.router ?? null);
       void applyInitialRoute();
     }}
   >

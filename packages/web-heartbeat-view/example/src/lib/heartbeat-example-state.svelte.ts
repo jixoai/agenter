@@ -17,6 +17,10 @@ export type HeartbeatConnectionPhase = "idle" | "editing" | "connecting" | "succ
 
 type ConnectionAttemptSource = "visible" | "silent";
 
+type HeartbeatExampleRouter = {
+  navigate: (url: string) => void;
+};
+
 type HeartbeatExampleStateInit = {
   initialMode?: string | null;
   initialRuntimeId?: string | null;
@@ -60,6 +64,7 @@ export class HeartbeatExampleState {
   private connectTask: Promise<void> | null = null;
   private connectionCloseTimer: ReturnType<typeof setTimeout> | null = null;
   private pendingRuntimeId: string | null = null;
+  private router: HeartbeatExampleRouter | null = null;
   private destroyed = false;
 
   constructor(init: HeartbeatExampleStateInit = {}) {
@@ -80,6 +85,11 @@ export class HeartbeatExampleState {
     this.unsubscribe = null;
     this.connection?.disconnect();
     this.connection = null;
+    this.router = null;
+  }
+
+  setRouter(router: HeartbeatExampleRouter | null): void {
+    this.router = router;
   }
 
   async connect(): Promise<void> {
@@ -291,6 +301,14 @@ export class HeartbeatExampleState {
     const listHref = this.buildHeartbeatHref(runtimeId);
     const [path, query = ""] = listHref.split("?");
     return `${path}/records/${encodeURIComponent(String(recordId))}${query ? `?${query}` : ""}`;
+  }
+
+  openHeartbeatRecordRoute(runtimeId: string, recordId: string | number): boolean {
+    if (!this.router) {
+      return false;
+    }
+    this.router.navigate(this.buildHeartbeatRecordHref(runtimeId, recordId));
+    return true;
   }
 
   avatarStatus(avatar: GlobalAvatarCatalogEntry): AvatarRuntimeStatus {

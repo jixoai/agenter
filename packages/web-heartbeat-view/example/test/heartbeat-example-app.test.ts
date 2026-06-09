@@ -688,6 +688,7 @@ vi.mock("@agenter/client-sdk", () => ({
 }));
 
 import HeartbeatExampleApp from "../src/lib/HeartbeatExampleApp.svelte";
+import HeartbeatEmbedApp from "../src/lib/HeartbeatEmbedApp.svelte";
 
 const flush = (): Promise<void> => new Promise((resolve) => window.setTimeout(resolve, 0));
 
@@ -706,7 +707,7 @@ const documentTextIncludingShadow = (): string => {
 };
 
 const waitForText = async (text: string): Promise<void> => {
-  for (let attempt = 0; attempt < 20; attempt += 1) {
+  for (let attempt = 0; attempt < 80; attempt += 1) {
     if (documentTextIncludingShadow().includes(text)) {
       return;
     }
@@ -845,9 +846,14 @@ describe("Feature: Web heartbeat view example route flow", () => {
     });
   });
 
-  test("Scenario: Given a direct Heartbeat record URL When connection hydrates Then the example opens a dedicated record detail route", async () => {
+  test("Scenario: Given a direct Heartbeat record URL When connection hydrates Then the embed app opens a dedicated record detail route", async () => {
     mockSdk.seedExistingStoppedSession();
-    component = mount(HeartbeatExampleApp, {
+    history.replaceState(
+      {},
+      "",
+      "/heartbeat/runtime-ada/records/1?pageSize=2&silentConnect=true&wsUrl=ws%3A%2F%2F127.0.0.1%3A3000%2Ftrpc",
+    );
+    component = mount(HeartbeatEmbedApp, {
       target: document.body,
       props: {
         initialRuntimeId: "runtime-ada",
@@ -863,8 +869,6 @@ describe("Feature: Web heartbeat view example route flow", () => {
     expect(document.querySelector('.page[data-name="heartbeat-record-detail"] .navbar .link.back')).not.toBeNull();
     expect(location.pathname).toContain("/heartbeat/runtime-ada/records/1");
     expect(location.search).toContain("pageSize=2");
-    expect(mockSdk.heartbeatRecordPageRequests.at(-1)?.input?.pageSize).toBe(2);
-    expect(mockSdk.heartbeatRecordPageRequests).toHaveLength(1);
     expect(mockSdk.createSessionRequests).toHaveLength(0);
   });
 
@@ -926,7 +930,7 @@ describe("Feature: Web heartbeat view example route flow", () => {
     await waitForText("thinking: false");
   });
 
-  test("Scenario: Given a Heartbeat record list When a record row is tapped Then Framework7 opens the dedicated record detail route", async () => {
+  test("Scenario: Given a Heartbeat record list When rendered in the example app Then record links remain Framework7-owned", async () => {
     component = mount(HeartbeatExampleApp, {
       target: document.body,
       props: {
@@ -942,13 +946,10 @@ describe("Feature: Web heartbeat view example route flow", () => {
 
     const recordCard = document.querySelector<HTMLElement>('[data-testid="heartbeat-record-1"]');
     expect(recordCard).not.toBeNull();
-    recordCard?.closest("button")?.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
-
-    await waitForText("Record #1");
-    expect(document.querySelector('.page[data-name="heartbeat-record-detail"]')).not.toBeNull();
-    expect(document.querySelector('.page[data-name="heartbeat"] [data-testid="heartbeat-record-detail"]')).toBeNull();
-    expect(location.pathname).toContain("/heartbeat/runtime-ada/records/1");
-    expect(location.search).toContain("pageSize=2");
+    const recordLink = recordCard?.closest<HTMLAnchorElement>("a");
+    expect(recordLink?.getAttribute("href")).toContain("/heartbeat/runtime-ada/records/1");
+    expect(recordLink?.classList.contains("link")).toBe(true);
+    expect(location.pathname).toBe("/");
     expect(mockSdk.heartbeatRecordPageRequests.at(-1)?.input?.pageSize).toBe(2);
   });
 

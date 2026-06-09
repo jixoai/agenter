@@ -156,6 +156,7 @@
                 layoutMode="detailed"
                 groupLabel={sectionGroupLabel(section)}
                 groupTimestamp={record.startedAt}
+                allowLayoutModeSwitch={false}
               />
             {/each}
           </div>

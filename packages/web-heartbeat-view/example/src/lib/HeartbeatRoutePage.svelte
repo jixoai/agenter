@@ -18,15 +18,18 @@
 
   import HeartbeatAvatarMedia from "./heartbeat-avatar-media.svelte";
   import { useHeartbeatExampleState } from "./heartbeat-example-context";
+  import { heartbeatPerfLog } from "./heartbeat-performance-log";
 
   type Framework7RouteProps = {
     f7route?: {
+      path?: string;
+      url?: string;
       params?: {
         runtimeId?: string;
       };
     };
     f7router?: {
-      navigate: (url: string, options?: { animate?: boolean }) => void;
+      back: (url?: string, options?: { animate?: boolean; force?: boolean }) => void;
     };
     runtimeId?: string;
   };
@@ -43,14 +46,11 @@
   );
   const avatarsHref = "/";
   const openRecordDetail = (recordId: number): void => {
-    const href = state.buildHeartbeatRecordHref(runtimeId, recordId);
-    if (f7router) {
-      f7router.navigate(href);
+    if (state.openHeartbeatRecordRoute(runtimeId, recordId)) {
       return;
     }
-    window.location.assign(href);
+    window.location.assign(state.buildHeartbeatRecordHref(runtimeId, recordId));
   };
-
   const activeHeartbeat = $derived.by<HeartbeatViewState | null>(() => {
     const heartbeat = state.connectionState.selectedHeartbeat;
     const target = state.selectedTarget;
@@ -64,6 +64,7 @@
       onLoadOlder: () => state.loadOlderSelectedHeartbeat(),
       onLoadRecordPage: (anchor) => state.loadSelectedHeartbeatRecordPage(anchor),
       onLoadRecordDetail: (recordId) => state.loadSelectedHeartbeatRecordDetail(recordId),
+      recordDetailHref: (recordId) => state.buildHeartbeatRecordHref(runtimeId, recordId),
       onOpenRecordDetail: openRecordDetail,
       actions: {
         compact: {
@@ -148,12 +149,49 @@
       void state.openRuntimeId(runtimeId);
     }
   });
+
+  const readCurrentPageName = (): string | null =>
+    typeof document === "undefined"
+      ? null
+      : (document.querySelector(".page-current")?.getAttribute("data-name") ?? null);
+  const readPreviousPageName = (): string | null =>
+    typeof document === "undefined"
+      ? null
+      : (document.querySelector(".page-previous")?.getAttribute("data-name") ?? null);
+  const logBackNavigation = (event: string): void => {
+    heartbeatPerfLog.mark(event, {
+      runtimeId,
+      routePath: f7route?.path ?? null,
+      routeUrl: f7route?.url ?? null,
+      currentPage: readCurrentPageName(),
+      previousPage: readPreviousPageName(),
+    });
+  };
+
+  const backToAvatars = (event?: Event): void => {
+    logBackNavigation("heartbeat.navigation.backToAvatars:click");
+    event?.preventDefault();
+    if (!f7router) {
+      logBackNavigation("heartbeat.navigation.backToAvatars:no-router");
+      return;
+    }
+    f7router.back(avatarsHref, { force: true });
+    window.requestAnimationFrame(() => {
+      logBackNavigation("heartbeat.navigation.backToAvatars:after-frame");
+    });
+  };
 </script>
 
 <Page name="heartbeat" pageContent={false} withSubnavbar={true}>
   <Navbar>
     <NavLeft>
-      <Link iconOnly iconF7="chevron_left_ios" href={avatarsHref} aria-label="Back to Avatars" />
+      <Link
+        iconOnly
+        iconF7="chevron_left_ios"
+        href={avatarsHref}
+        aria-label="Back to Avatars"
+        onClick={backToAvatars}
+      />
     </NavLeft>
     <NavTitle>
       <span class="heartbeat-example-navbar-title">

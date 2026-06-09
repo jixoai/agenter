@@ -23,6 +23,7 @@
     groupTimestamp,
     presentation = "default",
     onLayoutModeChange = undefined,
+    allowLayoutModeSwitch = true,
   }: {
     section: HeartbeatSubjectSection;
     layoutMode?: HeartbeatLayoutMode;
@@ -30,6 +31,7 @@
     groupTimestamp: number;
     presentation?: HeartbeatEntryPresentation;
     onLayoutModeChange?: ((mode: HeartbeatLayoutMode) => void) | undefined;
+    allowLayoutModeSwitch?: boolean;
   } = $props();
 
   let localLayoutMode = $state<HeartbeatLayoutMode>("compact");
@@ -66,7 +68,10 @@
     }
     return readHeartbeatPartText(firstBlock.part)?.trim() ?? summary;
   });
-  const showLayoutModeSwitch = $derived.by(() => {
+  const shouldShowLayoutModeSwitch = $derived.by(() => {
+    if (!allowLayoutModeSwitch) {
+      return false;
+    }
     if (presentation === "compact-special" && compactSpecialPreludeBlocks.length > 0) {
       return true;
     }
@@ -167,7 +172,7 @@
     {/if}
   </div>
 
-  {#if showLayoutModeSwitch}
+  {#if shouldShowLayoutModeSwitch}
     <footer class="ag-heartbeat-entry__footer">
       <div class="ag-heartbeat-segmented" role="group" aria-label="Heartbeat row layout">
         <button type="button" class:active={localLayoutMode === "compact"} onclick={() => setLayoutMode("compact")}>Compact</button>
