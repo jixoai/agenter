@@ -9,7 +9,6 @@
 		McpProbeOutput,
 	} from '@agenter/client-sdk';
 	import CircleEllipsisIcon from '@lucide/svelte/icons/circle-ellipsis';
-	import HelpCircleIcon from '@lucide/svelte/icons/help-circle';
 	import PlayIcon from '@lucide/svelte/icons/play';
 	import PlusIcon from '@lucide/svelte/icons/plus';
 	import RotateCwIcon from '@lucide/svelte/icons/rotate-cw';
@@ -21,9 +20,9 @@
 	import * as Dialog from '$lib/components/ui/dialog/index.js';
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
 	import { Input } from '$lib/components/ui/input/index.js';
-	import HelpHint from '$lib/components/web-components/help-hint.svelte';
 	import WorkbenchDetailDrawer from '$lib/features/navigation/workbench-detail-drawer.svelte';
 
+	import McpHelpHint from './mcp-help-hint.svelte';
 	import McpNewGlobalForm from './mcp-new-global-form.svelte';
 	import type {
 		McpAvatarCatalogOption,
@@ -148,9 +147,7 @@
 			<div class="flex min-w-0 items-center justify-between gap-3">
 				<div class="flex min-w-0 items-center gap-2">
 					<div class="text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground">Instances</div>
-					<HelpHint ariaLabel="MCP instances help" side="bottom" align="start" textContext={helpText}>
-						<HelpCircleIcon class="size-4 text-muted-foreground" />
-					</HelpHint>
+					<McpHelpHint ariaLabel="MCP instances help" side="bottom" align="start" textContext={helpText} />
 				</div>
 				<div class="flex items-center gap-2">
 					<Badge variant="outline">{projectRows.length}</Badge>

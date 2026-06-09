@@ -10,11 +10,12 @@
 		McpProbeOutput,
 	} from '@agenter/client-sdk';
 	import BugPlayIcon from '@lucide/svelte/icons/bug-play';
-	import HelpCircleIcon from '@lucide/svelte/icons/help-circle';
+	import Maximize2Icon from '@lucide/svelte/icons/maximize-2';
+	import Minimize2Icon from '@lucide/svelte/icons/minimize-2';
 	import NetworkIcon from '@lucide/svelte/icons/network';
 	import PlayIcon from '@lucide/svelte/icons/play';
 	import RefreshCwIcon from '@lucide/svelte/icons/refresh-cw';
-	import { onDestroy } from 'svelte';
+	import { onDestroy, onMount } from 'svelte';
 
 	import StructuredValueViewer from '$lib/components/structured-value/structured-value-viewer.svelte';
 	import { Badge } from '$lib/components/ui/badge/index.js';
@@ -25,8 +26,9 @@
 	import NoticeBanner from '$lib/components/ui/notice-banner.svelte';
 	import * as Tabs from '$lib/components/ui/tabs/index.js';
 	import { Textarea } from '$lib/components/ui/textarea/index.js';
-	import HelpHint from '$lib/components/web-components/help-hint.svelte';
+	import { cn } from '$lib/utils.js';
 
+	import McpHelpHint from './mcp-help-hint.svelte';
 	import type { McpGlobalConfigDraft } from './mcp-workbench-state';
 	import {
 		resolveCapabilityDescription,
@@ -139,7 +141,7 @@
 		if (kind === 'app') {
 			return readStringField(value, 'title') ?? readStringField(value, 'toolName') ?? readStringField(value, 'resourceUri') ?? fallback;
 		}
-		return readStringField(value, 'title') ?? readStringField(value, 'name') ?? fallback;
+		return readStringField(value, 'name') ?? readStringField(value, 'title') ?? fallback;
 	};
 
 	const buildCapabilityCard = (kind: CapabilityKind, value: unknown, fallback: string): InspectCapabilityCard => ({
@@ -236,6 +238,8 @@
 	let inspectorError = $state<string | null>(null);
 	let inspectorAvatarNickname = $state<string | null>(null);
 	let inspectorSession = $state<McpInspectorSnapshotOutput | null>(null);
+	let inspectorCompactViewport = $state(false);
+	let inspectorFullscreenRequested = $state(false);
 	let inspectorSubscription: InspectorSubscription | null = null;
 
 	const toolOptions = $derived.by(() =>
@@ -347,6 +351,10 @@
 	const inspectHeaderHelp = $derived(formatProbeHelp(lastOpenProbeInput, lastCliResult));
 	const actionHeaderHelp = $derived(formatProbeHelp(lastActionProbeInput, lastCliResult));
 	const inspectorHeaderHelp = $derived(formatInspectorHelp(inspectorSession));
+	const inspectorFullscreen = $derived(inspectorCompactViewport || inspectorFullscreenRequested);
+	const inspectorFullscreenToggleLabel = $derived(
+		inspectorFullscreen ? 'Exit full screen inspector' : 'Expand inspector',
+	);
 
 	$effect(() => {
 		if (resetKey === lastResetKey) {
@@ -536,6 +544,13 @@
 		inspectorDialogOpen = false;
 	};
 
+	const toggleInspectorFullscreen = (): void => {
+		if (inspectorCompactViewport) {
+			return;
+		}
+		inspectorFullscreenRequested = !inspectorFullscreenRequested;
+	};
+
 	const closeCurrentProbe = async (): Promise<void> => {
 		const currentProbeId = probeId;
 		const currentAvatarNickname = probeAvatarNickname;
@@ -691,20 +706,31 @@
 		void closeCurrentProbe();
 		void releaseInspectorSession();
 	});
+
+	onMount(() => {
+		const query = window.matchMedia('(max-width: 767px)');
+		const syncCompactViewport = (): void => {
+			inspectorCompactViewport = query.matches;
+		};
+		syncCompactViewport();
+		query.addEventListener('change', syncCompactViewport);
+		return () => {
+			query.removeEventListener('change', syncCompactViewport);
+		};
+	});
 </script>
 
 <section class="grid gap-3 border-t border-border/50 px-3 py-4 md:px-5" data-testid="mcp-config-inspect">
 	<div class="flex min-w-0 items-center justify-between gap-3">
 		<div class="flex min-w-0 items-center gap-2">
 			<div class="text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground">Inspect</div>
-			<HelpHint
+			<McpHelpHint
 				ariaLabel="Inspect draft help"
 				side="bottom"
 				align="start"
 				textContext={inspectHeaderHelp}
-			>
-				<HelpCircleIcon class="size-4 text-muted-foreground" />
-			</HelpHint>
+				mode="mono"
+			/>
 		</div>
 		{#if snapshot}
 			<div class="flex min-w-0 flex-wrap items-center justify-end gap-1.5">
@@ -763,14 +789,13 @@
 						<BugPlayIcon class="size-4" />
 						Inspector
 					</Button>
-					<HelpHint
+					<McpHelpHint
 						ariaLabel="MCP Inspector command"
 						side="bottom"
 						align="end"
 						textContext={inspectorHeaderHelp}
-					>
-						<HelpCircleIcon class="size-4 text-muted-foreground" />
-					</HelpHint>
+						mode="mono"
+					/>
 				</div>
 			{/if}
 		</div>
@@ -801,14 +826,13 @@
 									<div class="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
 										{section.title}
 									</div>
-									<HelpHint
+									<McpHelpHint
 										ariaLabel={`${section.title} probe command`}
 										side="bottom"
 										align="start"
 										textContext={inspectHeaderHelp}
-									>
-										<HelpCircleIcon class="size-3.5 text-muted-foreground" />
-									</HelpHint>
+										mode="mono"
+									/>
 								</div>
 								<dl class="grid gap-2 text-sm">
 									{#each section.items as item (item.label)}
@@ -828,14 +852,13 @@
 								<div class="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
 									Capabilities
 								</div>
-								<HelpHint
+								<McpHelpHint
 									ariaLabel="Capabilities probe command"
 									side="bottom"
 									align="start"
 									textContext={inspectHeaderHelp}
-								>
-									<HelpCircleIcon class="size-3.5 text-muted-foreground" />
-								</HelpHint>
+									mode="mono"
+								/>
 							</div>
 							<Badge variant="outline">{mixedSnapshotCapabilities.length}</Badge>
 						</div>
@@ -859,11 +882,19 @@
 														<span>{item.name.slice(0, 1).toUpperCase()}</span>
 													{/if}
 												</div>
-												<div class="min-w-0 truncate text-sm font-medium text-foreground">{item.name}</div>
+												<div
+													class="min-w-0 truncate text-sm font-medium text-foreground"
+													data-testid={`mcp-config-inspect-${item.kind}-title:${item.name}`}
+												>
+													{item.name}
+												</div>
 											</div>
 											<Badge variant="outline">{item.kind}</Badge>
 										</div>
-										<p class="line-clamp-3 text-xs text-muted-foreground">
+										<p
+											class="line-clamp-3 text-xs text-muted-foreground"
+											data-testid={`mcp-config-inspect-${item.kind}-description:${item.name}`}
+										>
 											{item.description || 'No description'}
 										</p>
 									</button>
@@ -878,14 +909,13 @@
 						<div class="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
 							Raw Snapshot
 						</div>
-						<HelpHint
+						<McpHelpHint
 							ariaLabel="Raw snapshot probe command"
 							side="bottom"
 							align="start"
 							textContext={inspectHeaderHelp}
-						>
-							<HelpCircleIcon class="size-3.5 text-muted-foreground" />
-						</HelpHint>
+							mode="mono"
+						/>
 					</div>
 					{#if lastCliResult}
 						<div
@@ -948,14 +978,13 @@
 									<label class="grid gap-1.5 text-xs text-muted-foreground">
 										<div class="flex items-center gap-1.5">
 											<span>Arguments</span>
-											<HelpHint
+											<McpHelpHint
 												ariaLabel="Capability arguments command"
 												side="bottom"
 												align="start"
 												textContext={`${activeCapabilityHelp}\n\nArguments are seeded from inputSchema when present.\n\n${activeCapabilitySchema ? formatJson(activeCapabilitySchema) : 'inputSchema: none'}`}
-											>
-												<HelpCircleIcon class="size-3.5 text-muted-foreground" />
-											</HelpHint>
+												mode="mono"
+											/>
 										</div>
 										<Textarea
 											value={activeCapabilityArguments}
@@ -1001,14 +1030,13 @@
 									<div class="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
 										Probe Result
 									</div>
-									<HelpHint
+									<McpHelpHint
 										ariaLabel="Probe result command"
 										side="bottom"
 										align="start"
 										textContext={actionHeaderHelp}
-									>
-										<HelpCircleIcon class="size-3.5 text-muted-foreground" />
-									</HelpHint>
+										mode="mono"
+									/>
 								</div>
 								{#if lastCliResult}
 									<div
@@ -1029,14 +1057,13 @@
 							<div class="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
 								Raw Capability
 							</div>
-							<HelpHint
+							<McpHelpHint
 								ariaLabel="Raw capability probe command"
 								side="bottom"
 								align="start"
 								textContext={inspectHeaderHelp}
-							>
-								<HelpCircleIcon class="size-3.5 text-muted-foreground" />
-							</HelpHint>
+								mode="mono"
+							/>
 						</div>
 						<StructuredValueViewer value={activeCapability.raw} menuLabel="Capability raw options" class="rounded-lg" />
 					</div>
@@ -1067,21 +1094,27 @@
 	}}
 >
 	<Dialog.Content
-		class="grid h-[min(86dvh,54rem)] grid-rows-[auto_minmax(0,1fr)_auto] gap-0 p-0 sm:max-w-6xl"
+		class={cn(
+			'grid grid-rows-[auto_minmax(0,1fr)_auto] gap-0 p-0',
+			inspectorFullscreen
+				? 'left-0 top-0 h-[100dvh] max-h-none w-[100vw] max-w-none translate-x-0 translate-y-0 rounded-none border-0 sm:max-w-none'
+				: 'h-[min(92dvh,58rem)] max-h-[calc(100dvh-1rem)] w-[min(96vw,88rem)] max-w-[calc(100vw-1rem)] sm:max-w-[min(96vw,88rem)]',
+		)}
+		showCloseButton={false}
 		data-testid="mcp-config-heavy-inspector-dialog"
+		data-fullscreen={inspectorFullscreen ? 'true' : 'false'}
 	>
 		<Dialog.Header class="border-b border-border/50 px-4 py-3">
 			<div class="flex min-w-0 items-center justify-between gap-3">
 				<div class="flex min-w-0 items-center gap-2">
 					<Dialog.Title>Inspector</Dialog.Title>
-					<HelpHint
+					<McpHelpHint
 						ariaLabel="Heavy inspector command"
 						side="bottom"
 						align="start"
 						textContext={inspectorHeaderHelp}
-					>
-						<HelpCircleIcon class="size-4 text-muted-foreground" />
-					</HelpHint>
+						mode="mono"
+					/>
 				</div>
 				<div class="flex min-w-0 items-center gap-1.5">
 					{#if inspectorSession}
@@ -1092,11 +1125,27 @@
 					{#if inspectorSession?.url}
 						<Badge variant="outline">iframe</Badge>
 					{/if}
+					<Button
+						variant={inspectorFullscreen ? 'secondary' : 'ghost'}
+						size="icon-sm"
+						disabled={inspectorCompactViewport}
+						aria-pressed={inspectorFullscreen}
+						aria-label={inspectorFullscreenToggleLabel}
+						title={inspectorCompactViewport ? 'Full screen is required below tablet width' : inspectorFullscreenToggleLabel}
+						onclick={toggleInspectorFullscreen}
+						data-testid="mcp-config-heavy-inspector-fullscreen"
+					>
+						{#if inspectorFullscreen}
+							<Minimize2Icon class="size-4" />
+						{:else}
+							<Maximize2Icon class="size-4" />
+						{/if}
+					</Button>
 				</div>
 			</div>
 		</Dialog.Header>
 
-		<div class="grid min-h-0 grid-rows-[auto_minmax(0,1fr)]">
+		<div class="grid h-full min-h-0 grid-rows-[auto_minmax(0,1fr)]">
 			{#if inspectorError}
 				<div class="border-b border-border/50 px-4 py-3">
 					<NoticeBanner tone="destructive" message={inspectorError} />
@@ -1106,12 +1155,12 @@
 				<iframe
 					src={inspectorSession.url}
 					title="MCP Inspector"
-					class="h-full w-full bg-background"
+					class="h-full min-h-0 w-full border-0 bg-background"
 					data-testid="mcp-config-heavy-inspector-iframe"
 				></iframe>
 			{:else}
 				<div
-					class="min-h-0 overflow-auto bg-muted/20 p-4 font-mono text-xs leading-5 text-muted-foreground"
+					class="h-full min-h-0 overflow-auto bg-muted/20 p-4 font-mono text-xs leading-5 text-muted-foreground"
 					data-testid="mcp-config-heavy-inspector-log"
 				>
 					{#if inspectorSession?.logs.length}

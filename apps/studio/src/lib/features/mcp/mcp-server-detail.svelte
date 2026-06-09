@@ -1,5 +1,4 @@
 <script lang="ts">
-	import HelpCircleIcon from '@lucide/svelte/icons/help-circle';
 	import PencilIcon from '@lucide/svelte/icons/pencil';
 	import PlayIcon from '@lucide/svelte/icons/play';
 	import RotateCwIcon from '@lucide/svelte/icons/rotate-cw';
@@ -13,9 +12,9 @@
 	import * as Dialog from '$lib/components/ui/dialog/index.js';
 	import { Input } from '$lib/components/ui/input/index.js';
 	import { Textarea } from '$lib/components/ui/textarea/index.js';
-	import HelpHint from '$lib/components/web-components/help-hint.svelte';
 	import WorkbenchDetailDrawer from '$lib/features/navigation/workbench-detail-drawer.svelte';
 
+	import McpHelpHint from './mcp-help-hint.svelte';
 	import type { McpProjectLifecycleAction, McpWorkbenchCapability, McpWorkbenchRow } from './mcp-workbench-state';
 
 	let {
@@ -158,9 +157,7 @@
 		<section class="grid gap-3 border-b border-border/50 p-4">
 			<div class="flex items-center justify-between gap-3">
 				<div class="text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground">Project projection matrix</div>
-				<HelpHint ariaLabel="MCP scope law" side="bottom" align="end" textContext={helpText}>
-					<HelpCircleIcon class="size-4 text-muted-foreground" />
-				</HelpHint>
+				<McpHelpHint ariaLabel="MCP scope law" side="bottom" align="end" textContext={helpText} />
 			</div>
 			<div class="grid gap-4 lg:grid-cols-2">
 				<div class="grid gap-3">

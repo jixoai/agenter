@@ -135,6 +135,7 @@
 		tools: [
 			{
 				name: 'echo',
+				title: 'Echo one message back through the fixture transport.',
 				description: 'Echo one message back through the fixture transport.',
 				icons: [
 					{

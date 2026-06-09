@@ -73,6 +73,10 @@ export const InspectVisualAndRaw = {
     await expect(canvas.getByTestId("mcp-story-event")).toHaveTextContent("probe:ping:probe-story-1");
     await expect(canvas.getByTestId("mcp-config-inspect-capability-grid")).toBeInTheDocument();
     await expect(canvas.getByTestId("mcp-config-inspect-tool-card:echo")).toBeInTheDocument();
+    await expect(canvas.getByTestId("mcp-config-inspect-tool-title:echo")).toHaveTextContent("echo");
+    await expect(canvas.getByTestId("mcp-config-inspect-tool-description:echo")).toHaveTextContent(
+      "Echo one message back through the fixture transport.",
+    );
     await expect(canvas.getByTestId("mcp-config-inspect-tool-icon:echo")).toBeInTheDocument();
     await expect(canvas.getByTestId("mcp-config-inspect-resource-card:Workspace Memory")).toBeInTheDocument();
     await expect(canvas.getByTestId("mcp-config-inspect-template-card:Workspace Memory Template")).toBeInTheDocument();
@@ -137,6 +141,11 @@ export const HeavyInspectorDialog = {
     await waitFor(() => {
       expect(within(dialog).getByTestId("mcp-config-heavy-inspector-iframe")).toBeInTheDocument();
     });
+    await expect(dialog).toHaveAttribute("data-fullscreen", "false");
+    await userEvent.click(within(dialog).getByTestId("mcp-config-heavy-inspector-fullscreen"));
+    await expect(dialog).toHaveAttribute("data-fullscreen", "true");
+    await userEvent.click(within(dialog).getByTestId("mcp-config-heavy-inspector-fullscreen"));
+    await expect(dialog).toHaveAttribute("data-fullscreen", "false");
     await userEvent.click(within(dialog).getByRole("button", { name: "Close" }));
     await expect(body.getByTestId("mcp-config-heavy-inspector-close-confirm")).toBeInTheDocument();
     await userEvent.click(body.getByTestId("mcp-config-heavy-inspector-release"));

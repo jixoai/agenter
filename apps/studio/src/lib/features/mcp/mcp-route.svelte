@@ -1,6 +1,5 @@
 <script lang="ts">
 	import { ScrollView } from '@agenter/svelte-components';
-	import HelpCircleIcon from '@lucide/svelte/icons/help-circle';
 	import NetworkIcon from '@lucide/svelte/icons/network';
 	import PanelRightOpenIcon from '@lucide/svelte/icons/panel-right-open';
 	import RefreshCwIcon from '@lucide/svelte/icons/refresh-cw';
@@ -11,7 +10,6 @@
 	import { Button } from '$lib/components/ui/button/index.js';
 	import { Input } from '$lib/components/ui/input/index.js';
 	import NoticeBanner from '$lib/components/ui/notice-banner.svelte';
-	import HelpHint from '$lib/components/web-components/help-hint.svelte';
 	import WorkbenchPageContent from '$lib/features/navigation/workbench-page-content.svelte';
 	import WorkbenchPageTabs from '$lib/features/navigation/workbench-page-tabs.svelte';
 	import type { WorkbenchPageTabItem } from '$lib/features/navigation/workbench-page-tabs.types';
@@ -24,6 +22,7 @@
 	import McpAvatarOverview from './mcp-avatar-overview.svelte';
 	import McpConfigDetail from './mcp-config-detail.svelte';
 	import McpConfigList from './mcp-config-list.svelte';
+	import McpHelpHint from './mcp-help-hint.svelte';
 	import McpNewGlobalForm from './mcp-new-global-form.svelte';
 	import {
 		buildMcpConfigSelectionKey,
@@ -571,14 +570,12 @@
 									aria-label="Filter MCP configs"
 								/>
 							</div>
-							<HelpHint
+							<McpHelpHint
 								ariaLabel="Config catalog help"
 								side="bottom"
 								align="start"
 								textContext="Configs are global truth. Each row keeps its owner Avatar; exact-project instances stay read-only in detail."
-							>
-								<HelpCircleIcon class="size-4 text-muted-foreground" />
-							</HelpHint>
+							/>
 						</div>
 						<div class="flex items-center gap-2">
 							{#if detailCompact}

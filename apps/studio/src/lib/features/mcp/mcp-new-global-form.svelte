@@ -8,7 +8,6 @@
 		McpProbeInput,
 		McpProbeOutput,
 	} from '@agenter/client-sdk';
-	import HelpCircleIcon from '@lucide/svelte/icons/help-circle';
 	import SaveIcon from '@lucide/svelte/icons/save';
 	import TrashIcon from '@lucide/svelte/icons/trash';
 
@@ -19,12 +18,12 @@
 	import * as NativeSelect from '$lib/components/ui/native-select/index.js';
 	import NoticeBanner from '$lib/components/ui/notice-banner.svelte';
 	import { Textarea } from '$lib/components/ui/textarea/index.js';
-	import HelpHint from '$lib/components/web-components/help-hint.svelte';
 	import { resolveAvatarHandle } from '$lib/features/avatars/avatar-identity-presentation';
 	import ActorSelect from '$lib/features/collaboration/actor-select.svelte';
 	import type { ActorSelectItem } from '$lib/features/collaboration/actor-select.types';
 
 	import McpConfigInspectPanel from './mcp-config-inspect-panel.svelte';
+	import McpHelpHint from './mcp-help-hint.svelte';
 	import { parseMcpDraftJson, serializeMcpDraft } from './mcp-draft-codec';
 	import type {
 		McpAvatarCatalogOption,
@@ -370,14 +369,12 @@
 	<div class="flex min-w-0 items-center justify-between gap-3 border-b border-border/50 px-3 py-3 md:px-5">
 		<div class="flex min-w-0 items-center gap-2">
 			<div class="truncate text-sm font-semibold">{modeLabel}</div>
-			<HelpHint
+			<McpHelpHint
 				ariaLabel="New MCP config help"
 				side="bottom"
 				align="start"
 				textContext="Global config is durable truth. Install updates only the owner Avatar config."
-			>
-				<HelpCircleIcon class="size-4 text-muted-foreground" />
-			</HelpHint>
+			/>
 		</div>
 		<div class="flex items-center gap-2">
 			<div class="inline-flex rounded-lg border border-border/60 bg-muted/35 p-0.5">
@@ -428,14 +425,12 @@
 	<section class="grid gap-3 border-b border-border/50 px-3 py-4 md:px-5">
 		<div class="flex min-w-0 items-center gap-2">
 			<div class="text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground">Global</div>
-			<HelpHint
+			<McpHelpHint
 				ariaLabel="Global MCP help"
 				side="bottom"
 				align="start"
 				textContext="Global config belongs to one Avatar. Project rows live in config detail."
-			>
-				<HelpCircleIcon class="size-4 text-muted-foreground" />
-			</HelpHint>
+			/>
 		</div>
 
 		{#if editorMode === 'form'}
