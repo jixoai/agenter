@@ -15,6 +15,7 @@ import { toJSONSchema, z, type ZodTypeAny } from "zod";
 
 import type {
   McpAddInput,
+  McpAppServerStartInput,
   McpCallInput,
   McpDisableInput,
   McpListInput,
@@ -823,6 +824,22 @@ const mcpCallSchema = mcpProjectSchema.extend({
   autoStart: z.boolean().optional(),
   autoEnable: z.boolean().optional(),
 });
+
+const mcpAppServerSchema = z
+  .object({
+    name: z.string().trim().min(1).optional(),
+    projectPath: z.string().trim().min(1).optional(),
+    transport: mcpTransportSchema,
+    env: mcpEnvRecordSchema.optional(),
+    toolName: z.string().trim().min(1).optional(),
+    resourceUri: z.string().trim().min(1).optional(),
+    arguments: z.record(z.string(), z.unknown()).optional(),
+  })
+  .strict()
+  .refine((value) => Boolean(value.toolName || value.resourceUri), {
+    message: "toolName or resourceUri is required",
+    path: ["toolName"],
+  });
 
 const mcpProbeRefSchema = z.union([
   z.object({
@@ -1637,6 +1654,51 @@ export const runtimeToolDescriptors = [
     ],
     handler: async (input, handlers, context) => ({
       result: await handlers.mcp.probe(input satisfies McpProbeInput, { signal: context?.signal }),
+    }),
+  }),
+  defineRuntimeToolDescriptor({
+    namespace: "mcp",
+    name: "app-server",
+    route: "/v1/mcp/app-server",
+    description:
+      "Start an isolated MCP Apps host session for one draft config. It reads an MCP App resource, optionally calls the owning tool, and exposes a lease-backed hostPath/wsPath for a browser iframe.",
+    helpNotes: [
+      "This is the CLI/server primitive behind Studio's lightweight MCP Apps preview.",
+      "It is isolated like `mcp probe`: it does not install configs, enable projects, start durable instances, save snapshots, or append action facts.",
+      "The returned lease must be attached by `/mcp/apps/:leaseId/ws`; closing that WebSocket releases the MCP client.",
+    ],
+    inputSchema: mcpAppServerSchema,
+    examples: [
+      {
+        kind: "stdin",
+        payload: {
+          name: "svelte",
+          projectPath: "/repo/app",
+          transport: {
+            kind: "stdio",
+            command: "bunx",
+            args: ["@sveltejs/mcp"],
+          },
+          toolName: "get_svelte_playground_link",
+          arguments: { files: {} },
+        },
+      },
+      {
+        kind: "stdin",
+        payload: {
+          name: "svelte",
+          projectPath: "/repo/app",
+          transport: {
+            kind: "stdio",
+            command: "bunx",
+            args: ["@sveltejs/mcp"],
+          },
+          resourceUri: "ui://svelte/playground-link",
+        },
+      },
+    ],
+    handler: async (input, handlers) => ({
+      result: await handlers.mcp.appServerStart(input satisfies McpAppServerStartInput),
     }),
   }),
   defineRuntimeToolDescriptor({

@@ -12,7 +12,7 @@ import { z } from "zod";
 
 import { McpSystemStore } from "../src/mcp-system/store";
 import { McpSystem, type McpInspectorSpawnFactory } from "../src/mcp-system/system";
-import type { McpTransportStartContext } from "../src/mcp-system/types";
+import type { McpAppServerEvent, McpTransportStartContext } from "../src/mcp-system/types";
 
 const tempRoots: string[] = [];
 
@@ -72,6 +72,17 @@ const readString = (value: unknown, key: string): string => {
   return candidate;
 };
 
+const waitUntil = async (predicate: () => boolean, message: string): Promise<void> => {
+  const startedAt = Date.now();
+  while (Date.now() - startedAt < 1000) {
+    if (predicate()) {
+      return;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+  throw new Error(message);
+};
+
 const createFixtureTransportFactory = () => {
   const starts: McpTransportStartContext[] = [];
   const servers: McpServer[] = [];
@@ -114,6 +125,23 @@ const createFixtureTransportFactory = () => {
               null,
               2,
             ),
+          },
+        ],
+      }),
+    );
+    server.registerResource(
+      "playground-link-ui",
+      "ui://fixture/playground-link",
+      {
+        title: "Fixture MCP App",
+        description: "Fixture MCP Apps resource",
+      },
+      async (uri) => ({
+        contents: [
+          {
+            uri: uri.href,
+            mimeType: "text/html;profile=mcp-app",
+            text: "<!doctype html><html><body><main>Fixture MCP App</main></body></html>",
           },
         ],
       }),
@@ -406,6 +434,85 @@ describe("Feature: mcpSystem lifecycle", () => {
     }
   });
 
+  test("Scenario: Given an unsaved MCP draft When app-server hosts an MCP App resource Then the lease owns an isolated protocol session", async () => {
+    const fixture = createFixtureTransportFactory();
+    const system = createSystem({ transportFactory: fixture.factory });
+    try {
+      const session = await system.appServerStart({
+        name: "draft-app",
+        projectPath: "/repo/app",
+        env: { TOKEN: "draft-token" },
+        transport: {
+          kind: "stdio",
+          command: "fixture",
+          env: { TRANSPORT_ONLY: "transport-env" },
+        },
+        resourceUri: "ui://fixture/playground-link",
+      });
+      const events: McpAppServerEvent[] = [];
+      const lease = system.attachAppServerLease(session.leaseId, (event) => {
+        events.push(event);
+      });
+
+      await lease.receive({ jsonrpc: "2.0", id: 1, method: "ui/initialize", params: {} });
+      await lease.receive({ jsonrpc: "2.0", id: 2, method: "resources/list", params: {} });
+      await lease.receive({
+        jsonrpc: "2.0",
+        id: 3,
+        method: "resources/read",
+        params: { uri: "memory://workspace" },
+      });
+
+      await waitUntil(
+        () => events.filter((event) => event.type === "message").length >= 3,
+        "expected app-server JSON-RPC responses",
+      );
+      const messagePayloads = events.flatMap((event) => (event.type === "message" ? [event.message] : []));
+
+      expect(session.command).toBe("mcp app-server");
+      expect(session.hostPath).toContain(`/mcp/apps/${encodeURIComponent(session.leaseId)}/host`);
+      expect(
+        events.some((event) => event.type === "resource" && event.resource.uri === "ui://fixture/playground-link"),
+      ).toBeTrue();
+      expect(JSON.stringify(messagePayloads.find((message) => readRecord(message).id === 1))).toContain(
+        "agenter-mcp-app-server",
+      );
+      expect(JSON.stringify(messagePayloads.find((message) => readRecord(message).id === 2))).toContain(
+        "ui://fixture/playground-link",
+      );
+      expect(JSON.stringify(messagePayloads.find((message) => readRecord(message).id === 3))).toContain(
+        '\\"workspace\\": \\"fixture\\"',
+      );
+      expect(fixture.starts).toHaveLength(1);
+      expect(fixture.starts[0]?.projectPath).toBe("/repo/app");
+      expect(fixture.starts[0]?.env.TOKEN).toBe("draft-token");
+      expect(system.store.getInstance("draft-app", "/repo/app")).toBeNull();
+      expect(
+        system.query({
+          projectPath: "/repo/app",
+          sql: "select name from mcp_enabled where name = $name",
+          params: { name: "draft-app" },
+        }).rows,
+      ).toHaveLength(0);
+      expect(
+        system.query({
+          sql: "select name from mcp_installed where name = $name",
+          params: { name: "draft-app" },
+        }).rows,
+      ).toHaveLength(0);
+
+      lease.release();
+      await waitUntil(
+        () => system.appServerSnapshot({ sessionId: session.sessionId }).state === "closed",
+        "expected app-server lease release to close session",
+      );
+      expect(() => system.attachAppServerLease(session.leaseId, () => undefined)).toThrow(/lease not found/);
+    } finally {
+      system.close();
+      await Promise.all(fixture.servers.map((server) => server.close().catch(() => undefined)));
+    }
+  });
+
   test("Scenario: Given an unsaved MCP draft When inspector starts Then a heavyweight inspector process is isolated and releasable", async () => {
     const fixture = createFixtureTransportFactory();
     const fakeInspectorProcess = createFakeInspectorProcess();
@@ -443,6 +550,7 @@ describe("Feature: mcpSystem lifecycle", () => {
       const config = readRecord(JSON.parse(readFileSync(configPath, "utf8")));
       const mcpServers = readRecord(config.mcpServers);
       const memoryServer = readRecord(mcpServers.memory);
+      const serverPort = spawns[0]?.options.env?.SERVER_PORT;
 
       fakeInspectorProcess.stdout.write(
         "MCP Inspector ready at http://127.0.0.1:6274/?MCP_PROXY_AUTH_TOKEN=test-token\n",
@@ -458,13 +566,16 @@ describe("Feature: mcpSystem lifecycle", () => {
       expect(spawns[0]?.command).toBe("bunx");
       expect(spawns[0]?.args).toEqual(started.args);
       expect(spawns[0]?.options.cwd).toBe("/repo/app");
+      expect(spawns[0]?.options.env?.HOST).toBe("localhost");
       expect(spawns[0]?.options.env?.TOKEN).toBe("draft-token");
       expect(spawns[0]?.options.env?.MCP_AUTO_OPEN_ENABLED).toBe("false");
       expect(JSON.stringify(started.args)).not.toContain("draft-token");
-      expect(readString(memoryServer, "type")).toBe("stdio");
+      expect("type" in memoryServer).toBe(false);
       expect(readString(memoryServer, "command")).toBe("fixture");
       expect(ready.state).toBe("ready");
       expect(ready.url).toContain("MCP_PROXY_AUTH_TOKEN=test-token");
+      expect(serverPort).toBeDefined();
+      expect(ready.url).toContain(`MCP_PROXY_PORT=${serverPort}`);
       expect(closed.state).toBe("closed");
       expect(fakeInspectorProcess.killedSignal).toBe("SIGTERM");
       expect(existsSync(configPath)).toBe(false);

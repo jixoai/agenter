@@ -9,6 +9,7 @@ const ConfigsDuplicateConflict = getPortableStory(stories, "ConfigsDuplicateConf
 const ConfigDetailEdit = getPortableStory(stories, "ConfigDetailEdit");
 const ConfigRunningSummary = getPortableStory(stories, "ConfigRunningSummary");
 const InspectVisualAndRaw = getPortableStory(stories, "InspectVisualAndRaw");
+const HeavyInspectorDialog = getPortableStory(stories, "HeavyInspectorDialog");
 const AvatarsOverview = getPortableStory(stories, "AvatarsOverview");
 
 describe("Feature: Storybook DOM contract for MCP workbench states", () => {
@@ -22,6 +23,10 @@ describe("Feature: Storybook DOM contract for MCP workbench states", () => {
 
   test("Scenario: Given inspect connects When snapshot and tool call render Then visual and raw tabs both stay available", async () => {
     await InspectVisualAndRaw.run();
+  });
+
+  test("Scenario: Given a draft MCP When heavyweight inspector opens Then logs become an iframe and close requires release confirmation", async () => {
+    await HeavyInspectorDialog.run();
   });
 
   test("Scenario: Given one owner Avatar already has the same config id When install is submitted Then Studio asks for override or cancel", async () => {

@@ -1,5 +1,9 @@
 <script lang="ts">
 	import type {
+		McpAppServerCloseInput,
+		McpAppServerCloseOutput,
+		McpAppServerStartInput,
+		McpAppServerStartOutput,
 		McpInspectorCloseInput,
 		McpInspectorCloseOutput,
 		McpInspectorStartInput,
@@ -45,6 +49,8 @@
 		onProbe,
 		onInspectorStart,
 		onInspectorClose,
+		onAppServerStart,
+		onAppServerClose,
 		createInspectorSocket,
 		onAddProject,
 		onStartProject,
@@ -65,6 +71,8 @@
 		onProbe: (input: McpProbeInput) => Promise<McpProbeOutput>;
 		onInspectorStart?: (input: McpInspectorStartInput) => Promise<McpInspectorStartOutput>;
 		onInspectorClose?: (input: McpInspectorCloseInput) => Promise<McpInspectorCloseOutput>;
+		onAppServerStart?: (input: McpAppServerStartInput) => Promise<McpAppServerStartOutput>;
+		onAppServerClose?: (input: McpAppServerCloseInput) => Promise<McpAppServerCloseOutput>;
 		createInspectorSocket?: ComponentProps<typeof McpNewGlobalForm>['createInspectorSocket'];
 		onAddProject: (projectPath: string) => Promise<void>;
 		onStartProject: (row: McpWorkbenchRow) => Promise<void>;
@@ -134,6 +142,8 @@
 			{onProbe}
 			{onInspectorStart}
 			{onInspectorClose}
+			{onAppServerStart}
+			{onAppServerClose}
 			{createInspectorSocket}
 		/>
 

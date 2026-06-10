@@ -326,6 +326,55 @@ describe("Feature: cli server contracts", () => {
     ]);
   });
 
+  test("Scenario: Given MCP Apps routes When host, sandbox, and unknown websocket lease are requested Then the daemon exposes the backend host contract", async () => {
+    const { dir, workspace } = createWorkspaceRoot();
+    const handle = await startTrpcServer({
+      host: "127.0.0.1",
+      port: 0,
+      globalSessionRoot: join(dir, "sessions"),
+      workspacesPath: join(dir, "workspaces.yaml"),
+      workspaceCwd: workspace,
+      homeDir: join(dir, "home"),
+    });
+    handles.push(handle);
+
+    const hostResponse = await fetch(`http://${handle.host}:${handle.port}/mcp/apps/missing-lease/host`);
+    const hostHtml = await hostResponse.text();
+    const sandboxResponse = await fetch(
+      `http://${handle.host}:${handle.port}/mcp/apps/missing-lease/sandbox?csp=${encodeURIComponent(
+        JSON.stringify({
+          connectDomains: ["https://api.example.test"],
+          frameDomains: ["https://frame.example.test"],
+        }),
+      )}`,
+    );
+    const sandboxHtml = await sandboxResponse.text();
+    const messages: unknown[] = [];
+    const closeCode = await new Promise<number>((resolveClose, rejectClose) => {
+      const ws = new WebSocket(`ws://${handle.host}:${handle.port}/mcp/apps/missing-lease/ws`);
+      ws.on("message", (data) => {
+        messages.push(JSON.parse(data.toString()) as unknown);
+      });
+      ws.on("close", (code) => resolveClose(code));
+      ws.on("error", rejectClose);
+    });
+
+    expect(hostResponse.status).toBe(200);
+    expect(hostHtml).toContain("MCP App sandbox");
+    expect(hostHtml).toContain("/ws");
+    expect(sandboxResponse.status).toBe(200);
+    expect(sandboxResponse.headers.get("content-security-policy")).toContain("https://api.example.test");
+    expect(sandboxResponse.headers.get("content-security-policy")).toContain("https://frame.example.test");
+    expect(sandboxHtml).toContain("ui/notifications/sandbox-proxy-ready");
+    expect(closeCode).toBe(1011);
+    expect(messages).toEqual([
+      {
+        type: "error",
+        error: "mcp app-server lease not found: missing-lease",
+      },
+    ]);
+  });
+
   test("Scenario: Given cross-origin HTTP tRPC queries When requesting runtime snapshot Then the /trpc prefix is rewritten and CORS headers are present", async () => {
     const { dir } = createWorkspaceRoot();
     const handle = await startTrpcServer({

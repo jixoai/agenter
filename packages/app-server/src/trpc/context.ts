@@ -6,12 +6,20 @@ export interface TrpcContext {
   kernel: AppKernel;
   auth: AuthSessionProjection | null;
   resolveMcpInspectorWsUrl?: (input: { avatarNickname?: string | null; leaseId: string }) => string;
+  resolveMcpAppServerUrls?: (input: { avatarNickname?: string | null; leaseId: string }) => {
+    hostUrl: string;
+    wsUrl: string;
+  };
 }
 
 export interface CreateTrpcContextInput {
   kernel: AppKernel;
   authorizationHeader?: string | null;
   resolveMcpInspectorWsUrl?: (input: { avatarNickname?: string | null; leaseId: string }) => string;
+  resolveMcpAppServerUrls?: (input: { avatarNickname?: string | null; leaseId: string }) => {
+    hostUrl: string;
+    wsUrl: string;
+  };
 }
 
 export const readBearerToken = (value: string | null | undefined): string | null => {
@@ -30,13 +38,20 @@ const isCreateTrpcContextInput = (input: AppKernel | CreateTrpcContextInput): in
   typeof input === "object" && input !== null && "kernel" in input;
 
 export const createTrpcContext = async (input: AppKernel | CreateTrpcContextInput): Promise<TrpcContext> => {
-  const contextInput = isCreateTrpcContextInput(input) ? input : null;
-  const kernel = contextInput ? contextInput.kernel : input;
+  let contextInput: CreateTrpcContextInput | null = null;
+  let kernel: AppKernel;
+  if (isCreateTrpcContextInput(input)) {
+    contextInput = input;
+    kernel = input.kernel;
+  } else {
+    kernel = input;
+  }
   const authorizationHeader = contextInput?.authorizationHeader ?? null;
   const token = readBearerToken(authorizationHeader);
   return {
     kernel,
     auth: token ? await kernel.authenticateAuthToken(token) : null,
     resolveMcpInspectorWsUrl: contextInput?.resolveMcpInspectorWsUrl,
+    resolveMcpAppServerUrls: contextInput?.resolveMcpAppServerUrls,
   };
 };

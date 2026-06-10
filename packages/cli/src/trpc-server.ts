@@ -61,6 +61,175 @@ const sendJson = (res: ServerResponse, statusCode: number, body: Record<string, 
 `);
 };
 
+const sendHtml = (res: ServerResponse, statusCode: number, html: string): void => {
+  res.statusCode = statusCode;
+  res.setHeader("content-type", "text/html; charset=utf-8");
+  res.end(html);
+};
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === "object" && value !== null && !Array.isArray(value);
+
+const readStringArray = (value: unknown): string[] =>
+  Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
+
+const buildMcpAppSandboxCsp = (input: unknown): string => {
+  const csp = isRecord(input) ? input : {};
+  const connectDomains = readStringArray(csp.connectDomains).join(" ");
+  const resourceDomains = readStringArray(csp.resourceDomains).join(" ");
+  const frameDomains = readStringArray(csp.frameDomains).join(" ");
+  const baseUriDomains = readStringArray(csp.baseUriDomains).join(" ");
+  return [
+    "default-src 'none'",
+    `script-src 'self' 'unsafe-inline' blob: ${resourceDomains}`.trim(),
+    `style-src 'self' 'unsafe-inline' blob: data: ${resourceDomains}`.trim(),
+    `img-src 'self' data: blob: ${resourceDomains}`.trim(),
+    `font-src 'self' data: blob: ${resourceDomains}`.trim(),
+    `media-src 'self' data: blob: ${resourceDomains}`.trim(),
+    `connect-src 'self' ${connectDomains}`.trim(),
+    `worker-src 'self' blob: ${resourceDomains}`.trim(),
+    frameDomains ? `frame-src ${frameDomains}` : "frame-src 'none'",
+    "object-src 'none'",
+    baseUriDomains ? `base-uri ${baseUriDomains}` : "base-uri 'none'",
+  ].join("; ");
+};
+
+const renderMcpAppHostHtml = (): string => `<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <style>
+      html, body, #root, iframe { width: 100%; height: 100%; margin: 0; }
+      body { background: Canvas; color: CanvasText; overflow: hidden; }
+      iframe { display: block; border: 0; }
+      .status { position: fixed; inset: 0; display: grid; place-items: center; font: 12px system-ui, sans-serif; color: color-mix(in srgb, currentColor 62%, transparent); }
+      .status[hidden] { display: none; }
+    </style>
+  </head>
+  <body>
+    <div id="root">
+      <div id="status" class="status">Connecting MCP App...</div>
+      <iframe id="sandbox" title="MCP App sandbox"></iframe>
+    </div>
+    <script>
+      const statusEl = document.getElementById("status");
+      const sandbox = document.getElementById("sandbox");
+      let sandboxLoaded = false;
+      const wsUrl = new URL(window.location.href);
+      wsUrl.protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+      wsUrl.pathname = wsUrl.pathname.replace(/\\/host$/, "/ws");
+      const ws = new WebSocket(wsUrl);
+      const setStatus = (text) => {
+        if (!statusEl) return;
+        statusEl.textContent = text;
+        statusEl.hidden = !text;
+      };
+      const loadSandbox = (resource) => {
+        if (sandboxLoaded) return;
+        sandboxLoaded = true;
+        const sandboxUrl = new URL(window.location.href);
+        sandboxUrl.pathname = sandboxUrl.pathname.replace(/\\/host$/, "/sandbox");
+        sandboxUrl.search = "";
+        if (resource && resource.csp) {
+          sandboxUrl.searchParams.set("csp", JSON.stringify(resource.csp));
+        }
+        sandbox.setAttribute("sandbox", "allow-scripts allow-same-origin allow-forms");
+        sandbox.src = sandboxUrl.toString();
+      };
+      window.addEventListener("message", (event) => {
+        if (event.source !== sandbox.contentWindow) return;
+        if (ws.readyState !== WebSocket.OPEN) return;
+        try {
+          ws.send(JSON.stringify(event.data));
+        } catch (error) {
+          console.error("[MCP App Host] failed to forward app message", error);
+        }
+      });
+      ws.addEventListener("open", () => setStatus("Loading MCP App..."));
+      ws.addEventListener("message", (event) => {
+        let payload;
+        try {
+          payload = JSON.parse(event.data);
+        } catch (error) {
+          console.error("[MCP App Host] invalid ws payload", error);
+          return;
+        }
+        if (payload.type === "resource") {
+          loadSandbox(payload.resource);
+          return;
+        }
+        if (payload.type === "snapshot") {
+          if (payload.session?.state === "closed" || payload.session?.state === "failed") {
+            setStatus(payload.session?.error || "MCP App closed");
+          }
+          return;
+        }
+        if (payload.type === "message" && sandbox.contentWindow) {
+          setStatus("");
+          sandbox.contentWindow.postMessage(payload.message, "*");
+        }
+      });
+      ws.addEventListener("close", () => setStatus("MCP App disconnected"));
+      ws.addEventListener("error", () => setStatus("MCP App connection error"));
+      window.addEventListener("beforeunload", () => ws.close());
+    </script>
+  </body>
+</html>`;
+
+const renderMcpAppSandboxHtml = (): string => `<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <style>
+      html, body, iframe { width: 100%; height: 100%; margin: 0; }
+      body { overflow: hidden; background: transparent; }
+      iframe { display: block; border: 0; }
+    </style>
+  </head>
+  <body>
+    <script>
+      const inner = document.createElement("iframe");
+      inner.style.cssText = "width:100%;height:100%;border:0;display:block";
+      inner.setAttribute("sandbox", "allow-scripts allow-same-origin allow-forms");
+      document.body.appendChild(inner);
+      const resourceReadyMethod = "ui/notifications/sandbox-resource-ready";
+      const proxyReadyMethod = "ui/notifications/sandbox-proxy-ready";
+      window.addEventListener("message", (event) => {
+        if (event.source === window.parent) {
+          const data = event.data;
+          if (data && data.method === resourceReadyMethod) {
+            const params = data.params || {};
+            if (typeof params.sandbox === "string") {
+              inner.setAttribute("sandbox", params.sandbox);
+            }
+            if (typeof params.html === "string") {
+              const doc = inner.contentDocument || (inner.contentWindow && inner.contentWindow.document);
+              if (doc) {
+                doc.open();
+                doc.write(params.html);
+                doc.close();
+              } else {
+                inner.srcdoc = params.html;
+              }
+            }
+            return;
+          }
+          if (inner.contentWindow) {
+            inner.contentWindow.postMessage(data, "*");
+          }
+          return;
+        }
+        if (event.source === inner.contentWindow) {
+          window.parent.postMessage(event.data, "*");
+        }
+      });
+      window.parent.postMessage({ jsonrpc: "2.0", method: proxyReadyMethod, params: {} }, "*");
+    </script>
+  </body>
+</html>`;
+
 const resolveStaticEntryDocumentPath = (staticDir: string): string | null => {
   for (const filename of STATIC_ENTRY_FILENAMES) {
     const filePath = join(staticDir, filename);
@@ -536,6 +705,24 @@ export const startTrpcServer = async (options: TrpcServerOptions): Promise<TrpcS
           }
           return url.toString();
         },
+        resolveMcpAppServerUrls: ({ avatarNickname, leaseId }) => {
+          const hostUrl = new URL(
+            `${req.headers["x-forwarded-proto"] === "https" ? "https:" : "http:"}//${resolveRequestHost(req, `${options.host}:${actualPort}`)}`,
+          );
+          hostUrl.pathname = `/mcp/apps/${encodeURIComponent(leaseId)}/host`;
+          const wsUrl = new URL(
+            `${resolveRequestWsProtocol(req)}//${resolveRequestHost(req, `${options.host}:${actualPort}`)}`,
+          );
+          wsUrl.pathname = `/mcp/apps/${encodeURIComponent(leaseId)}/ws`;
+          if (avatarNickname?.trim()) {
+            hostUrl.searchParams.set("avatarNickname", avatarNickname.trim());
+            wsUrl.searchParams.set("avatarNickname", avatarNickname.trim());
+          }
+          return {
+            hostUrl: hostUrl.toString(),
+            wsUrl: wsUrl.toString(),
+          };
+        },
       }),
   });
 
@@ -572,6 +759,26 @@ export const startTrpcServer = async (options: TrpcServerOptions): Promise<TrpcS
         port: (server.address() as { port?: number } | null)?.port ?? options.port,
         launcher: options.launcherIdentity,
       });
+      return;
+    }
+
+    if (req.method === "GET" && /^\/mcp\/apps\/[^/]+\/host$/u.test(pathname)) {
+      sendHtml(res, 200, renderMcpAppHostHtml());
+      return;
+    }
+
+    if (req.method === "GET" && /^\/mcp\/apps\/[^/]+\/sandbox$/u.test(pathname)) {
+      let csp: unknown;
+      const cspParam = url?.searchParams.get("csp");
+      if (cspParam) {
+        try {
+          csp = JSON.parse(cspParam);
+        } catch {
+          csp = undefined;
+        }
+      }
+      res.setHeader("Content-Security-Policy", buildMcpAppSandboxCsp(csp));
+      sendHtml(res, 200, renderMcpAppSandboxHtml());
       return;
     }
 
@@ -1162,6 +1369,7 @@ export const startTrpcServer = async (options: TrpcServerOptions): Promise<TrpcS
       }),
   });
   const inspectorWss = new WebSocketServer({ noServer: true });
+  const appServerWss = new WebSocketServer({ noServer: true });
   const upgradedSockets = new Set<Duplex>();
   inspectorWss.on("connection", (ws: WebSocket, req) => {
     const url = req.url ? new URL(req.url, `http://${options.host}:${actualPort}`) : null;
@@ -1207,6 +1415,63 @@ export const startTrpcServer = async (options: TrpcServerOptions): Promise<TrpcS
         ws.close(1011, "mcp inspector lease attach failed");
       });
   });
+  appServerWss.on("connection", (ws: WebSocket, req) => {
+    const url = req.url ? new URL(req.url, `http://${options.host}:${actualPort}`) : null;
+    const [leaseId] = decodePathMatch(url?.pathname ?? "", /^\/mcp\/apps\/([^/]+)\/ws$/u) ?? [];
+    let leaseHandle: Awaited<ReturnType<AppKernel["attachMcpAppServerLease"]>> | null = null;
+    let socketClosed = false;
+    const send = (payload: unknown): void => {
+      try {
+        ws.send(JSON.stringify(payload));
+      } catch {
+        // The close handler owns lease release; failed sends are best-effort telemetry.
+      }
+    };
+    const releaseFromSocket = (): void => {
+      socketClosed = true;
+      leaseHandle?.release();
+      leaseHandle = null;
+    };
+    ws.once("close", releaseFromSocket);
+    ws.once("error", releaseFromSocket);
+    if (!leaseId) {
+      send({ type: "error", error: "mcp app-server lease id is required" });
+      ws.close(1008, "mcp app-server lease id is required");
+      return;
+    }
+    void kernel
+      .attachMcpAppServerLease(
+        {
+          avatarNickname: url?.searchParams.get("avatarNickname") ?? undefined,
+          leaseId,
+        },
+        send,
+      )
+      .then((handle) => {
+        if (socketClosed) {
+          handle.release();
+          return;
+        }
+        leaseHandle = handle;
+      })
+      .catch((error: unknown) => {
+        send({ type: "error", error: error instanceof Error ? error.message : String(error) });
+        ws.close(1011, "mcp app-server lease attach failed");
+      });
+    ws.on("message", (data) => {
+      const text = typeof data === "string" ? data : data.toString("utf8");
+      let payload: unknown;
+      try {
+        payload = JSON.parse(text);
+      } catch (error) {
+        send({ type: "error", error: error instanceof Error ? error.message : String(error) });
+        return;
+      }
+      void leaseHandle?.receive(payload).catch((error: unknown) => {
+        send({ type: "error", error: error instanceof Error ? error.message : String(error) });
+      });
+    });
+  });
 
   server.on("upgrade", (req, socket, head) => {
     upgradedSockets.add(socket);
@@ -1225,6 +1490,12 @@ export const startTrpcServer = async (options: TrpcServerOptions): Promise<TrpcS
     if (pathname.startsWith("/mcp/inspector/")) {
       inspectorWss.handleUpgrade(req, socket, head, (ws: WebSocket) => {
         inspectorWss.emit("connection", ws, req);
+      });
+      return;
+    }
+    if (/^\/mcp\/apps\/[^/]+\/ws$/u.test(pathname)) {
+      appServerWss.handleUpgrade(req, socket, head, (ws: WebSocket) => {
+        appServerWss.emit("connection", ws, req);
       });
       return;
     }
@@ -1266,6 +1537,9 @@ export const startTrpcServer = async (options: TrpcServerOptions): Promise<TrpcS
       for (const ws of inspectorWss.clients) {
         ws.terminate();
       }
+      for (const ws of appServerWss.clients) {
+        ws.terminate();
+      }
       for (const socket of upgradedSockets) {
         socket.destroy();
       }
@@ -1275,6 +1549,7 @@ export const startTrpcServer = async (options: TrpcServerOptions): Promise<TrpcS
       server.closeIdleConnections?.();
       server.closeAllConnections?.();
       inspectorWss.close();
+      appServerWss.close();
       wss.close();
       await kernel.stop();
       try {

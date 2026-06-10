@@ -44,6 +44,13 @@ import type {
   JsonValue,
   McpAddInput,
   McpAddOutput,
+  McpAppServerCloseInput,
+  McpAppServerCloseOutput,
+  McpAppServerEvent,
+  McpAppServerSnapshotInput,
+  McpAppServerSnapshotOutput,
+  McpAppServerStartInput,
+  McpAppServerStartOutput,
   McpCallInput,
   McpCallOutput,
   McpDisableInput,
@@ -4307,6 +4314,29 @@ export class RuntimeStore {
     },
   ): SubscriptionHandle {
     return this.client.trpc.mcp.inspectorEvents.subscribe(input, handlers);
+  }
+
+  async startMcpAppServer(input: McpAppServerStartInput): Promise<McpAppServerStartOutput> {
+    return await this.client.trpc.mcp.appServerStart.mutate(input);
+  }
+
+  async getMcpAppServerSnapshot(input: McpAppServerSnapshotInput): Promise<McpAppServerSnapshotOutput> {
+    return await this.client.trpc.mcp.appServerSnapshot.query(input);
+  }
+
+  async closeMcpAppServer(input: McpAppServerCloseInput): Promise<McpAppServerCloseOutput> {
+    return await this.client.trpc.mcp.appServerClose.mutate(input);
+  }
+
+  subscribeMcpAppServerEvents(
+    input: McpAppServerSnapshotInput,
+    handlers: {
+      onData: (event: McpAppServerEvent) => void;
+      onError?: () => void;
+      onComplete?: () => void;
+    },
+  ): SubscriptionHandle {
+    return this.client.trpc.mcp.appServerEvents.subscribe(input, handlers);
   }
 
   async listNoteCatalog(input: { avatarNickname?: string; limit?: number } = {}): Promise<NoteCatalogOutput> {

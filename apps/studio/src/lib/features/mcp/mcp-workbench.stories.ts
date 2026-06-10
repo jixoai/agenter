@@ -52,7 +52,8 @@ export const InspectVisualAndRaw = {
   },
   play: async ({ canvasElement, userEvent }) => {
     const canvas = within(canvasElement);
-    const body = within(document.body);
+    const bodyElement = canvasElement.ownerDocument.body;
+    const body = within(bodyElement);
     const waitForCapabilityCard = async (testId: string): Promise<HTMLElement> =>
       waitFor(() => {
         expect(body.queryByTestId("mcp-config-inspect-capability-dialog")).toBeNull();
@@ -79,7 +80,7 @@ export const InspectVisualAndRaw = {
     );
     await expect(canvas.getByTestId("mcp-config-inspect-tool-icon:echo")).toBeInTheDocument();
     await expect(canvas.getByTestId("mcp-config-inspect-resource-card:memory://workspace")).toBeInTheDocument();
-    await expect(canvas.getByTestId("mcp-config-inspect-template-card:memory://workspace/{name}")).toBeInTheDocument();
+    await expect(canvas.getByTestId("mcp-config-inspect-template-card:svelte://{/slug*}.md")).toBeInTheDocument();
     await expect(canvas.getByTestId("mcp-config-inspect-app-card:ui://svelte/playground-link")).toBeInTheDocument();
     await expect(canvas.getByTestId("mcp-config-inspect-prompt-card:summarize")).toBeInTheDocument();
     await userEvent.click(canvas.getByRole("tab", { name: "Raw" }));
@@ -97,7 +98,9 @@ export const InspectVisualAndRaw = {
       '{\n  "message": "hello",\n  "trace": false\n}',
     );
     await userEvent.click(within(dialog).getByRole("button", { name: "Call" }));
-    await expect(within(dialog).getByTestId("mcp-config-inspect-result-preview")).toHaveTextContent("structuredContent");
+    await expect(within(dialog).getByTestId("mcp-config-inspect-result-preview")).toHaveTextContent(
+      "structuredContent",
+    );
     await expect(within(dialog).getByTestId("mcp-config-inspect-cli-result")).toHaveTextContent("mcp probe");
     await expect(within(dialog).getByText(/received/u)).toBeInTheDocument();
     await userEvent.click(within(dialog).getByRole("tab", { name: "Raw" }));
@@ -108,16 +111,36 @@ export const InspectVisualAndRaw = {
     const resourceDialog = body.getByTestId("mcp-config-inspect-capability-dialog");
     await expect(within(resourceDialog).getByRole("tab", { name: "Read" })).toBeInTheDocument();
     await userEvent.click(within(resourceDialog).getByRole("button", { name: "Read" }));
-    await expect(within(resourceDialog).getByTestId("mcp-config-inspect-result-preview")).toHaveTextContent("Workspace Memory");
+    await expect(within(resourceDialog).getByTestId("mcp-config-inspect-result-preview")).toHaveTextContent(
+      "Workspace Memory",
+    );
     await expect(canvas.getByTestId("mcp-story-event")).toHaveTextContent("probe:read-resource:probe-story-1");
-    await expect(within(resourceDialog).getByTestId("mcp-config-inspect-result-preview")).toHaveTextContent('"workspace": "fixture"');
+    await expect(within(resourceDialog).getByTestId("mcp-config-inspect-result-preview")).toHaveTextContent(
+      '"workspace": "fixture"',
+    );
 
     await userEvent.click(within(resourceDialog).getByTestId("mcp-config-inspect-capability-dialog-close"));
+    await userEvent.click(await waitForCapabilityCard("mcp-config-inspect-template-card:svelte://{/slug*}.md"));
+    const templateDialog = body.getByTestId("mcp-config-inspect-capability-dialog");
+    await expect(within(templateDialog).getByRole("tab", { name: "Read Resource" })).toBeInTheDocument();
+    await expect(within(templateDialog).getByTestId("mcp-config-inspect-template-slug")).toBeInTheDocument();
+    await userEvent.type(within(templateDialog).getByTestId("mcp-config-inspect-template-slug"), "ai/instructions");
+    await userEvent.click(within(templateDialog).getByRole("button", { name: "Read Resource" }));
+    await expect(within(templateDialog).getByTestId("mcp-config-inspect-result-preview")).toHaveTextContent(
+      "AI Instructions",
+    );
+    await expect(within(templateDialog).getByTestId("mcp-config-inspect-result-preview")).toHaveTextContent(
+      "CLI-shaped evidence",
+    );
+    await userEvent.click(within(templateDialog).getByTestId("mcp-config-inspect-capability-dialog-close"));
     await userEvent.click(await waitForCapabilityCard("mcp-config-inspect-app-card:ui://svelte/playground-link"));
     const appDialog = body.getByTestId("mcp-config-inspect-capability-dialog");
     await expect(within(appDialog).getByRole("tab", { name: "Open" })).toBeInTheDocument();
     await userEvent.click(within(appDialog).getByRole("button", { name: "Open" }));
     await expect(within(appDialog).getByTestId("mcp-config-inspect-app-preview")).toHaveTextContent("mcp-app");
+    await waitFor(() => {
+      expect(within(appDialog).getByTestId("mcp-config-inspect-app-preview")).toHaveTextContent("host");
+    });
     await expect(within(appDialog).getByTestId("mcp-config-inspect-result-preview")).toHaveTextContent(
       "text/html;profile=mcp-app",
     );
@@ -141,7 +164,8 @@ export const HeavyInspectorDialog = {
   },
   play: async ({ canvasElement, userEvent }) => {
     const canvas = within(canvasElement);
-    const body = within(document.body);
+    const bodyElement = canvasElement.ownerDocument.body;
+    const body = within(bodyElement);
 
     await userEvent.click(canvas.getByTestId("mcp-config-inspect-inspector"));
     const dialog = body.getByTestId("mcp-config-heavy-inspector-dialog");
@@ -157,6 +181,10 @@ export const HeavyInspectorDialog = {
     await expect(dialog).toHaveAttribute("data-fullscreen", "true");
     await userEvent.click(within(dialog).getByTestId("mcp-config-heavy-inspector-fullscreen"));
     await expect(dialog).toHaveAttribute("data-fullscreen", "false");
+    const overlay = bodyElement.querySelector('[data-slot="dialog-overlay"]');
+    expect(overlay).not.toBeNull();
+    await userEvent.click(overlay as HTMLElement);
+    await expect(body.getByTestId("mcp-config-heavy-inspector-dialog")).toBeInTheDocument();
     await expect(within(dialog).queryByRole("button", { name: "Close" })).toBeNull();
     await userEvent.click(within(dialog).getByRole("button", { name: "Close inspector" }));
     await expect(body.getByTestId("mcp-config-heavy-inspector-close-confirm")).toBeInTheDocument();

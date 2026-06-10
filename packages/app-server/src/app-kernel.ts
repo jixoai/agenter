@@ -11,7 +11,7 @@ import {
 } from "node:fs";
 import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
-import { join, relative, resolve } from "node:path";
+import { join, resolve } from "node:path";
 
 import type {
   AppAttentionCommitInput,
@@ -71,6 +71,9 @@ import {
 } from "@agenter/message-system";
 import {
   listNoteCatalog,
+  listNoteNotebooks,
+  listNoteSectionPages,
+  listNoteSections,
   listNoteTagCatalog,
   queryNoteCatalogSql,
   readNotePage,
@@ -79,10 +82,14 @@ import {
   writeNoteCatalogPage,
   type NoteAvatarContext,
   type NoteCatalogOutput,
+  type NoteListSort,
+  type NoteNotebookListOutput,
+  type NotePageListOutput,
   type NotePageOutput,
   type NoteReferenceInput,
   type NoteRenameOutput,
   type NoteSearchOutput,
+  type NoteSectionListOutput,
   type NoteSqlQueryOutput,
   type NoteTagQueryOutput,
 } from "@agenter/note-system";
@@ -122,9 +129,9 @@ import {
 } from "@agenter/terminal-system";
 import { privateKeyToAccount } from "viem/accounts";
 import {
-  AttentionSearchEngine,
   ATTENTION_SEARCH_LEGACY_DUCKDB_FILENAME,
   ATTENTION_SEARCH_SQLITE_FILENAME,
+  AttentionSearchEngine,
   type AttentionSearchRequest,
 } from "./attention-search";
 import { appAttentionSourceRegistry } from "./attention-src";
@@ -181,6 +188,10 @@ import { readLocalEnvValue, resolveLocalEnvPath, writeLocalEnvValue } from "./lo
 import { McpSystem } from "./mcp-system/system";
 import type {
   McpAddInput,
+  McpAppServerCloseInput,
+  McpAppServerEvent,
+  McpAppServerLeaseHandle,
+  McpAppServerStartInput,
   McpCallInput,
   McpDisableInput,
   McpInspectorCloseInput,
@@ -1000,7 +1011,10 @@ export class AppKernel {
     if (!record) {
       return;
     }
-    const promptPath = join(resolveGlobalAvatarCanonicalRoot(record.principal.principalId, this.getHomeDir()), "AGENTER.mdx");
+    const promptPath = join(
+      resolveGlobalAvatarCanonicalRoot(record.principal.principalId, this.getHomeDir()),
+      "AGENTER.mdx",
+    );
     await mkdir(resolve(promptPath, ".."), { recursive: true });
     // File truth: for the locked default avatar, the canonical AGENTER.mdx on
     // disk is the durable authority. Daemon startup reasserts that file's
@@ -1320,7 +1334,9 @@ export class AppKernel {
       this.rememberWorkspace(this.options.initialWorkspace);
     }
     this.ensureSessionCatalogLoaded();
-    const boundSessions = await Promise.all(this.sessions.list().map(async (session) => await this.bindSessionAvatarPrincipal(session)));
+    const boundSessions = await Promise.all(
+      this.sessions.list().map(async (session) => await this.bindSessionAvatarPrincipal(session)),
+    );
     this.repairLegacySessionMessageActors(boundSessions);
     this.syncAvatarCatalogWatchers();
     await Promise.all([
@@ -2105,6 +2121,75 @@ export class AppKernel {
       ...listNoteCatalog({
         avatarHome: avatar.avatarHome,
         limit: input.limit,
+      }),
+    };
+  }
+
+  async listNoteNotebooks(
+    input: { avatarNickname?: string | null; cursor?: string; limit?: number; sort?: NoteListSort } = {},
+  ): Promise<
+    NoteNotebookListOutput & {
+      avatar: NoteAvatarContext;
+    }
+  > {
+    const avatar = await this.resolveNoteAvatarContext(input);
+    return {
+      avatar,
+      ...listNoteNotebooks({
+        avatarHome: avatar.avatarHome,
+        cursor: input.cursor,
+        limit: input.limit,
+        sort: input.sort,
+      }),
+    };
+  }
+
+  async listNoteSections(input: {
+    avatarNickname?: string | null;
+    notebook: string;
+    cursor?: string;
+    limit?: number;
+    sort?: NoteListSort;
+  }): Promise<
+    NoteSectionListOutput & {
+      avatar: NoteAvatarContext;
+    }
+  > {
+    const avatar = await this.resolveNoteAvatarContext(input);
+    return {
+      avatar,
+      ...listNoteSections({
+        avatarHome: avatar.avatarHome,
+        notebook: input.notebook,
+        cursor: input.cursor,
+        limit: input.limit,
+        sort: input.sort,
+      }),
+    };
+  }
+
+  async listNoteSectionPages(input: {
+    avatarNickname?: string | null;
+    notebook: string;
+    section: string;
+    cursor?: string;
+    limit?: number;
+    sort?: NoteListSort;
+  }): Promise<
+    NotePageListOutput & {
+      avatar: NoteAvatarContext;
+    }
+  > {
+    const avatar = await this.resolveNoteAvatarContext(input);
+    return {
+      avatar,
+      ...listNoteSectionPages({
+        avatarHome: avatar.avatarHome,
+        notebook: input.notebook,
+        section: input.section,
+        cursor: input.cursor,
+        limit: input.limit,
+        sort: input.sort,
       }),
     };
   }
@@ -6269,6 +6354,47 @@ export class AppKernel {
     listener: (event: McpInspectorEvent) => void,
   ): Promise<() => void> {
     return (await this.resolveMcpSurface({ avatarNickname: input.avatarNickname })).attachInspectorLease(
+      input.leaseId,
+      listener,
+    );
+  }
+
+  async mcpAppServerStart(
+    input: { avatarNickname?: string | null } & McpAppServerStartInput,
+  ): Promise<Awaited<ReturnType<McpSystemSurface["appServerStart"]>>> {
+    const { avatarNickname, ...mcpInput } = input;
+    return await (await this.resolveMcpSurface({ avatarNickname })).appServerStart(mcpInput);
+  }
+
+  async mcpAppServerSnapshot(
+    input: { avatarNickname?: string | null } & McpAppServerCloseInput,
+  ): Promise<ReturnType<McpSystemSurface["appServerSnapshot"]>> {
+    const { avatarNickname, ...mcpInput } = input;
+    return (await this.resolveMcpSurface({ avatarNickname })).appServerSnapshot(mcpInput);
+  }
+
+  async mcpAppServerClose(
+    input: { avatarNickname?: string | null } & McpAppServerCloseInput,
+  ): Promise<Awaited<ReturnType<McpSystemSurface["appServerClose"]>>> {
+    const { avatarNickname, ...mcpInput } = input;
+    return await (await this.resolveMcpSurface({ avatarNickname })).appServerClose(mcpInput);
+  }
+
+  async onMcpAppServerEvent(
+    input: { avatarNickname?: string | null; sessionId: string },
+    listener: (event: McpAppServerEvent) => void,
+  ): Promise<() => void> {
+    return (await this.resolveMcpSurface({ avatarNickname: input.avatarNickname })).subscribeAppServer(
+      input.sessionId,
+      listener,
+    );
+  }
+
+  async attachMcpAppServerLease(
+    input: { avatarNickname?: string | null; leaseId: string },
+    listener: (event: McpAppServerEvent) => void,
+  ): Promise<McpAppServerLeaseHandle> {
+    return (await this.resolveMcpSurface({ avatarNickname: input.avatarNickname })).attachAppServerLease(
       input.leaseId,
       listener,
     );

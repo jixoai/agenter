@@ -267,6 +267,74 @@ export type McpInspectorEvent =
       session: McpInspectorSessionSnapshot;
     };
 
+export interface McpAppServerStartInput {
+  name?: string;
+  projectPath?: string;
+  transport: McpTransportConfig;
+  env?: Record<string, string>;
+  toolName?: string;
+  resourceUri?: string;
+  arguments?: McpJsonObject;
+}
+
+export interface McpAppServerCloseInput {
+  sessionId: string;
+}
+
+export type McpAppServerState = "starting" | "ready" | "failed" | "closed";
+
+export interface McpAppServerResourceSnapshot {
+  uri: string;
+  mimeType: "text/html;profile=mcp-app";
+  html: string;
+  csp?: McpJsonObject;
+  permissions?: McpJsonObject;
+}
+
+export interface McpAppServerSessionSnapshot {
+  sessionId: string;
+  leaseId: string;
+  state: McpAppServerState;
+  command: "mcp app-server";
+  name: string;
+  projectPath: string;
+  resourceUri: string;
+  toolName?: string;
+  toolArguments?: McpJsonObject;
+  toolResult?: unknown;
+  hostPath: string;
+  wsPath: string;
+  hostUrl?: string;
+  wsUrl?: string;
+  error?: string;
+  startedAt: string;
+  updatedAt: string;
+  closedAt?: string;
+}
+
+export type McpAppServerEvent =
+  | {
+      type: "snapshot";
+      session: McpAppServerSessionSnapshot;
+    }
+  | {
+      type: "resource";
+      sessionId: string;
+      resource: McpAppServerResourceSnapshot;
+      session: McpAppServerSessionSnapshot;
+    }
+  | {
+      type: "message";
+      sessionId: string;
+      message: McpJsonObject;
+      session: McpAppServerSessionSnapshot;
+    };
+
+export interface McpAppServerLeaseHandle {
+  receive: (message: unknown) => Promise<void>;
+  release: () => void;
+}
+
 export interface McpTransportStartContext {
   name: string;
   projectPath: string;
@@ -321,4 +389,9 @@ export interface McpSystemSurface {
   inspectorClose: (input: McpInspectorCloseInput) => Promise<McpInspectorSessionSnapshot>;
   subscribeInspector: (sessionId: string, listener: (event: McpInspectorEvent) => void) => () => void;
   attachInspectorLease: (leaseId: string, listener: (event: McpInspectorEvent) => void) => () => void;
+  appServerStart: (input: McpAppServerStartInput) => Promise<McpAppServerSessionSnapshot>;
+  appServerSnapshot: (input: McpAppServerCloseInput) => McpAppServerSessionSnapshot;
+  appServerClose: (input: McpAppServerCloseInput) => Promise<McpAppServerSessionSnapshot>;
+  subscribeAppServer: (sessionId: string, listener: (event: McpAppServerEvent) => void) => () => void;
+  attachAppServerLease: (leaseId: string, listener: (event: McpAppServerEvent) => void) => McpAppServerLeaseHandle;
 }

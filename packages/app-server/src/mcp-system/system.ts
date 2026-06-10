@@ -1,9 +1,5 @@
+import { spawn, type ChildProcessWithoutNullStreams, type SpawnOptionsWithoutStdio } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import {
-  spawn,
-  type ChildProcessWithoutNullStreams,
-  type SpawnOptionsWithoutStdio,
-} from "node:child_process";
 import { mkdirSync, unlinkSync, writeFileSync } from "node:fs";
 import { createServer } from "node:net";
 import { dirname, join, resolve } from "node:path";
@@ -13,22 +9,40 @@ import { SSEClientTransport } from "@modelcontextprotocol/sdk/client/sse.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
+import type { Tool } from "@modelcontextprotocol/sdk/types.js";
+import {
+  getToolUiResourceUri,
+  INITIALIZE_METHOD,
+  INITIALIZED_METHOD,
+  isToolVisibilityModelOnly,
+  LATEST_PROTOCOL_VERSION,
+  RESOURCE_MIME_TYPE,
+  TOOL_INPUT_METHOD,
+  TOOL_RESULT_METHOD,
+} from "@modelcontextprotocol/ext-apps/app-bridge";
 
 import { McpSystemStore } from "./store";
 import type {
   McpAddInput,
+  McpAppServerCloseInput,
+  McpAppServerEvent,
+  McpAppServerLeaseHandle,
+  McpAppServerResourceSnapshot,
+  McpAppServerSessionSnapshot,
+  McpAppServerStartInput,
+  McpAppServerState,
   McpCallInput,
   McpCallResult,
   McpCapabilitySnapshot,
   McpDisableInput,
   McpGlobalConfig,
+  McpInspectInput,
   McpInspectorCloseInput,
   McpInspectorEvent,
   McpInspectorLogEntry,
   McpInspectorSessionSnapshot,
   McpInspectorStartInput,
   McpInspectorState,
-  McpInspectInput,
   McpInspectResult,
   McpInstanceRecord,
   McpJsonObject,
@@ -84,6 +98,7 @@ interface McpInspectorSession {
   state: McpInspectorState;
   child: ChildProcessWithoutNullStreams;
   configPath: string;
+  proxyPort: number;
   url?: string;
   command: "bunx";
   args: string[];
@@ -98,6 +113,39 @@ interface McpInspectorSession {
   nextLogId: number;
   closeRequested: boolean;
   leaseAttached: boolean;
+  leaseClaimTimer: ReturnType<typeof setTimeout> | null;
+}
+
+type McpJsonRpcId = string | number | null;
+
+interface McpJsonRpcMessage {
+  jsonrpc?: unknown;
+  id?: unknown;
+  method?: unknown;
+  params?: unknown;
+}
+
+interface McpAppServerSession {
+  sessionId: string;
+  leaseId: string;
+  state: McpAppServerState;
+  client: Client;
+  transport: Transport;
+  name: string;
+  projectPath: string;
+  snapshot: McpCapabilitySnapshot;
+  resource: McpAppServerResourceSnapshot;
+  toolName?: string;
+  toolArguments?: McpJsonObject;
+  toolResult?: unknown;
+  error?: string;
+  startedAt: string;
+  updatedAt: string;
+  closedAt?: string;
+  leaseAttached: boolean;
+  initialized: boolean;
+  initialPayloadSent: boolean;
+  closeRequested: boolean;
   leaseClaimTimer: ReturnType<typeof setTimeout> | null;
 }
 
@@ -138,6 +186,8 @@ const createPromptArguments = (argumentsInput: McpJsonObject | undefined): Recor
 
 const INSPECTOR_LOG_LIMIT = 500;
 const INSPECTOR_LEASE_CLAIM_TIMEOUT_MS = 30_000;
+const APP_SERVER_LEASE_CLAIM_TIMEOUT_MS = 30_000;
+const APP_SERVER_PROTOCOL_VERSION = LATEST_PROTOCOL_VERSION;
 
 const stripAnsi = (input: string): string => input.replace(/\u001b\[[0-?]*[ -/]*[@-~]/gu, "");
 
@@ -163,7 +213,6 @@ const reserveTcpPort = async (): Promise<number> =>
 
 type McpInspectorServerConfig =
   | {
-      type: "stdio";
       command: string;
       args?: string[];
       env?: Record<string, string>;
@@ -177,7 +226,6 @@ type McpInspectorServerConfig =
 const buildInspectorServerConfig = (transport: McpTransportConfig): McpInspectorServerConfig => {
   if (transport.kind === "stdio") {
     return {
-      type: "stdio",
       command: transport.command,
       args: transport.args ?? [],
       env: transport.env,
@@ -250,18 +298,144 @@ const readString = (value: unknown, key: string): string | null => {
 };
 
 const resolveMcpAppResourceUri = (tool: unknown): string | null => {
-  if (!isRecord(tool) || !isRecord(tool._meta)) {
+  if (!isRecord(tool)) {
     return null;
   }
-  const nestedUi = isRecord(tool._meta.ui) ? readString(tool._meta.ui, "resourceUri") : null;
-  return nestedUi ?? readString(tool._meta, "ui/resourceUri") ?? readString(tool._meta, "openai/outputTemplate");
+  try {
+    return (
+      getToolUiResourceUri(tool as Partial<Tool>) ??
+      (isRecord(tool._meta) ? readString(tool._meta, "openai/outputTemplate") : null)
+    );
+  } catch {
+    return null;
+  }
 };
 
-const extractMcpApps = (input: {
-  tools: unknown[];
-  resources: unknown[];
-  resourceTemplates: unknown[];
-}): unknown[] => {
+const isMcpAppMimeType = (value: unknown): value is typeof RESOURCE_MIME_TYPE =>
+  typeof value === "string" &&
+  value
+    .toLowerCase()
+    .split(";")
+    .map((part) => part.trim())
+    .includes("profile=mcp-app");
+
+const decodeBase64Utf8 = (value: string): string => Buffer.from(value, "base64").toString("utf8");
+
+const readNestedRecord = (value: unknown, path: readonly string[]): Record<string, unknown> | null => {
+  let current: unknown = value;
+  for (const key of path) {
+    if (!isRecord(current)) {
+      return null;
+    }
+    current = current[key];
+  }
+  return isRecord(current) ? current : null;
+};
+
+const readUiMeta = (content: unknown, listing: unknown): Record<string, unknown> | null =>
+  readNestedRecord(content, ["_meta", "ui"]) ??
+  readNestedRecord(content, ["meta", "ui"]) ??
+  readNestedRecord(listing, ["_meta", "ui"]) ??
+  readNestedRecord(listing, ["meta", "ui"]);
+
+const readJsonRpcId = (value: unknown): McpJsonRpcId | undefined =>
+  typeof value === "string" || typeof value === "number" || value === null ? value : undefined;
+
+const normalizeJsonRpcMessage = (value: unknown): McpJsonRpcMessage | null => (isRecord(value) ? value : null);
+
+const createJsonRpcResult = (id: McpJsonRpcId, result: unknown): McpJsonObject => ({
+  jsonrpc: "2.0",
+  id,
+  result,
+});
+
+const createJsonRpcError = (id: McpJsonRpcId, code: number, message: string): McpJsonObject => ({
+  jsonrpc: "2.0",
+  id,
+  error: {
+    code,
+    message,
+  },
+});
+
+const createJsonRpcNotification = (method: string, params: unknown): McpJsonObject => ({
+  jsonrpc: "2.0",
+  method,
+  params,
+});
+
+const findNamedCapability = (items: unknown[], name: string): unknown | null =>
+  items.find((item) => readString(item, "name") === name) ?? null;
+
+const isToolCallableFromApp = (tool: unknown): boolean => isRecord(tool) && !isToolVisibilityModelOnly(tool as Partial<Tool>);
+
+const readStringFromRecord = (value: Record<string, unknown>, key: string): string | null => {
+  const candidate = value[key];
+  return typeof candidate === "string" && candidate.trim().length > 0 ? candidate.trim() : null;
+};
+
+const readJsonObject = (value: unknown): McpJsonObject | undefined => (isRecord(value) ? { ...value } : undefined);
+
+const readJsonObjectRecord = (value: unknown, key: string): McpJsonObject | undefined =>
+  isRecord(value) ? readJsonObject(value[key]) : undefined;
+
+const readResourceContents = (value: unknown): unknown[] => {
+  if (!isRecord(value)) {
+    return [];
+  }
+  return Array.isArray(value.contents) ? value.contents : [];
+};
+
+const readMcpAppHtmlContent = (content: unknown): { html: string; mimeType: string } | null => {
+  if (!isRecord(content) || !isMcpAppMimeType(content.mimeType)) {
+    return null;
+  }
+  if (typeof content.text === "string") {
+    return { html: content.text, mimeType: content.mimeType };
+  }
+  if (typeof content.blob === "string") {
+    return { html: decodeBase64Utf8(content.blob), mimeType: content.mimeType };
+  }
+  return null;
+};
+
+const readToolCallParams = (params: unknown): { name: string; arguments?: McpJsonObject } | null => {
+  if (!isRecord(params)) {
+    return null;
+  }
+  const name = readStringFromRecord(params, "name");
+  if (!name) {
+    return null;
+  }
+  return {
+    name,
+    arguments: readJsonObjectRecord(params, "arguments"),
+  };
+};
+
+const readPromptGetParams = (params: unknown): { name: string; arguments?: McpJsonObject } | null => {
+  if (!isRecord(params)) {
+    return null;
+  }
+  const name = readStringFromRecord(params, "name");
+  if (!name) {
+    return null;
+  }
+  return {
+    name,
+    arguments: readJsonObjectRecord(params, "arguments"),
+  };
+};
+
+const readResourceReadParams = (params: unknown): { uri: string } | null => {
+  if (!isRecord(params)) {
+    return null;
+  }
+  const uri = readStringFromRecord(params, "uri");
+  return uri ? { uri } : null;
+};
+
+const extractMcpApps = (input: { tools: unknown[]; resources: unknown[]; resourceTemplates: unknown[] }): unknown[] => {
   const resourcesByUri = new Map(
     input.resources.flatMap((resource) => {
       const uri = readString(resource, "uri");
@@ -307,6 +481,9 @@ export class McpSystem {
   private readonly inspectorSessions = new Map<string, McpInspectorSession>();
   private readonly inspectorSessionIdsByLease = new Map<string, string>();
   private readonly inspectorListeners = new Map<string, Set<(event: McpInspectorEvent) => void>>();
+  private readonly appServerSessions = new Map<string, McpAppServerSession>();
+  private readonly appServerSessionIdsByLease = new Map<string, string>();
+  private readonly appServerListeners = new Map<string, Set<(event: McpAppServerEvent) => void>>();
   private readonly locks = new Map<string, Promise<unknown>>();
   private closed = false;
 
@@ -353,6 +530,13 @@ export class McpSystem {
     this.inspectorSessions.clear();
     this.inspectorSessionIdsByLease.clear();
     this.inspectorListeners.clear();
+    for (const session of this.appServerSessions.values()) {
+      this.clearAppServerLeaseTimer(session);
+      void session.client.close().catch(() => undefined);
+    }
+    this.appServerSessions.clear();
+    this.appServerSessionIdsByLease.clear();
+    this.appServerListeners.clear();
     this.store.close();
   }
 
@@ -530,7 +714,8 @@ export class McpSystem {
       }
 
       let result: unknown;
-      const capabilityKind = input.capabilityKind ?? (input.toolName ? "tool" : input.resourceUri ? "resource" : "prompt");
+      const capabilityKind =
+        input.capabilityKind ?? (input.toolName ? "tool" : input.resourceUri ? "resource" : "prompt");
       if (capabilityKind === "tool") {
         if (!input.toolName?.trim()) {
           throw new Error("toolName is required for tool inspect calls");
@@ -699,7 +884,7 @@ export class McpSystem {
         ...launchEnv,
         CLIENT_PORT: String(clientPort),
         SERVER_PORT: String(serverPort),
-        HOST: "127.0.0.1",
+        HOST: "localhost",
         MCP_AUTO_OPEN_ENABLED: "false",
       },
       detached: process.platform !== "win32",
@@ -711,6 +896,7 @@ export class McpSystem {
       state: "starting",
       child,
       configPath,
+      proxyPort: serverPort,
       command: "bunx",
       args,
       cwd: projectPath,
@@ -815,6 +1001,128 @@ export class McpSystem {
         return;
       }
       void this.inspectorClose({ sessionId: session.sessionId }).catch(() => undefined);
+    };
+  }
+
+  async appServerStart(input: McpAppServerStartInput): Promise<McpAppServerSessionSnapshot> {
+    const name = input.name?.trim() || "app-server";
+    const projectPath = input.projectPath ? normalizeProjectPath(input.projectPath) : this.rootWorkspacePath;
+    const connection = await this.connectEphemeral({
+      name,
+      projectPath,
+      transport: input.transport,
+      env: input.env,
+    });
+    try {
+      const appContext = await this.resolveAppServerResource({
+        client: connection.client,
+        snapshot: connection.snapshot,
+        toolName: input.toolName,
+        resourceUri: input.resourceUri,
+        arguments: input.arguments,
+      });
+      const now = new Date().toISOString();
+      const sessionId = randomUUID();
+      const leaseId = randomUUID();
+      const session: McpAppServerSession = {
+        sessionId,
+        leaseId,
+        state: "ready",
+        client: connection.client,
+        transport: connection.transport,
+        name,
+        projectPath,
+        snapshot: connection.snapshot,
+        resource: appContext.resource,
+        toolName: appContext.toolName,
+        toolArguments: appContext.toolArguments,
+        toolResult: appContext.toolResult,
+        startedAt: now,
+        updatedAt: now,
+        leaseAttached: false,
+        initialized: false,
+        initialPayloadSent: false,
+        closeRequested: false,
+        leaseClaimTimer: null,
+      };
+      this.appServerSessions.set(sessionId, session);
+      this.appServerSessionIdsByLease.set(leaseId, sessionId);
+      this.armAppServerLeaseClaimTimer(session);
+      this.emitAppServerSnapshot(session);
+      return this.snapshotAppServerSession(session);
+    } catch (error) {
+      await connection.client.close().catch(() => undefined);
+      throw error;
+    }
+  }
+
+  appServerSnapshot(input: McpAppServerCloseInput): McpAppServerSessionSnapshot {
+    return this.snapshotAppServerSession(this.requireAppServerSession(input.sessionId));
+  }
+
+  async appServerClose(input: McpAppServerCloseInput): Promise<McpAppServerSessionSnapshot> {
+    const session = this.requireAppServerSession(input.sessionId);
+    if (session.state === "closed") {
+      return this.snapshotAppServerSession(session);
+    }
+    session.closeRequested = true;
+    session.state = "closed";
+    session.closedAt = new Date().toISOString();
+    session.updatedAt = session.closedAt;
+    this.clearAppServerLeaseTimer(session);
+    this.appServerSessionIdsByLease.delete(session.leaseId);
+    await session.client.close().catch(() => undefined);
+    this.emitAppServerSnapshot(session);
+    return this.snapshotAppServerSession(session);
+  }
+
+  subscribeAppServer(sessionId: string, listener: (event: McpAppServerEvent) => void): () => void {
+    const listeners = this.appServerListeners.get(sessionId) ?? new Set<(event: McpAppServerEvent) => void>();
+    listeners.add(listener);
+    this.appServerListeners.set(sessionId, listeners);
+    const session = this.appServerSessions.get(sessionId);
+    if (session) {
+      listener({ type: "snapshot", session: this.snapshotAppServerSession(session) });
+    }
+    return () => {
+      listeners.delete(listener);
+      if (listeners.size === 0) {
+        this.appServerListeners.delete(sessionId);
+      }
+    };
+  }
+
+  attachAppServerLease(leaseId: string, listener: (event: McpAppServerEvent) => void): McpAppServerLeaseHandle {
+    const session = this.requireAppServerSessionByLease(leaseId);
+    if (session.leaseAttached) {
+      throw new Error(`mcp app-server lease already attached: ${leaseId}`);
+    }
+    session.leaseAttached = true;
+    this.clearAppServerLeaseTimer(session);
+    const unsubscribe = this.subscribeAppServer(session.sessionId, listener);
+    listener({
+      type: "resource",
+      sessionId: session.sessionId,
+      resource: session.resource,
+      session: this.snapshotAppServerSession(session),
+    });
+    let released = false;
+    return {
+      receive: async (message: unknown) => {
+        await this.receiveAppServerMessage(session, message);
+      },
+      release: () => {
+        if (released) {
+          return;
+        }
+        released = true;
+        unsubscribe();
+        session.leaseAttached = false;
+        if (this.isAppServerTerminal(session)) {
+          return;
+        }
+        void this.appServerClose({ sessionId: session.sessionId }).catch(() => undefined);
+      },
     };
   }
 
@@ -958,7 +1266,10 @@ export class McpSystem {
       ? await safeList<unknown>(() => input.client.listResources(undefined, { timeout: 30_000 }), "resources")
       : [];
     const resourceTemplates = capabilities?.resources
-      ? await safeList<unknown>(() => input.client.listResourceTemplates(undefined, { timeout: 30_000 }), "resourceTemplates")
+      ? await safeList<unknown>(
+          () => input.client.listResourceTemplates(undefined, { timeout: 30_000 }),
+          "resourceTemplates",
+        )
       : [];
     const prompts = capabilities?.prompts
       ? await safeList<unknown>(() => input.client.listPrompts(undefined, { timeout: 30_000 }), "prompts")
@@ -1102,8 +1413,18 @@ export class McpSystem {
     if (!preferredUrl || session.url) {
       return;
     }
-    session.url = preferredUrl;
+    session.url = this.decorateInspectorUrl(preferredUrl, session.proxyPort);
     session.state = "ready";
+  }
+
+  private decorateInspectorUrl(url: string, proxyPort: number): string {
+    try {
+      const resolved = new URL(url);
+      resolved.searchParams.set("MCP_PROXY_PORT", String(proxyPort));
+      return resolved.toString();
+    } catch {
+      return url;
+    }
   }
 
   private emitInspectorSnapshot(session: McpInspectorSession): void {
@@ -1143,6 +1464,358 @@ export class McpSystem {
     } catch {
       // Temp config cleanup is best-effort; the file lives under the Avatar private tmp directory.
     }
+  }
+
+  private async resolveAppServerResource(input: {
+    client: Client;
+    snapshot: McpCapabilitySnapshot;
+    toolName?: string;
+    resourceUri?: string;
+    arguments?: McpJsonObject;
+  }): Promise<{
+    resource: McpAppServerResourceSnapshot;
+    toolName?: string;
+    toolArguments?: McpJsonObject;
+    toolResult?: unknown;
+  }> {
+    const toolName = input.toolName?.trim() || undefined;
+    const toolArguments = input.arguments ?? {};
+    let resourceUri = input.resourceUri?.trim() || undefined;
+    let toolResult: unknown;
+
+    if (toolName) {
+      const tool = findNamedCapability(input.snapshot.tools, toolName);
+      if (!tool) {
+        throw new Error(`mcp app tool not found: ${toolName}`);
+      }
+      resourceUri = resourceUri ?? resolveMcpAppResourceUri(tool) ?? undefined;
+      if (!resourceUri) {
+        throw new Error(`mcp app tool has no ui resource: ${toolName}`);
+      }
+      toolResult = await input.client.callTool({
+        name: toolName,
+        arguments: toolArguments,
+      });
+    }
+
+    if (!resourceUri) {
+      throw new Error("mcp app-server requires resourceUri or toolName");
+    }
+
+    const readResult = await input.client.readResource({ uri: resourceUri });
+    const contents = readResourceContents(readResult);
+    const content =
+      contents.find((item) => isRecord(item) && readString(item, "uri") === resourceUri && readMcpAppHtmlContent(item)) ??
+      contents.find((item) => readMcpAppHtmlContent(item));
+    const htmlContent = readMcpAppHtmlContent(content);
+    if (!htmlContent) {
+      throw new Error(`mcp resource is not an MCP App HTML resource: ${resourceUri}`);
+    }
+
+    const listing =
+      findNamedCapability(input.snapshot.resources, resourceUri) ??
+      input.snapshot.resources.find((resource) => isRecord(resource) && readString(resource, "uri") === resourceUri) ??
+      input.snapshot.resourceTemplates?.find(
+        (template) => isRecord(template) && readString(template, "uriTemplate") === resourceUri,
+      ) ??
+      null;
+    const uiMeta = readUiMeta(content, listing);
+    return {
+      resource: {
+        uri: resourceUri,
+        mimeType: RESOURCE_MIME_TYPE,
+        html: htmlContent.html,
+        csp: readJsonObjectRecord(uiMeta, "csp"),
+        permissions: readJsonObjectRecord(uiMeta, "permissions"),
+      },
+      toolName,
+      toolArguments: toolName ? toolArguments : undefined,
+      toolResult,
+    };
+  }
+
+  private requireAppServerSession(sessionId: string): McpAppServerSession {
+    const session = this.appServerSessions.get(sessionId.trim());
+    if (!session) {
+      throw new Error(`mcp app-server not found: ${sessionId}`);
+    }
+    return session;
+  }
+
+  private requireAppServerSessionByLease(leaseId: string): McpAppServerSession {
+    const sessionId = this.appServerSessionIdsByLease.get(leaseId.trim());
+    if (!sessionId) {
+      throw new Error(`mcp app-server lease not found: ${leaseId}`);
+    }
+    return this.requireAppServerSession(sessionId);
+  }
+
+  private snapshotAppServerSession(session: McpAppServerSession): McpAppServerSessionSnapshot {
+    return {
+      sessionId: session.sessionId,
+      leaseId: session.leaseId,
+      state: session.state,
+      command: "mcp app-server",
+      name: session.name,
+      projectPath: session.projectPath,
+      resourceUri: session.resource.uri,
+      toolName: session.toolName,
+      toolArguments: session.toolArguments,
+      toolResult: session.toolResult,
+      hostPath: `/mcp/apps/${encodeURIComponent(session.leaseId)}/host`,
+      wsPath: `/mcp/apps/${encodeURIComponent(session.leaseId)}/ws`,
+      error: session.error,
+      startedAt: session.startedAt,
+      updatedAt: session.updatedAt,
+      closedAt: session.closedAt,
+    };
+  }
+
+  private isAppServerTerminal(session: McpAppServerSession): boolean {
+    return session.state === "closed" || session.state === "failed";
+  }
+
+  private armAppServerLeaseClaimTimer(session: McpAppServerSession): void {
+    this.clearAppServerLeaseTimer(session);
+    session.leaseClaimTimer = setTimeout(() => {
+      if (session.leaseAttached || this.isAppServerTerminal(session)) {
+        return;
+      }
+      void this.appServerClose({ sessionId: session.sessionId }).catch(() => undefined);
+    }, APP_SERVER_LEASE_CLAIM_TIMEOUT_MS);
+    session.leaseClaimTimer.unref?.();
+  }
+
+  private clearAppServerLeaseTimer(session: McpAppServerSession): void {
+    if (!session.leaseClaimTimer) {
+      return;
+    }
+    clearTimeout(session.leaseClaimTimer);
+    session.leaseClaimTimer = null;
+  }
+
+  private emitAppServerSnapshot(session: McpAppServerSession): void {
+    this.emitAppServerEvent({ type: "snapshot", session: this.snapshotAppServerSession(session) });
+  }
+
+  private emitAppServerOutgoingMessage(session: McpAppServerSession, message: McpJsonObject): void {
+    this.emitAppServerEvent({
+      type: "message",
+      sessionId: session.sessionId,
+      message,
+      session: this.snapshotAppServerSession(session),
+    });
+  }
+
+  private emitAppServerEvent(event: McpAppServerEvent): void {
+    const listeners = this.appServerListeners.get(event.type === "snapshot" ? event.session.sessionId : event.sessionId);
+    if (!listeners) {
+      return;
+    }
+    for (const listener of listeners) {
+      listener(event);
+    }
+  }
+
+  private async receiveAppServerMessage(session: McpAppServerSession, value: unknown): Promise<void> {
+    if (Array.isArray(value)) {
+      for (const item of value) {
+        await this.receiveAppServerMessage(session, item);
+      }
+      return;
+    }
+    const message = normalizeJsonRpcMessage(value);
+    if (!message) {
+      return;
+    }
+    const method = typeof message.method === "string" ? message.method : null;
+    if (!method) {
+      return;
+    }
+    const id = readJsonRpcId(message.id);
+    if (id === undefined) {
+      await this.handleAppServerNotification(session, method, message.params);
+      return;
+    }
+    try {
+      const result = await this.handleAppServerRequest(session, method, message.params);
+      this.emitAppServerOutgoingMessage(session, createJsonRpcResult(id, result));
+    } catch (error) {
+      this.emitAppServerOutgoingMessage(session, createJsonRpcError(id, -32000, actionError(error)));
+    }
+  }
+
+  private async handleAppServerNotification(
+    session: McpAppServerSession,
+    method: string,
+    params: unknown,
+  ): Promise<void> {
+    session.updatedAt = new Date().toISOString();
+    if (method === INITIALIZED_METHOD) {
+      session.initialized = true;
+      this.emitAppServerSnapshot(session);
+      this.sendInitialAppServerPayload(session);
+      return;
+    }
+    if (method === "ui/notifications/sandbox-proxy-ready") {
+      this.emitAppServerOutgoingMessage(
+        session,
+        createJsonRpcNotification("ui/notifications/sandbox-resource-ready", {
+          html: session.resource.html,
+          csp: session.resource.csp,
+          permissions: session.resource.permissions,
+          sandbox: "allow-scripts allow-forms allow-popups allow-modals allow-downloads",
+        }),
+      );
+      return;
+    }
+    if (method === "ui/notifications/request-teardown") {
+      await this.appServerClose({ sessionId: session.sessionId });
+      return;
+    }
+    if (method === "notifications/message" && isRecord(params)) {
+      session.error = readString(params, "level") === "error" ? JSON.stringify(params.data ?? params) : session.error;
+      this.emitAppServerSnapshot(session);
+    }
+  }
+
+  private sendInitialAppServerPayload(session: McpAppServerSession): void {
+    if (session.initialPayloadSent) {
+      return;
+    }
+    session.initialPayloadSent = true;
+    if (session.toolName) {
+      this.emitAppServerOutgoingMessage(
+        session,
+        createJsonRpcNotification(TOOL_INPUT_METHOD, {
+          arguments: session.toolArguments ?? {},
+        }),
+      );
+    }
+    if (session.toolResult !== undefined) {
+      this.emitAppServerOutgoingMessage(session, createJsonRpcNotification(TOOL_RESULT_METHOD, session.toolResult));
+    }
+  }
+
+  private async handleAppServerRequest(
+    session: McpAppServerSession,
+    method: string,
+    params: unknown,
+  ): Promise<unknown> {
+    if (method === INITIALIZE_METHOD) {
+      const tool =
+        session.toolName ? (findNamedCapability(session.snapshot.tools, session.toolName) as Tool | null) : null;
+      return {
+        protocolVersion: APP_SERVER_PROTOCOL_VERSION,
+        hostInfo: {
+          name: "agenter-mcp-app-server",
+          version: this.clientVersion,
+        },
+        hostCapabilities: {
+          serverTools: {},
+          serverResources: {},
+          logging: {},
+          message: {
+            text: {},
+            image: {},
+            resource: {},
+            resourceLink: {},
+            structuredContent: {},
+          },
+          updateModelContext: {
+            text: {},
+            image: {},
+            resource: {},
+            resourceLink: {},
+            structuredContent: {},
+          },
+          sandbox: {
+            csp: session.resource.csp,
+            permissions: session.resource.permissions,
+          },
+        },
+        hostContext: {
+          toolInfo: tool
+            ? {
+                tool,
+              }
+            : undefined,
+          theme: "light",
+          displayMode: "inline",
+          availableDisplayModes: ["inline", "fullscreen"],
+          platform: "web",
+          userAgent: "agenter-studio",
+        },
+      };
+    }
+    if (method === "ping") {
+      return {};
+    }
+    if (method === "tools/list") {
+      return {
+        tools: session.snapshot.tools.filter(isToolCallableFromApp),
+      };
+    }
+    if (method === "tools/call") {
+      const toolCall = readToolCallParams(params);
+      if (!toolCall) {
+        throw new Error("tools/call requires params.name");
+      }
+      const tool = findNamedCapability(session.snapshot.tools, toolCall.name);
+      if (!tool || !isToolCallableFromApp(tool)) {
+        throw new Error(`mcp app cannot call tool: ${toolCall.name}`);
+      }
+      return await session.client.callTool({
+        name: toolCall.name,
+        arguments: toolCall.arguments ?? {},
+      });
+    }
+    if (method === "resources/list") {
+      return {
+        resources: session.snapshot.resources,
+      };
+    }
+    if (method === "resources/templates/list") {
+      return {
+        resourceTemplates: session.snapshot.resourceTemplates ?? [],
+      };
+    }
+    if (method === "resources/read") {
+      const readParams = readResourceReadParams(params);
+      if (!readParams) {
+        throw new Error("resources/read requires params.uri");
+      }
+      return await session.client.readResource(readParams);
+    }
+    if (method === "prompts/list") {
+      return {
+        prompts: session.snapshot.prompts,
+      };
+    }
+    if (method === "prompts/get") {
+      const promptParams = readPromptGetParams(params);
+      if (!promptParams) {
+        throw new Error("prompts/get requires params.name");
+      }
+      return await session.client.getPrompt({
+        name: promptParams.name,
+        arguments: createPromptArguments(promptParams.arguments),
+      });
+    }
+    if (method === "ui/message" || method === "ui/update-model-context") {
+      return {};
+    }
+    if (method === "ui/open-link" || method === "ui/download-file") {
+      return { isError: true };
+    }
+    if (method === "ui/request-display-mode") {
+      const requestedMode = isRecord(params) && params.mode === "fullscreen" ? "fullscreen" : "inline";
+      return { mode: requestedMode };
+    }
+    if (method === "ui/resource-teardown") {
+      return {};
+    }
+    throw new Error(`unsupported MCP Apps request: ${method}`);
   }
 
   private formatProbeResult(

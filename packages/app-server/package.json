@@ -36,6 +36,7 @@
     "@agenter/task-system": "workspace:*",
     "@agenter/terminal-system": "workspace:*",
     "@jixo/reactive-fs": "workspace:*",
+    "@modelcontextprotocol/ext-apps": "^1.7.4",
     "@modelcontextprotocol/sdk": "^1.29.0",
     "@opentelemetry/api": "^1.9.0",
     "@opentelemetry/sdk-trace-base": "^2.1.0",

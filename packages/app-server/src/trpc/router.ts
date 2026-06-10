@@ -7,7 +7,6 @@ import {
   appAttentionQueryInputSchema,
   appAttentionSettleInputSchema,
   appAvatarPromptSeedInputSchema,
-  appMemoryPackEnsureInputSchema,
   appPrivateTextAssetEnsureInputSchema,
 } from "@agenter/app-runtime";
 import { AVATAR_CLASSIFY_VALUES } from "@agenter/auth-service";
@@ -33,7 +32,7 @@ import {
 } from "../auth-kv-types";
 import type { AnyRuntimeEvent } from "../realtime-types";
 import { settingsKindSchema } from "../realtime-types";
-import type { McpInspectorEvent } from "../mcp-system/types";
+import type { McpAppServerEvent, McpInspectorEvent } from "../mcp-system/types";
 import { t } from "./init";
 
 const sessionIdInput = z.object({ sessionId: z.string().min(1) });
@@ -395,6 +394,23 @@ const mcpInspectorStartInputSchema = mcpAvatarInputSchema.extend({
   env: mcpStringRecordSchema.optional(),
 });
 const mcpInspectorSessionInputSchema = mcpAvatarInputSchema.extend({
+  sessionId: z.string().trim().min(1),
+});
+const mcpAppServerStartInputSchema = mcpAvatarInputSchema
+  .extend({
+    name: z.string().trim().min(1).optional(),
+    projectPath: z.string().trim().min(1).optional(),
+    transport: mcpTransportSchema,
+    env: mcpStringRecordSchema.optional(),
+    toolName: z.string().trim().min(1).optional(),
+    resourceUri: z.string().trim().min(1).optional(),
+    arguments: mcpJsonObjectSchema.optional(),
+  })
+  .refine((value) => Boolean(value.toolName || value.resourceUri), {
+    message: "toolName or resourceUri is required",
+    path: ["toolName"],
+  });
+const mcpAppServerSessionInputSchema = mcpAvatarInputSchema.extend({
   sessionId: z.string().trim().min(1),
 });
 const noteReferenceInputSchema = z.union([
@@ -847,6 +863,54 @@ export const appRouter = t.router({
         let closed = false;
         void ctx.kernel
           .onMcpInspectorEvent(input, (event) => {
+            if (!closed) {
+              emit.next(event);
+            }
+          })
+          .then((nextUnsubscribe) => {
+            if (closed) {
+              nextUnsubscribe();
+              return;
+            }
+            unsubscribe = nextUnsubscribe;
+          })
+          .catch((error: unknown) => {
+            if (!closed) {
+              emit.error(error instanceof Error ? error : new Error(String(error)));
+            }
+          });
+        return () => {
+          closed = true;
+          unsubscribe?.();
+        };
+      });
+    }),
+    appServerStart: superadminProcedure
+      .input(mcpAppServerStartInputSchema)
+      .mutation(async ({ ctx, input }) => {
+        const session = await ctx.kernel.mcpAppServerStart(input);
+        const urls = ctx.resolveMcpAppServerUrls?.({
+          avatarNickname: input.avatarNickname,
+          leaseId: session.leaseId,
+        });
+        return {
+          ...session,
+          hostUrl: urls?.hostUrl,
+          wsUrl: urls?.wsUrl,
+        };
+      }),
+    appServerSnapshot: superadminProcedure
+      .input(mcpAppServerSessionInputSchema)
+      .query(async ({ ctx, input }) => await ctx.kernel.mcpAppServerSnapshot(input)),
+    appServerClose: superadminProcedure
+      .input(mcpAppServerSessionInputSchema)
+      .mutation(async ({ ctx, input }) => await ctx.kernel.mcpAppServerClose(input)),
+    appServerEvents: superadminProcedure.input(mcpAppServerSessionInputSchema).subscription(({ ctx, input }) => {
+      return observable<McpAppServerEvent>((emit) => {
+        let unsubscribe: (() => void) | null = null;
+        let closed = false;
+        void ctx.kernel
+          .onMcpAppServerEvent(input, (event) => {
             if (!closed) {
               emit.next(event);
             }

@@ -976,6 +976,21 @@ const createRuntimeLocalHandlers = (input: {
     attachInspectorLease: () => {
       throw new Error("mcp inspector lease not configured");
     },
+    appServerStart: async () => {
+      throw new Error("mcp app-server start not configured");
+    },
+    appServerSnapshot: () => {
+      throw new Error("mcp app-server snapshot not configured");
+    },
+    appServerClose: async () => {
+      throw new Error("mcp app-server close not configured");
+    },
+    subscribeAppServer: () => {
+      throw new Error("mcp app-server events not configured");
+    },
+    attachAppServerLease: () => {
+      throw new Error("mcp app-server lease not configured");
+    },
   },
 });
 

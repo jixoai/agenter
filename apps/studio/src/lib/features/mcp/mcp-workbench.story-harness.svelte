@@ -1,5 +1,9 @@
 <script lang="ts">
 	import type {
+		McpAppServerCloseInput,
+		McpAppServerCloseOutput,
+		McpAppServerStartInput,
+		McpAppServerStartOutput,
 		McpInspectorCloseInput,
 		McpInspectorCloseOutput,
 		McpInspectorSnapshotOutput,
@@ -199,12 +203,24 @@
 				title: 'UI resource for the Svelte Playground widget',
 				description: 'UI resource for the Svelte Playground widget.',
 			},
+			{
+				uri: 'svelte:///ai/instructions.md',
+				title: 'ai/instructions',
+				description: 'To get the most out of the MCP server and skills, include the following...',
+			},
 		],
 		resourceTemplates: [
 			{
-				uriTemplate: 'memory://workspace/{name}',
-				title: 'Workspace Memory Template',
-				description: 'Parameterized workspace memory URI.',
+				name: 'Svelte-Doc-Section',
+				title: 'A single documentation section',
+				description: 'A single documentation section',
+				icons: [
+					{
+						src: 'https://cdn.example.com/svelte-doc-section.svg',
+						mimeType: 'image/svg+xml',
+					},
+				],
+				uriTemplate: 'svelte://{/slug*}.md',
 			},
 		],
 		prompts: [
@@ -248,7 +264,7 @@
 		],
 		snapshot: {
 			transport: input.transport,
-			resourceTemplates: ['memory://workspace/{name}'],
+			resourceTemplates: ['svelte://{/slug*}.md'],
 		},
 		snapshotAt: '2026-06-08T00:00:00.000Z',
 	});
@@ -364,23 +380,33 @@
 								},
 							],
 						}
-					: {
-							contents: [
-								{
-									uri: input.resourceUri,
-									mimeType: 'application/json',
-									text: JSON.stringify(
-										{
-											title: 'Workspace Memory',
-											workspace: 'fixture',
-											projectPath: '/repo/app',
-										},
-										null,
-										2,
-									),
-								},
-							],
-						}
+					: input.resourceUri === 'svelte:///ai/instructions.md'
+						? {
+								contents: [
+									{
+										uri: input.resourceUri,
+										mimeType: 'text/markdown',
+										text: `# AI Instructions\n\nTo get the most out of the MCP server and skills, include the following:\n\n- Keep the app focused\n- Use the inspect panel for CLI-shaped evidence\n- Read resources before calling tools when the URI template points at docs\n`,
+									},
+								],
+							}
+						: {
+								contents: [
+									{
+										uri: input.resourceUri,
+										mimeType: 'application/json',
+										text: JSON.stringify(
+											{
+												title: 'Workspace Memory',
+												workspace: 'fixture',
+												projectPath: '/repo/app',
+											},
+											null,
+											2,
+										),
+									},
+								],
+							}
 				: input.action === 'get-prompt'
 					? {
 							description: 'Fixture summarize prompt.',
@@ -424,6 +450,47 @@
 	const closeInspector = async (input: McpInspectorCloseInput): Promise<McpInspectorCloseOutput> => {
 		recordEvent(`inspector-close:${input.sessionId}`);
 		return buildInspectorSession('closed');
+	};
+
+	const startAppServer = async (input: McpAppServerStartInput): Promise<McpAppServerStartOutput> => {
+		recordEvent(`app-server-start:${input.toolName ?? input.resourceUri ?? input.name ?? 'app'}`);
+		const now = new Date().toISOString();
+		return {
+			sessionId: 'app-server-story-1',
+			leaseId: 'app-lease-story-1',
+			state: 'ready',
+			command: 'mcp app-server',
+			name: input.name ?? 'story-app',
+			projectPath: input.projectPath ?? '/repo/app',
+			resourceUri: input.resourceUri ?? 'ui://story/app',
+			toolName: input.toolName,
+			toolArguments: input.arguments,
+			hostPath: '/mcp/apps/app-lease-story-1/host',
+			wsPath: '/mcp/apps/app-lease-story-1/ws',
+			hostUrl: 'about:blank',
+			wsUrl: 'ws://127.0.0.1:6006/mcp/apps/app-lease-story-1/ws',
+			startedAt: now,
+			updatedAt: now,
+		};
+	};
+
+	const closeAppServer = async (input: McpAppServerCloseInput): Promise<McpAppServerCloseOutput> => {
+		recordEvent(`app-server-close:${input.sessionId}`);
+		const now = new Date().toISOString();
+		return {
+			sessionId: input.sessionId,
+			leaseId: 'app-lease-story-1',
+			state: 'closed',
+			command: 'mcp app-server',
+			name: 'story-app',
+			projectPath: '/repo/app',
+			resourceUri: 'ui://story/app',
+			hostPath: '/mcp/apps/app-lease-story-1/host',
+			wsPath: '/mcp/apps/app-lease-story-1/ws',
+			startedAt: now,
+			updatedAt: now,
+			closedAt: now,
+		};
 	};
 
 	const createInspectorSocket = (url: string): StoryInspectorSocket => {
@@ -511,6 +578,8 @@
 					onProbe={probeDraft}
 					onInspectorStart={startInspector}
 					onInspectorClose={closeInspector}
+					onAppServerStart={startAppServer}
+					onAppServerClose={closeAppServer}
 					{createInspectorSocket}
 				/>
 			</div>
@@ -537,6 +606,8 @@
 					onProbe={probeDraft}
 					onInspectorStart={startInspector}
 					onInspectorClose={closeInspector}
+					onAppServerStart={startAppServer}
+					onAppServerClose={closeAppServer}
 					{createInspectorSocket}
 				/>
 			</div>
@@ -570,6 +641,8 @@
 					onProbe={probeDraft}
 					onInspectorStart={startInspector}
 					onInspectorClose={closeInspector}
+					onAppServerStart={startAppServer}
+					onAppServerClose={closeAppServer}
 					{createInspectorSocket}
 					onAddProject={async (nextProjectPath) => {
 						selectedProjectPath = nextProjectPath;
@@ -622,6 +695,8 @@
 					onProbe={probeDraft}
 					onInspectorStart={startInspector}
 					onInspectorClose={closeInspector}
+					onAppServerStart={startAppServer}
+					onAppServerClose={closeAppServer}
 					{createInspectorSocket}
 					onAddProject={async (nextProjectPath) => {
 						selectedProjectPath = nextProjectPath;

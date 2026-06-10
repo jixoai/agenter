@@ -1,5 +1,6 @@
 import type { inferRouterInputs, inferRouterOutputs } from "@trpc/server";
 
+import type { AppAvatarMemoryPackFile } from "@agenter/app-runtime";
 import type {
   AppRouter,
   AuthDraftEntry as AuthDraftEntryContract,
@@ -15,6 +16,7 @@ import type {
 
 export type RouterOutputs = inferRouterOutputs<AppRouter>;
 export type RouterInputs = inferRouterInputs<AppRouter>;
+export type AppAvatarMemoryPackEnsureOutput = AppAvatarMemoryPackFile[];
 
 export type SessionListOutput = RouterOutputs["session"]["list"];
 export type SessionEntry = SessionListOutput["sessions"][number];
@@ -83,6 +85,13 @@ export type McpInspectorSnapshotOutput = RouterOutputs["mcp"]["inspectorSnapshot
 export type McpInspectorCloseInput = RouterInputs["mcp"]["inspectorClose"];
 export type McpInspectorCloseOutput = RouterOutputs["mcp"]["inspectorClose"];
 export type McpInspectorEvent = RouterOutputs["mcp"]["inspectorEvents"];
+export type McpAppServerStartInput = RouterInputs["mcp"]["appServerStart"];
+export type McpAppServerStartOutput = RouterOutputs["mcp"]["appServerStart"];
+export type McpAppServerSnapshotInput = RouterInputs["mcp"]["appServerSnapshot"];
+export type McpAppServerSnapshotOutput = RouterOutputs["mcp"]["appServerSnapshot"];
+export type McpAppServerCloseInput = RouterInputs["mcp"]["appServerClose"];
+export type McpAppServerCloseOutput = RouterOutputs["mcp"]["appServerClose"];
+export type McpAppServerEvent = RouterOutputs["mcp"]["appServerEvents"];
 export type WorkspaceListOutput = RouterOutputs["workspace"]["listAll"];
 export type WorkspaceEntry = WorkspaceListOutput["items"][number];
 export type WorkspaceSessionListOutput = RouterOutputs["workspace"]["listSessions"];

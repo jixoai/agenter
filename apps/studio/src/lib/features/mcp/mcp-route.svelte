@@ -438,6 +438,10 @@
 		await controller.runtimeStore.startMcpInspector(input);
 	const handleInspectorClose = async (input: Parameters<typeof controller.runtimeStore.closeMcpInspector>[0]) =>
 		await controller.runtimeStore.closeMcpInspector(input);
+	const handleAppServerStart = async (input: Parameters<typeof controller.runtimeStore.startMcpAppServer>[0]) =>
+		await controller.runtimeStore.startMcpAppServer(input);
+	const handleAppServerClose = async (input: Parameters<typeof controller.runtimeStore.closeMcpAppServer>[0]) =>
+		await controller.runtimeStore.closeMcpAppServer(input);
 
 	const handleOpenAvatarConfig = async (row: McpConfigCatalogRow): Promise<void> => {
 		activeView = 'configs';
@@ -626,6 +630,8 @@
 							onProbe={handleProbeDraft}
 							onInspectorStart={handleInspectorStart}
 							onInspectorClose={handleInspectorClose}
+							onAppServerStart={handleAppServerStart}
+							onAppServerClose={handleAppServerClose}
 						/>
 					</ScrollView>
 				{:else if selectedCatalogRow}
@@ -643,6 +649,8 @@
 						onProbe={handleProbeDraft}
 						onInspectorStart={handleInspectorStart}
 						onInspectorClose={handleInspectorClose}
+						onAppServerStart={handleAppServerStart}
+						onAppServerClose={handleAppServerClose}
 						onAddProject={handleAddProject}
 						onStartProject={handleStartProject}
 						onStopProject={handleStopProject}

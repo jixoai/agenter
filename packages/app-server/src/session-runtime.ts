@@ -108,9 +108,9 @@ import { basename, dirname, isAbsolute, join, relative, resolve } from "node:pat
 import { z } from "zod";
 import { createRuntimeAttentionPreview } from "./attention-runtime-view";
 import {
-  AttentionSearchEngine,
   ATTENTION_SEARCH_LEGACY_DUCKDB_FILENAME,
   ATTENTION_SEARCH_SQLITE_FILENAME,
+  AttentionSearchEngine,
   type AttentionSearchRequest,
 } from "./attention-search";
 
@@ -1628,6 +1628,21 @@ const unavailableMcpSystemSurface: McpSystemSurface = {
     throw new Error("mcp system surface unavailable");
   },
   attachInspectorLease: () => {
+    throw new Error("mcp system surface unavailable");
+  },
+  appServerStart: async () => {
+    throw new Error("mcp system surface unavailable");
+  },
+  appServerSnapshot: () => {
+    throw new Error("mcp system surface unavailable");
+  },
+  appServerClose: async () => {
+    throw new Error("mcp system surface unavailable");
+  },
+  subscribeAppServer: () => {
+    throw new Error("mcp system surface unavailable");
+  },
+  attachAppServerLease: () => {
     throw new Error("mcp system surface unavailable");
   },
 };
@@ -8592,12 +8607,7 @@ export class SessionRuntime {
     });
   }
 
-  pushUserRoomMessage(input: {
-    chatId: string;
-    text: string;
-    assetIds?: string[];
-    clientMessageId?: string;
-  }): void {
+  pushUserRoomMessage(input: { chatId: string; text: string; assetIds?: string[]; clientMessageId?: string }): void {
     const isCompactCommand = input.text.trim() === "/compact";
     if (isCompactCommand) {
       this.queueCompactCycle("manual");
