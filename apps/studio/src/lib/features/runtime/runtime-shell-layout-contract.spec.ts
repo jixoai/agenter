@@ -68,6 +68,14 @@ describe("Feature: Runtime shell toolbar contract", () => {
     expect(runtimeHeartbeatAppViewSource).not.toContain("packages/web-heartbeat-view/example");
   });
 
+  test("Scenario: Given the Studio Heartbeat list iframe owns only record-page projection When reading the app-view source Then legacy group hydration and detail state stay outside the list surface", () => {
+    expect(runtimeHeartbeatAppViewSource).toContain("listViewState");
+    expect(runtimeHeartbeatAppViewSource).toContain("groupsState: emptyGroupsState");
+    expect(runtimeHeartbeatAppViewSource).toContain("includeHeartbeatGroups: false");
+    expect(runtimeHeartbeatAppViewSource).toContain("includeHeartbeatRecords: false");
+    expect(runtimeHeartbeatAppViewSource).toContain("controller.runtimeStore.loadHeartbeatRecords(runtimeId)");
+  });
+
   test("Scenario: Given runtime shell inserts route-level notices above the primary stage When reading the shell source Then the stage host itself remains shrinkable so Heartbeat keeps a bounded inner viewport", () => {
     expect(runtimeShellSource).toContain("'runtime-shell__layout-grid grid h-full gap-3'");
     expect(runtimeShellSource).toContain(

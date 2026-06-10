@@ -14,12 +14,13 @@
 	import { onMount } from 'svelte';
 
 	import { createAppController } from '$lib/app/app-controller.svelte';
-	import type { SettingsLayerFile } from '$lib/features/settings/settings-graph-types';
 
-	import { readRuntimeHeartbeatConfigBinding } from './runtime-heartbeat-config-state';
 	import { HEARTBEAT_RECORD_SELECT_MESSAGE_TYPE } from './runtime-heartbeat-app-view-url';
 
 	type HeartbeatAppViewSurface = 'list' | 'detail';
+	const emptyGroupsState = createCachedResourceState([]);
+	const emptyRecordsState = createCachedResourceState(null);
+	const emptyRecordDetailsState: Record<number, CachedResourceState<HeartbeatRecordDetail | null>> = {};
 
 	let {
 		runtimeId,
@@ -34,10 +35,6 @@
 	const controller = createAppController();
 	let hydrating = $state(true);
 	let hydrateError = $state<string | null>(null);
-	let configGraph = $state<Awaited<ReturnType<typeof controller.runtimeStore.listRuntimeSettingsScope>> | null>(null);
-	let configLayerFile = $state<SettingsLayerFile | null>(null);
-	let configLoading = $state(false);
-	let configError = $state<string | null>(null);
 	let hydratedRuntimeId = $state<string | null>(null);
 	let localRecordDetailsState = $state<Record<number, CachedResourceState<HeartbeatRecordDetail | null>>>({});
 
@@ -80,13 +77,13 @@
 
 	const session = $derived(controller.runtimeState.sessions.find((entry) => entry.id === runtimeId) ?? null);
 	const runtime = $derived(controller.runtimeState.runtimes[runtimeId] ?? null);
-	const groupsState = $derived(
-		controller.runtimeState.heartbeatGroupsBySession[runtimeId] ?? createCachedResourceState([]),
-	);
 	const recordsState = $derived(
-		controller.runtimeState.heartbeatRecordsBySession[runtimeId] ?? createCachedResourceState(null),
+		controller.runtimeState.heartbeatRecordsBySession[runtimeId] ?? emptyRecordsState,
 	);
 	const recordDetailsState = $derived.by<Record<number, CachedResourceState<HeartbeatRecordDetail | null>>>(() => {
+		if (surface !== 'detail') {
+			return emptyRecordDetailsState;
+		}
 		const source = controller.runtimeState.heartbeatRecordDetailsBySession[runtimeId] ?? {};
 		return Object.fromEntries(
 			Object.entries(source).map(([recordKey, state]) => [Number(recordKey), adaptRecordDetailState(state)]),
@@ -95,8 +92,6 @@
 	const selectedRecordDetailState = $derived(recordId === null ? undefined : recordDetailsState[recordId]);
 	const selectedLocalRecordDetailState = $derived(recordId === null ? undefined : localRecordDetailsState[recordId]);
 	const selectedDetailState = $derived(selectedLocalRecordDetailState ?? selectedRecordDetailState);
-	const modelCalls = $derived(controller.runtimeState.modelCallsBySession[runtimeId] ?? []);
-	const configBinding = $derived(readRuntimeHeartbeatConfigBinding(configGraph, configLayerFile));
 	const avatarLabel = $derived(session?.avatar || session?.name || 'Avatar');
 	const selectedRecord = $derived.by<HeartbeatRecordItem | null>(() => {
 		if (recordId === null) {
@@ -109,19 +104,11 @@
 			null
 		);
 	});
-	const viewState = $derived<HeartbeatViewState>({
+	const listViewState = $derived<HeartbeatViewState>({
 		sessionStatus: session?.status ?? 'stopped',
 		schedulerState: runtime?.schedulerState ?? null,
-		groupsState,
+		groupsState: emptyGroupsState,
 		recordsState,
-		recordDetailsState,
-		modelCalls,
-		attention: runtime?.attention ?? null,
-		attentionDelivery: runtime?.attentionDelivery ?? null,
-		configBinding,
-		configLoading,
-		configError,
-		runtime,
 		livePushStatus: session?.status === 'running' ? 'active' : 'inactive',
 	});
 	const callbacks = $derived<HeartbeatViewCallbacks>({
@@ -142,25 +129,6 @@
 
 	const toErrorMessage = (error: unknown): string => (error instanceof Error ? error.message : String(error));
 
-	const loadConfig = async (): Promise<void> => {
-		configLoading = true;
-		configError = null;
-		try {
-			const graph = await controller.runtimeStore.listRuntimeSettingsScope(runtimeId);
-			configGraph = graph;
-			const editableLayer = graph.layers.find((layer) => layer.editable) ?? null;
-			configLayerFile = editableLayer
-				? await controller.runtimeStore.readRuntimeSettingsLayer(runtimeId, editableLayer.layerId)
-				: null;
-		} catch (error) {
-			configError = toErrorMessage(error);
-			configGraph = null;
-			configLayerFile = null;
-		} finally {
-			configLoading = false;
-		}
-	};
-
 	const hydrateRuntime = async (): Promise<void> => {
 		hydrating = true;
 		hydrateError = null;
@@ -168,8 +136,15 @@
 			await controller.runtimeStore.hydrateSessionArtifacts(runtimeId, {
 				includeChatHistory: false,
 				observabilityMode: 'heartbeat',
+				observability: {
+					includeHeartbeatGroups: false,
+					includeHeartbeatRecords: false,
+					includeModelCalls: false,
+				},
 			});
-			await Promise.all([controller.runtimeStore.loadHeartbeatRecords(runtimeId), loadConfig()]);
+			if (surface === 'list') {
+				await controller.runtimeStore.loadHeartbeatRecords(runtimeId);
+			}
 			hydratedRuntimeId = runtimeId;
 		} catch (error) {
 			hydrateError = toErrorMessage(error);
@@ -261,7 +236,7 @@
 		<div class="runtime-heartbeat-app-view__state runtime-heartbeat-app-view__state--error">{hydrateError}</div>
 	{:else if surface === 'list'}
 		<HeartbeatView
-			state={viewState}
+			state={listViewState}
 			mode="configable"
 			{avatarLabel}
 			{callbacks}
@@ -285,7 +260,7 @@
 <style>
 	.runtime-heartbeat-app-view {
 		box-sizing: border-box;
-		block-size: 100dvh;
+		/*block-size: 100dvh;*/
 		min-block-size: 0;
 		min-inline-size: 0;
 		overflow: auto;
