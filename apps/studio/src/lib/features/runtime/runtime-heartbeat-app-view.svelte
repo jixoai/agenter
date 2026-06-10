@@ -91,7 +91,17 @@
 	});
 	const selectedRecordDetailState = $derived(recordId === null ? undefined : recordDetailsState[recordId]);
 	const selectedLocalRecordDetailState = $derived(recordId === null ? undefined : localRecordDetailsState[recordId]);
-	const selectedDetailState = $derived(selectedLocalRecordDetailState ?? selectedRecordDetailState);
+	const selectedDetailState = $derived.by(() => {
+		if (!selectedLocalRecordDetailState) {
+			return selectedRecordDetailState;
+		}
+		if (!selectedRecordDetailState) {
+			return selectedLocalRecordDetailState;
+		}
+		const sourceRefreshedAt = selectedRecordDetailState.refreshedAt ?? 0;
+		const localRefreshedAt = selectedLocalRecordDetailState.refreshedAt ?? 0;
+		return sourceRefreshedAt >= localRefreshedAt ? selectedRecordDetailState : selectedLocalRecordDetailState;
+	});
 	const selectedDetailPending = $derived(
 		recordId !== null &&
 			(hydrating ||

@@ -90,6 +90,12 @@ describe("Feature: Runtime shell toolbar contract", () => {
     expect(runtimeHeartbeatAppViewSource).toContain("Heartbeat record is not available.");
   });
 
+  test("Scenario: Given Heartbeat detail store refreshes after a local load snapshot When reading the app-view source Then fresher store detail wins over stale local detail", () => {
+    expect(runtimeHeartbeatAppViewSource).toContain("selectedLocalRecordDetailState");
+    expect(runtimeHeartbeatAppViewSource).toContain("sourceRefreshedAt >= localRefreshedAt");
+    expect(runtimeHeartbeatAppViewSource).toContain("selectedRecordDetailState : selectedLocalRecordDetailState");
+  });
+
   test("Scenario: Given runtime shell inserts route-level notices above the primary stage When reading the shell source Then the stage host itself remains shrinkable so Heartbeat keeps a bounded inner viewport", () => {
     expect(runtimeShellSource).toContain("'runtime-shell__layout-grid grid h-full gap-3'");
     expect(runtimeShellSource).toContain(
