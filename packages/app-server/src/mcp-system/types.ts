@@ -393,5 +393,6 @@ export interface McpSystemSurface {
   appServerSnapshot: (input: McpAppServerCloseInput) => McpAppServerSessionSnapshot;
   appServerClose: (input: McpAppServerCloseInput) => Promise<McpAppServerSessionSnapshot>;
   subscribeAppServer: (sessionId: string, listener: (event: McpAppServerEvent) => void) => () => void;
+  readAppServerLeaseResource: (leaseId: string) => McpAppServerResourceSnapshot;
   attachAppServerLease: (leaseId: string, listener: (event: McpAppServerEvent) => void) => McpAppServerLeaseHandle;
 }

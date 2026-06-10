@@ -988,6 +988,9 @@ const createRuntimeLocalHandlers = (input: {
     subscribeAppServer: () => {
       throw new Error("mcp app-server events not configured");
     },
+    readAppServerLeaseResource: () => {
+      throw new Error("mcp app-server lease resource not configured");
+    },
     attachAppServerLease: () => {
       throw new Error("mcp app-server lease not configured");
     },

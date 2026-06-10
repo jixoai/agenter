@@ -191,6 +191,7 @@ import type {
   McpAppServerCloseInput,
   McpAppServerEvent,
   McpAppServerLeaseHandle,
+  McpAppServerResourceSnapshot,
   McpAppServerStartInput,
   McpCallInput,
   McpDisableInput,
@@ -6387,6 +6388,15 @@ export class AppKernel {
     return (await this.resolveMcpSurface({ avatarNickname: input.avatarNickname })).subscribeAppServer(
       input.sessionId,
       listener,
+    );
+  }
+
+  async readMcpAppServerLeaseResource(input: {
+    avatarNickname?: string | null;
+    leaseId: string;
+  }): Promise<McpAppServerResourceSnapshot> {
+    return (await this.resolveMcpSurface({ avatarNickname: input.avatarNickname })).readAppServerLeaseResource(
+      input.leaseId,
     );
   }
 

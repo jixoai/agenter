@@ -1092,6 +1092,15 @@ export class McpSystem {
     };
   }
 
+  readAppServerLeaseResource(leaseId: string): McpAppServerResourceSnapshot {
+    const session = this.requireAppServerSessionByLease(leaseId);
+    return {
+      ...session.resource,
+      csp: session.resource.csp ? { ...session.resource.csp } : undefined,
+      permissions: session.resource.permissions ? { ...session.resource.permissions } : undefined,
+    };
+  }
+
   attachAppServerLease(leaseId: string, listener: (event: McpAppServerEvent) => void): McpAppServerLeaseHandle {
     const session = this.requireAppServerSessionByLease(leaseId);
     if (session.leaseAttached) {
@@ -1655,18 +1664,6 @@ export class McpSystem {
       session.initialized = true;
       this.emitAppServerSnapshot(session);
       this.sendInitialAppServerPayload(session);
-      return;
-    }
-    if (method === "ui/notifications/sandbox-proxy-ready") {
-      this.emitAppServerOutgoingMessage(
-        session,
-        createJsonRpcNotification("ui/notifications/sandbox-resource-ready", {
-          html: session.resource.html,
-          csp: session.resource.csp,
-          permissions: session.resource.permissions,
-          sandbox: "allow-scripts allow-forms allow-popups allow-modals allow-downloads",
-        }),
-      );
       return;
     }
     if (method === "ui/notifications/request-teardown") {

@@ -1642,6 +1642,9 @@ const unavailableMcpSystemSurface: McpSystemSurface = {
   subscribeAppServer: () => {
     throw new Error("mcp system surface unavailable");
   },
+  readAppServerLeaseResource: () => {
+    throw new Error("mcp system surface unavailable");
+  },
   attachAppServerLease: () => {
     throw new Error("mcp system surface unavailable");
   },

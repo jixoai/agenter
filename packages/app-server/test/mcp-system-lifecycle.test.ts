@@ -471,6 +471,7 @@ describe("Feature: mcpSystem lifecycle", () => {
 
       expect(session.command).toBe("mcp app-server");
       expect(session.hostPath).toContain(`/mcp/apps/${encodeURIComponent(session.leaseId)}/host`);
+      expect(system.readAppServerLeaseResource(session.leaseId).html).toContain("Fixture MCP App");
       expect(
         events.some((event) => event.type === "resource" && event.resource.uri === "ui://fixture/playground-link"),
       ).toBeTrue();

@@ -67,6 +67,12 @@ const sendHtml = (res: ServerResponse, statusCode: number, html: string): void =
   res.end(html);
 };
 
+const sendMcpAppHtml = (res: ServerResponse, statusCode: number, html: string): void => {
+  res.statusCode = statusCode;
+  res.setHeader("content-type", "text/html;profile=mcp-app; charset=utf-8");
+  res.end(html);
+};
+
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
 
@@ -130,11 +136,8 @@ const renderMcpAppHostHtml = (): string => `<!doctype html>
         sandboxLoaded = true;
         const sandboxUrl = new URL(window.location.href);
         sandboxUrl.pathname = sandboxUrl.pathname.replace(/\\/host$/, "/sandbox");
-        sandboxUrl.search = "";
-        if (resource && resource.csp) {
-          sandboxUrl.searchParams.set("csp", JSON.stringify(resource.csp));
-        }
-        sandbox.setAttribute("sandbox", "allow-scripts allow-same-origin allow-forms");
+        sandboxUrl.searchParams.delete("csp");
+        sandbox.setAttribute("sandbox", "allow-scripts allow-forms allow-popups allow-modals allow-downloads");
         sandbox.src = sandboxUrl.toString();
       };
       window.addEventListener("message", (event) => {
@@ -173,59 +176,6 @@ const renderMcpAppHostHtml = (): string => `<!doctype html>
       ws.addEventListener("close", () => setStatus("MCP App disconnected"));
       ws.addEventListener("error", () => setStatus("MCP App connection error"));
       window.addEventListener("beforeunload", () => ws.close());
-    </script>
-  </body>
-</html>`;
-
-const renderMcpAppSandboxHtml = (): string => `<!doctype html>
-<html>
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <style>
-      html, body, iframe { width: 100%; height: 100%; margin: 0; }
-      body { overflow: hidden; background: transparent; }
-      iframe { display: block; border: 0; }
-    </style>
-  </head>
-  <body>
-    <script>
-      const inner = document.createElement("iframe");
-      inner.style.cssText = "width:100%;height:100%;border:0;display:block";
-      inner.setAttribute("sandbox", "allow-scripts allow-same-origin allow-forms");
-      document.body.appendChild(inner);
-      const resourceReadyMethod = "ui/notifications/sandbox-resource-ready";
-      const proxyReadyMethod = "ui/notifications/sandbox-proxy-ready";
-      window.addEventListener("message", (event) => {
-        if (event.source === window.parent) {
-          const data = event.data;
-          if (data && data.method === resourceReadyMethod) {
-            const params = data.params || {};
-            if (typeof params.sandbox === "string") {
-              inner.setAttribute("sandbox", params.sandbox);
-            }
-            if (typeof params.html === "string") {
-              const doc = inner.contentDocument || (inner.contentWindow && inner.contentWindow.document);
-              if (doc) {
-                doc.open();
-                doc.write(params.html);
-                doc.close();
-              } else {
-                inner.srcdoc = params.html;
-              }
-            }
-            return;
-          }
-          if (inner.contentWindow) {
-            inner.contentWindow.postMessage(data, "*");
-          }
-          return;
-        }
-        if (event.source === inner.contentWindow) {
-          window.parent.postMessage(event.data, "*");
-        }
-      });
-      window.parent.postMessage({ jsonrpc: "2.0", method: proxyReadyMethod, params: {} }, "*");
     </script>
   </body>
 </html>`;
@@ -767,18 +717,26 @@ export const startTrpcServer = async (options: TrpcServerOptions): Promise<TrpcS
       return;
     }
 
-    if (req.method === "GET" && /^\/mcp\/apps\/[^/]+\/sandbox$/u.test(pathname)) {
-      let csp: unknown;
-      const cspParam = url?.searchParams.get("csp");
-      if (cspParam) {
+    const appSandboxMatch = decodePathMatch(pathname, /^\/mcp\/apps\/([^/]+)\/sandbox$/u);
+    if (req.method === "GET" && appSandboxMatch) {
+      const [leaseId] = appSandboxMatch;
+      void (async () => {
         try {
-          csp = JSON.parse(cspParam);
-        } catch {
-          csp = undefined;
+          if (!leaseId) {
+            sendHtml(res, 400, "mcp app-server lease id is required");
+            return;
+          }
+          const resource = await kernel.readMcpAppServerLeaseResource({
+            avatarNickname: url?.searchParams.get("avatarNickname") ?? undefined,
+            leaseId,
+          });
+          res.setHeader("Content-Security-Policy", buildMcpAppSandboxCsp(resource.csp));
+          sendMcpAppHtml(res, 200, resource.html);
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          sendHtml(res, message.includes("lease not found") ? 404 : 500, message);
         }
-      }
-      res.setHeader("Content-Security-Policy", buildMcpAppSandboxCsp(csp));
-      sendHtml(res, 200, renderMcpAppSandboxHtml());
+      })();
       return;
     }
 

@@ -338,17 +338,33 @@ describe("Feature: cli server contracts", () => {
     });
     handles.push(handle);
 
-    const hostResponse = await fetch(`http://${handle.host}:${handle.port}/mcp/apps/missing-lease/host`);
+    const originalReadAppServerLeaseResource = handle.kernel.readMcpAppServerLeaseResource.bind(handle.kernel);
+    handle.kernel.readMcpAppServerLeaseResource = async (input) => {
+      if (input.leaseId === "fixture-lease") {
+        return {
+          uri: "ui://fixture/playground-link",
+          mimeType: "text/html;profile=mcp-app",
+          html: "<!doctype html><html><body><main>Fixture MCP App</main></body></html>",
+          csp: {
+            connectDomains: ["https://api.example.test"],
+            frameDomains: ["https://frame.example.test"],
+          },
+        };
+      }
+      return await originalReadAppServerLeaseResource(input);
+    };
+
+    const hostResponse = await fetch(`http://${handle.host}:${handle.port}/mcp/apps/fixture-lease/host`);
     const hostHtml = await hostResponse.text();
     const sandboxResponse = await fetch(
-      `http://${handle.host}:${handle.port}/mcp/apps/missing-lease/sandbox?csp=${encodeURIComponent(
+      `http://${handle.host}:${handle.port}/mcp/apps/fixture-lease/sandbox?avatarNickname=default&csp=${encodeURIComponent(
         JSON.stringify({
-          connectDomains: ["https://api.example.test"],
-          frameDomains: ["https://frame.example.test"],
+          connectDomains: ["https://ignored.example.test"],
         }),
       )}`,
     );
     const sandboxHtml = await sandboxResponse.text();
+    const missingSandboxResponse = await fetch(`http://${handle.host}:${handle.port}/mcp/apps/missing-lease/sandbox`);
     const messages: unknown[] = [];
     const closeCode = await new Promise<number>((resolveClose, rejectClose) => {
       const ws = new WebSocket(`ws://${handle.host}:${handle.port}/mcp/apps/missing-lease/ws`);
@@ -362,10 +378,17 @@ describe("Feature: cli server contracts", () => {
     expect(hostResponse.status).toBe(200);
     expect(hostHtml).toContain("MCP App sandbox");
     expect(hostHtml).toContain("/ws");
+    expect(hostHtml).not.toContain("allow-same-origin");
     expect(sandboxResponse.status).toBe(200);
+    expect(sandboxResponse.headers.get("content-type")).toContain("text/html;profile=mcp-app");
     expect(sandboxResponse.headers.get("content-security-policy")).toContain("https://api.example.test");
     expect(sandboxResponse.headers.get("content-security-policy")).toContain("https://frame.example.test");
-    expect(sandboxHtml).toContain("ui/notifications/sandbox-proxy-ready");
+    expect(sandboxResponse.headers.get("content-security-policy")).not.toContain("https://ignored.example.test");
+    expect(sandboxHtml).toContain("Fixture MCP App");
+    expect(sandboxHtml).not.toContain("ui/notifications/sandbox-proxy-ready");
+    expect(sandboxHtml).not.toContain("document.createElement(\"iframe\")");
+    expect(sandboxHtml).not.toContain("srcdoc");
+    expect(missingSandboxResponse.status).toBe(404);
     expect(closeCode).toBe(1011);
     expect(messages).toEqual([
       {
