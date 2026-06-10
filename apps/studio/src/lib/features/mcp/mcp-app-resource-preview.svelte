@@ -5,7 +5,7 @@
 		McpAppServerStartInput,
 		McpAppServerStartOutput,
 	} from '@agenter/client-sdk';
-	import { onDestroy } from 'svelte';
+	import { onDestroy, untrack } from 'svelte';
 
 	import { Badge } from '$lib/components/ui/badge/index.js';
 	import NoticeBanner from '$lib/components/ui/notice-banner.svelte';
@@ -27,34 +27,61 @@
 	let error = $state<string | null>(null);
 	let runId = 0;
 	let closedSessionIds = new Set<string>();
+	let activeAvatarNickname: string | null | undefined;
 
-	const closeSession = (target: McpAppServerStartOutput | null): void => {
+	const isRecord = (value: unknown): value is Record<string, unknown> =>
+		typeof value === 'object' && value !== null && !Array.isArray(value);
+
+	const stableJson = (value: unknown): unknown => {
+		if (Array.isArray(value)) {
+			return value.map(stableJson);
+		}
+		if (!isRecord(value)) {
+			return value;
+		}
+		return Object.fromEntries(
+			Object.entries(value)
+				.sort(([left], [right]) => left.localeCompare(right))
+				.map(([key, entry]) => [key, stableJson(entry)]),
+		);
+	};
+
+	const stableStringify = (value: unknown): string => JSON.stringify(stableJson(value));
+	const startKey = $derived(startInput ? stableStringify(startInput) : null);
+
+	const closeSession = (target: McpAppServerStartOutput | null, avatarNickname?: string | null): void => {
 		if (!target || closedSessionIds.has(target.sessionId)) {
 			return;
 		}
 		closedSessionIds = new Set([...closedSessionIds, target.sessionId]);
-		void onAppServerClose?.({
-			avatarNickname: startInput?.avatarNickname,
+		const closeHandler = untrack(() => onAppServerClose);
+		void closeHandler?.({
+			avatarNickname: avatarNickname ?? undefined,
 			sessionId: target.sessionId,
 		}).catch(() => undefined);
 	};
 
 	$effect(() => {
-		const input = startInput;
+		const key = startKey;
+		const input = untrack(() => startInput);
+		const startHandler = untrack(() => onAppServerStart);
+		const previousSession = untrack(() => session);
+		const previousAvatarNickname = activeAvatarNickname;
 		const currentRunId = ++runId;
-		closeSession(session);
+		closeSession(previousSession, previousAvatarNickname);
 		session = null;
 		error = null;
-		if (!input) {
+		activeAvatarNickname = input?.avatarNickname;
+		if (!key || !input) {
 			pending = false;
 			return;
 		}
 		pending = true;
 		void (async () => {
 			try {
-				const started = await onAppServerStart(input);
+				const started = await startHandler(input);
 				if (currentRunId !== runId) {
-					closeSession(started);
+					closeSession(started, input.avatarNickname);
 					return;
 				}
 				session = started;
@@ -70,13 +97,13 @@
 		})();
 		return () => {
 			runId += 1;
-			closeSession(session);
+			closeSession(untrack(() => session), input.avatarNickname);
 		};
 	});
 
 	onDestroy(() => {
 		runId += 1;
-		closeSession(session);
+		closeSession(session, activeAvatarNickname);
 	});
 </script>
 

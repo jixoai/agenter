@@ -63,6 +63,8 @@ describe("Feature: Studio MCP route contract", () => {
     expect(appPreviewSource).toContain("onAppServerClose");
     expect(appPreviewSource).toContain("hostUrl");
     expect(appPreviewSource).toContain("hostPath");
+    expect(appPreviewSource).toContain("stableStringify(startInput)");
+    expect(appPreviewSource).toContain("untrack");
     expect(appPreviewSource).not.toContain("sessionStorage");
     expect(appPreviewSource).not.toContain("registerMcpUiPreview");
     expect(appPreviewSource).not.toContain("Blob");
