@@ -76,6 +76,13 @@ describe("Feature: Runtime shell toolbar contract", () => {
     expect(runtimeHeartbeatAppViewSource).toContain("controller.runtimeStore.loadHeartbeatRecords(runtimeId)");
   });
 
+  test("Scenario: Given a Studio Heartbeat detail route is selected before detail data exists When reading the app-view source Then pending detail state wins over unavailable fallback", () => {
+    expect(runtimeHeartbeatAppViewSource).toContain("selectedDetailPending");
+    expect(runtimeHeartbeatAppViewSource).toContain("!selectedDetailState");
+    expect(runtimeHeartbeatAppViewSource).toContain("Loading Heartbeat record…");
+    expect(runtimeHeartbeatAppViewSource).toContain("Heartbeat record is not available.");
+  });
+
   test("Scenario: Given runtime shell inserts route-level notices above the primary stage When reading the shell source Then the stage host itself remains shrinkable so Heartbeat keeps a bounded inner viewport", () => {
     expect(runtimeShellSource).toContain("'runtime-shell__layout-grid grid h-full gap-3'");
     expect(runtimeShellSource).toContain(

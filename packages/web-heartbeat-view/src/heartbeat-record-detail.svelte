@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { onMount } from "svelte";
+
   import HeartbeatRecordIcon from "./heartbeat-record-icon.svelte";
   import { describeRecordStatus } from "./heartbeat-record-chips";
   import { getHeartbeatRecordCardMeta, getHeartbeatRecordKindLabel } from "./heartbeat-record-card-model";
@@ -32,11 +34,13 @@
     configPanelLabelledBy?: string | undefined;
   } = $props();
 
+  let nowMs = $state(Date.now());
+
   const detail = $derived(detailState?.data ?? null);
   const loading = $derived(Boolean(detailState?.loading && !detailState.loaded));
   const error = $derived(detailState?.error ?? null);
   const statusLabel = $derived(describeRecordStatus(record.status));
-  const meta = $derived(getHeartbeatRecordCardMeta(record));
+  const meta = $derived(getHeartbeatRecordCardMeta(record, nowMs));
   const summaryLabel = $derived(meta.modelLabel ?? meta.metaLabel);
 
   const partSummaryById = $derived.by(() => {
@@ -70,6 +74,17 @@
       null,
   );
   const configPayload = $derived(collectHeartbeatRecordParts(detail?.messages ?? [], ["config"])[0]?.payload ?? null);
+
+  onMount(() => {
+    const timer = setInterval(() => {
+      if (record.status === "running") {
+        nowMs = Date.now();
+      }
+    }, 1_000);
+    return () => {
+      clearInterval(timer);
+    };
+  });
 </script>
 
 <section class="ag-heartbeat-record-detail" data-testid="heartbeat-record-detail" data-kind={record.kind}>

@@ -5,6 +5,7 @@ import {
   buildHeartbeatRecordTimeline,
   type HeartbeatRecordChipToken,
 } from "../src/heartbeat-record-chips";
+import { getHeartbeatRecordCardMeta } from "../src/heartbeat-record-card-model";
 import type { HeartbeatRecordItem, HeartbeatRecordPartSummary } from "../src";
 
 const part = (input: {
@@ -135,5 +136,29 @@ describe("Feature: Heartbeat Record chip metric projection", () => {
     expect(wide.hiddenCount).toBe(0);
     expect(wide.chips.some((chip) => chip.kind === "combo")).toBe(false);
     expect(wide.chips.filter((chip) => chip.kind === "tool")).toHaveLength(2);
+  });
+
+  test("Scenario: Given a running model run When wall-clock time advances Then card and metro durations advance without backend refresh", () => {
+    const runningRecord: HeartbeatRecordItem = {
+      ...recordWithParts([
+        part({ partId: "input", role: "user", type: "text", startedAt: 1_000, completedAt: 1_050, tokenCount: 12 }),
+        part({ partId: "thinking", role: "assistant", type: "thinking", startedAt: 1_050, completedAt: null }),
+      ]),
+      status: "running",
+      updatedAt: 1_500,
+      completedAt: null,
+      isComplete: false,
+    };
+
+    expect(getHeartbeatRecordCardMeta(runningRecord, 3_000).durationLabel).toBe("2s");
+    expect(getHeartbeatRecordCardMeta(runningRecord, 5_500).durationLabel).toBe("4.5s");
+
+    const firstTimeline = buildHeartbeatRecordTimeline(runningRecord, 900, 3_050);
+    const nextTimeline = buildHeartbeatRecordTimeline(runningRecord, 900, 5_550);
+
+    expect(firstTimeline.chips.at(-1)?.kind).toBe("pending");
+    expect(nextTimeline.chips.at(-1)?.kind).toBe("pending");
+    expect(firstTimeline.segments.at(-1)?.lineBefore?.label).toBe("2s");
+    expect(nextTimeline.segments.at(-1)?.lineBefore?.label).toBe("4.5s");
   });
 });

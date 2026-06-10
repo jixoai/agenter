@@ -699,6 +699,62 @@ describe("Feature: HeartbeatView DOM capability contract", () => {
     expect(document.querySelector('[data-testid="heartbeat-record-detail"]')).toBeNull();
   });
 
+  test("Scenario: Given a running host-routed record When the row is selected Then the host receives the detail navigation request", async () => {
+    const runningRecord = heartbeatRecord({
+      id: 106,
+      kind: "model_call",
+      status: "running",
+      previewText: "Running route detail row",
+      parts: [
+        recordPart({
+          messageId: "record-user-106",
+          partId: "1",
+          role: "user",
+          type: "text",
+          startedAt: 1_780_000_000_000,
+          completedAt: 1_780_000_000_050,
+          label: "Open the running route detail.",
+        }),
+        recordPart({
+          messageId: "record-pending-106",
+          partId: "2",
+          role: "assistant",
+          type: "thinking",
+          startedAt: 1_780_000_000_050,
+          completedAt: null,
+          isComplete: false,
+          label: "Still thinking.",
+        }),
+      ],
+    });
+    const openedRecordIds: number[] = [];
+    const component = mount(HeartbeatView, {
+      target: document.body,
+      props: {
+        mode: "readonly",
+        avatarLabel: "Ada",
+        state: {
+          sessionStatus: "running",
+          groupsState: completeLoadedState([]),
+          recordsState: completeLoadedResource(recordsPage([runningRecord])),
+        },
+        callbacks: {
+          onOpenRecordDetail: (recordId) => {
+            openedRecordIds.push(recordId);
+          },
+        },
+      },
+    });
+    trackMountedComponent(component);
+
+    await waitForDocumentText("Running route detail row");
+    document.querySelector<HTMLElement>('[data-testid="heartbeat-record-106"]')?.click();
+    await wait();
+
+    expect(openedRecordIds).toEqual([106]);
+    expect(document.querySelector('[data-testid="heartbeat-record-detail"]')).toBeNull();
+  });
+
   test("Scenario: Given a latest record page returned oldest first When the record list renders Then newest records appear first", async () => {
     const olderRecord = heartbeatRecord({
       id: 104,

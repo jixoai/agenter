@@ -92,6 +92,14 @@
 	const selectedRecordDetailState = $derived(recordId === null ? undefined : recordDetailsState[recordId]);
 	const selectedLocalRecordDetailState = $derived(recordId === null ? undefined : localRecordDetailsState[recordId]);
 	const selectedDetailState = $derived(selectedLocalRecordDetailState ?? selectedRecordDetailState);
+	const selectedDetailPending = $derived(
+		recordId !== null &&
+			(hydrating ||
+				!selectedDetailState ||
+				selectedDetailState.loading ||
+				selectedDetailState.refreshing ||
+				(!selectedDetailState.loaded && !selectedDetailState.error)),
+	);
 	const avatarLabel = $derived(session?.avatar || session?.name || 'Avatar');
 	const selectedRecord = $derived.by<HeartbeatRecordItem | null>(() => {
 		if (recordId === null) {
@@ -250,7 +258,7 @@
 			record={selectedRecord}
 			detailState={selectedDetailState}
 		/>
-	{:else if hydrating || selectedDetailState?.loading}
+	{:else if selectedDetailPending}
 		<div class="runtime-heartbeat-app-view__state">Loading Heartbeat record…</div>
 	{:else}
 		<div class="runtime-heartbeat-app-view__state">Heartbeat record is not available.</div>

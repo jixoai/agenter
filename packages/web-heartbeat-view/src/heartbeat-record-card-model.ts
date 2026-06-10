@@ -52,10 +52,11 @@ export const getHeartbeatRecordModelLabel = (record: HeartbeatRecordItem): strin
     ? [record.summary.provider, record.summary.model].filter(Boolean).join(" / ")
     : null;
 
-export const getHeartbeatRecordCardMeta = (record: HeartbeatRecordItem): HeartbeatRecordCardMeta => {
+export const getHeartbeatRecordCardMeta = (record: HeartbeatRecordItem, nowMs?: number): HeartbeatRecordCardMeta => {
   const kindLabel = getHeartbeatRecordKindLabel(record);
   const statusLabel = describeRecordStatus(record.status);
-  const durationLabel = formatHeartbeatRecordDuration((record.completedAt ?? record.updatedAt) - record.startedAt);
+  const durationEnd = record.completedAt ?? (isRecordRunning(record.status) && nowMs ? nowMs : record.updatedAt);
+  const durationLabel = formatHeartbeatRecordDuration(durationEnd - record.startedAt);
   const modelLabel = getHeartbeatRecordModelLabel(record);
   const metaLabel = (() => {
     if (record.kind === "compact") {

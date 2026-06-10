@@ -1,5 +1,6 @@
 <script lang="ts">
   import type { Snippet } from "svelte";
+  import { onMount } from "svelte";
 
   import { isRecordRunning } from "./heartbeat-record-chips";
   import { formatHeartbeatRecordTime, getHeartbeatRecordCardMeta } from "./heartbeat-record-card-model";
@@ -17,9 +18,22 @@
     support?: Snippet;
   } = $props();
 
-  const meta = $derived(getHeartbeatRecordCardMeta(record));
+  let nowMs = $state(Date.now());
+
+  const meta = $derived(getHeartbeatRecordCardMeta(record, nowMs));
   const recordTime = $derived(formatHeartbeatRecordTime(record.startedAt));
   const hasSupport = $derived(Boolean(support || meta.supportLabel || record.previewText));
+
+  onMount(() => {
+    const timer = setInterval(() => {
+      if (isRecordRunning(record.status)) {
+        nowMs = Date.now();
+      }
+    }, 1_000);
+    return () => {
+      clearInterval(timer);
+    };
+  });
 </script>
 
 <article

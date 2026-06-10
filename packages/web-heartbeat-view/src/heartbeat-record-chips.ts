@@ -727,14 +727,14 @@ const fitTimeline = (chips: readonly HeartbeatRecordChip[], width: number): Hear
   };
 };
 
-const buildHeartbeatRecordChips = (record: HeartbeatRecordItem): HeartbeatRecordChip[] => {
+const buildHeartbeatRecordChips = (record: HeartbeatRecordItem, nowMs?: number): HeartbeatRecordChip[] => {
   const parts = [...record.summary.parts].sort((left, right) => left.startedAt - right.startedAt);
   const inputParts = parts.filter(isUserInputPart);
   const inputChip = createChip("input", inputParts, record.startedAt, inputParts.at(-1)?.completedAt ?? record.startedAt);
   const outputParts = parts.filter((part) => !isUserInputPart(part));
   const chips = [inputChip, ...groupOutputParts(outputParts)];
   if (record.status === "running" && chips.every((chip) => chip.kind !== "pending")) {
-    chips.push(createChip("pending", [], record.updatedAt, null));
+    chips.push(createChip("pending", [], record.updatedAt, nowMs ?? null));
   }
   if (record.status === "error" && chips.every((chip) => chip.kind !== "error")) {
     chips.push(createChip("error", [], record.updatedAt, record.completedAt ?? record.updatedAt));
@@ -742,8 +742,8 @@ const buildHeartbeatRecordChips = (record: HeartbeatRecordItem): HeartbeatRecord
   return chips;
 };
 
-export const buildHeartbeatRecordFullTimeline = (record: HeartbeatRecordItem): HeartbeatRecordTimeline => {
-  const chips = buildHeartbeatRecordChips(record);
+export const buildHeartbeatRecordFullTimeline = (record: HeartbeatRecordItem, nowMs?: number): HeartbeatRecordTimeline => {
+  const chips = buildHeartbeatRecordChips(record, nowMs);
   return {
     chips,
     segments: buildSegments(chips),
@@ -752,8 +752,12 @@ export const buildHeartbeatRecordFullTimeline = (record: HeartbeatRecordItem): H
   };
 };
 
-export const buildHeartbeatRecordTimeline = (record: HeartbeatRecordItem, width = 390): HeartbeatRecordTimeline => {
-  const chips = buildHeartbeatRecordChips(record);
+export const buildHeartbeatRecordTimeline = (
+  record: HeartbeatRecordItem,
+  width = 390,
+  nowMs?: number,
+): HeartbeatRecordTimeline => {
+  const chips = buildHeartbeatRecordChips(record, nowMs);
   return fitTimeline(chips, width);
 };
 

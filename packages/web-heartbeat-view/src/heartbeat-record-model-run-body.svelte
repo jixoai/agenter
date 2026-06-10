@@ -31,9 +31,10 @@
 
   let metroWidth = $state(390);
   let metroElement = $state<HTMLElement | null>(null);
+  let nowMs = $state(Date.now());
 
-  const timeline = $derived(buildHeartbeatRecordTimeline(record, metroWidth));
-  const fullTimeline = $derived(buildHeartbeatRecordFullTimeline(record));
+  const timeline = $derived(buildHeartbeatRecordTimeline(record, metroWidth, nowMs));
+  const fullTimeline = $derived(buildHeartbeatRecordFullTimeline(record, nowMs));
   const timelineColumns = $derived.by(() =>
     timeline.segments
       .flatMap((segment) => {
@@ -47,9 +48,17 @@
 
   onMount(() => {
     const element = metroElement;
+    const timer = setInterval(() => {
+      if (record.status === "running") {
+        nowMs = Date.now();
+      }
+    }, 1_000);
+    const stopTimer = (): void => {
+      clearInterval(timer);
+    };
     if (!element || variant !== "card") {
-      return;
-    }
+      return stopTimer;
+    };
     const commitWidth = (value: number): void => {
       if (Number.isFinite(value) && value > 0) {
         metroWidth = Math.round(value);
@@ -57,13 +66,14 @@
     };
     commitWidth(element.clientWidth);
     if (typeof ResizeObserver !== "function") {
-      return;
+      return stopTimer;
     }
     const observer = new ResizeObserver((entries) => {
       commitWidth(entries[0]?.contentRect.width ?? element.clientWidth);
     });
     observer.observe(element);
     return () => {
+      stopTimer();
       observer.disconnect();
     };
   });
