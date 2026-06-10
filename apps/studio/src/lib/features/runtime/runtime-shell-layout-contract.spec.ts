@@ -61,6 +61,13 @@ describe("Feature: Runtime shell toolbar contract", () => {
     expect(runtimeHeartbeatEmbedStageSource).toContain("event.origin !== window.location.origin");
   });
 
+  test("Scenario: Given a Heartbeat record selection races iframe hydration When reading the embed source Then initial effects do not clear the selected record", () => {
+    expect(runtimeHeartbeatEmbedStageSource).toContain("let activeSessionId = $state(sessionId)");
+    expect(runtimeHeartbeatEmbedStageSource).toContain("if (activeSessionId === sessionId)");
+    expect(runtimeHeartbeatEmbedStageSource).toContain("activeSessionId = sessionId");
+    expect(runtimeHeartbeatEmbedStageSource).toContain("selectedRecordId = null");
+  });
+
   test("Scenario: Given the Studio Heartbeat app-view owns iframe content When reading the app-view source Then list selection is a postMessage event instead of an iframe self-route", () => {
     expect(runtimeHeartbeatAppViewSource).toContain("HeartbeatView");
     expect(runtimeHeartbeatAppViewSource).toContain("HeartbeatRecordDetailView");

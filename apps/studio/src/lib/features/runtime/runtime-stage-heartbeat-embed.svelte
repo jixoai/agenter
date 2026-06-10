@@ -23,6 +23,7 @@
 	let selectedRecordId = $state<number | null>(null);
 	let detailOpen = $state(true);
 	let detailCompact = $state(false);
+	let activeSessionId = $state(sessionId);
 
 	const listUrl = $derived(buildHeartbeatListAppViewUrl(sessionId));
 	const detailUrl = $derived(buildHeartbeatDetailAppViewUrl({ runtimeId: sessionId, recordId: selectedRecordId }));
@@ -31,7 +32,10 @@
 	);
 
 	$effect(() => {
-		sessionId;
+		if (activeSessionId === sessionId) {
+			return;
+		}
+		activeSessionId = sessionId;
 		selectedRecordId = null;
 		detailOpen = true;
 	});
