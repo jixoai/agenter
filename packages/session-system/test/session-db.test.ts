@@ -488,6 +488,82 @@ describe("Feature: session-system AI-call ledger persistence", () => {
     }
   });
 
+  test("Scenario: Given collected user input metadata When heartbeat detail is loaded Then the synthetic input boundary is preserved", () => {
+    const db = createDb();
+    try {
+      const attentionItemsText = [
+        "## Attention Items",
+        "",
+        "```yaml+attention-item",
+        "contextId: ctx-room",
+        "commitId: commit-room-message",
+        "provenance:",
+        "  author: Gaubee",
+        "  source: message",
+        "  src: \"room:walkthrough#8\"",
+        "summary: \"今天科技圈有什么新闻？\"",
+        "change:",
+        "  type: update",
+        "  value: |",
+        "    ```yaml",
+        "    message:",
+        "      messageId: 8",
+        "    ```",
+        "",
+        "    今天科技圈有什么新闻？",
+        "```",
+      ].join("\n");
+      const call = db.appendAiCall({
+        roundIndex: 1,
+        kind: "chat",
+        status: "done",
+        provider: "openai",
+        model: "gpt-5.1",
+        requestUrl: "https://api.example.test/v1/responses",
+        requestBody: {
+          model: "gpt-5.1",
+          meta: {
+            collectedInputs: [
+              {
+                role: "user",
+                parts: [{ type: "text", text: attentionItemsText }],
+                meta: { createdAt: 100, updatedAt: 120 },
+              },
+            ],
+          },
+        },
+        createdAt: 100,
+        updatedAt: 180,
+        completedAt: 180,
+        isComplete: true,
+      });
+      db.upsertMessage({
+        messageId: "synthetic-response",
+        aiCallId: call.id,
+        roundIndex: 1,
+        scope: "heartbeat_part",
+        role: "assistant",
+        createdAt: 140,
+        updatedAt: 180,
+        parts: [{ partType: "text", payload: { content: "Done." } }],
+      });
+      db.updateAiCall(call.id, { responseMessageIds: ["synthetic-response"] });
+      db.rebuildHeartbeatRecords();
+
+      const record = db.pageHeartbeatRecords({ pageSize: 1, anchor: { kind: "latest" } }).records[0]!;
+      const detail = db.getHeartbeatRecordDetail(record.id);
+      expect(detail?.messages[0]?.role).toBe("user");
+      expect(detail?.messages[0]?.parts[0]?.partType).toBe("text");
+      expect(detail?.messages[0]?.parts[0]?.payload).toMatchObject({
+        type: "text",
+        content: attentionItemsText,
+      });
+      expect(record.summary.parts[0]?.label).toBe(attentionItemsText);
+    } finally {
+      db.close();
+    }
+  });
+
   test("Scenario: Given attention delivery facts When dispatches bind to ai_call rows later Then attempts and receipts stay durable without rewriting commit truth", () => {
     const db = createDb();
     try {

@@ -554,6 +554,20 @@ describe("Feature: HeartbeatView DOM capability contract", () => {
               recordDetail(modelRecord, [
                 heartbeatEntry({
                   id: 101,
+                  messageId: "record-user-101",
+                  role: "user",
+                  parts: [
+                    heartbeatPart({
+                      partId: 1,
+                      messageId: "record-user-101",
+                      role: "user",
+                      partType: "text",
+                      payload: { text: "Please inspect the current runtime facts." },
+                    }),
+                  ],
+                }),
+                heartbeatEntry({
+                  id: 102,
                   messageId: "record-thinking-101",
                   parts: [
                     heartbeatPart({
@@ -607,7 +621,8 @@ describe("Feature: HeartbeatView DOM capability contract", () => {
     );
     expect(document.body.textContent).toContain("Trace the source refs.");
     expect(document.body.textContent).toContain("shell.exec");
-    expect(document.querySelector(".station-heartbeat-entries .ag-heartbeat-entry")).not.toBeNull();
+    expect(document.querySelector(".station-input-body")).toBeNull();
+    expect(document.querySelector('.station-body-copy[data-station-kind="input"] .ag-heartbeat-entry')).not.toBeNull();
     expect(document.querySelector(".station-payload")).toBeNull();
     const detailTrack = document.querySelector<HTMLElement>('[data-testid="heartbeat-record-detail-track"]');
     expect(detailTrack?.style.gridTemplateRows).not.toContain("1fr");

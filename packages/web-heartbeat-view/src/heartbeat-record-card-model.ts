@@ -1,5 +1,6 @@
 import {
   describeRecordStatus,
+  formatHeartbeatRecordCardDuration,
   formatHeartbeatRecordDuration,
   isRecordRunning,
   type HeartbeatRecordChipKind,
@@ -56,7 +57,7 @@ export const getHeartbeatRecordCardMeta = (record: HeartbeatRecordItem, nowMs?: 
   const kindLabel = getHeartbeatRecordKindLabel(record);
   const statusLabel = describeRecordStatus(record.status);
   const durationEnd = record.completedAt ?? (isRecordRunning(record.status) && nowMs ? nowMs : record.updatedAt);
-  const durationLabel = formatHeartbeatRecordDuration(durationEnd - record.startedAt);
+  const durationLabel = formatHeartbeatRecordCardDuration(durationEnd - record.startedAt);
   const modelLabel = getHeartbeatRecordModelLabel(record);
   const metaLabel = (() => {
     if (record.kind === "compact") {

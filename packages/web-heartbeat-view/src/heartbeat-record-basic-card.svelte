@@ -121,7 +121,7 @@
 
   .ag-heartbeat-basic-record-card__head {
     display: grid;
-    grid-template-columns: 54px minmax(0, 1fr) auto;
+    grid-template-columns: minmax(70px, auto) minmax(0, 1fr) auto;
     gap: 10px;
     align-items: start;
   }

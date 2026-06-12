@@ -14,6 +14,7 @@ import type {
   HeartbeatRecordSummary,
   ReversePage,
   ReverseTimeCursor,
+  SessionCollectedInput,
   SessionAiCallInsert,
   SessionAiCallRecord,
   SessionAiCallUpdate,
@@ -42,7 +43,7 @@ import type {
 } from "./types";
 import { PROMPT_WINDOW_STATE_PART_TYPE } from "./types";
 
-const SESSION_DB_SCHEMA_VERSION = 5;
+const SESSION_DB_SCHEMA_VERSION = 9;
 
 const parseJson = <T>(value: string | null, fallback: T): T => {
   if (!value) {
@@ -1651,20 +1652,25 @@ export class SessionDb {
     const aiCalls = record.aiCallIds
       .map((id) => this.getAiCallById(id))
       .filter((call): call is SessionAiCallRecord => call !== null);
-    const messageIds = [
-      ...new Set(
-        record.sourceRefs.flatMap((ref) => {
-          if (ref.kind !== "message_part") {
-            return [];
-          }
-          return [ref.messageId];
-        }),
-      ),
-    ];
+    const messages =
+      record.kind === "model_call"
+        ? aiCalls.flatMap((call) => this.buildModelCallHeartbeatDetailMessages(call))
+        : this.listMessagesByIds(
+            [
+              ...new Set(
+                record.sourceRefs.flatMap((ref) => {
+                  if (ref.kind !== "message_part") {
+                    return [];
+                  }
+                  return [ref.messageId];
+                }),
+              ),
+            ],
+          );
     return {
       record,
       aiCalls,
-      messages: this.listMessagesByIds(messageIds),
+      messages,
       sourceRefs: record.sourceRefs,
     };
   }
@@ -1724,19 +1730,26 @@ export class SessionDb {
   private buildAiCallHeartbeatProjection(call: SessionAiCallRecord): HeartbeatRecordProjection {
     // Classification is call-bound: tool activity remains message-part evidence, not a top-level record kind.
     const kind: HeartbeatRecordKind = call.kind === "compact" ? "compact" : "model_call";
-    const messages = this.listHeartbeatMessagesForAiCall(call, kind);
+    const messages =
+      kind === "compact"
+        ? this.listHeartbeatMessagesForAiCall(call, kind)
+        : this.buildModelCallHeartbeatSummaryMessages(call);
     const status = this.toHeartbeatRecordStatus(call.status);
+    const inputProjection = kind === "compact" ? { sourceRefs: [] as HeartbeatRecordSourceRef[] } : this.buildModelCallInputProjection(call);
+    const responseMessages = this.listMessagesByIds(call.responseMessageIds);
     const sourceRefs: HeartbeatRecordSourceRef[] = [
       { kind: "ai_call", id: call.id, role: "primary" },
-      ...this.buildMessagePartSourceRefs(messages),
+      ...inputProjection.sourceRefs,
+      ...this.buildMessagePartSourceRefs(responseMessages),
     ];
+    const messageStartedAt = this.minMessageCreatedAt(messages);
+    const recordStartedAt = Math.min(call.createdAt, messageStartedAt ?? call.createdAt);
     const summary = this.buildHeartbeatRecordSummary({
       provider: call.provider,
       model: call.model,
       messages,
-      startedAt: call.createdAt,
+      startedAt: recordStartedAt,
     });
-    const messageStartedAt = this.minMessageCreatedAt(messages);
     const messageUpdatedAt = this.maxMessageUpdatedAt(messages);
     const isComplete = call.isComplete && messages.every((message) => message.isComplete);
     const callActivityUpdatedAt = call.completedAt ?? call.updatedAt;
@@ -1761,6 +1774,112 @@ export class SessionDb {
       completedAt: isComplete ? (call.completedAt ?? activityUpdatedAt) : null,
       isComplete,
     };
+  }
+
+  private buildModelCallHeartbeatSummaryMessages(call: SessionAiCallRecord): SessionMessageRecord[] {
+    const inputMessages = this.buildModelCallInputProjection(call).messages;
+    const responseMessages = this.listMessagesByIds(call.responseMessageIds);
+    return [...inputMessages, ...responseMessages].sort((left, right) => {
+      if (left.createdAt !== right.createdAt) {
+        return left.createdAt - right.createdAt;
+      }
+      return left.id - right.id;
+    });
+  }
+
+  private buildModelCallHeartbeatDetailMessages(call: SessionAiCallRecord): SessionMessageRecord[] {
+    return this.buildModelCallHeartbeatSummaryMessages(call);
+  }
+
+  private buildModelCallInputProjection(call: SessionAiCallRecord): {
+    messages: SessionMessageRecord[];
+    sourceRefs: HeartbeatRecordSourceRef[];
+  } {
+    const collectedInputs = this.readCollectedHeartbeatInputs(call.requestBody);
+    const latestUserInput = [...collectedInputs].reverse().find((input) => input.role === "user") ?? null;
+    if (latestUserInput) {
+      return {
+        messages: [this.buildSyntheticHeartbeatInputMessage(call, latestUserInput, 0)],
+        sourceRefs: [],
+      };
+    }
+    const requestMessages = this.listMessagesByIds(call.requestMessageIds);
+    return {
+      messages: requestMessages,
+      sourceRefs: this.buildMessagePartSourceRefs(requestMessages),
+    };
+  }
+
+  private readCollectedHeartbeatInputs(requestBody: unknown): SessionCollectedInput[] {
+    if (!requestBody || typeof requestBody !== "object" || Array.isArray(requestBody)) {
+      return [];
+    }
+    const meta = (requestBody as { meta?: { collectedInputs?: SessionCollectedInput[] } }).meta;
+    const inputs = meta?.collectedInputs;
+    return Array.isArray(inputs) ? inputs : [];
+  }
+
+  private buildSyntheticHeartbeatInputMessage(
+    call: SessionAiCallRecord,
+    input: SessionCollectedInput,
+    index: number,
+  ): SessionMessageRecord {
+    const createdAt = this.readHeartbeatTimestamp(input.meta?.createdAt) ?? call.createdAt;
+    const updatedAt = this.readHeartbeatTimestamp(input.meta?.updatedAt) ?? createdAt;
+    const messageId = `heartbeat-part:ai-call:${call.id}:input:${index}`;
+    const parts: SessionMessagePartRecord[] = input.parts.map((part, partIndex) => ({
+      partId: -((call.id * 1000) + index * 10 + partIndex + 1),
+      partIndex,
+      messageId,
+      windowId: null,
+      aiCallId: call.id,
+      roundIndex: call.roundIndex,
+      scope: "heartbeat_part",
+      role: input.role,
+      partType: part.type,
+      mimeType: part.type === "text" ? null : part.mimeType,
+      payload:
+        part.type === "text"
+          ? {
+              type: "text",
+              // Heartbeat is an objective fact view, not a semantic projection layer.
+              // Preserve collected input text exactly; cards may visually crop it, but
+              // the record facts must not extract summaries or rewrite the source.
+              content: part.text,
+            }
+          : structuredClone(part),
+      createdAt,
+      updatedAt,
+      isComplete: true,
+    }));
+    return {
+      id: -((call.id * 1000) + index + 1),
+      messageId,
+      windowId: null,
+      aiCallId: call.id,
+      roundIndex: call.roundIndex,
+      scope: "heartbeat_part",
+      role: input.role,
+      createdAt,
+      updatedAt,
+      isComplete: true,
+      parts,
+      text: parts
+        .map((part) => this.partPayloadToText(part.payload).trim())
+        .filter((text) => text.length > 0)
+        .join("\n"),
+    };
+  }
+
+  private readHeartbeatTimestamp(value: unknown): number | null {
+    if (typeof value === "number" && Number.isFinite(value)) {
+      return value;
+    }
+    if (typeof value === "string" && value.trim().length > 0) {
+      const parsed = Date.parse(value);
+      return Number.isFinite(parsed) ? parsed : null;
+    }
+    return null;
   }
 
   private buildMessageBackedHeartbeatProjection(input: {
@@ -1864,7 +1983,9 @@ export class SessionDb {
         }
         return left.partId.localeCompare(right.partId);
       });
-    const firstOutput = parts.find((part) => part.role === "assistant" || part.role === "tool");
+    const firstOutput = parts.find(
+      (part) => part.role === "assistant" && part.type !== "tool_result" && part.type !== "tool_call_result",
+    );
     return {
       provider: input.provider,
       model: input.model,
@@ -1943,6 +2064,12 @@ export class SessionDb {
   }
 
   private buildHeartbeatPartLabel(part: SessionMessagePartRecord): string {
+    if (part.partType === "text" || part.partType === "thinking") {
+      const text = this.partPayloadToText(part.payload).trim();
+      if (text.length > 0) {
+        return text;
+      }
+    }
     if (part.partType === "tool_call" || part.partType === "tool_result") {
       const payload = part.payload;
       if (payload && typeof payload === "object" && !Array.isArray(payload)) {
@@ -2236,6 +2363,7 @@ export class SessionDb {
   private migrate(): void {
     const currentVersion =
       (this.db.query(`pragma user_version`).get() as { user_version?: number } | null)?.user_version ?? 0;
+    const shouldRebuildHeartbeatRecords = currentVersion < SESSION_DB_SCHEMA_VERSION;
     if (currentVersion < 1) {
       this.db.exec(`
         create table if not exists session_head (
@@ -2462,5 +2590,8 @@ export class SessionDb {
       `);
     }
     this.db.exec(`pragma user_version = ${SESSION_DB_SCHEMA_VERSION}`);
+    if (shouldRebuildHeartbeatRecords) {
+      this.rebuildHeartbeatRecords();
+    }
   }
 }

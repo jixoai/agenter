@@ -1,6 +1,7 @@
 import { stringify } from "yaml";
 
 import {
+  formatHeartbeatRecordBridgeDuration as formatHeartbeatRecordBridgeDurationFromChips,
   formatHeartbeatRecordDuration,
   resolveHeartbeatRecordPartKind,
   type HeartbeatRecordChipKind,
@@ -66,6 +67,8 @@ export const indentHeartbeatYaml = (value: string): string =>
     .split("\n")
     .map((line) => `  ${line}`)
     .join("\n");
+
+export const formatHeartbeatRecordBridgeDuration = formatHeartbeatRecordBridgeDurationFromChips;
 
 export const buildHeartbeatRecordDetailRows = (
   messages: readonly HeartbeatPartItem[],

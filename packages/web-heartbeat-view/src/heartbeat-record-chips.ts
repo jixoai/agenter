@@ -85,6 +85,9 @@ const sizeFormatter = new Intl.NumberFormat(undefined, {
   maximumFractionDigits: 1,
 });
 
+const pad2 = (value: number): string => value.toString().padStart(2, "0");
+const pad3 = (value: number): string => value.toString().padStart(3, "0");
+
 const KIND_BASE_TONE: Record<HeartbeatRecordChipKind, string> = {
   input: "var(--kind-input, oklch(58% 0.16 230deg))",
   text: "var(--kind-text, oklch(58% 0.17 260deg))",
@@ -183,13 +186,66 @@ export const formatHeartbeatRecordDuration = (durationMs: number | null): string
   if (durationMs === null || !Number.isFinite(durationMs) || durationMs < 0) {
     return "";
   }
-  if (durationMs < 1000) {
-    return `${Math.round(durationMs)}ms`;
+  const wholeMs = Math.floor(durationMs);
+  const hours = Math.floor(wholeMs / 3_600_000);
+  const minutes = Math.floor((wholeMs % 3_600_000) / 60_000);
+  const seconds = Math.floor((wholeMs % 60_000) / 1000);
+  const millis = wholeMs % 1000;
+  if (hours > 0) {
+    return `${pad2(hours)}:${pad2(minutes)}:${pad2(seconds)}`;
   }
-  if (durationMs < 60_000) {
-    return `${sizeFormatter.format(durationMs / 1000)}s`;
+  return `${pad2(minutes)}:${pad2(seconds)}.${pad3(millis)}`;
+};
+
+export const formatHeartbeatRecordCardDuration = (durationMs: number | null): string => {
+  if (durationMs === null || !Number.isFinite(durationMs) || durationMs < 0) {
+    return "";
   }
-  return `${sizeFormatter.format(durationMs / 60_000)}m`;
+  const wholeMs = Math.floor(durationMs);
+  if (wholeMs < 1000) {
+    return `${wholeMs}ms`;
+  }
+  const totalSeconds = Math.floor(wholeMs / 1000);
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+  if (hours > 0) {
+    return `${pad2(hours)}h ${pad2(minutes)}:${pad2(seconds)}s`;
+  }
+  return `${minutes}:${pad2(seconds)}s`;
+};
+
+export interface HeartbeatRecordBridgeDuration {
+  primaryLabel: string;
+  secondaryLabel: string;
+  title: string;
+}
+
+export const formatHeartbeatRecordBridgeDuration = (durationMs: number | null): HeartbeatRecordBridgeDuration => {
+  if (durationMs === null || !Number.isFinite(durationMs) || durationMs < 0) {
+    return {
+      primaryLabel: "",
+      secondaryLabel: "",
+      title: "",
+    };
+  }
+  const wholeMs = Math.floor(durationMs);
+  const hours = Math.floor(wholeMs / 3_600_000);
+  const minutes = Math.floor((wholeMs % 3_600_000) / 60_000);
+  const seconds = Math.floor((wholeMs % 60_000) / 1000);
+  const millis = wholeMs % 1000;
+  if (hours > 0) {
+    return {
+      primaryLabel: `${pad2(hours)}h`,
+      secondaryLabel: `${pad2(minutes)}:${pad2(seconds)}s`,
+      title: `${pad2(hours)}h ${pad2(minutes)}:${pad2(seconds)}s`,
+    };
+  }
+  return {
+    primaryLabel: `${pad2(minutes)}:${pad2(seconds)}`,
+    secondaryLabel: `.${pad3(millis)}`,
+    title: `${pad2(minutes)}:${pad2(seconds)}.${pad3(millis)}`,
+  };
 };
 
 const estimateTextTokens = (text: string): number => {
@@ -336,12 +392,12 @@ const compactDurationLabel = (durationMs: number, density: ChipDensity): string 
     return density === "narrow" ? `${Math.max(1, Math.round(durationMs / 1000))}s` : `${Math.round(durationMs)}ms`;
   }
   if (durationMs < 10_000) {
-    return density === "full" ? formatHeartbeatRecordDuration(durationMs) : `${(durationMs / 1000).toFixed(1)}s`;
+    return `${(durationMs / 1000).toFixed(1)}s`;
   }
   if (durationMs < 60_000) {
     return density === "narrow" ? `${Math.round(durationMs / 1000)}s` : `${(durationMs / 1000).toFixed(1)}s`;
   }
-  return density === "full" ? formatHeartbeatRecordDuration(durationMs) : `${Math.round(durationMs / 60_000)}m`;
+  return `${Math.round(durationMs / 60_000)}m`;
 };
 
 const estimateTokenWidth = (token: HeartbeatRecordChipToken, density: ChipDensity): number => {
@@ -370,7 +426,7 @@ export const buildHeartbeatRecordChipTokens = (
     tokens.push({
       kind: chip.kind,
       label: "",
-      title: chip.kind === "input" ? "User message input" : "Merged middle span",
+      title: chip.kind === "input" ? "User message input boundary" : "Merged middle span",
     });
   }
 
@@ -634,16 +690,17 @@ const lineBetween = (previous: HeartbeatRecordChip, next: HeartbeatRecordChip, i
   const previousBoundary = index === 1 ? previous.startedAt : (previous.completedAt ?? previous.startedAt);
   const nextBoundary = next.completedAt ?? next.startedAt;
   const durationMs = Number.isFinite(nextBoundary - previousBoundary) ? Math.max(0, nextBoundary - previousBoundary) : null;
+  const label = formatHeartbeatRecordCardDuration(durationMs);
   return {
     id: `${previous.id}->${next.id}`,
     durationMs,
-    label: formatHeartbeatRecordDuration(durationMs),
+    label,
     fromKind: previous.kind,
     toKind: next.kind,
     title:
       index === 1
-        ? `Closed interval from input start to ${next.kind}: ${formatHeartbeatRecordDuration(durationMs)}`
-        : `Interval after ${previous.kind} until ${next.kind}: ${formatHeartbeatRecordDuration(durationMs)}`,
+        ? `Closed interval from input start to ${next.kind}: ${label}`
+        : `Interval after ${previous.kind} until ${next.kind}: ${label}`,
   };
 };
 

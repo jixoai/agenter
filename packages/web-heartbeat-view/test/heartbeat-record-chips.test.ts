@@ -3,6 +3,7 @@ import { describe, expect, test } from "vitest";
 import {
   buildHeartbeatRecordChipTokens,
   buildHeartbeatRecordTimeline,
+  formatHeartbeatRecordDuration,
   type HeartbeatRecordChipToken,
 } from "../src/heartbeat-record-chips";
 import { getHeartbeatRecordCardMeta } from "../src/heartbeat-record-card-model";
@@ -67,6 +68,12 @@ const tokenLabel = (tokens: HeartbeatRecordChipToken[], kind: HeartbeatRecordChi
   tokens.find((token) => token.kind === kind)?.label ?? null;
 
 describe("Feature: Heartbeat Record chip metric projection", () => {
+  test("Scenario: Given a duration span When it is formatted Then it uses mm:ss.mmm and hh:mm:ss for long spans", () => {
+    expect(formatHeartbeatRecordDuration(999)).toBe("00:00.999");
+    expect(formatHeartbeatRecordDuration(61_234)).toBe("01:01.234");
+    expect(formatHeartbeatRecordDuration(3_661_000)).toBe("01:01:01");
+  });
+
   test("Scenario: Given structured input part metrics When model-run chips render Then media and token facts survive the compact chip grammar", () => {
     const timeline = buildHeartbeatRecordTimeline(
       recordWithParts([
@@ -82,6 +89,7 @@ describe("Feature: Heartbeat Record chip metric projection", () => {
     expect(inputChip).not.toBeNull();
 
     const tokens = buildHeartbeatRecordChipTokens(inputChip!, "full");
+    expect(tokens[0]?.kind).toBe("input");
     expect(tokenLabel(tokens, "text")).toBe("31t");
     expect(tokenLabel(tokens, "image")).toBe("2K");
     expect(tokenLabel(tokens, "file")).toBe("5K");
@@ -150,15 +158,15 @@ describe("Feature: Heartbeat Record chip metric projection", () => {
       isComplete: false,
     };
 
-    expect(getHeartbeatRecordCardMeta(runningRecord, 3_000).durationLabel).toBe("2s");
-    expect(getHeartbeatRecordCardMeta(runningRecord, 5_500).durationLabel).toBe("4.5s");
+    expect(getHeartbeatRecordCardMeta(runningRecord, 3_000).durationLabel).toBe("0:02s");
+    expect(getHeartbeatRecordCardMeta(runningRecord, 5_500).durationLabel).toBe("0:04s");
 
     const firstTimeline = buildHeartbeatRecordTimeline(runningRecord, 900, 3_050);
     const nextTimeline = buildHeartbeatRecordTimeline(runningRecord, 900, 5_550);
 
     expect(firstTimeline.chips.at(-1)?.kind).toBe("pending");
     expect(nextTimeline.chips.at(-1)?.kind).toBe("pending");
-    expect(firstTimeline.segments.at(-1)?.lineBefore?.label).toBe("2s");
-    expect(nextTimeline.segments.at(-1)?.lineBefore?.label).toBe("4.5s");
+    expect(firstTimeline.segments.at(-1)?.lineBefore?.label).toBe("0:01s");
+    expect(nextTimeline.segments.at(-1)?.lineBefore?.label).toBe("0:04s");
   });
 });

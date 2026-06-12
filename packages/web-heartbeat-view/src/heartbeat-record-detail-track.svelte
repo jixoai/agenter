@@ -3,6 +3,7 @@
   import HeartbeatRecordChip from "./heartbeat-record-chip.svelte";
   import {
     buildHeartbeatDetailPartMatchKeys,
+    formatHeartbeatRecordBridgeDuration,
     formatHeartbeatRecordPayload,
     type HeartbeatRecordDetailPartRow,
   } from "./heartbeat-record-detail-model";
@@ -120,6 +121,7 @@
     {@const stationRow = index + 1}
     {@const style = railStyle(segment.chip, nextChip)}
     {@const bridgeLine = nextSegment?.lineBefore ?? null}
+    {@const bridgeDuration = bridgeLine ? formatHeartbeatRecordBridgeDuration(bridgeLine.durationMs) : null}
     {@const detailSections = sectionsForRows(detailRows)}
     <a
       class="ag-heartbeat-record-detail-track__station-link station-link"
@@ -147,20 +149,21 @@
           <span class="station-body-meta">{segment.chip.label}</span>
         {/if}
       </div>
-      <div class="station-body-copy">
-        {#if detailSections.length > 0}
-          <div class="station-heartbeat-entries">
-            {#each detailSections as section (section.key)}
-              <HeartbeatEntry
-                {section}
-                layoutMode="detailed"
-                groupLabel={sectionGroupLabel(section)}
-                groupTimestamp={record.startedAt}
-                allowLayoutModeSwitch={false}
-              />
-            {/each}
-          </div>
-        {:else if detailRows.length > 0}
+      <div class="station-body-copy" data-station-kind={segment.chip.kind}>
+        {#if detailRows.length > 0}
+          {#if detailSections.length > 0}
+            <div class="station-heartbeat-entries">
+              {#each detailSections as section (section.key)}
+                <HeartbeatEntry
+                  {section}
+                  layoutMode="detailed"
+                  groupLabel={sectionGroupLabel(section)}
+                  groupTimestamp={record.startedAt}
+                  allowLayoutModeSwitch={false}
+                />
+              {/each}
+            </div>
+          {:else}
           <div class="station-payloads">
             {#each detailRows as row (row.key)}
               <section class="station-payload" data-part-kind={row.kind}>
@@ -174,6 +177,7 @@
               </section>
             {/each}
           </div>
+          {/if}
         {:else}
           <span class="station-empty" aria-label={segment.chip.title}></span>
         {/if}
@@ -186,7 +190,10 @@
         style={`grid-row:${stationRow};${style}`}
         title={bridgeLine.title}
       >
-        <span class="time-bridge-label__content">{bridgeLine.label}</span>
+        <span class="time-bridge-label__content" title={bridgeDuration?.title ?? bridgeLine.title}>
+          <div class="time-bridge-label__primary">{bridgeDuration?.primaryLabel}</div>
+          <div class="time-bridge-label__secondary">{bridgeDuration?.secondaryLabel}</div>
+        </span>
       </span>
       <span
         class="ag-heartbeat-record-detail__time-bridge ag-heartbeat-record-detail__time-crossline ag-heartbeat-record-detail-track__time-bridge time-bridge"
@@ -290,6 +297,8 @@
     inset-inline-end: -2px;
     display: flex;
     align-items: center;
+    flex-direction: column;
+    align-content: center;
     justify-content: center;
     aspect-ratio: 1;
     border-radius: 38%;
@@ -304,6 +313,19 @@
     font-weight: 800;
     line-height: 1;
     text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .time-bridge-label__primary {
+    padding-block-start: 4px;
+    padding-block-end: 2px;
+    text-align: center;
+    white-space: nowrap;
+  }
+
+  .time-bridge-label__secondary {
+    zoom: 0.8;
+    text-align: center;
     white-space: nowrap;
   }
 
@@ -386,6 +408,13 @@
     min-width: 0;
     padding-block: 1px 14px;
     padding-inline-start: 10px;
+  }
+
+  .station-heartbeat-entries,
+  .station-payloads {
+    display: grid;
+    gap: 0.55rem;
+    min-width: 0;
   }
 
   .station-body-head {
