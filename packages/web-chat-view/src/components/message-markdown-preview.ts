@@ -24,7 +24,7 @@ import {
   resolveInlineResourceTokenNode,
 } from "./message-markdown-resource-token-projection";
 
-const HIDDEN_TOKENS = ["HeaderMark", "EmphasisMark", "LinkMark", "URL", "HardBreak", "QuoteMark"];
+const HIDDEN_TOKENS = ["HeaderMark", "EmphasisMark", "LinkMark", "HardBreak", "QuoteMark"];
 
 const hiddenDecoration = Decoration.mark({ class: "cm-md-hidden" });
 const blockquoteLine = Decoration.line({ class: "cm-md-blockquote-line" });
@@ -86,6 +86,19 @@ const mapProjectionRange = (range: MarkdownProjectionRange, changes: ChangeDesc)
     return null;
   }
   return { from, to };
+};
+
+const isHiddenSyntaxNode = (node: SyntaxNodeRef): boolean => {
+  if (HIDDEN_TOKENS.includes(node.name)) {
+    return true;
+  }
+
+  if (node.name !== "URL") {
+    return false;
+  }
+
+  const parentName = node.node.parent?.name;
+  return parentName === "Link" || parentName === "Image";
 };
 
 const buildInlineDecorations = (
@@ -233,7 +246,7 @@ const buildInlineDecorations = (
         return undefined;
       }
 
-      if (HIDDEN_TOKENS.includes(node.name)) {
+      if (isHiddenSyntaxNode(node)) {
         decorations.push({
           from: node.from,
           to: node.to,

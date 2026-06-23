@@ -50,6 +50,9 @@ describe("Feature: Framework7 modal encapsulation for Web Chat", () => {
     expect(actionSurfaceSource).toContain("actions.create");
     expect(actionSurfaceSource).toContain("convertToPopover: true");
     expect(actionSurfaceSource).toContain("forceToPopover");
+    expect(actionSurfaceSource).toContain("...(anchor ?? {})");
+    expect(actionSurfaceSource).toContain("if (!$framework7Runtime)");
+    expect(actionSurfaceSource).not.toContain("if (!$framework7Runtime || !anchor)");
     expect(actionSurfaceSource).not.toContain("backdrop-filter");
 
     for (const source of [

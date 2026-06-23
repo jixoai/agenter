@@ -42,9 +42,15 @@
     id: string;
     label: string;
     lineNumber: number;
+    lineEndNumber?: number;
     selectedText: string;
     commentText: string;
     sourceUri?: string | undefined;
+  };
+
+  export type MessageSourceSelectionRequest = {
+    id: string;
+    openCommentEditor?: boolean;
   };
 
   let {
@@ -53,6 +59,8 @@
     resourceReferences = [],
     open = false,
     activeLineNumber = 1,
+    activeLineEndNumber = undefined,
+    commentSelectionRequest = null,
     onOpenChange,
     onCreateCommentDraft,
   }: {
@@ -61,6 +69,8 @@
     resourceReferences?: readonly WebChatResourceReference[];
     open?: boolean;
     activeLineNumber?: number;
+    activeLineEndNumber?: number | undefined;
+    commentSelectionRequest?: MessageSourceSelectionRequest | null;
     onOpenChange?: (next: boolean) => void;
     onCreateCommentDraft?: (input: WebChatCommentDraftRequest) => void | Promise<void>;
   } = $props();
@@ -70,6 +80,7 @@
   let scrollSurfaceRef = $state<HTMLDivElement | null>(null);
   let retainedMessage = $state<WebChatMessage | null>(null);
   let selectedLineNumber = $state(1);
+  let selectedLineEndNumber = $state(1);
   let selectionActionsOpen = $state(false);
   let sourceCommentAnchors = $state<SourceCommentAnchor[]>([]);
   let activeCommentAnchorId = $state<string | null>(null);
@@ -77,6 +88,7 @@
   let commentEditorSheetAnchor = $state<SourceCommentAnchor | null>(null);
   let commentDraft = $state("");
   let lastOpenedKey = "";
+  let lastSelectionRequestId = "";
   let selectionActionButtonRef = $state<HTMLElement | null>(null);
 
   const framework7Runtime = useFramework7Runtime();
@@ -106,6 +118,12 @@
     });
   });
   const sourceLines = $derived(sourceText.split(/\r?\n/u));
+  const selectedLineRange = $derived.by(() => {
+    const lineCount = Math.max(1, sourceLines.length);
+    const start = Math.min(Math.max(selectedLineNumber, 1), lineCount);
+    const end = Math.min(Math.max(selectedLineEndNumber, start), lineCount);
+    return { start, end };
+  });
   const safeActiveLineNumber = $derived.by(() => {
     const lineCount = Math.max(1, sourceLines.length);
     return Math.min(Math.max(activeLineNumber, 1), lineCount);
@@ -121,7 +139,9 @@
       minute: "2-digit",
     }).format(new Date(activeMessage.createdAt));
   });
-  const selectedLineText = $derived(sourceLines[selectedLineNumber - 1]?.trim() ?? "");
+  const selectedLineText = $derived.by(() =>
+    sourceLines.slice(selectedLineRange.start - 1, selectedLineRange.end).join("\n").trim(),
+  );
   const selectedSourceUri = $derived.by(() => {
     if (!activeMessage) {
       return undefined;
@@ -130,7 +150,8 @@
       roomId: activeMessage.chatId,
       sourceMessageId: activeMessage.messageId,
       sourceViewKey: activeMessage.viewKey,
-      sourceLineNumber: selectedLineNumber,
+      sourceLineNumber: selectedLineRange.start,
+      sourceLineEndNumber: selectedLineRange.end > selectedLineRange.start ? selectedLineRange.end : undefined,
     });
   });
   const sourceCommentBaseCount = $derived(
@@ -179,11 +200,13 @@
 
   const selectLine = (lineNumber: number): void => {
     selectedLineNumber = lineNumber;
+    selectedLineEndNumber = lineNumber;
   };
 
-  const buildSourceSummary = (lineNumber: number): string => {
+  const buildSourceSummary = (lineNumber: number, lineEndNumber?: number): string => {
     const parts = [resolvedActor.label];
-    parts.push(`Line ${lineNumber}`);
+    const end = lineEndNumber && lineEndNumber > lineNumber ? lineEndNumber : undefined;
+    parts.push(end ? `Lines ${lineNumber}-${end}` : `Line ${lineNumber}`);
     return parts.join(" · ");
   };
 
@@ -203,7 +226,10 @@
     }
     const existing =
       sourceCommentAnchors.find(
-        (anchor) => anchor.lineNumber === selectedLineNumber && anchor.selectedText === selectedLineText,
+        (anchor) =>
+          anchor.lineNumber === selectedLineRange.start &&
+          (anchor.lineEndNumber ?? anchor.lineNumber) === selectedLineRange.end &&
+          anchor.selectedText === selectedLineText,
       ) ?? null;
     if (existing) {
       return existing;
@@ -211,7 +237,8 @@
     const next: SourceCommentAnchor = {
       id: createSourceCommentAnchorId(),
       label: `Comment ${sourceCommentBaseCount + sourceCommentAnchors.length + 1}`,
-      lineNumber: selectedLineNumber,
+      lineNumber: selectedLineRange.start,
+      lineEndNumber: selectedLineRange.end > selectedLineRange.start ? selectedLineRange.end : undefined,
       selectedText: selectedLineText,
       commentText: "",
       sourceUri: selectedSourceUri,
@@ -366,6 +393,7 @@
       sourceMessageId: activeMessage.messageId,
       sourceViewKey: activeMessage.viewKey,
       sourceLineNumber: anchor.lineNumber,
+      sourceLineEndNumber: anchor.lineEndNumber,
       selectedText: anchor.selectedText,
       sourceActorId: resolvedActor.actorId ?? activeMessage.senderContactId ?? null,
       sourceActorLabel: resolvedActor.label,
@@ -381,15 +409,35 @@
     if (!resolvedOpen || !scrollSurfaceRef) {
       return;
     }
-    const nextKey = activeMessage ? `${activeMessage.viewKey}:${activeLineNumber}` : "";
+    const nextKey = activeMessage ? `${activeMessage.viewKey}:${activeLineNumber}:${activeLineEndNumber ?? activeLineNumber}` : "";
     if (nextKey !== lastOpenedKey) {
       selectedLineNumber = safeActiveLineNumber;
+      const lineCount = Math.max(1, sourceLines.length);
+      selectedLineEndNumber = Math.min(
+        Math.max(activeLineEndNumber ?? activeLineNumber ?? safeActiveLineNumber, selectedLineNumber),
+        lineCount,
+      );
       lastOpenedKey = nextKey;
     }
     void tick().then(() => {
       scrollSurfaceRef
         ?.querySelector<HTMLElement>(`[data-line-number="${selectedLineNumber}"]`)
         ?.scrollIntoView({ block: "center", inline: "nearest" });
+    });
+  });
+
+  $effect(() => {
+    if (!resolvedOpen || !activeMessage || !commentSelectionRequest) {
+      return;
+    }
+    if (commentSelectionRequest.id === lastSelectionRequestId) {
+      return;
+    }
+    lastSelectionRequestId = commentSelectionRequest.id;
+    void tick().then(() => {
+      if (resolvedOpen && activeMessage && commentSelectionRequest.id === lastSelectionRequestId) {
+        openCommentAnchor(commentSelectionRequest.openCommentEditor === false ? "view" : "edit");
+      }
     });
   });
 
@@ -453,8 +501,8 @@
             <div class="message-source-code-surface" part="message-source-surface">
               {#each sourceLines as line, index (`${activeMessage.viewKey}-${index}`)}
                 <div
-                  class={`message-source-line ${index + 1 === selectedLineNumber ? "message-source-line-active" : ""}`}
-                  data-active-line={index + 1 === selectedLineNumber ? "true" : "false"}
+                  class={`message-source-line ${index + 1 >= selectedLineRange.start && index + 1 <= selectedLineRange.end ? "message-source-line-active" : ""}`}
+                  data-active-line={index + 1 >= selectedLineRange.start && index + 1 <= selectedLineRange.end ? "true" : "false"}
                   data-line-number={index + 1}
                   role="button"
                   aria-label={`Select source line ${index + 1}`}
@@ -470,7 +518,7 @@
                         label={anchor.label}
                         selectedText={anchor.selectedText}
                         commentText={anchor.commentText}
-                        sourceSummary={buildSourceSummary(anchor.lineNumber)}
+                        sourceSummary={buildSourceSummary(anchor.lineNumber, anchor.lineEndNumber)}
                         mode={activeCommentAnchorId === anchor.id ? commentAnchorMode : null}
                         onView={() => {
                           activateCommentAnchor(anchor, "view");
@@ -490,7 +538,7 @@
 
           <Toolbar bottom class="message-source-selection-toolbar">
             <div class="message-source-selection-summary">
-              <span>Line {selectedLineNumber}</span>
+              <span>{selectedLineRange.end > selectedLineRange.start ? `Lines ${selectedLineRange.start}-${selectedLineRange.end}` : `Line ${selectedLineRange.start}`}</span>
               {#if selectedLineText}
                 <span>{selectedLineText}</span>
               {/if}
@@ -587,8 +635,8 @@
             <div class="message-source-code-surface" part="message-source-surface">
               {#each sourceLines as line, index (`${activeMessage.viewKey}-${index}`)}
                 <div
-                  class={`message-source-line ${index + 1 === selectedLineNumber ? "message-source-line-active" : ""}`}
-                  data-active-line={index + 1 === selectedLineNumber ? "true" : "false"}
+                  class={`message-source-line ${index + 1 >= selectedLineRange.start && index + 1 <= selectedLineRange.end ? "message-source-line-active" : ""}`}
+                  data-active-line={index + 1 >= selectedLineRange.start && index + 1 <= selectedLineRange.end ? "true" : "false"}
                   data-line-number={index + 1}
                   role="button"
                   aria-label={`Select source line ${index + 1}`}
@@ -604,7 +652,7 @@
                         label={anchor.label}
                         selectedText={anchor.selectedText}
                         commentText={anchor.commentText}
-                        sourceSummary={buildSourceSummary(anchor.lineNumber)}
+                        sourceSummary={buildSourceSummary(anchor.lineNumber, anchor.lineEndNumber)}
                         mode={activeCommentAnchorId === anchor.id ? commentAnchorMode : null}
                         onView={() => {
                           activateCommentAnchor(anchor, "view");
@@ -622,7 +670,7 @@
 
           <div class="message-source-footer">
             <div class="message-source-selection-summary">
-              <span>Line {selectedLineNumber}</span>
+              <span>{selectedLineRange.end > selectedLineRange.start ? `Lines ${selectedLineRange.start}-${selectedLineRange.end}` : `Line ${selectedLineRange.start}`}</span>
               {#if selectedLineText}
                 <span>{selectedLineText}</span>
               {/if}

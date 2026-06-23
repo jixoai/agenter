@@ -108,6 +108,7 @@ export const commentResourceToReference = (input: WebChatCommentResourcePayload)
     sourceMessageId: input.sourceMessageId,
     sourceViewKey: input.sourceViewKey,
     sourceLineNumber: input.sourceLineNumber,
+    sourceLineEndNumber: input.sourceLineEndNumber,
     selectedText: input.selectedText,
     sourceActorId: input.sourceActorId,
     sourceActorLabel: input.sourceActorLabel,
@@ -163,6 +164,8 @@ export const normalizeCommentResourcePayload = (
       typeof candidate.sourceMessageId === "number" ? candidate.sourceMessageId : fallback.sourceMessageId,
     sourceViewKey,
     sourceLineNumber: candidate.sourceLineNumber,
+    sourceLineEndNumber:
+      typeof candidate.sourceLineEndNumber === "number" ? candidate.sourceLineEndNumber : undefined,
     selectedText: candidate.selectedText,
     sourceActorId:
       typeof candidate.sourceActorId === "string" || candidate.sourceActorId === null
@@ -192,6 +195,7 @@ export const createCommentResourcePayload = (
     sourceMessageId: input.sourceMessageId,
     sourceViewKey: input.sourceViewKey,
     sourceLineNumber: input.sourceLineNumber,
+    sourceLineEndNumber: input.sourceLineEndNumber,
     selectedText: input.selectedText,
     sourceActorId: input.sourceActorId,
     sourceActorLabel: input.sourceActorLabel,
@@ -271,11 +275,19 @@ export const formatCommentResourceDefinition = (
 };
 
 export const buildCommentResourceSourceUri = (
-  input: Pick<WebChatCommentResourceAnchor, "sourceViewKey" | "sourceLineNumber" | "sourceMessageId"> & {
+  input: Pick<
+    WebChatCommentResourceAnchor,
+    "sourceViewKey" | "sourceLineNumber" | "sourceLineEndNumber" | "sourceMessageId"
+  > & {
     roomId: string;
   },
 ): string => {
-  const suffix = `#L${input.sourceLineNumber}`;
+  const safeStart = Math.max(1, Math.floor(input.sourceLineNumber));
+  const safeEnd =
+    typeof input.sourceLineEndNumber === "number" && input.sourceLineEndNumber > safeStart
+      ? Math.floor(input.sourceLineEndNumber)
+      : undefined;
+  const suffix = safeEnd ? `#L${safeStart}-L${safeEnd}` : `#L${safeStart}`;
   const base = input.sourceMessageId
     ? `msg://${input.roomId}/${input.sourceMessageId}`
     : `msg://${input.roomId}/${encodeURIComponent(input.sourceViewKey)}`;
@@ -294,13 +306,15 @@ const resolveCommentAnchorFromSourceUri = (
   try {
     const url = new URL(sourceUri);
     const target = decodeURIComponent(url.pathname.replace(/^\//u, ""));
-    const lineMatch = /^#L(\d+)$/u.exec(url.hash);
+    const lineMatch = /^#L(\d+)(?:-L(\d+))?$/u.exec(url.hash);
     const sourceLineNumber = lineMatch?.[1] ? Number.parseInt(lineMatch[1], 10) : 1;
+    const sourceLineEndNumber = lineMatch?.[2] ? Number.parseInt(lineMatch[2], 10) : undefined;
     const sourceMessageId = /^\d+$/u.test(target) ? Number.parseInt(target, 10) : undefined;
     return {
       sourceMessageId,
       sourceViewKey: sourceMessageId ? `${url.hostname}:${sourceMessageId}` : target,
       sourceLineNumber,
+      sourceLineEndNumber,
       selectedText: selectedText ?? "",
       sourceUri,
     };
@@ -397,6 +411,7 @@ const resolveCommentResourceSourceUri = (resource: WebChatResourceReference, roo
     sourceMessageId: anchor.sourceMessageId,
     sourceViewKey: anchor.sourceViewKey,
     sourceLineNumber: anchor.sourceLineNumber,
+    sourceLineEndNumber: anchor.sourceLineEndNumber,
   });
 };
 

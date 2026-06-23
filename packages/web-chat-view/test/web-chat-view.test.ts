@@ -1,16 +1,16 @@
-import { flushSync, mount, unmount } from "svelte";
-import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import {
   getBottomAnchoredDistanceToLatest,
   getBottomAnchoredDistanceToStart,
   getBottomAnchoredLatestScrollTop as readBottomAnchoredLatestScrollTop,
   getBottomAnchoredStartScrollTop as readBottomAnchoredStartScrollTop,
 } from "@agenter/svelte-components";
+import { flushSync, mount, unmount } from "svelte";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
 import {
+  type WebChatActorResolveInput,
   type WebChatChannel,
   type WebChatMessage,
-  type WebChatActorResolveInput,
   type WebChatSocketFactory,
   type WebChatSocketLike,
   type WebChatVisibleMessageFact,
@@ -305,6 +305,7 @@ const createRoomChannel = (overrides: {
   metadata?: WebChatChannel["metadata"];
   archivedAt?: WebChatChannel["archivedAt"];
   archivedBy?: WebChatChannel["archivedBy"];
+  seatStates?: WebChatChannel["seatStates"];
 }): WebChatChannel => ({
   chatId: overrides.chatId,
   kind: "room",
@@ -327,6 +328,7 @@ const createRoomChannel = (overrides: {
   participantId: overrides.participantId,
   currentAdmin: overrides.currentAdmin,
   transportUrl: overrides.transportUrl,
+  seatStates: overrides.seatStates,
 });
 
 const mountHost = (props: Record<string, unknown>) => {
@@ -403,6 +405,63 @@ const readMockElementHeightFromStyle = (element: HTMLElement | null | undefined)
   return Number.isFinite(parsed) ? parsed : null;
 };
 
+const findFirstTextNode = (root: Node): Text | null => {
+  if (root.nodeType === Node.TEXT_NODE && root.textContent?.trim()) {
+    return root as Text;
+  }
+  for (const child of Array.from(root.childNodes)) {
+    const match = findFirstTextNode(child);
+    if (match) {
+      return match;
+    }
+  }
+  return null;
+};
+
+const selectTextWithin = (root: HTMLElement): void => {
+  const textNode = findFirstTextNode(root);
+  if (!textNode || !textNode.textContent) {
+    throw new Error("selectable text node missing");
+  }
+  const selection = window.getSelection();
+  if (!selection) {
+    throw new Error("selection API missing");
+  }
+  const range = document.createRange();
+  range.setStart(textNode, 0);
+  range.setEnd(textNode, textNode.textContent.length);
+  selection.removeAllRanges();
+  selection.addRange(range);
+};
+
+const withSelectionRect = <T>(callback: () => T): T => {
+  const originalDescriptor = Object.getOwnPropertyDescriptor(Range.prototype, "getBoundingClientRect");
+  Object.defineProperty(Range.prototype, "getBoundingClientRect", {
+    configurable: true,
+    value: () =>
+      ({
+        x: 24,
+        y: 32,
+        left: 24,
+        top: 32,
+        right: 120,
+        bottom: 50,
+        width: 96,
+        height: 18,
+        toJSON: () => ({}),
+      }) as DOMRect,
+  });
+  try {
+    return callback();
+  } finally {
+    if (originalDescriptor) {
+      Object.defineProperty(Range.prototype, "getBoundingClientRect", originalDescriptor);
+    } else {
+      Reflect.deleteProperty(Range.prototype, "getBoundingClientRect");
+    }
+  }
+};
+
 const settleLitUpdates = async (root: ParentNode = document): Promise<void> => {
   await Promise.resolve();
 
@@ -477,10 +536,7 @@ describe("Feature: web-chat-view package", () => {
     Object.defineProperty(HTMLElement.prototype, "scrollTo", {
       configurable: true,
       value(topOrOptions: ScrollToOptions | number, y?: number) {
-        const top =
-          typeof topOrOptions === "number"
-            ? (typeof y === "number" ? y : 0)
-            : (topOrOptions.top ?? 0);
+        const top = typeof topOrOptions === "number" ? (typeof y === "number" ? y : 0) : (topOrOptions.top ?? 0);
         this.scrollTop = top;
       },
     });
@@ -663,202 +719,214 @@ describe("Feature: web-chat-view package", () => {
 
     expect(readRenderedText(document.body)).toContain("earliest message");
     expect(readRenderedText(document.body)).toContain("latest reply");
-    expect(
-      (document.body.querySelector("[data-view-key='1']") as HTMLElement | null)?.dataset.insertMotion,
-    ).toBe("older");
-  });
-
-  test("Scenario: Given the transcript moves away from latest When the viewport returns to latest Then the affordance appears only while away", { timeout: 15_000 }, async () => {
-    mountHost({
-      channel: {
-        chatId: "chat-scroll-latest",
-        kind: "room",
-        title: "Scroll latest",
-        owner: "jane",
-        participants: [
-          { id: "session:jane", label: "jane" },
-          { id: "auth:user", label: "User" },
-        ],
-        createdAt: 1,
-        updatedAt: 1,
-        focused: true,
-        accessRole: "admin",
-        accessToken: "msgtok_admin",
-      },
-      initialSnapshotResolved: true,
-      initialMessages: Array.from({ length: 120 }, (_unused, index) => ({
-        rowId: index + 1,
-        messageId: index + 1,
-        chatId: "chat-scroll-latest",
-        from: index % 2 === 0 ? "User" : "jane",
-        to: index % 2 === 0 ? "jane" : undefined,
-        kind: "text" as const,
-        content: `scroll transcript row ${index + 1}`,
-        createdAt: (index + 1) * 100,
-        updatedAt: (index + 1) * 100,
-        visibleAt: (index + 1) * 100,
-        metadata: {},
-        attachments: [],
-      })),
-    });
-
-    await settleLitUpdates();
-
-    const viewport = document.body.querySelector("[data-testid='web-chat-scroll-viewport']") as HTMLDivElement;
-    const buttonShell = document.body.querySelector(".chat-scroll-latest") as HTMLElement | null;
-    const button = document.body.querySelector("[aria-label='Scroll to latest']") as HTMLElement | null;
-    await vi.waitFor(() => {
-      expect(buttonShell?.dataset.visible).toBe("false");
-      expect(
-        (document.body.querySelector(".bottom-anchored-timeline-root") as HTMLElement | null)?.dataset.atLatest,
-      ).toBe("true");
-      expect(getBottomAnchoredDistanceToLatest(viewport)).toBe(0);
-    });
-
-    viewport.dispatchEvent(new Event("wheel"));
-    viewport.scrollTop = getBottomAnchoredStartScrollTop(viewport);
-    viewport.dispatchEvent(new Event("scroll"));
-    flushSync();
-    await settleLitUpdates();
-
-    await vi.waitFor(() => {
-      expect(buttonShell?.dataset.visible).toBe("true");
-    });
-
-    expect((document.body.querySelector(".bottom-anchored-timeline-root") as HTMLElement | null)?.dataset.atLatest).toBe(
-      "false",
+    expect((document.body.querySelector("[data-view-key='1']") as HTMLElement | null)?.dataset.insertMotion).toBe(
+      "older",
     );
-
-    expect(button).not.toBeNull();
-    viewport.scrollTop = getBottomAnchoredLatestScrollTop(viewport);
-    viewport.dispatchEvent(new Event("scroll"));
-    flushSync();
-    await settleLitUpdates();
-
-    await vi.waitFor(() => {
-      expect(buttonShell?.dataset.visible).toBe("false");
-    });
   });
 
-  test("Scenario: Given browser-style negative transcript scroll When scroll-to-latest is pressed Then the viewport returns to latest instead of history start", { timeout: 15_000 }, async () => {
-    mountHost({
-      channel: {
-        chatId: "chat-scroll-latest-negative",
-        kind: "room",
-        title: "Scroll latest negative",
-        owner: "jane",
-        participants: [
-          { id: "session:jane", label: "jane" },
-          { id: "auth:user", label: "User" },
-        ],
-        createdAt: 1,
-        updatedAt: 1,
-        focused: true,
-        accessRole: "admin",
-        accessToken: "msgtok_admin",
-      },
-      initialSnapshotResolved: true,
-      initialMessages: Array.from({ length: 120 }, (_unused, index) => ({
-        rowId: index + 1,
-        messageId: index + 1,
-        chatId: "chat-scroll-latest-negative",
-        from: index % 2 === 0 ? "User" : "jane",
-        to: index % 2 === 0 ? "jane" : undefined,
-        kind: "text" as const,
-        content: `negative scroll transcript row ${index + 1}`,
-        createdAt: (index + 1) * 100,
-        updatedAt: (index + 1) * 100,
-        visibleAt: (index + 1) * 100,
-        metadata: {},
-        attachments: [],
-      })),
-    });
+  test(
+    "Scenario: Given the transcript moves away from latest When the viewport returns to latest Then the affordance appears only while away",
+    { timeout: 15_000 },
+    async () => {
+      mountHost({
+        channel: {
+          chatId: "chat-scroll-latest",
+          kind: "room",
+          title: "Scroll latest",
+          owner: "jane",
+          participants: [
+            { id: "session:jane", label: "jane" },
+            { id: "auth:user", label: "User" },
+          ],
+          createdAt: 1,
+          updatedAt: 1,
+          focused: true,
+          accessRole: "admin",
+          accessToken: "msgtok_admin",
+        },
+        initialSnapshotResolved: true,
+        initialMessages: Array.from({ length: 120 }, (_unused, index) => ({
+          rowId: index + 1,
+          messageId: index + 1,
+          chatId: "chat-scroll-latest",
+          from: index % 2 === 0 ? "User" : "jane",
+          to: index % 2 === 0 ? "jane" : undefined,
+          kind: "text" as const,
+          content: `scroll transcript row ${index + 1}`,
+          createdAt: (index + 1) * 100,
+          updatedAt: (index + 1) * 100,
+          visibleAt: (index + 1) * 100,
+          metadata: {},
+          attachments: [],
+        })),
+      });
 
-    await settleLitUpdates();
+      await settleLitUpdates();
 
-    const viewport = document.body.querySelector("[data-testid='web-chat-scroll-viewport']") as HTMLDivElement;
-    const buttonShell = document.body.querySelector(".chat-scroll-latest") as HTMLElement | null;
-    const button = document.body.querySelector("[aria-label='Scroll to latest']") as HTMLElement | null;
-    const latestScrollTop = getBottomAnchoredLatestScrollTop(viewport);
+      const viewport = document.body.querySelector("[data-testid='web-chat-scroll-viewport']") as HTMLDivElement;
+      const buttonShell = document.body.querySelector(".chat-scroll-latest") as HTMLElement | null;
+      const button = document.body.querySelector("[aria-label='Scroll to latest']") as HTMLElement | null;
+      await vi.waitFor(() => {
+        expect(buttonShell?.dataset.visible).toBe("false");
+        expect(
+          (document.body.querySelector(".bottom-anchored-timeline-root") as HTMLElement | null)?.dataset.atLatest,
+        ).toBe("true");
+        expect(getBottomAnchoredDistanceToLatest(viewport)).toBe(0);
+      });
 
-    viewport.dispatchEvent(new Event("wheel"));
-    viewport.scrollTop = getBottomAnchoredStartScrollTop(viewport);
-    viewport.dispatchEvent(new Event("scroll"));
-    flushSync();
-    await settleLitUpdates();
+      viewport.dispatchEvent(new Event("wheel"));
+      viewport.scrollTop = getBottomAnchoredStartScrollTop(viewport);
+      viewport.dispatchEvent(new Event("scroll"));
+      flushSync();
+      await settleLitUpdates();
 
-    await vi.waitFor(() => {
-      expect(buttonShell?.dataset.visible).toBe("true");
-    });
+      await vi.waitFor(() => {
+        expect(buttonShell?.dataset.visible).toBe("true");
+      });
 
-    expect((document.body.querySelector(".bottom-anchored-timeline-root") as HTMLElement | null)?.dataset.atLatest).toBe(
-      "false",
-    );
-
-    expect(button).not.toBeNull();
-    await settleLitUpdates();
-    await Promise.resolve();
-    await Promise.resolve();
-    button?.click();
-    flushSync();
-    await settleLitUpdates();
-
-    await vi.waitFor(() => {
-      expect(getBottomAnchoredDistanceToLatest(viewport)).toBe(0);
-      expect(buttonShell?.dataset.visible).toBe("false");
       expect(
         (document.body.querySelector(".bottom-anchored-timeline-root") as HTMLElement | null)?.dataset.atLatest,
-      ).toBe("true");
-    });
-  });
-
-  test("Scenario: Given a fresh room with preloaded overflowing history When the host opens the transcript Then initial alignment lands on latest instead of history start", { timeout: 15_000 }, async () => {
-    mountHost({
-      channel: {
-        chatId: "chat-initial-latest",
-        kind: "room",
-        title: "Initial latest",
-        owner: "jane",
-        participants: [
-          { id: "session:jane", label: "jane" },
-          { id: "auth:user", label: "User" },
-        ],
-        createdAt: 1,
-        updatedAt: 1,
-        focused: true,
-        accessRole: "admin",
-        accessToken: "msgtok_admin",
-      },
-      initialSnapshotResolved: true,
-      initialMessages: Array.from({ length: 120 }, (_unused, index) => ({
-        rowId: index + 1,
-        messageId: index + 1,
-        chatId: "chat-initial-latest",
-        from: index % 2 === 0 ? "User" : "jane",
-        to: index % 2 === 0 ? "jane" : undefined,
-        kind: "text" as const,
-        content: `initial latest row ${index + 1}`,
-        createdAt: (index + 1) * 100,
-        updatedAt: (index + 1) * 100,
-        visibleAt: (index + 1) * 100,
-        metadata: {},
-        attachments: [],
-      })),
-    });
-
-    await settleLitUpdates();
-
-    const viewport = document.body.querySelector("[data-testid='web-chat-scroll-viewport']") as HTMLDivElement;
-    await vi.waitFor(() => {
-      expect(getBottomAnchoredDistanceToLatest(viewport)).toBe(0);
-      expect(
-        (document.body.querySelector(".bottom-anchored-timeline-root") as HTMLElement | null)?.dataset.atLatest,
-      ).toBe("true");
-      expect(
-        (document.body.querySelector(".bottom-anchored-timeline-root") as HTMLElement | null)?.dataset.atStart,
       ).toBe("false");
-    });
-  });
+
+      expect(button).not.toBeNull();
+      viewport.scrollTop = getBottomAnchoredLatestScrollTop(viewport);
+      viewport.dispatchEvent(new Event("scroll"));
+      flushSync();
+      await settleLitUpdates();
+
+      await vi.waitFor(() => {
+        expect(buttonShell?.dataset.visible).toBe("false");
+      });
+    },
+  );
+
+  test(
+    "Scenario: Given browser-style negative transcript scroll When scroll-to-latest is pressed Then the viewport returns to latest instead of history start",
+    { timeout: 15_000 },
+    async () => {
+      mountHost({
+        channel: {
+          chatId: "chat-scroll-latest-negative",
+          kind: "room",
+          title: "Scroll latest negative",
+          owner: "jane",
+          participants: [
+            { id: "session:jane", label: "jane" },
+            { id: "auth:user", label: "User" },
+          ],
+          createdAt: 1,
+          updatedAt: 1,
+          focused: true,
+          accessRole: "admin",
+          accessToken: "msgtok_admin",
+        },
+        initialSnapshotResolved: true,
+        initialMessages: Array.from({ length: 120 }, (_unused, index) => ({
+          rowId: index + 1,
+          messageId: index + 1,
+          chatId: "chat-scroll-latest-negative",
+          from: index % 2 === 0 ? "User" : "jane",
+          to: index % 2 === 0 ? "jane" : undefined,
+          kind: "text" as const,
+          content: `negative scroll transcript row ${index + 1}`,
+          createdAt: (index + 1) * 100,
+          updatedAt: (index + 1) * 100,
+          visibleAt: (index + 1) * 100,
+          metadata: {},
+          attachments: [],
+        })),
+      });
+
+      await settleLitUpdates();
+
+      const viewport = document.body.querySelector("[data-testid='web-chat-scroll-viewport']") as HTMLDivElement;
+      const buttonShell = document.body.querySelector(".chat-scroll-latest") as HTMLElement | null;
+      const button = document.body.querySelector("[aria-label='Scroll to latest']") as HTMLElement | null;
+      const latestScrollTop = getBottomAnchoredLatestScrollTop(viewport);
+
+      viewport.dispatchEvent(new Event("wheel"));
+      viewport.scrollTop = getBottomAnchoredStartScrollTop(viewport);
+      viewport.dispatchEvent(new Event("scroll"));
+      flushSync();
+      await settleLitUpdates();
+
+      await vi.waitFor(() => {
+        expect(buttonShell?.dataset.visible).toBe("true");
+      });
+
+      expect(
+        (document.body.querySelector(".bottom-anchored-timeline-root") as HTMLElement | null)?.dataset.atLatest,
+      ).toBe("false");
+
+      expect(button).not.toBeNull();
+      await settleLitUpdates();
+      await Promise.resolve();
+      await Promise.resolve();
+      button?.click();
+      flushSync();
+      await settleLitUpdates();
+
+      await vi.waitFor(() => {
+        expect(getBottomAnchoredDistanceToLatest(viewport)).toBe(0);
+        expect(buttonShell?.dataset.visible).toBe("false");
+        expect(
+          (document.body.querySelector(".bottom-anchored-timeline-root") as HTMLElement | null)?.dataset.atLatest,
+        ).toBe("true");
+      });
+    },
+  );
+
+  test(
+    "Scenario: Given a fresh room with preloaded overflowing history When the host opens the transcript Then initial alignment lands on latest instead of history start",
+    { timeout: 15_000 },
+    async () => {
+      mountHost({
+        channel: {
+          chatId: "chat-initial-latest",
+          kind: "room",
+          title: "Initial latest",
+          owner: "jane",
+          participants: [
+            { id: "session:jane", label: "jane" },
+            { id: "auth:user", label: "User" },
+          ],
+          createdAt: 1,
+          updatedAt: 1,
+          focused: true,
+          accessRole: "admin",
+          accessToken: "msgtok_admin",
+        },
+        initialSnapshotResolved: true,
+        initialMessages: Array.from({ length: 120 }, (_unused, index) => ({
+          rowId: index + 1,
+          messageId: index + 1,
+          chatId: "chat-initial-latest",
+          from: index % 2 === 0 ? "User" : "jane",
+          to: index % 2 === 0 ? "jane" : undefined,
+          kind: "text" as const,
+          content: `initial latest row ${index + 1}`,
+          createdAt: (index + 1) * 100,
+          updatedAt: (index + 1) * 100,
+          visibleAt: (index + 1) * 100,
+          metadata: {},
+          attachments: [],
+        })),
+      });
+
+      await settleLitUpdates();
+
+      const viewport = document.body.querySelector("[data-testid='web-chat-scroll-viewport']") as HTMLDivElement;
+      await vi.waitFor(() => {
+        expect(getBottomAnchoredDistanceToLatest(viewport)).toBe(0);
+        expect(
+          (document.body.querySelector(".bottom-anchored-timeline-root") as HTMLElement | null)?.dataset.atLatest,
+        ).toBe("true");
+        expect(
+          (document.body.querySelector(".bottom-anchored-timeline-root") as HTMLElement | null)?.dataset.atStart,
+        ).toBe("false");
+      });
+    },
+  );
 
   test("Scenario: Given a host send handler When the composer submits text Then the package delegates to the host instead of raw transport send", async () => {
     const submitMessage = vi.fn(async () => undefined);
@@ -1097,8 +1165,10 @@ describe("Feature: web-chat-view package", () => {
     await settleLitUpdates();
 
     expect(document.body.querySelector("img[alt='Analyst']")).toBeTruthy();
-    expect(document.body.querySelector("img[alt='spec.png']")).toBeTruthy();
     expect(document.body.querySelector("[part='message-attachments']")).toBeTruthy();
+    expect(document.body.querySelector("[part='resource-card-hitbox']")?.getAttribute("aria-label")).toBe(
+      "Open image resource Image 1",
+    );
     expect(readRenderedText(document.body)).toContain("spec.png");
     expect(readRenderedText(document.body)).not.toContain("auth:user");
   });
@@ -1158,7 +1228,9 @@ describe("Feature: web-chat-view package", () => {
     expect(messageContent).toBeTruthy();
     expect(messageContent?.contains(shelf ?? null)).toBe(true);
 
-    const sentCard = document.body.querySelector("[part='message-attachment'] [part='resource-card-hitbox']") as HTMLElement | null;
+    const sentCard = document.body.querySelector(
+      "[part='message-attachment'] [part='resource-card-hitbox']",
+    ) as HTMLElement | null;
     expect(sentCard).toBeTruthy();
     sentCard?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     flushSync();
@@ -1289,6 +1361,72 @@ describe("Feature: web-chat-view package", () => {
     expect(rendered).toContain("This message was recalled.");
   });
 
+  test("Scenario: Given durable room read membership When the host omits a custom read resolver Then the row projects the standard read ring", async () => {
+    mountHost({
+      channel: createRoomChannel({
+        chatId: "chat-main",
+        title: "Room",
+        owner: "default",
+        participants: [],
+        accessRole: "member",
+        accessToken: "msgtok_member",
+        participantId: "auth:user",
+        currentAdmin: false,
+        seatStates: [
+          {
+            contactId: "0x1111111111111111111111111111111111111111",
+            role: "member",
+            label: "default",
+            currentAdmin: false,
+            online: true,
+            focused: false,
+            invalidCredential: false,
+          },
+          {
+            contactId: "auth:user",
+            role: "member",
+            label: "Gaubee",
+            currentAdmin: false,
+            online: true,
+            focused: false,
+            invalidCredential: false,
+          },
+        ],
+      }),
+      initialSnapshotResolved: true,
+      initialMessages: [
+        {
+          rowId: 3,
+          viewKey: "msg-progress",
+          messageId: 3,
+          chatId: "chat-main",
+          sourceSystemId: TEST_SYSTEM_ID,
+          senderContactId: "0x1111111111111111111111111111111111111111",
+          from: "default",
+          kind: "text",
+          content: "read me",
+          createdAt: 100,
+          updatedAt: 100,
+          visibleAt: 100,
+          readContactIds: ["0x1111111111111111111111111111111111111111", "auth:user"],
+          unreadContactIds: [],
+          metadata: {},
+          attachments: [],
+        },
+      ],
+    });
+
+    await settleLitUpdates();
+
+    const trigger = document.body.querySelector("[data-message-actions-trigger]");
+    expect(trigger?.getAttribute("aria-label")).toBe("Message actions, 1/1 read");
+    const readActionShell = document.body.querySelector(".bubble-actions-read");
+    expect(readActionShell).toBeTruthy();
+    expect(readActionShell?.querySelector("[data-message-actions-trigger]")).toBeTruthy();
+    expect(readActionShell?.querySelector("[data-testid='message-read-indicator']")).toBeTruthy();
+    expect(readActionShell?.closest(".message-bubble")).toBeNull();
+  });
+
   test("Scenario: Given room read-state projections When the transcript renders Then each message can expose an inline-end read indicator", async () => {
     mountHost({
       channel: {
@@ -1354,16 +1492,223 @@ describe("Feature: web-chat-view package", () => {
 
     const indicator = document.body.querySelector("[data-testid='message-read-indicator']");
     expect(indicator).toBeTruthy();
-    expect(indicator?.getAttribute("aria-label")).toBe("1/2 read");
+    expect(indicator?.getAttribute("aria-hidden")).toBe("true");
     expect(indicator?.getAttribute("data-complete")).toBe("false");
 
-    (indicator as HTMLElement).dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    const trigger = document.body.querySelector("[data-message-actions-trigger]") as HTMLElement;
+    expect(trigger).toBeTruthy();
+    expect(trigger.getAttribute("aria-label")).toBe("Message actions, 1/2 read");
+    const readActionShell = document.body.querySelector(".bubble-actions-read");
+    expect(readActionShell).toBeTruthy();
+    expect(readActionShell?.querySelector("[data-message-actions-trigger]")).toBeTruthy();
+    expect(readActionShell?.querySelector("[data-testid='message-read-indicator']")).toBeTruthy();
+    expect(readActionShell?.closest(".message-bubble")).toBeNull();
+    trigger.dispatchEvent(new FocusEvent("focusin", { bubbles: true }));
     flushSync();
     await Promise.resolve();
 
     expect(readRenderedText(document.body)).toContain("Read");
     expect(readRenderedText(document.body)).toContain("Unread");
     expect(readRenderedText(document.body)).toContain("Jane");
+  });
+
+  test("Scenario: Given read progress on every sender side When hovering each read ring Then every message can disclose the read panel", async () => {
+    mountHost({
+      channel: {
+        chatId: "chat-main",
+        kind: "room",
+        title: "Room",
+        owner: "jane",
+        participants: [
+          { id: "session:jane", label: "jane" },
+          { id: "auth:user", label: "User" },
+        ],
+        createdAt: 1,
+        updatedAt: 1,
+        focused: true,
+        accessRole: "admin",
+        accessToken: "msgtok_admin",
+      },
+      initialSnapshotResolved: true,
+      initialMessages: [
+        {
+          rowId: 3,
+          viewKey: "participant-read",
+          messageId: 3,
+          chatId: "chat-main",
+          senderContactId: "session:jane",
+          from: "jane",
+          kind: "text",
+          content: "participant side",
+          createdAt: 100,
+          updatedAt: 100,
+          visibleAt: 100,
+          metadata: {},
+          attachments: [],
+        },
+        {
+          rowId: 4,
+          viewKey: "viewer-read",
+          messageId: 4,
+          chatId: "chat-main",
+          senderContactId: "auth:user",
+          from: "User",
+          kind: "text",
+          content: "viewer side",
+          createdAt: 101,
+          updatedAt: 101,
+          visibleAt: 101,
+          metadata: {},
+          attachments: [],
+        },
+      ],
+      resolveMessageReadProgress: ({ message }: { message: WebChatMessage }) => ({
+        readCount: 1,
+        totalCount: 2,
+        title: `${message.viewKey} read`,
+        readActors: [
+          {
+            actorId: "auth:user",
+            label: "User",
+            subtitle: "auth:user",
+            iconUrl: null,
+          },
+        ],
+        unreadActors: [
+          {
+            actorId: "session:jane",
+            label: "Jane",
+            subtitle: "session:jane",
+            iconUrl: null,
+          },
+        ],
+      }),
+    });
+
+    await settleLitUpdates();
+
+    const readActionShells = Array.from(document.body.querySelectorAll<HTMLElement>(".bubble-actions-read"));
+    expect(readActionShells).toHaveLength(2);
+
+    for (const shell of readActionShells) {
+      const trigger = shell.querySelector("[data-message-actions-trigger]");
+      const expectedTitle = trigger?.getAttribute("aria-label")?.replace("Message actions, ", "");
+      expect(expectedTitle).toBeTruthy();
+
+      shell.dispatchEvent(new Event("pointerenter"));
+      flushSync();
+      await Promise.resolve();
+
+      expect(readRenderedText(document.body)).toContain(expectedTitle);
+      expect(readRenderedText(document.body)).toContain("Jane");
+    }
+
+    const focusedShell = readActionShells[0]!;
+    const focusedTrigger = focusedShell.querySelector("[data-message-actions-trigger]");
+    focusedTrigger?.dispatchEvent(new FocusEvent("focusin", { bubbles: true }));
+    flushSync();
+    await Promise.resolve();
+
+    const focusedDisclosure = document.body.querySelector<HTMLElement>("[data-testid='message-read-disclosure']");
+    expect(focusedDisclosure).toBeTruthy();
+    focusedTrigger?.dispatchEvent(
+      new FocusEvent("focusout", {
+        bubbles: true,
+        relatedTarget: focusedDisclosure,
+      }),
+    );
+    flushSync();
+    await new Promise((resolve) => setTimeout(resolve, 720));
+    flushSync();
+
+    expect(document.body.querySelector("[data-testid='message-read-disclosure']")).toBeTruthy();
+  });
+
+  test("Scenario: Given a read-enabled message has menu actions When the explicit menu trigger opens Then the read panel closes and the action menu remains reachable", async () => {
+    mountHost({
+      channel: {
+        chatId: "chat-main",
+        kind: "room",
+        title: "Room",
+        owner: "jane",
+        participants: [
+          { id: "session:jane", label: "jane" },
+          { id: "auth:user", label: "User" },
+        ],
+        createdAt: 1,
+        updatedAt: 1,
+        focused: true,
+        accessRole: "admin",
+        accessToken: "msgtok_admin",
+      },
+      initialSnapshotResolved: true,
+      initialMessages: [
+        {
+          rowId: 3,
+          viewKey: "read-menu",
+          messageId: 3,
+          chatId: "chat-main",
+          senderContactId: "auth:user",
+          from: "User",
+          kind: "text",
+          content: "read action menu",
+          createdAt: 100,
+          updatedAt: 100,
+          visibleAt: 100,
+          metadata: {},
+          attachments: [],
+        },
+      ],
+      resolveMessageReadProgress: () => ({
+        readCount: 1,
+        totalCount: 2,
+        title: "1/2 read",
+        readActors: [
+          {
+            actorId: "auth:user",
+            label: "User",
+            subtitle: "auth:user",
+            iconUrl: null,
+          },
+        ],
+        unreadActors: [
+          {
+            actorId: "session:jane",
+            label: "Jane",
+            subtitle: "session:jane",
+            iconUrl: null,
+          },
+        ],
+      }),
+      resolveMessageActions: () => [
+        {
+          id: "inspect",
+          label: "Inspect",
+          detail: "host",
+        },
+      ],
+    });
+
+    await settleLitUpdates();
+
+    const readActionShell = document.body.querySelector<HTMLElement>(".bubble-actions-read");
+    const trigger = readActionShell?.querySelector<HTMLElement>("[data-message-actions-trigger]");
+    expect(readActionShell).toBeTruthy();
+    expect(trigger).toBeTruthy();
+
+    readActionShell!.dispatchEvent(new Event("pointerenter"));
+    flushSync();
+    await Promise.resolve();
+
+    expect(document.body.querySelector("[data-testid='message-read-disclosure']")).toBeTruthy();
+
+    trigger!.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, button: 0 }));
+    flushSync();
+    await Promise.resolve();
+
+    expect(document.body.querySelector("[data-testid='message-read-disclosure']")).toBeNull();
+    expect(readRenderedText(document.body)).toContain("Inspect");
+    expect(readRenderedText(document.body)).toContain("Copy message");
   });
 
   test("Scenario: Given host message actions When the menu opens Then the shared row exposes those actions", async () => {
@@ -1412,7 +1757,9 @@ describe("Feature: web-chat-view package", () => {
 
     await settleLitUpdates();
 
-    const trigger = document.body.querySelector("[aria-label='Message actions']") as HTMLElement;
+    const trigger = document.body.querySelector(
+      "[data-message-actions-trigger][aria-label='Message actions']",
+    ) as HTMLElement;
     trigger.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     flushSync();
     await Promise.resolve();
@@ -1420,7 +1767,7 @@ describe("Feature: web-chat-view package", () => {
     expect(readRenderedText(document.body)).toContain("Inspect");
   });
 
-  test("Scenario: Given shared message actions When the row opens its context menu Then the same action list is available from right click", async () => {
+  test("Scenario: Given shared message actions When the external row affordance opens Then the same action list is available from the explicit icon button", async () => {
     mountHost({
       channel: {
         chatId: "chat-main",
@@ -1466,13 +1813,73 @@ describe("Feature: web-chat-view package", () => {
 
     await settleLitUpdates();
 
-    const bubble = document.body.querySelector('[part~="message-bubble"]') as HTMLElement;
-    bubble.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, button: 2 }));
+    const trigger = document.body.querySelector("[data-message-actions-trigger]") as HTMLElement;
+    trigger.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     flushSync();
     await Promise.resolve();
 
     expect(readRenderedText(document.body)).toContain("Inspect");
     expect(readRenderedText(document.body)).toContain("Copy message");
+  });
+
+  test("Scenario: Given message text is selected When the user opens the native context menu Then the row does not open the comment affordance", async () => {
+    mountHost({
+      channel: {
+        chatId: "chat-main",
+        kind: "room",
+        title: "Room",
+        owner: "jane",
+        participants: [
+          { id: "session:jane", label: "jane" },
+          { id: "auth:user", label: "User" },
+        ],
+        createdAt: 1,
+        updatedAt: 1,
+        focused: true,
+        accessRole: "admin",
+        accessToken: "msgtok_admin",
+      },
+      initialSnapshotResolved: true,
+      initialMessages: [
+        {
+          rowId: 1,
+          viewKey: "msg-right-click",
+          messageId: 1,
+          chatId: "chat-main",
+          senderContactId: "auth:user",
+          from: "User",
+          kind: "text",
+          content: "right click selection",
+          createdAt: 100,
+          updatedAt: 100,
+          visibleAt: 100,
+          metadata: {},
+          attachments: [],
+        },
+      ],
+    });
+
+    await settleLitUpdates();
+
+    const messageCard = document.body.querySelector<HTMLElement>(".message-card");
+    expect(messageCard).toBeTruthy();
+
+    withSelectionRect(() => {
+      selectTextWithin(messageCard!);
+      const event = new MouseEvent("contextmenu", {
+        bubbles: true,
+        cancelable: true,
+        button: 2,
+        clientX: 40,
+        clientY: 40,
+      });
+      expect(messageCard!.dispatchEvent(event)).toBe(true);
+      expect(event.defaultPrevented).toBe(false);
+    });
+    flushSync();
+    await Promise.resolve();
+
+    expect(document.body.querySelector("[data-testid='message-comment-action-popover']")).toBeNull();
   });
 
   test("Scenario: Given the shared chat surface When it mounts Then transcript and composer regions expose durable styling parts", async () => {
@@ -1577,75 +1984,82 @@ describe("Feature: web-chat-view package", () => {
     expect(rendered).not.toContain("Loading channel history...");
   });
 
-  test("Scenario: Given a long room transcript When the host scrolls deep into history Then offscreen rows stay unmounted until the viewport reaches them", { timeout: 15_000 }, async () => {
-    mountHost({
-      channel: {
-        chatId: "chat-virtualized",
-        kind: "room",
-        title: "Virtualized room",
-        owner: "jane",
-        participants: [
-          { id: "session:jane", label: "jane" },
-          { id: "auth:user", label: "User" },
-        ],
-        createdAt: 1,
-        updatedAt: 1,
-        focused: true,
-        accessRole: "admin",
-        accessToken: "msgtok_admin",
-      },
-      initialSnapshotResolved: true,
-      initialMessages: Array.from({ length: 200 }, (_value, index) => ({
-        rowId: index + 1,
-        viewKey: `virtual-${index + 1}`,
-        messageId: index + 1,
-        chatId: "chat-virtualized",
-        from: index % 2 === 0 ? "User" : "jane",
-        to: index % 2 === 0 ? "jane" : undefined,
-        kind: "text" as const,
-        content: `virtual transcript row ${index + 1}`,
-        createdAt: (index + 1) * 100,
-        updatedAt: (index + 1) * 100,
-        visibleAt: (index + 1) * 100,
-        metadata: {},
-        attachments: [],
-      })),
-    });
+  test(
+    "Scenario: Given a long room transcript When the host scrolls deep into history Then offscreen rows stay unmounted until the viewport reaches them",
+    { timeout: 15_000 },
+    async () => {
+      mountHost({
+        channel: {
+          chatId: "chat-virtualized",
+          kind: "room",
+          title: "Virtualized room",
+          owner: "jane",
+          participants: [
+            { id: "session:jane", label: "jane" },
+            { id: "auth:user", label: "User" },
+          ],
+          createdAt: 1,
+          updatedAt: 1,
+          focused: true,
+          accessRole: "admin",
+          accessToken: "msgtok_admin",
+        },
+        initialSnapshotResolved: true,
+        initialMessages: Array.from({ length: 200 }, (_value, index) => ({
+          rowId: index + 1,
+          viewKey: `virtual-${index + 1}`,
+          messageId: index + 1,
+          chatId: "chat-virtualized",
+          from: index % 2 === 0 ? "User" : "jane",
+          to: index % 2 === 0 ? "jane" : undefined,
+          kind: "text" as const,
+          content: `virtual transcript row ${index + 1}`,
+          createdAt: (index + 1) * 100,
+          updatedAt: (index + 1) * 100,
+          visibleAt: (index + 1) * 100,
+          metadata: {},
+          attachments: [],
+        })),
+      });
 
-    await settleLitUpdates();
+      await settleLitUpdates();
 
-    const viewport = document.body.querySelector("[data-testid='web-chat-scroll-viewport']") as HTMLDivElement;
-    await vi.waitFor(() => {
-      expect(
-        (document.body.querySelector(".bottom-anchored-timeline-root") as HTMLElement | null)?.dataset.atLatest,
-      ).toBe("true");
-      expect(viewport.querySelector("[data-view-key='virtual-200']")).toBeTruthy();
-    }, { timeout: 15_000 });
-    expect(viewport.querySelector("[data-view-key='virtual-120']")).toBeNull();
-    const firstVirtualWrapper = viewport.querySelector<HTMLElement>(".scroll-view-virtual-item");
-    expect(firstVirtualWrapper?.getAttribute("style")).not.toContain("block-size:");
-    Object.defineProperties(viewport, {
-      clientHeight: {
-        configurable: true,
-        value: 600,
-      },
-      scrollHeight: {
-        configurable: true,
-        value: 40_600,
-      },
-    });
+      const viewport = document.body.querySelector("[data-testid='web-chat-scroll-viewport']") as HTMLDivElement;
+      await vi.waitFor(
+        () => {
+          expect(
+            (document.body.querySelector(".bottom-anchored-timeline-root") as HTMLElement | null)?.dataset.atLatest,
+          ).toBe("true");
+          expect(viewport.querySelector("[data-view-key='virtual-200']")).toBeTruthy();
+        },
+        { timeout: 15_000 },
+      );
+      expect(viewport.querySelector("[data-view-key='virtual-120']")).toBeNull();
+      const firstVirtualWrapper = viewport.querySelector<HTMLElement>(".scroll-view-virtual-item");
+      expect(firstVirtualWrapper?.getAttribute("style")).not.toContain("block-size:");
+      Object.defineProperties(viewport, {
+        clientHeight: {
+          configurable: true,
+          value: 600,
+        },
+        scrollHeight: {
+          configurable: true,
+          value: 40_600,
+        },
+      });
 
-    viewport.dispatchEvent(new Event("wheel"));
-    viewport.scrollTop = getBottomAnchoredStartScrollTop(viewport);
-    viewport.dispatchEvent(new Event("scroll"));
-    flushSync();
-    await settleLitUpdates();
+      viewport.dispatchEvent(new Event("wheel"));
+      viewport.scrollTop = getBottomAnchoredStartScrollTop(viewport);
+      viewport.dispatchEvent(new Event("scroll"));
+      flushSync();
+      await settleLitUpdates();
 
-    await vi.waitFor(() => {
-      expect(viewport.querySelector("[data-view-key='virtual-1']")).toBeTruthy();
-      expect(viewport.querySelector("[data-view-key='virtual-200']")).toBeNull();
-    });
-  });
+      await vi.waitFor(() => {
+        expect(viewport.querySelector("[data-view-key='virtual-1']")).toBeTruthy();
+        expect(viewport.querySelector("[data-view-key='virtual-200']")).toBeNull();
+      });
+    },
+  );
 
   test("Scenario: Given queued room messages without visibleAt When the transcript renders Then they stay visible in createdAt order without a pending strip", async () => {
     mountHost({
@@ -1701,9 +2115,7 @@ describe("Feature: web-chat-view package", () => {
     const replyRow = document.body.querySelector("[data-view-key='reply-1']") as HTMLElement | null;
     expect(queuedRow).toBeTruthy();
     expect(replyRow).toBeTruthy();
-    expect(
-      Number(queuedRow?.closest<HTMLElement>("[data-source-index]")?.dataset.sourceIndex ?? "-1"),
-    ).toBeLessThan(
+    expect(Number(queuedRow?.closest<HTMLElement>("[data-source-index]")?.dataset.sourceIndex ?? "-1")).toBeLessThan(
       Number(replyRow?.closest<HTMLElement>("[data-source-index]")?.dataset.sourceIndex ?? "-1"),
     );
     expect(readRenderedText(document.body)).not.toContain("Pending for attention");
@@ -2388,9 +2800,9 @@ describe("Feature: web-chat-view package", () => {
         rowId: 2,
       });
     });
-    expect(
-      (document.body.querySelector("[data-view-key='2']") as HTMLElement | null)?.dataset.insertMotion,
-    ).toBe("latest");
+    expect((document.body.querySelector("[data-view-key='2']") as HTMLElement | null)?.dataset.insertMotion).toBe(
+      "latest",
+    );
     unmount(component);
   });
 
@@ -2565,8 +2977,8 @@ describe("Feature: web-chat-view package", () => {
       expect(shadowRoot.querySelector("[data-testid='web-chat-draft-editor']")).toBeNull();
     });
     await vi.waitFor(() => {
-      const indicator = shadowRoot.querySelector("[data-testid='message-read-indicator']");
-      expect(indicator?.getAttribute("aria-label")).toBe("1/1 read");
+      const trigger = shadowRoot.querySelector("[data-message-actions-trigger]");
+      expect(trigger?.getAttribute("aria-label")).toBe("Message actions, 1/1 read");
     });
   });
 });

@@ -261,7 +261,7 @@ describe("Feature: web-components foundation", () => {
       expect(element.hasAttribute("open")).toBe(true);
 
       trigger?.dispatchEvent(new MouseEvent("mouseleave", { composed: true }));
-      vi.advanceTimersByTime(150);
+      vi.advanceTimersByTime(220);
       await element.updateComplete;
 
       expect(element.getAttribute("data-presentation")).toBe("closed");

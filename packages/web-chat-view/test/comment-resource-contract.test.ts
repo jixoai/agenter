@@ -96,6 +96,29 @@ describe("Feature: comment resource serialization contract", () => {
     ).toBe("msg://room-1/42#L7");
   });
 
+  test("Scenario: Given a multi-line source anchor When the source uri is derived and parsed Then the range stays in the durable source reference", () => {
+    const sourceUri = buildCommentResourceSourceUri({
+      roomId: "room-1",
+      sourceMessageId: 42,
+      sourceViewKey: "msg-42",
+      sourceLineNumber: 2,
+      sourceLineEndNumber: 4,
+    });
+
+    expect(sourceUri).toBe("msg://room-1/42#L2-L4");
+
+    const resources = resolveMessageResourceReferences({
+      content: `[^Comment 1]: [Review all selected rows](${sourceUri} "line two\\nline three")`,
+    });
+
+    expect(resources[0]?.commentAnchor).toMatchObject({
+      sourceMessageId: 42,
+      sourceLineNumber: 2,
+      sourceLineEndNumber: 4,
+      sourceUri,
+    });
+  });
+
   test("Scenario: Given an empty comment draft When a comment resource is normalized or created Then no visible comment resource is produced", () => {
     const emptyPayload = {
       id: "comment-1",

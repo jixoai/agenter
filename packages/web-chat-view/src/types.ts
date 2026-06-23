@@ -40,6 +40,7 @@ export interface WebChatCommentResourceAnchor {
   sourceMessageId?: number;
   sourceViewKey: string;
   sourceLineNumber: number;
+  sourceLineEndNumber?: number;
   selectedText: string;
   sourceActorId?: string | null;
   sourceActorLabel?: string;

@@ -35,6 +35,25 @@ describe("Feature: svelte-components layout foundation", () => {
     expect(violations).toEqual([]);
   });
 
+  test("Scenario: Given an iframe lives inside split detail When resizing crosses it Then the root owns a temporary drag shield", () => {
+    const source = readFileSync(
+      resolve(packageRoot, "src/layout/workbench-split-detail/workbench-split-detail-root.svelte"),
+      "utf8",
+    );
+
+    expect(source).toContain('data-layout-role="workbench-split-detail-drag-shield"');
+    expect(source).toContain('data-slot="workbench-split-detail-drag-shield"');
+    expect(source).toContain('z-index: 2147483647');
+    expect(source).toContain("pointer-events: auto");
+    expect(source).toContain('[data-layout-role="workbench-split-detail-root"][data-dragging="true"] iframe');
+    expect(source).toContain('ownerDocument.addEventListener("pointermove", handlePointerMove, true)');
+    expect(source).toContain("moveEvent.pointerId !== dragPointerId");
+    expect(source).toContain("let activeDragPointerId = $state<number | null>(null)");
+    expect(source).toContain("const handleDragShieldPointerEvent = (event: PointerEvent): void =>");
+    expect(source).toContain("onpointermove={handleDragShieldPointerEvent}");
+    expect(source).toContain("onpointerup={handleDragShieldPointerEvent}");
+  });
+
   test("Scenario: Given scaffold roots without optional slots When reviewing source Then slot rows stay explicit inside the shared package", () => {
     const scaffoldRootSource = readFileSync(resolve(packageRoot, "src/layout/scaffold/scaffold-root.svelte"), "utf8");
 

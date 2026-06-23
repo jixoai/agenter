@@ -47,6 +47,8 @@ describe("Feature: comment resource reopen contract", () => {
 
   test("Scenario: Given comment creation from the source popup When reading the implementation Then selection actions create an inline anchor with a bottom editor", () => {
     expect(messageSourcePopupSource).toContain("buildCommentResourceSourceUri");
+    expect(messageRowSource).toContain("<MessageCommentActionPopover");
+    expect(messageRowSource).toContain("commentSelectionRequest");
     expect(messageSourcePopupSource).toContain("selectionActionButtonRef");
     expect(messageSourcePopupSource).toContain("<SelectionActionSurface");
     expect(messageSourcePopupSource).toContain("<CommentAnchorBadge");

@@ -1,12 +1,13 @@
 <script lang="ts">
   import ChatAvatar from "./chat-avatar.svelte";
   import MessageMarkdownContent from "./components/message-markdown-content.svelte";
-  import MessageActionsContextMenu from "./message-actions-context-menu.svelte";
   import MessageActionsMenu, {
     type ResolvedMessageAction,
   } from "./message-actions-menu.svelte";
-  import MessageReadIndicator from "./message-read-indicator.svelte";
-  import MessageSourcePopup from "./message-source-popup.svelte";
+  import { WEB_CHAT_CLOSE_COMMENT_ACTION_POPOVERS_EVENT } from "./message-comment-action-events";
+  import MessageCommentActionPopover from "./message-comment-action-popover.svelte";
+  import MessageSourcePopup, { type MessageSourceSelectionRequest } from "./message-source-popup.svelte";
+  import { resolveDefaultMessageReadProgress } from "./message-read-progress";
   import {
     mergeResourceReferences,
     resolveMessageResourceReferences,
@@ -76,14 +77,17 @@
   } = $props();
 
   let interactiveDraft: Record<string, string> = $state({});
+  let messageCardRef = $state<HTMLDivElement | null>(null);
   let interactiveSubmitting = $state(false);
   let actionsOpen = $state(false);
-  let contextMenuOpen = $state(false);
   let sourcePopupOpen = $state(false);
   let previewingResourceId = $state<string | null>(null);
   let commentDetailMode = $state<"view" | "edit">("view");
-  let contextMenuAnchorX = $state<number | null>(null);
-  let contextMenuAnchorY = $state<number | null>(null);
+  let commentActionOpen = $state(false);
+  let commentActionAnchor = $state<{ x: number; y: number; width: number; height: number } | null>(null);
+  let commentSelectionRequest = $state<MessageSourceSelectionRequest | null>(null);
+  let requestedSourceLineNumber = $state(1);
+  let requestedSourceLineEndNumber = $state<number | undefined>(undefined);
 
   const assistant = $derived(isAssistantMessage(channel, message));
   const resolvedActorId = $derived(resolveMessageActorId(channel, message, viewerActorId));
@@ -200,8 +204,108 @@
       return;
     }
     actionsOpen = false;
-    contextMenuOpen = false;
+    commentSelectionRequest = null;
     sourcePopupOpen = true;
+  };
+
+  const createCommentSelectionRequestId = (): string => {
+    if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+      return crypto.randomUUID();
+    }
+    return `comment-selection-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+  };
+
+  const openCommentActionForSelection = (input: {
+    lineNumber: number;
+    lineEndNumber?: number;
+    selectedText: string;
+    anchor: { x: number; y: number; width: number; height: number };
+  }): void => {
+    if (input.selectedText.trim().length === 0) {
+      return;
+    }
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(new Event(WEB_CHAT_CLOSE_COMMENT_ACTION_POPOVERS_EVENT));
+    }
+    commentSelectionRequest = {
+      id: createCommentSelectionRequestId(),
+      openCommentEditor: true,
+    };
+    requestedSourceLineNumber = input.lineNumber;
+    requestedSourceLineEndNumber = input.lineEndNumber;
+    commentActionAnchor = input.anchor;
+    commentActionOpen = true;
+  };
+
+  const currentSelectedTextWithinMessage = (): string => {
+    const selection = typeof window !== "undefined" ? window.getSelection() : null;
+    if (!selection || selection.rangeCount === 0 || !messageCardRef) {
+      return "";
+    }
+    const anchorNode = selection.anchorNode;
+    const focusNode = selection.focusNode;
+    const containsNode = (node: Node | null): boolean =>
+      node
+        ? messageCardRef?.contains(node.nodeType === Node.ELEMENT_NODE ? node : node.parentElement) === true
+        : false;
+    if (!containsNode(anchorNode) || !containsNode(focusNode)) {
+      return "";
+    }
+    const text = selection?.toString().trim() ?? "";
+    return text;
+  };
+
+  const selectionRectFromSelection = (): { x: number; y: number; width: number; height: number } | null => {
+    if (typeof window === "undefined") {
+      return null;
+    }
+    const selection = window.getSelection();
+    if (!selection || selection.rangeCount === 0 || selection.isCollapsed) {
+      return null;
+    }
+    const range = selection.getRangeAt(0);
+    const rect = range.getBoundingClientRect();
+    if (!rect || (rect.width === 0 && rect.height === 0)) {
+      return null;
+    }
+    return {
+      x: rect.left + rect.width / 2,
+      y: rect.top,
+      width: Math.max(rect.width, 24),
+      height: Math.max(rect.height, 24),
+    };
+  };
+
+  const lineRangeForText = (selectedText: string): { lineNumber: number; lineEndNumber?: number } => {
+    const normalizedSelection = selectedText.trim();
+    if (normalizedSelection.length === 0) {
+      return { lineNumber: 1 };
+    }
+    const index = sourceMarkdown.indexOf(normalizedSelection);
+    if (index < 0) {
+      return { lineNumber: 1 };
+    }
+    const prefix = sourceMarkdown.slice(0, index);
+    const segment = sourceMarkdown.slice(index, index + normalizedSelection.length);
+    const lineNumber = prefix.split(/\r?\n/u).length;
+    const lineEndNumber = lineNumber + segment.split(/\r?\n/u).length - 1;
+    return lineEndNumber > lineNumber ? { lineNumber, lineEndNumber } : { lineNumber };
+  };
+
+  const openSelectionCommentFromSelection = (): void => {
+    const selectedText = currentSelectedTextWithinMessage();
+    if (selectedText.length === 0) {
+      return;
+    }
+    const anchor = selectionRectFromSelection();
+    if (!anchor) {
+      return;
+    }
+    openCommentActionForSelection({
+      ...lineRangeForText(selectedText),
+      selectedText,
+      anchor,
+    });
   };
 
   const builtInActions = $derived.by(() => {
@@ -256,7 +360,12 @@
       onSelect: action.onSelect ? () => action.onSelect?.(renderInput) : undefined,
     })),
   ]);
-  const messageReadProgress = $derived(resolveMessageReadProgress?.(renderInput) ?? null);
+  const messageReadProgress = $derived.by(() => {
+    if (resolveMessageReadProgress) {
+      return resolveMessageReadProgress(renderInput);
+    }
+    return resolveDefaultMessageReadProgress(renderInput, resolveActorPresentation);
+  });
   const defaultMessageResources = $derived(
     resolveMessageResourceReferences({
       attachments: message.attachments ?? [],
@@ -344,18 +453,15 @@
           {/snippet}
 
           <div
-            class={`message-card ${messageActions.length > 0 ? "message-card-with-actions" : ""}`}
+            class={`message-card ${messageActions.length > 0 ? "message-card-with-actions" : ""} ${messageReadProgress ? "message-card-with-read" : ""}`}
             part={`message-bubble message-bubble-${tone}`}
             role="presentation"
-            ondblclick={() => {
-              openSourcePopup();
-            }}
-            oncontextmenu={(event) => {
-              event.preventDefault();
-              contextMenuAnchorX = event.clientX;
-              contextMenuAnchorY = event.clientY;
-              contextMenuOpen = true;
-              actionsOpen = false;
+            bind:this={messageCardRef}
+            onpointerup={(event: PointerEvent) => {
+              if (event.button !== 0) {
+                return;
+              }
+              setTimeout(openSelectionCommentFromSelection, 0);
             }}
           >
             {#if referencedMessage && referencedPreviewText}
@@ -426,24 +532,35 @@
               </div>
             {/if}
 
-            {#if messageActions.length > 0}
-              <div class={`bubble-actions ${actionsOpen ? "bubble-actions-open" : ""}`}>
-                <MessageActionsMenu bind:open={actionsOpen} actions={messageActions} />
-              </div>
-              <MessageActionsContextMenu
-                bind:open={contextMenuOpen}
-                actions={messageActions}
-                anchorX={contextMenuAnchorX}
-                anchorY={contextMenuAnchorY}
-              />
-            {/if}
           </div>
+          <MessageCommentActionPopover
+            bind:open={commentActionOpen}
+            anchor={commentActionAnchor}
+            onComment={() => {
+              if (!commentSelectionRequest) {
+                return;
+              }
+              sourcePopupOpen = true;
+              commentActionOpen = false;
+            }}
+          />
+          {#snippet contentEnd()}
+            {#if messageActions.length > 0 || messageReadProgress}
+              <div
+                class={`bubble-actions bubble-actions-${tone} ${messageReadProgress ? "bubble-actions-has-read" : ""} ${actionsOpen ? "bubble-actions-open" : ""}`}
+              >
+                <MessageActionsMenu
+                  bind:open={actionsOpen}
+                  actions={messageActions}
+                  readProgress={messageReadProgress}
+                  class={messageReadProgress ? "bubble-actions-read" : ""}
+                />
+              </div>
+            {/if}
+          {/snippet}
         </Framework7Message>
       </div>
 
-      {#if messageReadProgress}
-        <MessageReadIndicator progress={messageReadProgress} />
-      {/if}
     </div>
   </div>
 </div>
@@ -453,8 +570,18 @@
   {actorPresentation}
   resourceReferences={messageResources}
   open={sourcePopupOpen}
+  activeLineNumber={requestedSourceLineNumber}
+  activeLineEndNumber={requestedSourceLineEndNumber}
+  commentSelectionRequest={commentSelectionRequest}
   onOpenChange={(next) => {
     sourcePopupOpen = next;
+    if (!next) {
+      commentSelectionRequest = null;
+      requestedSourceLineNumber = 1;
+      requestedSourceLineEndNumber = undefined;
+      commentActionAnchor = null;
+      commentActionOpen = false;
+    }
   }}
   {onCreateCommentDraft}
 />
@@ -501,10 +628,20 @@
   }
 
   .message-shell {
+    --message-action-button-size: 1.5rem;
+    --message-action-gutter: 2.5rem;
+    --message-action-inline-offset: calc(-1 * var(--message-action-button-size) - 0.75rem);
+    --message-action-block-offset: 0;
     display: grid;
     position: relative;
     min-width: 0;
     overflow: visible;
+    padding-inline-end: var(--message-action-gutter);
+  }
+
+  .row.viewer-owned .message-shell {
+    padding-inline-start: var(--message-action-gutter);
+    padding-inline-end: 0;
   }
 
   .row.viewer-owned .row-body {
@@ -586,20 +723,31 @@
   }
 
   .bubble-actions {
+    --message-read-disclosure-inline-start: 0;
+    --message-read-disclosure-inline-end: auto;
     position: absolute;
-    inset-block-start: -0.06rem;
-    inset-inline-end: -0.02rem;
-    opacity: 0;
-    transform: translateY(-2px);
-    transition: opacity 120ms ease, transform 120ms ease;
-    z-index: 2;
+    inset-block-end: var(--message-action-block-offset);
+    inset-inline-end: var(--message-action-inline-offset);
+    opacity: 0.34;
+    transition: opacity 120ms ease;
+    z-index: 20;
   }
 
-  .message-card:hover .bubble-actions,
-  .message-card:focus-within .bubble-actions,
+  .bubble-actions-viewer {
+    --message-read-disclosure-inline-start: auto;
+    --message-read-disclosure-inline-end: 0;
+    inset-inline-start: var(--message-action-inline-offset);
+    inset-inline-end: auto;
+  }
+
+  .message-shell:hover .bubble-actions,
+  .message-shell:focus-within .bubble-actions,
   .bubble-actions-open {
     opacity: 1;
-    transform: translateY(0);
+  }
+
+  .bubble-actions-has-read {
+    opacity: 1;
   }
 
   .meta-head {
@@ -841,12 +989,18 @@
   }
 
   @container (max-width: 34rem) {
-    .message-card:hover .bubble-actions {
+    .message-shell:hover .bubble-actions {
       opacity: 0;
-      transform: translateY(-2px);
     }
 
-    .message-card:focus-within .bubble-actions,
+    .message-shell:hover .bubble-actions-has-read,
+    .message-shell:focus-within .bubble-actions-has-read,
+    .bubble-actions-open.bubble-actions-has-read {
+      opacity: 1;
+      transform: translateY(0);
+    }
+
+    .message-shell:focus-within .bubble-actions,
     .bubble-actions-open {
       opacity: 1;
       transform: translateY(0);
@@ -886,8 +1040,13 @@
     }
 
     .bubble-actions {
-      inset-block-start: -0.04rem;
-      inset-inline-end: -0.01rem;
+      inset-block-end: var(--message-action-block-offset);
+      inset-inline-end: var(--message-action-inline-offset);
+    }
+
+    .message-shell {
+      --message-action-button-size: 1.45rem;
+      --message-action-gutter: 2.35rem;
     }
   }
 </style>

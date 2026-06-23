@@ -58,6 +58,43 @@ describe("Feature: Message markdown content preview", () => {
     }
   });
 
+  test("Scenario: Given a bare URL line When the markdown component mounts Then the URL remains visible in the bubble projection", () => {
+    const url = "https://support.claude.com/en/articles/14328960-identity-verification-on-claude";
+    const harness = mountMarkdownContent(
+      [
+        "1. Claude 身份验证  ⭐ 690",
+        "   Claude 开始要求用户进行身份验证",
+        `   ${url}`,
+      ].join("\n"),
+    );
+
+    try {
+      expect(harness.target.textContent).toContain(url);
+      const hiddenUrlFragments = Array.from(harness.target.querySelectorAll(".cm-md-hidden")).filter((element) =>
+        element.textContent?.includes(url),
+      );
+      expect(hiddenUrlFragments).toHaveLength(0);
+    } finally {
+      unmount(harness.component);
+    }
+  });
+
+  test("Scenario: Given an inline markdown link When the markdown component mounts Then the destination remains syntax chrome", () => {
+    const harness = mountMarkdownContent(
+      "[Claude 身份验证](https://support.claude.com/en/articles/14328960-identity-verification-on-claude)",
+    );
+
+    try {
+      const hiddenLinkSyntax = Array.from(harness.target.querySelectorAll(".cm-md-hidden"))
+        .map((element) => element.textContent ?? "")
+        .join("");
+      expect(hiddenLinkSyntax).toContain("https://support.claude.com/");
+      expect(harness.target.textContent).toContain("Claude 身份验证");
+    } finally {
+      unmount(harness.component);
+    }
+  });
+
   test("Scenario: Given a table message When the markdown component mounts Then it renders a scrollable table preview inside the bubble", () => {
     const harness = mountMarkdownContent(`| Name | Role |\n| --- | --- |\n| QAQ | owner |`);
 

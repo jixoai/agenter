@@ -25,7 +25,7 @@ export const HELP_HINT_PARTS = {
 
 const VIEWPORT_PADDING = 8;
 const HIDDEN_POSITION = -10_000;
-const TRANSIENT_CLOSE_DELAY_MS = 100;
+const TRANSIENT_CLOSE_DELAY_MS = 180;
 const HIDDEN_POPUP_STYLE = {
   "--help-hint-popover-left": `${HIDDEN_POSITION}px`,
   "--help-hint-popover-top": `${HIDDEN_POSITION}px`,
@@ -112,6 +112,9 @@ export class HelpHintElement extends LitElement {
       z-index: 60;
       width: max-content;
       max-width: min(30rem, calc(100vw - 1rem));
+      max-height: min(24rem, calc(100dvh - 2rem));
+      overflow: auto;
+      overscroll-behavior: contain;
       border-radius: 0.75rem;
       border: 1px solid hsl(var(--border, 214 32% 91%));
       background: hsl(var(--background, 0 0% 100%));
@@ -237,6 +240,8 @@ export class HelpHintElement extends LitElement {
   private transientCloseHandle: number | null = null;
   private popupStyleResetQueued = false;
   private unregisterRuntimeHandle: (() => void) | null = null;
+  private triggerHovered = false;
+  private popupHovered = false;
   private readonly popupId = `help-hint-${crypto.randomUUID()}`;
 
   private get triggerElement(): HTMLButtonElement | null {
@@ -510,7 +515,7 @@ export class HelpHintElement extends LitElement {
     this.clearTransientClose();
     this.transientCloseHandle = window.setTimeout(() => {
       this.transientCloseHandle = null;
-      if (this.isTransientActive) {
+      if (this.isTransientActive && !this.triggerHovered && !this.popupHovered) {
         this.displayState = createClosedState();
       }
     }, TRANSIENT_CLOSE_DELAY_MS);
@@ -535,6 +540,26 @@ export class HelpHintElement extends LitElement {
         : createActiveState("manual-click");
   }
 
+  private readonly handleTriggerMouseEnter = (): void => {
+    this.triggerHovered = true;
+    this.openTransientHint();
+  };
+
+  private readonly handleTriggerMouseLeave = (): void => {
+    this.triggerHovered = false;
+    this.scheduleTransientClose();
+  };
+
+  private readonly handlePopupMouseEnter = (): void => {
+    this.popupHovered = true;
+    this.openTransientHint();
+  };
+
+  private readonly handlePopupMouseLeave = (): void => {
+    this.popupHovered = false;
+    this.scheduleTransientClose();
+  };
+
   render() {
     if (this.disabled) {
       return nothing;
@@ -554,8 +579,8 @@ export class HelpHintElement extends LitElement {
         @click=${this.handleTriggerClick}
         @focus=${() => this.openTransientHint()}
         @blur=${() => this.closeTransientHint()}
-        @mouseenter=${() => this.openTransientHint()}
-        @mouseleave=${() => this.scheduleTransientClose()}
+        @mouseenter=${this.handleTriggerMouseEnter}
+        @mouseleave=${this.handleTriggerMouseLeave}
       >
         <span part=${HELP_HINT_PARTS.triggerLabel}>?</span>
       </button>
@@ -581,8 +606,8 @@ export class HelpHintElement extends LitElement {
             this.displayState = createActiveState("manual-click");
           }
         }}
-        @mouseenter=${() => this.openTransientHint()}
-        @mouseleave=${() => this.scheduleTransientClose()}
+        @mouseenter=${this.handlePopupMouseEnter}
+        @mouseleave=${this.handlePopupMouseLeave}
       >
         <div part=${HELP_HINT_PARTS.content}>
           <slot></slot>

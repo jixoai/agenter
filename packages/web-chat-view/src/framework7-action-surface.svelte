@@ -47,7 +47,7 @@
 
   const openActionSurface = (): void => {
     const framework7App = app.f7 as unknown as Framework7AppWithActions | undefined;
-    if (!framework7App || !anchor) {
+    if (!framework7App) {
       return;
     }
 
@@ -76,7 +76,7 @@
       closeByOutsideClick: true,
       convertToPopover: true,
       forceToPopover: !useCompactActions(),
-      ...anchor,
+      ...(anchor ?? {}),
       containerEl: "body",
       on: {
         closed: () => {
@@ -89,7 +89,7 @@
   };
 
   $effect(() => {
-    if (!$framework7Runtime || !anchor) {
+    if (!$framework7Runtime) {
       destroyActionSurface();
       return;
     }
@@ -107,7 +107,7 @@
   });
 </script>
 
-{#if open && (!$framework7Runtime || !anchor)}
+{#if open && !$framework7Runtime}
   <div class="framework7-action-surface-fallback" role="menu" aria-label={title}>
     {#each actions as action (action.id)}
       <Link

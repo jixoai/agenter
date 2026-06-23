@@ -51,6 +51,8 @@
 	let dragging = $state(false);
 	let ratioSourceReady = $state(false);
 	let lastSyncedRatio = $state<number | null>(null);
+	let activeDragPointerId = $state<number | null>(null);
+	let releaseCurrentDrag: (() => void) | null = null;
 
 	const ratioSource = $derived(resolveWorkbenchSplitDetailRatioSource(ratioPersistence));
 	const layout = $derived(
@@ -96,33 +98,75 @@
 		});
 	};
 
+	const capturePointer = (target: Element, pointerId: number): void => {
+		try {
+			target.setPointerCapture?.(pointerId);
+		} catch {
+			// Some synthetic/browser states do not expose an active pointer capture target.
+		}
+	};
+
+	const releasePointerCapture = (target: Element, pointerId: number): void => {
+		try {
+			if (target.hasPointerCapture?.(pointerId)) {
+				target.releasePointerCapture?.(pointerId);
+			}
+		} catch {
+			// Pointer capture may already be gone after blur, cancellation, or synthetic events.
+		}
+	};
+
 	const handlePointerDown = (event: PointerEvent): void => {
-		if (!rootRef || compact || event.button !== 0 || !isHandleTarget(event.target)) {
+		if (dragging || !rootRef || compact || event.button !== 0 || !isHandleTarget(event.target)) {
 			return;
 		}
 		const rootRect = rootRef.getBoundingClientRect();
+		const dragPointerTarget = rootRef;
+		const dragPointerId = event.pointerId;
+		activeDragPointerId = dragPointerId;
 		dragging = true;
 		commitRatioFromPointer(event.clientX - rootRect.left);
 		const ownerDocument = rootRef.ownerDocument;
-		const releaseDrag = (): void => {
-			dragging = false;
-			ownerDocument.removeEventListener("pointermove", handlePointerMove);
-			ownerDocument.removeEventListener("pointerup", handlePointerUp);
-			ownerDocument.removeEventListener("pointercancel", handlePointerUp);
-		};
+		const ownerWindow = ownerDocument.defaultView;
 		const handlePointerMove = (moveEvent: PointerEvent): void => {
+			if (moveEvent.pointerId !== dragPointerId) {
+				return;
+			}
 			commitRatioFromPointer(moveEvent.clientX - rootRect.left);
+			moveEvent.preventDefault();
 		};
 		const handlePointerUp = (upEvent: PointerEvent): void => {
-			if (upEvent.pointerId !== event.pointerId) {
+			if (upEvent.pointerId !== dragPointerId) {
 				return;
 			}
 			releaseDrag();
+			upEvent.preventDefault();
 		};
-		ownerDocument.addEventListener("pointermove", handlePointerMove);
-		ownerDocument.addEventListener("pointerup", handlePointerUp);
-		ownerDocument.addEventListener("pointercancel", handlePointerUp);
+		const releaseDrag = (): void => {
+			dragging = false;
+			activeDragPointerId = null;
+			ownerDocument.removeEventListener("pointermove", handlePointerMove, true);
+			ownerDocument.removeEventListener("pointerup", handlePointerUp, true);
+			ownerDocument.removeEventListener("pointercancel", handlePointerUp, true);
+			ownerWindow?.removeEventListener("blur", releaseDrag);
+			releasePointerCapture(dragPointerTarget, dragPointerId);
+			if (releaseCurrentDrag === releaseDrag) {
+				releaseCurrentDrag = null;
+			}
+		};
+		releaseCurrentDrag = releaseDrag;
+		capturePointer(dragPointerTarget, dragPointerId);
+		ownerDocument.addEventListener("pointermove", handlePointerMove, true);
+		ownerDocument.addEventListener("pointerup", handlePointerUp, true);
+		ownerDocument.addEventListener("pointercancel", handlePointerUp, true);
+		ownerWindow?.addEventListener("blur", releaseDrag);
 		event.preventDefault();
+	};
+
+	const handleDragShieldPointerEvent = (event: PointerEvent): void => {
+		if (activeDragPointerId !== null && event.pointerId === activeDragPointerId) {
+			event.preventDefault();
+		}
 	};
 
 	const handleKeyDown = (event: KeyboardEvent): void => {
@@ -180,6 +224,12 @@
 
 	$effect(() => {
 		ref = rootRef;
+	});
+
+	$effect(() => {
+		return () => {
+			releaseCurrentDrag?.();
+		};
 	});
 
 	$effect(() => {
@@ -287,6 +337,16 @@
 	{...restProps}
 >
 	{@render children?.()}
+	{#if dragging}
+		<div
+			aria-hidden="true"
+			data-layout-role="workbench-split-detail-drag-shield"
+			data-slot="workbench-split-detail-drag-shield"
+			onpointermove={handleDragShieldPointerEvent}
+			onpointerup={handleDragShieldPointerEvent}
+			onpointercancel={handleDragShieldPointerEvent}
+		></div>
+	{/if}
 </div>
 
 <style>
@@ -337,5 +397,20 @@
 		grid-row: 1;
 		min-block-size: 0;
 		min-inline-size: 0;
+	}
+
+	:where([data-layout-role="workbench-split-detail-drag-shield"]) {
+		position: fixed;
+		inset: 0;
+		z-index: 2147483647;
+		cursor: col-resize;
+		background: transparent;
+		pointer-events: auto;
+		touch-action: none;
+		user-select: none;
+	}
+
+	:global([data-layout-role="workbench-split-detail-root"][data-dragging="true"] iframe) {
+		pointer-events: none;
 	}
 	</style>
