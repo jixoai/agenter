@@ -26,6 +26,8 @@ The session runtime SHALL materialize operator-visible Heartbeat list truth into
 
 Each `heartbeat_record` row SHALL carry only the bounded summary needed for list presentation, including at least stable key/identity, `kind`, `status`, `startedAt`, `updatedAt`, `completedAt`, ordered source refs, summary features, optional preview text, and related model-call identity when present. Full markdown bodies, reasoning bodies, tool inputs/results, JSON payloads, and long structured request facts SHALL remain detail-surface data resolved through source refs or dedicated detail projections rather than being duplicated wholesale into list rows.
 
+For `model_call` records, `startedAt` SHALL be the objective model invocation boundary from `ai_call.created_at`. Older prompt-window, attention-context, or collected-input facts MAY remain source-backed detail evidence, but they MUST NOT move the record's page-order timestamp before the invocation that created the record.
+
 #### Scenario: List rows stay bounded even when source content is large
 
 - **WHEN** one source record contains long markdown, long reasoning, or large tool payloads
@@ -37,6 +39,21 @@ Each `heartbeat_record` row SHALL carry only the bounded summary needed for list
 - **WHEN** the operator opens one record detail surface
 - **THEN** the system resolves full structured content from the record's source refs or a detail projection built from those refs
 - **AND** the detail response does not require the list page to inline the same long payloads
+
+#### Scenario: Old carried context does not reorder a new model call
+
+- **WHEN** a new `ai_call` carries collected input metadata from older prompt-window or attention-context facts
+- **THEN** the materialized `model_call` record keeps `startedAt` equal to `ai_call.created_at`
+- **AND** the old context facts remain available only as detail/summary evidence
+- **AND** the paged list does not place the new model call under the old context date
+
+#### Scenario: Operator clear removes session-local context residue
+
+- **WHEN** the operator invokes the destructive Heartbeat session clear action
+- **THEN** the system removes the materialized records, model-call ledger rows, Heartbeat/request-aux message parts, prompt-window message parts, attention delivery rows, effect ledger rows, and session-local persisted attention files
+- **AND** the live runtime ownership is stopped before the cold storage is cleared
+- **AND** the session head no longer points at an old prompt window
+- **AND** the next model invocation cannot be seeded by pre-clear prompt-window or attention-context residue
 
 ### Requirement: Heartbeat record classification SHALL be objective and deterministic
 

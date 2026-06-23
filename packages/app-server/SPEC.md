@@ -63,8 +63,11 @@
 
 ## 4. LoopBus 与 Prompt Assembly Contract
 
-- stopped / cold session 的模型检查、Heartbeat 历史和 prompt reconstruction，必须从 `@agenter/session-system` 的 `message_parts + ai_call` ledger 重建；session-db 不再拥有独立 `session_cycle` / telemetry durable truth。
-- `session.db/ai_call` 只保留近轮次的可恢复运行事实；跨轮次、长时间窗口的 token usage 统计必须投影到 avatar-root 下独立的 analytics DB，不能把价格估算或当前 settings 伪装成 durable truth。
+- stopped / cold session 的模型检查、Heartbeat 历史和 prompt reconstruction，必须从 `@agenter/session-system` 的 append-only `message_parts + ai_call` ledger 重建；session-db 不再拥有独立 `session_cycle` / telemetry durable truth。
+- `session.db/ai_call` 是模型调用检查历史的持久事实；compact 只能轮换 bounded prompt-window memory，不能删除旧 `ai_call` 行。跨轮次、长时间窗口的 token usage 统计必须投影到 avatar-root 下独立的 analytics DB，不能把价格估算或当前 settings 伪装成 durable truth。
+- `heartbeat_record` 是 append-stable page index；runtime refresh 只能 append/upsert。旧 bug 造成的 orphan projection 只能通过显式 repair API 清理，不能伪装成普通刷新或 compact retention。
+- `heartbeat_record.startedAt` 对 `model_call` 行固定等于 `ai_call.created_at`。旧 prompt-window、attention-context 或 collected-input 事实可以作为 detail/summary evidence 保留，但不能把新模型调用的分页日期拖回旧上下文日期。
+- `runtime.clearHeartbeatSession` 是显式 operator destructive reset，不是普通 materialized refresh：它必须先停止 live runtime ownership，再清理 `heartbeat_record`、`ai_call`、全部 `message_part` scopes（含 `prompt_window`）、attention dispatch/receipt rows、effect ledger rows 与 `sessionRoot/attention-system` persisted files，并把 `session_head` 回到无 current prompt window 的 fresh state。
 - analytics durable truth 只记录客观 token facts（如 input/output/total/cached/reasoning/uncached 以及 provider snapshot）；价格、缓存命中推断和计费估算都属于上层派生视图，不得回写成历史真相。
 - runtime Heartbeat inspection 固定读取一条 merged message-parts stream：`scope=heartbeat_part` 持久化 AI-visible request/response 与 compact boundary，`scope=request_aux` 持久化去重后的 `systemPrompt / tools / config`；app-server 必须通过统一 page API 与 realtime event 发布这条流，不能要求客户端再拼 chat / request-aux / model-call 三套时间线。
 - session-db 的 reverse page helpers（尤其是 `ai_call` 与 message-head 分页）必须在 SQL 边界先应用 `before + limit`，禁止再出现 `select all -> JS sort/filter/slice` 这类假分页。
