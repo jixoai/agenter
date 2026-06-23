@@ -39,6 +39,8 @@ import type {
   HeartbeatPartItem,
   HeartbeatRecordDetailOutput,
   HeartbeatRecordPageAnchorInput,
+  HeartbeatRecordProjectionRepairOutput,
+  HeartbeatSessionClearOutput,
   HeartbeatRecordsPageOutput,
   HistoryPageCursor,
   JsonValue,
@@ -3972,6 +3974,40 @@ export class RuntimeStore {
     return await this.client.trpc.runtime.requestCompact.mutate({ sessionId });
   }
 
+  async repairHeartbeatRecordProjectionHealth(sessionId: string): Promise<HeartbeatRecordProjectionRepairOutput> {
+    const result = await this.client.trpc.runtime.repairHeartbeatRecordProjectionHealth.mutate({ sessionId });
+    this.clearHeartbeatRecordRefresh(sessionId);
+    delete this.state.heartbeatRecordDetailsBySession[sessionId];
+    this.emit();
+    await this.loadHeartbeatRecords(sessionId, { anchor: { kind: "latest" } });
+    return result;
+  }
+
+  async clearHeartbeatSession(sessionId: string): Promise<HeartbeatSessionClearOutput> {
+    const result = await this.client.trpc.runtime.clearHeartbeatSession.mutate({ sessionId });
+    delete this.state.heartbeatGroupsBySession[sessionId];
+    delete this.state.heartbeatRecordsBySession[sessionId];
+    delete this.state.heartbeatRecordDetailsBySession[sessionId];
+    delete this.state.modelCallsBySession[sessionId];
+    delete this.state.requestAuxBySession[sessionId];
+    this.modelCallsAccessBySession.delete(sessionId);
+    this.requestAuxAccessBySession.delete(sessionId);
+    this.modelCallsBeforeCursorBySession.delete(sessionId);
+    this.requestAuxBeforeCursorBySession.delete(sessionId);
+    this.heartbeatGroupsBeforeCursorBySession.delete(sessionId);
+    const heartbeatGroupRefreshTimer = this.heartbeatGroupRefreshTimerBySession.get(sessionId);
+    if (heartbeatGroupRefreshTimer) {
+      clearTimeout(heartbeatGroupRefreshTimer);
+      this.heartbeatGroupRefreshTimerBySession.delete(sessionId);
+    }
+    this.heartbeatGroupRefreshInFlightBySession.delete(sessionId);
+    this.heartbeatGroupRefreshPendingLimitBySession.delete(sessionId);
+    this.clearHeartbeatRecordRefresh(sessionId);
+    this.emit();
+    await this.loadHeartbeatRecords(sessionId, { anchor: { kind: "latest" } });
+    return result;
+  }
+
   async abortSession(sessionId: string): Promise<void> {
     const result = await this.client.trpc.session.abort.mutate({ sessionId });
     this.upsertSession(result.session);
@@ -6933,7 +6969,12 @@ export class RuntimeStore {
     this.emit();
 
     try {
-      const output = await this.client.trpc.runtime.heartbeatRecordPage.query({ sessionId, pageSize, pageCount, anchor });
+      const output = await this.client.trpc.runtime.heartbeatRecordPage.query({
+        sessionId,
+        pageSize,
+        pageCount,
+        anchor,
+      });
       this.setHeartbeatRecordsState(sessionId, (resource) => ({
         ...resource,
         data: output,

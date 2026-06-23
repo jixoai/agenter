@@ -9,6 +9,7 @@ This document records durable package-level law for the Heartbeat presentation a
 It owns:
 
 - grouped Heartbeat presentation over existing runtime-store facts
+- paged Heartbeat record presentation over existing runtime-store facts
 - parser/materialization helpers for grouped `before-call`, `call`, `compact`, and `before-call-pending` records
 - structured rendering for text, thinking, JSON/config facts, tool calls/results, compact cards, and footer status
 - explicit `readonly | configable` capability presentation
@@ -23,9 +24,12 @@ It does not own:
 
 ## 2. Truth Boundary
 
-Heartbeat truth remains the grouped runtime/session DB projection supplied by `@agenter/client-sdk`.
+Heartbeat source truth remains runtime/session DB facts. For list presentation, the package consumes the `heartbeat_record`
+materialized record projection supplied by `@agenter/client-sdk`.
 
-The package must not rebuild Heartbeat truth from raw chat, raw `request_aux`, raw `heartbeat_part`, or model-call histories in the browser.
+The package must not rebuild Heartbeat truth from raw chat, raw `request_aux`, raw `heartbeat_part`, or model-call histories in the browser. It must render record pages in the order returned by the runtime API and may only add presentation items such as date dividers.
+
+Repairing damaged session DB projections is a backend/session-system maintenance operation. This package must not infer, hide, or synthesize missing source facts.
 
 ## 3. Capability Boundary
 

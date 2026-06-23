@@ -30,9 +30,9 @@ import {
   matchesAuthKvFilter,
   type AuthKvEvent,
 } from "../auth-kv-types";
+import type { McpAppServerEvent, McpInspectorEvent } from "../mcp-system/types";
 import type { AnyRuntimeEvent } from "../realtime-types";
 import { settingsKindSchema } from "../realtime-types";
-import type { McpAppServerEvent, McpInspectorEvent } from "../mcp-system/types";
 import { t } from "./init";
 
 const sessionIdInput = z.object({ sessionId: z.string().min(1) });
@@ -839,18 +839,16 @@ export const appRouter = t.router({
     probe: superadminProcedure
       .input(mcpProbeInputSchema)
       .mutation(async ({ ctx, input }) => await ctx.kernel.mcpProbe(input)),
-    inspectorStart: superadminProcedure
-      .input(mcpInspectorStartInputSchema)
-      .mutation(async ({ ctx, input }) => {
-        const session = await ctx.kernel.mcpInspectorStart(input);
-        return {
-          ...session,
-          wsUrl: ctx.resolveMcpInspectorWsUrl?.({
-            avatarNickname: input.avatarNickname,
-            leaseId: session.leaseId,
-          }),
-        };
-      }),
+    inspectorStart: superadminProcedure.input(mcpInspectorStartInputSchema).mutation(async ({ ctx, input }) => {
+      const session = await ctx.kernel.mcpInspectorStart(input);
+      return {
+        ...session,
+        wsUrl: ctx.resolveMcpInspectorWsUrl?.({
+          avatarNickname: input.avatarNickname,
+          leaseId: session.leaseId,
+        }),
+      };
+    }),
     inspectorSnapshot: superadminProcedure
       .input(mcpInspectorSessionInputSchema)
       .query(async ({ ctx, input }) => await ctx.kernel.mcpInspectorSnapshot(input)),
@@ -885,20 +883,18 @@ export const appRouter = t.router({
         };
       });
     }),
-    appServerStart: superadminProcedure
-      .input(mcpAppServerStartInputSchema)
-      .mutation(async ({ ctx, input }) => {
-        const session = await ctx.kernel.mcpAppServerStart(input);
-        const urls = ctx.resolveMcpAppServerUrls?.({
-          avatarNickname: input.avatarNickname,
-          leaseId: session.leaseId,
-        });
-        return {
-          ...session,
-          hostUrl: urls?.hostUrl,
-          wsUrl: urls?.wsUrl,
-        };
-      }),
+    appServerStart: superadminProcedure.input(mcpAppServerStartInputSchema).mutation(async ({ ctx, input }) => {
+      const session = await ctx.kernel.mcpAppServerStart(input);
+      const urls = ctx.resolveMcpAppServerUrls?.({
+        avatarNickname: input.avatarNickname,
+        leaseId: session.leaseId,
+      });
+      return {
+        ...session,
+        hostUrl: urls?.hostUrl,
+        wsUrl: urls?.wsUrl,
+      };
+    }),
     appServerSnapshot: superadminProcedure
       .input(mcpAppServerSessionInputSchema)
       .query(async ({ ctx, input }) => await ctx.kernel.mcpAppServerSnapshot(input)),
@@ -2409,6 +2405,12 @@ export const appRouter = t.router({
     heartbeatRecordDetail: superadminProcedure
       .input(heartbeatRecordDetailInput)
       .query(({ ctx, input }) => ctx.kernel.getHeartbeatRecordDetail(input.sessionId, input.recordId)),
+    repairHeartbeatRecordProjectionHealth: superadminProcedure
+      .input(sessionIdInput)
+      .mutation(({ ctx, input }) => ctx.kernel.repairHeartbeatRecordProjectionHealth(input.sessionId)),
+    clearHeartbeatSession: superadminProcedure
+      .input(sessionIdInput)
+      .mutation(({ ctx, input }) => ctx.kernel.clearHeartbeatSession(input.sessionId)),
     modelCallsPage: superadminProcedure
       .input(reversePageInput)
       .query(({ ctx, input }) =>

@@ -8,6 +8,7 @@
     HeartbeatConfigBinding,
     HeartbeatPartItem,
     HeartbeatRecordItem,
+    HeartbeatRecordPageAnchor,
     HeartbeatRecordPage,
     HeartbeatViewCallbacks,
     HeartbeatViewState,
@@ -201,27 +202,95 @@
     },
   ];
 
-  const recordsState = {
-    ...createCachedResourceState<HeartbeatRecordPage>({
-      records: storyRecords,
-      pageIndex: 0,
-      pageSize: 5,
-      pageCount: 2,
-      totalRecords: storyRecords.length,
-      totalPages: 1,
-      windowTotalRecords: storyRecords.length,
-      windowTotalPages: 1,
-      latestRecordId: storyRecords.at(-1)?.id ?? null,
-      anchor: { kind: "latest" },
-      hasOlder: false,
-      hasNewer: false,
-      newRecordsAvailable: false,
-    }),
-    loaded: true,
-    refreshedAt: 1_780_000_002_500,
+  const pagedStoryRecords = [
+    {
+      ...storyRecords[0],
+      id: 1,
+      recordKey: "story:model-run:1",
+      kind: "model_call" as const,
+      status: "completed" as const,
+      startedAt: Date.UTC(2026, 0, 1, 23, 58),
+      updatedAt: Date.UTC(2026, 0, 1, 23, 58, 30),
+      completedAt: Date.UTC(2026, 0, 1, 23, 58, 30),
+      isComplete: true,
+      previewText: "Older model run",
+    },
+    {
+      ...storyRecords[1],
+      id: 2,
+      recordKey: "story:compact:2",
+      startedAt: Date.UTC(2026, 0, 2, 0, 1),
+      updatedAt: Date.UTC(2026, 0, 2, 0, 1, 20),
+      completedAt: Date.UTC(2026, 0, 2, 0, 1, 20),
+      previewText: "Compact memory",
+    },
+    {
+      ...storyRecords[0],
+      id: 3,
+      recordKey: "story:model-run:3",
+      kind: "config" as const,
+      status: "completed" as const,
+      primaryAiCallId: null,
+      aiCallIds: [],
+      summary: {
+        provider: null,
+        model: null,
+        parts: [],
+        counts: { parts: 1, toolCalls: 0, toolResults: 0, errors: 0 },
+        firstFrameMs: null,
+        thinkingDurationMs: 0,
+      },
+      startedAt: Date.UTC(2026, 0, 2, 0, 2),
+      updatedAt: Date.UTC(2026, 0, 2, 0, 2, 20),
+      completedAt: Date.UTC(2026, 0, 2, 0, 2, 20),
+      isComplete: true,
+      previewText: "Config changed",
+    },
+    {
+      ...storyRecords[0],
+      id: 4,
+      recordKey: "story:model-run:4",
+      status: "completed" as const,
+      startedAt: Date.UTC(2026, 0, 2, 0, 3),
+      updatedAt: Date.UTC(2026, 0, 2, 0, 3, 20),
+      completedAt: Date.UTC(2026, 0, 2, 0, 3, 20),
+      isComplete: true,
+      previewText: "Newest model run",
+    },
+  ] satisfies HeartbeatRecordItem[];
+
+  const pageSize = 2;
+  const buildRecordPage = (anchor: HeartbeatRecordPageAnchor): HeartbeatRecordPage => {
+    const totalPages = Math.ceil(pagedStoryRecords.length / pageSize);
+    const pageIndex = anchor.kind === "latest" ? totalPages - 1 : Math.max(0, Math.min(anchor.pageIndex, totalPages - 1));
+    const start = pageIndex * pageSize;
+    const records = pagedStoryRecords.slice(start, start + pageSize);
+    return {
+      records,
+      pageIndex,
+      pageSize,
+      pageCount: 1,
+      totalRecords: pagedStoryRecords.length,
+      totalPages,
+      windowTotalRecords: pagedStoryRecords.length,
+      windowTotalPages: totalPages,
+      latestRecordId: pagedStoryRecords.at(-1)?.id ?? null,
+      anchor,
+      hasOlder: pageIndex > 0,
+      hasNewer: pageIndex < totalPages - 1,
+      newRecordsAvailable: anchor.kind === "fixed" && pageIndex < totalPages - 1,
+    };
   };
 
-  const state: HeartbeatViewState = {
+  let recordPage: HeartbeatRecordPage = $state(buildRecordPage({ kind: "latest" }));
+
+  const recordsState: HeartbeatViewState["recordsState"] = $derived({
+    ...createCachedResourceState<HeartbeatRecordPage>(recordPage),
+    loaded: true,
+    refreshedAt: 1_780_000_002_500 + recordPage.pageIndex,
+  });
+
+  const viewState: HeartbeatViewState = $derived({
     sessionStatus: "running",
     schedulerState: {
       runtimeStatus: "running",
@@ -249,10 +318,13 @@
     attention: { snapshot: { contexts: [{ focusState: "focused" }] } },
     configBinding,
     livePushStatus: "active",
-  };
+  });
 
   const callbacks = $derived<HeartbeatViewCallbacks>({
     onLoadOlder: async () => ({ items: 0, hasMore: false }),
+    onLoadRecordPage: async (anchor) => {
+      recordPage = buildRecordPage(anchor);
+    },
     actions:
       mode === "configable"
         ? {
@@ -266,8 +338,15 @@
 </script>
 
 <App name="web-heartbeat-view-story" theme="ios">
-  <div class="heartbeat-story-frame" style={`inline-size: ${width}px; block-size: ${height}px;`}>
-    <HeartbeatView {state} {mode} avatarLabel="Ada" callbacks={callbacks} />
+  <div
+    class="heartbeat-story-frame"
+    data-story-page-index={recordPage.pageIndex}
+    data-story-anchor-kind={recordPage.anchor.kind}
+    data-story-latest-record-id={recordPage.latestRecordId}
+    data-story-tail-record-id={recordPage.records.at(-1)?.id ?? ""}
+    style={`inline-size: ${width}px; block-size: ${height}px;`}
+  >
+    <HeartbeatView state={viewState} {mode} avatarLabel="Ada" callbacks={callbacks} />
   </div>
 </App>
 

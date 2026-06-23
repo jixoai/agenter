@@ -77,6 +77,8 @@ const heartbeatRecord = (input: {
   status?: HeartbeatRecordItem["status"];
   previewText?: string | null;
   parts?: HeartbeatRecordItem["summary"]["parts"];
+  startedAt?: number;
+  updatedAt?: number;
 }): HeartbeatRecordItem => ({
   id: input.id,
   recordKey: `test-record:${input.id}`,
@@ -100,9 +102,9 @@ const heartbeatRecord = (input: {
     thinkingDurationMs: 620,
   },
   previewText: input.previewText ?? null,
-  startedAt: 1_780_000_000_000 + input.id,
-  updatedAt: 1_780_000_001_000 + input.id,
-  completedAt: input.status === "running" ? null : 1_780_000_001_000 + input.id,
+  startedAt: input.startedAt ?? 1_780_000_000_000 + input.id,
+  updatedAt: input.updatedAt ?? 1_780_000_001_000 + input.id,
+  completedAt: input.status === "running" ? null : (input.updatedAt ?? 1_780_000_001_000 + input.id),
   isComplete: input.status !== "running",
 });
 
@@ -540,8 +542,11 @@ describe("Feature: HeartbeatView DOM capability contract", () => {
       ],
     });
     let detailLoads = 0;
+    const host = document.createElement("div");
+    host.style.cssText = "inline-size:390px;min-block-size:844px;overflow-x:clip;";
+    document.body.append(host);
     const component = mount(HeartbeatView, {
-      target: document.body,
+      target: host,
       props: {
         mode: "readonly",
         avatarLabel: "Ada",
@@ -624,6 +629,8 @@ describe("Feature: HeartbeatView DOM capability contract", () => {
     expect(document.querySelector(".station-input-body")).toBeNull();
     expect(document.querySelector('.station-body-copy[data-station-kind="input"] .ag-heartbeat-entry')).not.toBeNull();
     expect(document.querySelector(".station-payload")).toBeNull();
+    const detailBody = document.querySelector<HTMLElement>(".ag-heartbeat-record-detail-track__station-body");
+    expect(detailBody?.getBoundingClientRect().width).toBeGreaterThan(120);
     const detailTrack = document.querySelector<HTMLElement>('[data-testid="heartbeat-record-detail-track"]');
     expect(detailTrack?.style.gridTemplateRows).not.toContain("1fr");
     expect(detailTrack?.style.gridTemplateRows).not.toContain("min-content");
@@ -770,16 +777,20 @@ describe("Feature: HeartbeatView DOM capability contract", () => {
     expect(document.querySelector('[data-testid="heartbeat-record-detail"]')).toBeNull();
   });
 
-  test("Scenario: Given a latest record page returned oldest first When the record list renders Then newest records appear first", async () => {
+  test("Scenario: Given a latest record page returned oldest first When the record list renders Then API order is preserved with date dividers", async () => {
     const olderRecord = heartbeatRecord({
       id: 104,
       kind: "model_call",
       previewText: "Older model run",
+      startedAt: Date.UTC(2026, 0, 1, 23, 58),
+      updatedAt: Date.UTC(2026, 0, 1, 23, 58, 30),
     });
     const newerRecord = heartbeatRecord({
       id: 105,
       kind: "config",
       previewText: "Newer config update",
+      startedAt: Date.UTC(2026, 0, 2, 0, 2),
+      updatedAt: Date.UTC(2026, 0, 2, 0, 2, 30),
     });
     const component = mount(HeartbeatView, {
       target: document.body,
@@ -799,8 +810,19 @@ describe("Feature: HeartbeatView DOM capability contract", () => {
     const renderedRecordIds = Array.from(
       document.querySelectorAll<HTMLElement>('article[data-testid^="heartbeat-record-"]'),
     ).map((node) => node.dataset.testid);
+    const renderedListItems = Array.from(
+      document.querySelectorAll<HTMLElement>(
+        '[data-testid^="heartbeat-record-date-divider-"], article[data-testid^="heartbeat-record-"]',
+      ),
+    ).map((node) => node.dataset.testid);
 
-    expect(renderedRecordIds).toEqual(["heartbeat-record-105", "heartbeat-record-104"]);
+    expect(renderedRecordIds).toEqual(["heartbeat-record-104", "heartbeat-record-105"]);
+    expect(renderedListItems).toEqual([
+      "heartbeat-record-date-divider-2026-01-01",
+      "heartbeat-record-104",
+      "heartbeat-record-date-divider-2026-01-02",
+      "heartbeat-record-105",
+    ]);
   });
 
   test("Scenario: Given compact record without usage payload When the list card renders Then sample compression numbers are not invented", async () => {

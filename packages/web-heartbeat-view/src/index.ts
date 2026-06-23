@@ -70,6 +70,11 @@ export {
   readHeartbeatConfigBinding,
   writeHeartbeatConfigLayer,
 } from "./heartbeat-config-state";
+export {
+  buildHeartbeatRecordListItems,
+  formatHeartbeatRecordDate,
+  type HeartbeatRecordListItem,
+} from "./heartbeat-record-list-items";
 export { getHeartbeatToolVisualHint, type HeartbeatToolVisualHint } from "./heartbeat-tool-visual-hints";
 export type {
   AgenterHeartbeatConnection,

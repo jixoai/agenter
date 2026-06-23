@@ -7409,9 +7409,6 @@ export class SessionRuntime {
             messages,
             setCurrent,
           });
-          if (shouldRotateRound) {
-            this.sessionDb.pruneAiCallsBeforeRound(Math.max(0, roundIndex - 1));
-          }
           return toAgentPromptWindowStateRecord(record);
         },
       },

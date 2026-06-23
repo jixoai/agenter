@@ -2,6 +2,7 @@
   import HeartbeatGroup from "./heartbeat-group.svelte";
   import HeartbeatRecordCard from "./heartbeat-record-card.svelte";
   import HeartbeatRecordDetail from "./heartbeat-record-detail.svelte";
+  import { buildHeartbeatRecordListItems } from "./heartbeat-record-list-items";
   import HeartbeatStatusbar from "./heartbeat-statusbar.svelte";
   import { buildHeartbeatDisplayGroups } from "./heartbeat-parts";
   import type { HeartbeatCapabilityMode, HeartbeatRecordPageAnchor, HeartbeatViewCallbacks, HeartbeatViewState } from "./types";
@@ -32,8 +33,10 @@
   const recordsResource = $derived(viewState.recordsState ?? null);
   const recordsPage = $derived(recordsResource?.data ?? null);
   const records = $derived(recordsPage?.records ?? []);
-  const displayRecords = $derived([...records].reverse());
+  const recordListItems = $derived(buildHeartbeatRecordListItems(records));
   const hasRecordResource = $derived(Boolean(recordsResource));
+  const recordsLoadingWithoutData = $derived(Boolean(recordsResource && !recordsResource.loaded && !recordsResource.error));
+  const groupsLoadingWithoutData = $derived(!viewState.groupsState.loaded && !viewState.groupsState.error);
   const groups = $derived(buildHeartbeatDisplayGroups(viewState.groupsState.data));
   const selectedRecord = $derived(callbacks.onOpenRecordDetail ? null : records.find((record) => record.id === selectedRecordId) ?? null);
   const selectedRecordDetail = $derived(
@@ -138,6 +141,31 @@
   };
 </script>
 
+{#snippet loadingSkeleton()}
+  <div class="ag-heartbeat-loading-skeleton" data-testid="heartbeat-loading-skeleton" aria-hidden="true">
+    <div class="ag-heartbeat-loading-skeleton__pager">
+      <span></span>
+      <span></span>
+      <span></span>
+    </div>
+    {#each [0, 1, 2, 3] as row (row)}
+      <div class="ag-heartbeat-loading-skeleton__card">
+        <div class="ag-heartbeat-loading-skeleton__meta">
+          <span></span>
+          <span></span>
+        </div>
+        <div class="ag-heartbeat-loading-skeleton__line ag-heartbeat-loading-skeleton__line--wide"></div>
+        <div class="ag-heartbeat-loading-skeleton__line"></div>
+        <div class="ag-heartbeat-loading-skeleton__chips">
+          <span></span>
+          <span></span>
+          <span></span>
+        </div>
+      </div>
+    {/each}
+  </div>
+{/snippet}
+
 <section class="ag-heartbeat-view" data-testid="heartbeat-view" data-mode={mode}>
   {#if secondaryStatus}
     <div class="ag-heartbeat-secondary-status" data-testid="heartbeat-secondary-status">{secondaryStatus}</div>
@@ -171,19 +199,33 @@
       {/if}
       {#if records.length > 0}
         <div class="ag-heartbeat-record-list" data-testid="heartbeat-record-list">
-          {#each displayRecords as record (record.id)}
-            {@const recordHref = callbacks.recordDetailHref?.(record.id)}
-            <HeartbeatRecordCard
-              {record}
-              selected={record.id === selectedRecordId}
-              href={recordHref}
-              selectRecord={callbacks.onOpenRecordDetail || !recordHref ? (recordId) => void selectRecord(recordId) : undefined}
-            />
+          {#each recordListItems as item (item.kind === "record" ? `record:${item.record.id}` : `date:${item.date}`)}
+            {#if item.kind === "date-divider"}
+              <div
+                class="ag-heartbeat-record-date-divider"
+                data-testid={`heartbeat-record-date-divider-${item.date}`}
+                role="separator"
+                aria-label={item.date}
+              >
+                <span>{item.date}</span>
+              </div>
+            {:else}
+              {@const record = item.record}
+              {@const recordHref = callbacks.recordDetailHref?.(record.id)}
+              <HeartbeatRecordCard
+                {record}
+                selected={record.id === selectedRecordId}
+                href={recordHref}
+                selectRecord={callbacks.onOpenRecordDetail || !recordHref ? (recordId) => void selectRecord(recordId) : undefined}
+              />
+            {/if}
           {/each}
         </div>
         {#if selectedRecord}
           <HeartbeatRecordDetail record={selectedRecord} detailState={selectedRecordDetail} />
         {/if}
+      {:else if recordsLoadingWithoutData}
+        {@render loadingSkeleton()}
       {:else}
         <div class="ag-heartbeat-empty" data-testid="heartbeat-empty">
           <strong>{emptyState.title}</strong>
@@ -205,6 +247,8 @@
       {#each groups as group (group.groupId)}
         <HeartbeatGroup {group} {avatarLabel} {sessionIconUrl} />
       {/each}
+    {:else if groupsLoadingWithoutData}
+      {@render loadingSkeleton()}
     {:else}
       <div class="ag-heartbeat-empty" data-testid="heartbeat-empty">
         <strong>{emptyState.title}</strong>
@@ -288,6 +332,89 @@
     font: 0.84rem/1.45 system-ui, sans-serif;
   }
 
+  .ag-heartbeat-loading-skeleton {
+    display: grid;
+    gap: 0.65rem;
+  }
+
+  .ag-heartbeat-loading-skeleton__pager,
+  .ag-heartbeat-loading-skeleton__card {
+    border: 1px solid color-mix(in srgb, currentColor, transparent 88%);
+    border-radius: 14px;
+    background: color-mix(in srgb, Canvas, currentColor 2%);
+  }
+
+  .ag-heartbeat-loading-skeleton__pager {
+    display: grid;
+    grid-template-columns: 4.5rem minmax(0, 1fr) 4.5rem;
+    align-items: center;
+    gap: 0.65rem;
+    padding: 0.55rem;
+  }
+
+  .ag-heartbeat-loading-skeleton__card {
+    display: grid;
+    gap: 0.65rem;
+    padding: 0.78rem;
+  }
+
+  .ag-heartbeat-loading-skeleton__meta,
+  .ag-heartbeat-loading-skeleton__chips {
+    display: flex;
+    min-width: 0;
+    gap: 0.45rem;
+  }
+
+  .ag-heartbeat-loading-skeleton__meta {
+    justify-content: space-between;
+  }
+
+  .ag-heartbeat-loading-skeleton__pager span,
+  .ag-heartbeat-loading-skeleton__card span,
+  .ag-heartbeat-loading-skeleton__line {
+    border-radius: 999px;
+    background: color-mix(in srgb, currentColor, transparent 90%);
+    animation: ag-heartbeat-skeleton-pulse 1.6s ease-in-out infinite;
+  }
+
+  .ag-heartbeat-loading-skeleton__pager span {
+    block-size: 1.55rem;
+  }
+
+  .ag-heartbeat-loading-skeleton__meta span:first-child {
+    inline-size: 7rem;
+    block-size: 1rem;
+  }
+
+  .ag-heartbeat-loading-skeleton__meta span:last-child {
+    inline-size: 4.5rem;
+    block-size: 1rem;
+  }
+
+  .ag-heartbeat-loading-skeleton__line {
+    inline-size: 68%;
+    block-size: 0.8rem;
+  }
+
+  .ag-heartbeat-loading-skeleton__line--wide {
+    inline-size: 100%;
+  }
+
+  .ag-heartbeat-loading-skeleton__chips span {
+    inline-size: 4rem;
+    block-size: 1.45rem;
+  }
+
+  @keyframes ag-heartbeat-skeleton-pulse {
+    0%,
+    100% {
+      opacity: 0.62;
+    }
+    50% {
+      opacity: 1;
+    }
+  }
+
   .ag-heartbeat-load-older {
     justify-self: center;
     border: 1px solid color-mix(in srgb, currentColor, transparent 84%);
@@ -337,5 +464,25 @@
 
   .ag-heartbeat-record-pager button:disabled {
     opacity: 0.45;
+  }
+
+  .ag-heartbeat-record-date-divider {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+    align-items: center;
+    gap: 0.65rem;
+    color: color-mix(in srgb, currentColor, transparent 48%);
+    font: 600 0.72rem/1.1 system-ui, sans-serif;
+  }
+
+  .ag-heartbeat-record-date-divider::before,
+  .ag-heartbeat-record-date-divider::after {
+    content: "";
+    block-size: 1px;
+    background: color-mix(in srgb, currentColor, transparent 88%);
+  }
+
+  .ag-heartbeat-record-date-divider span {
+    white-space: nowrap;
   }
 </style>

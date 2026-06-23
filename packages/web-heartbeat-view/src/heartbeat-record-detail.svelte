@@ -87,6 +87,26 @@
   });
 </script>
 
+{#snippet detailLoadingSkeleton()}
+  <div class="ag-heartbeat-record-detail__skeleton" data-testid="heartbeat-record-detail-skeleton" aria-hidden="true">
+    <div class="ag-heartbeat-record-detail__skeleton-lines">
+      <span></span>
+      <span></span>
+      <span></span>
+    </div>
+    <div class="ag-heartbeat-record-detail__skeleton-track">
+      <span></span>
+      <span></span>
+      <span></span>
+      <span></span>
+    </div>
+    <div class="ag-heartbeat-record-detail__skeleton-grid">
+      <span></span>
+      <span></span>
+    </div>
+  </div>
+{/snippet}
+
 <section class="ag-heartbeat-record-detail" data-testid="heartbeat-record-detail" data-kind={record.kind}>
   <header class="ag-heartbeat-record-detail__head">
     <div class="ag-heartbeat-record-detail__title">
@@ -114,7 +134,7 @@
 
   <div class="ag-heartbeat-record-detail__body">
     {#if loading}
-      <div class="ag-heartbeat-record-detail__empty ag-heartbeat-record-detail__empty--pulse">Loading detail</div>
+      {@render detailLoadingSkeleton()}
     {:else if error}
       <div class="ag-heartbeat-record-detail__error">{error}</div>
     {:else if !detail}
@@ -253,14 +273,66 @@
     text-align: center;
   }
 
-  .ag-heartbeat-record-detail__empty--pulse {
-    animation: ag-heartbeat-record-detail-breathe 1.8s ease-in-out infinite;
+  .ag-heartbeat-record-detail__skeleton {
+    display: grid;
+    align-content: start;
+    gap: 14px;
+    min-width: 0;
   }
 
-  @keyframes ag-heartbeat-record-detail-breathe {
+  .ag-heartbeat-record-detail__skeleton-lines,
+  .ag-heartbeat-record-detail__skeleton-track,
+  .ag-heartbeat-record-detail__skeleton-grid {
+    display: grid;
+    gap: 8px;
+    min-width: 0;
+  }
+
+  .ag-heartbeat-record-detail__skeleton-track {
+    border: 1px solid color-mix(in srgb, currentColor, transparent 88%);
+    border-radius: 12px;
+    padding: 12px;
+  }
+
+  .ag-heartbeat-record-detail__skeleton-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .ag-heartbeat-record-detail__skeleton span {
+    border-radius: 999px;
+    background: color-mix(in srgb, currentColor, transparent 90%);
+    animation: ag-heartbeat-record-detail-skeleton-pulse 1.6s ease-in-out infinite;
+  }
+
+  .ag-heartbeat-record-detail__skeleton-lines span {
+    block-size: 0.85rem;
+  }
+
+  .ag-heartbeat-record-detail__skeleton-lines span:nth-child(1) {
+    inline-size: 46%;
+  }
+
+  .ag-heartbeat-record-detail__skeleton-lines span:nth-child(2) {
+    inline-size: 100%;
+  }
+
+  .ag-heartbeat-record-detail__skeleton-lines span:nth-child(3) {
+    inline-size: 76%;
+  }
+
+  .ag-heartbeat-record-detail__skeleton-track span {
+    block-size: 1.5rem;
+  }
+
+  .ag-heartbeat-record-detail__skeleton-grid span {
+    block-size: 2.25rem;
+    border-radius: 10px;
+  }
+
+  @keyframes ag-heartbeat-record-detail-skeleton-pulse {
     0%,
     100% {
-      opacity: 0.68;
+      opacity: 0.62;
     }
     50% {
       opacity: 1;
