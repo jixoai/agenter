@@ -32,13 +32,15 @@ export const CompactSource = {
     await expect(within(dialog).getByText("Kai")).toBeInTheDocument();
     await expect(within(dialog).getByLabelText("Copy source")).toBeInTheDocument();
     await expect(within(dialog).getByText("# Review checklist")).toBeInTheDocument();
-    await expect(within(dialog).getByText("[^Image 1]: [!source-image-name](https://assets.example/image.jpg)")).toBeInTheDocument();
-    await expect(within(dialog).getByText("[^File 2]: [!resource-map.pdf](https://assets.example/resource-map.pdf)")).toBeInTheDocument();
     await expect(
-      within(dialog).getByText(
-        "[^Comment 1]: [Expose comment detail in view mode by default.](msg://room-1/12#L3)",
-      ),
+      within(dialog).getByText("[^Image 1]: [!source-image-name](https://assets.example/image.jpg)"),
     ).toBeInTheDocument();
+    await expect(
+      within(dialog).getByText("[^File 2]: [!resource-map.pdf](https://assets.example/resource-map.pdf)"),
+    ).toBeInTheDocument();
+    const commentSourceLine = within(dialog).getByLabelText("Select source line 5");
+    await expect(commentSourceLine).toHaveTextContent("[^Comment 1]: [Expose comment detail in view mode by default.]");
+    await expect(commentSourceLine).toHaveTextContent("msg://room-1/12#L3");
     await expect(within(dialog).getByText("May 3, 5:12 PM")).toBeInTheDocument();
     await expect(dialog.querySelector('[data-active-line="true"]')?.getAttribute("data-line-number")).toBe("3");
   },

@@ -37,8 +37,8 @@ const resourceCardSource = readFileSync(resolve(import.meta.dirname, "../src/res
 
 describe("Feature: web-chat-view review shell evidence closure", () => {
   test("Scenario: Given the nested Framework7 example When dependencies are installed from the repo root Then the icon font package is workspace-owned and route-resolvable", () => {
-    expect(rootPackageJson.workspaces).toContain("packages/*/*");
-    expect(pnpmWorkspaceSource).toContain("- packages/*/*");
+    expect(rootPackageJson.workspaces).toContain("packages/web-chat-view/example");
+    expect(pnpmWorkspaceSource).toContain("- packages/web-chat-view/example");
     expect(examplePackageJson.dependencies).toMatchObject({
       "framework7-icons": "^5.0.5",
     });

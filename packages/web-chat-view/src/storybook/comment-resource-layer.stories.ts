@@ -35,7 +35,9 @@ export const ViewMode = {
     await expect(within(dialog).getByRole("tab", { name: /View/i })).toHaveAttribute("aria-selected", "true");
     await expect(within(anchorCard).getByText("Selected text")).toBeInTheDocument();
     await expect(within(anchorCard).getByText("Ava · Line 6")).toBeInTheDocument();
-    await expect(within(dialog).getByText("Keep resource detail grouped in the shelf, not in the body.")).toBeInTheDocument();
+    await expect(
+      within(dialog).getByText("Keep resource detail grouped in the shelf, not in the body."),
+    ).toBeInTheDocument();
   },
 } satisfies Story;
 
@@ -53,6 +55,6 @@ export const EditMode = {
     await expect(dialog).toBeInTheDocument();
     await expect(within(dialog).getByRole("tab", { name: /Edit/i })).toHaveAttribute("aria-selected", "true");
     await waitFor(() => expect(canvas.getByPlaceholderText("Add a selected-text comment")).toBeInTheDocument());
-    await waitFor(() => expect(canvas.getByRole("button", { name: "Save" })).toBeInTheDocument());
+    await waitFor(() => expect(canvas.getByRole("button", { name: "Save comment" })).toBeInTheDocument());
   },
 } satisfies Story;
