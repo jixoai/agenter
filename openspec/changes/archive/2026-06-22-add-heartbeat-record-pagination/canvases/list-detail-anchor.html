@@ -496,7 +496,6 @@
                   align-self: center;
                   justify-self: end;
                   max-inline-size: 54px;
-                  color: color-mix(in oklch, var(--rail-from), black 18%);
                   font-size: 9px;
                   font-weight: 800;
                   line-height: 1;
@@ -504,6 +503,15 @@
                   pointer-events: none;
                   text-overflow: ellipsis;
                   white-space: nowrap;
+                  background: linear-gradient(to bottom, var(--rail-from), var(--rail-to));
+                  aspect-ratio: 1;
+                  margin-inline-end: calc(-50% - 2px);
+                  border-radius: 38%;
+                  display: flex;
+                  justify-content: center;
+                  align-items: center;
+                  color: currentColor;
+                  padding: 2px;
                 }
 
                 .time-svg {

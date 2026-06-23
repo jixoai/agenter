@@ -60,7 +60,7 @@ When a session initializes its current prompt window with zero prompt messages, 
 
 ### Requirement: Session DB SHALL persist each model invocation as one AI-call ledger row
 
-The session durable store SHALL persist every model invocation as one `ai_call` row containing request URL, request body, response body, lifecycle timestamps, completion state, and the bounded round index used for retention.
+The session durable store SHALL persist every model invocation as one `ai_call` row containing request URL, request body, response body, lifecycle timestamps, completion state, and the prompt-window round index used for reconstruction and inspection.
 
 #### Scenario: Model request creates a running AI-call row
 - **WHEN** the runtime starts a provider request
@@ -78,28 +78,45 @@ The session durable store SHALL persist every model invocation as one `ai_call` 
 - **AND** the runtime does not preserve the earlier running request snapshot as the completed request body
 - **AND** scheduling, source-drain, read-ack, and trace facts remain outside the provider HTTP body except for explicit runtime metadata fields
 
-### Requirement: AI-call retention SHALL keep only the current and previous prompt-window rounds
+### Requirement: AI-call ledger SHALL remain append-only across compact rotation
 
-The `ai_call` ledger SHALL retain only the current prompt-window round and the immediately previous round. Older `ai_call` rows SHALL be pruned when compaction rotates the bounded prompt-window memory.
+The `ai_call` ledger SHALL preserve every model invocation that was persisted. Compaction SHALL rotate only bounded prompt-window memory; it SHALL NOT delete older `ai_call` rows.
 
-#### Scenario: Compaction rotates retained AI-call rounds
+Archived OpenSpec changes that describe two-round `ai_call` retention are obsolete historical context. The active law is append-only compact.
+
+#### Scenario: Compaction preserves AI-call history
 - **WHEN** compaction produces a new bounded prompt-window seed
-- **THEN** the previous current round becomes the retained previous round
 - **THEN** a fresh current round begins for later `ai_call` rows
-- **THEN** any `ai_call` rows older than the retained previous round are deleted
+- **THEN** earlier `ai_call` rows remain queryable for inspection history
+- **THEN** Heartbeat and Devtools projections can continue to reference those persisted model-call facts
 
-#### Scenario: Non-compacting calls stay in the current retained round
+#### Scenario: Non-compacting calls stay in the current prompt-window round
 - **WHEN** the runtime performs ordinary attention-processing calls without triggering compaction
 - **THEN** those `ai_call` rows stay assigned to the same current round index
-- **THEN** retention does not rotate until a compaction boundary occurs
+- **THEN** no history deletion occurs at ordinary or compact boundaries
+
+### Requirement: Heartbeat record refresh SHALL be append-stable
+
+The `heartbeat_record` table is a materialized page index over durable `ai_call` and `message_parts` facts. Normal runtime refresh SHALL append or update projected rows, and SHALL NOT delete existing rows as an implicit cleanup side effect.
+
+#### Scenario: Normal refresh does not shrink stale projection rows
+- **WHEN** a `heartbeat_record` row exists without a matching current projection
+- **AND** the caller runs normal Heartbeat record refresh
+- **THEN** the row remains stored
+- **AND** source facts are not fabricated to make that stale projection valid
+
+#### Scenario: Explicit projection repair removes orphan rows
+- **WHEN** a caller intentionally invokes the Heartbeat projection repair operation
+- **THEN** only `heartbeat_record` rows whose `primary_ai_call_id` is non-null and missing from `ai_call` are deleted
+- **AND** `ai_call`, `message_parts`, prompt-window, attention, and other durable source facts are not modified
 
 ### Requirement: Cold restart reconstruction SHALL read the AI-call ledger instead of legacy cycle tables
 
-Stopped-session reconstruction SHALL use `message_parts`, retained `ai_call` rows, and persisted attention facts as the durable sources of truth. It SHALL NOT require `session_cycle`, `prompt_window_state`, `model_call`, or trace tables to restore runtime context.
+Stopped-session reconstruction SHALL use `message_parts`, persisted `ai_call` rows, and persisted attention facts as the durable sources of truth. It SHALL NOT require `session_cycle`, `prompt_window_state`, `model_call`, or trace tables to restore runtime context.
 
 #### Scenario: Restart rebuilds from ledger facts
 - **WHEN** a stopped session starts again after the process has lost in-memory state
-- **THEN** the runtime rebuilds its bounded model context from `message_parts` plus retained `ai_call` rows
+- **THEN** the runtime rebuilds its bounded model context from `message_parts` plus persisted `ai_call` rows
 - **THEN** restart does not depend on any legacy cycle or prompt-window table being present
 
 ### Requirement: Heartbeat inspection SHALL page one merged message-parts stream

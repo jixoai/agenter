@@ -69,8 +69,8 @@
 - [x] 5.4 If review enters a real loop, run `bun run openspec:vision -- review-state add-web-heartbeat-view`; completion condition: recurrence/iteration state is persisted before continuing.
 - [x] 5.5 Confirm abnormal-exit handoff is not required because review exited normally; completion condition: no handoff artifact is needed for this milestone, and any future abnormal exit must still run `bun run openspec:vision -- handoff add-web-heartbeat-view`.
 - [x] 5.6 If review exits normally, sync durable package or project `SPEC.md` updates required by long-term behavior before archive; completion condition: durable law is not left only inside `openspec/changes/*`.
-- [x] 5.7 Archive `add-web-heartbeat-view` after implementation and self-review are accepted; completion condition: change is moved to `openspec/changes/archive/2026-06-02-add-web-heartbeat-view`.
-- [x] 5.8 Run `bun run openspec:vision -- check add-web-heartbeat-view` before archive; completion condition: the workflow exits cleanly with `{ ok: true }`.
+- [x] 5.7 Archive `add-web-heartbeat-view` only after the user explicitly accepts the active change state; completion condition: archive is performed from the active change and committed as a dedicated final docs/spec commit.
+- [x] 5.8 Run `bun run openspec:vision -- check add-web-heartbeat-view` before any future archive; completion condition: the workflow exits cleanly or returns to an active planning/apply loop.
 
 ## 6. User Acceptance Polish
 

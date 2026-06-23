@@ -56,5 +56,5 @@
 - [x] 6.3 If self-review changes OpenSpec artifacts or reopens tasks, commit those artifact updates before the next apply loop.
 - [ ] 6.4 If the review enters a real recurrence loop, run `bun run openspec:vision -- review-state add-heartbeat-record-pagination` to persist iteration state.
 - [ ] 6.5 If review cannot exit normally, run `bun run openspec:vision -- handoff add-heartbeat-record-pagination` and commit the handoff evidence before returning to user discussion.
-- [ ] 6.6 Archive only after implementation, verification, and user acceptance; completion condition: archive result is committed in a dedicated final docs/spec commit.
-- [ ] 6.7 Run `bun run openspec:vision -- check add-heartbeat-record-pagination` before archive or before an abnormal exit.
+- [x] 6.6 Archive only after implementation, verification, and user acceptance; completion condition: archive result is committed in a dedicated final docs/spec commit.
+- [x] 6.7 Run `bun run openspec:vision -- check add-heartbeat-record-pagination` before archive or before an abnormal exit.

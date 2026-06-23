@@ -6,14 +6,14 @@ Define the compact cycle that rewrites only the bounded model prompt window whil
 
 ### Requirement: Compact SHALL rewrite only the bounded model prompt window
 
-The system SHALL treat compact as a special cycle that rewrites only the model's bounded prompt window. Compact MUST NOT delete or rewrite persisted attention facts or the longer-lived `message_parts` ledger. Compact SHALL rotate the retained `ai_call` round window so that only the current and immediately previous request/response rounds remain stored in full.
+The system SHALL treat compact as a special cycle that rewrites only the model's bounded prompt window. Compact MUST NOT delete or rewrite persisted attention facts, `message_parts`, or `ai_call` ledger rows. Compact SHALL advance the prompt-window round for future model calls without shrinking persisted inspection history.
 
-#### Scenario: Compact leaves durable facts intact while rotating bounded AI-call retention
+#### Scenario: Compact leaves durable facts intact while rotating bounded prompt memory
 
 - **WHEN** compact is triggered manually or by an explicit compact-policy trigger such as threshold or context-overflow recovery
 - **THEN** the runtime rewrites only the prompt-window memory used for later model calls
-- **THEN** persisted attention and `message_parts` facts remain queryable and unchanged
-- **THEN** retained `ai_call` rows are rotated so older full request/response rounds are pruned
+- **THEN** persisted attention, `message_parts`, and `ai_call` facts remain queryable and unchanged
+- **THEN** later model calls use the new prompt-window round without deleting earlier request/response rows
 
 ### Requirement: Compact SHALL run as a tool-less structured-summary cycle
 

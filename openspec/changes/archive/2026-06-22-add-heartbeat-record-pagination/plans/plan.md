@@ -363,7 +363,7 @@ Diagnosis:
 
 - This is not a pure frontend atom.
 - Multi-page anchoring requires a platform law upgrade: a materialized `heartbeat_record` table in `session.db`.
-- The new table is a materialized index/projection. It must not replace source facts or hide source refs.
+- The new table is a materialized record projection. It supports pagination, count, and detail entry, but it must not replace source facts or hide source refs.
 
 ## Provisional Storage Shape
 

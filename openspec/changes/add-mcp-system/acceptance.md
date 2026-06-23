@@ -1,15 +1,15 @@
 # MCP System Acceptance Evidence
 
-Generated: 2026-05-17T20:18:21.644Z
+Generated: 2026-06-06T17:23:25.308Z
 
 ## Scope
 
 - Actor: Codex AI agent using root-workspace runtime CLI commands plus MCP skill/help discovery.
 - Stdio target: `@modelcontextprotocol/server-sequential-thinking` through `bunx -y`.
 - SSE target: official `@modelcontextprotocol/server-everything sse` reference/test server through `bunx -y`.
-- Project path: `/var/folders/tn/y_b12zxs2dldn8thmfnpy9c80000gp/T/agenter-mcp-acceptance-WDBTbL/project`
-- Root workspace: `/var/folders/tn/y_b12zxs2dldn8thmfnpy9c80000gp/T/agenter-mcp-acceptance-WDBTbL/root-workspace`
-- SQLite database: `/var/folders/tn/y_b12zxs2dldn8thmfnpy9c80000gp/T/agenter-mcp-acceptance-WDBTbL/mcp-system.sqlite`
+- Project path: `/var/folders/tn/y_b12zxs2dldn8thmfnpy9c80000gp/T/agenter-mcp-acceptance-AqWGQW/project`
+- Root workspace: `/var/folders/tn/y_b12zxs2dldn8thmfnpy9c80000gp/T/agenter-mcp-acceptance-AqWGQW/root-workspace`
+- SQLite database: `/var/folders/tn/y_b12zxs2dldn8thmfnpy9c80000gp/T/agenter-mcp-acceptance-AqWGQW/mcp-system.sqlite`
 
 ## Reviewed Sources
 
@@ -29,8 +29,8 @@ stdout summary:
   "skill": {
     "name": "agenter-mcp",
     "summary": "Install, enable, query, call, and recover MCP servers through the root runtime CLI.",
-    "path": "/Users/kzf/Dev/GitHub/jixoai-labs/agenter/.worktree/add-mcp-system/packages/app-server/skills/mcp/SKILL.md",
-    "root": "/Users/kzf/Dev/GitHub/jixoai-labs/agenter/.worktree/add-mcp-system/packages/app-server/skills/mcp",
+    "path": "/Users/kzf/Dev/GitHub/jixoai-labs/agenter/packages/app-server/skills/mcp/SKILL.md",
+    "root": "/Users/kzf/Dev/GitHub/jixoai-labs/agenter/packages/app-server/skills/mcp",
     "rootKind": "builtin",
     "writable": false
   },
@@ -92,8 +92,8 @@ stdout summary:
       "env": {}
     },
     "env": {},
-    "createdAt": "2026-05-17T20:18:21.965Z",
-    "updatedAt": "2026-05-17T20:18:21.965Z"
+    "createdAt": "2026-06-06T17:23:25.742Z",
+    "updatedAt": "2026-06-06T17:23:25.742Z"
   }
 }
 ```
@@ -106,7 +106,7 @@ stdin:
 
 ```json
 {
-  "projectPath": "/var/folders/tn/y_b12zxs2dldn8thmfnpy9c80000gp/T/agenter-mcp-acceptance-WDBTbL/project",
+  "projectPath": "/var/folders/tn/y_b12zxs2dldn8thmfnpy9c80000gp/T/agenter-mcp-acceptance-AqWGQW/project",
   "sql": "select name, enabled, enabled_source, lifecycle from mcp_enabled where name = $name",
   "params": {
     "name": "thinking"
@@ -139,7 +139,7 @@ stdin:
 ```json
 {
   "name": "thinking",
-  "projectPath": "/var/folders/tn/y_b12zxs2dldn8thmfnpy9c80000gp/T/agenter-mcp-acceptance-WDBTbL/project"
+  "projectPath": "/var/folders/tn/y_b12zxs2dldn8thmfnpy9c80000gp/T/agenter-mcp-acceptance-AqWGQW/project"
 }
 ```
 
@@ -150,11 +150,11 @@ stdout summary:
   "ok": true,
   "result": {
     "name": "thinking",
-    "projectPath": "/var/folders/tn/y_b12zxs2dldn8thmfnpy9c80000gp/T/agenter-mcp-acceptance-WDBTbL/project",
+    "projectPath": "/var/folders/tn/y_b12zxs2dldn8thmfnpy9c80000gp/T/agenter-mcp-acceptance-AqWGQW/project",
     "enabled": true,
-    "createdAt": "2026-05-17T20:18:21.969Z",
-    "updatedAt": "2026-05-17T20:18:21.969Z",
-    "enabledAt": "2026-05-17T20:18:21.969Z"
+    "createdAt": "2026-06-06T17:23:25.746Z",
+    "updatedAt": "2026-06-06T17:23:25.746Z",
+    "enabledAt": "2026-06-06T17:23:25.746Z"
   }
 }
 ```
@@ -167,7 +167,7 @@ stdin:
 
 ```json
 {
-  "projectPath": "/var/folders/tn/y_b12zxs2dldn8thmfnpy9c80000gp/T/agenter-mcp-acceptance-WDBTbL/project"
+  "projectPath": "/var/folders/tn/y_b12zxs2dldn8thmfnpy9c80000gp/T/agenter-mcp-acceptance-AqWGQW/project"
 }
 ```
 
@@ -179,7 +179,7 @@ stdout summary:
   "rows": [
     {
       "name": "thinking",
-      "project_path": "/var/folders/tn/y_b12zxs2dldn8thmfnpy9c80000gp/T/agenter-mcp-acceptance-WDBTbL/project",
+      "project_path": "/var/folders/tn/y_b12zxs2dldn8thmfnpy9c80000gp/T/agenter-mcp-acceptance-AqWGQW/project",
       "enabled": 1,
       "enabled_source": "explicit",
       "title": "Sequential Thinking",
@@ -191,8 +191,8 @@ stdout summary:
       "server_version": null,
       "protocol_version": null,
       "snapshot_at": null,
-      "created_at": "2026-05-17T20:18:21.969Z",
-      "updated_at": "2026-05-17T20:18:21.969Z",
+      "created_at": "2026-06-06T17:23:25.746Z",
+      "updated_at": "2026-06-06T17:23:25.746Z",
       "last_used_at": null
     }
   ]
@@ -208,7 +208,7 @@ stdin:
 ```json
 {
   "name": "thinking",
-  "projectPath": "/var/folders/tn/y_b12zxs2dldn8thmfnpy9c80000gp/T/agenter-mcp-acceptance-WDBTbL/project",
+  "projectPath": "/var/folders/tn/y_b12zxs2dldn8thmfnpy9c80000gp/T/agenter-mcp-acceptance-AqWGQW/project",
   "toolName": "sequentialthinking",
   "arguments": {
     "thought": "Acceptance: verify stdio MCP invocation through mcpSystem.",
@@ -242,9 +242,9 @@ stdout summary:
     },
     "instance": {
       "name": "thinking",
-      "projectPath": "/var/folders/tn/y_b12zxs2dldn8thmfnpy9c80000gp/T/agenter-mcp-acceptance-WDBTbL/project",
+      "projectPath": "/var/folders/tn/y_b12zxs2dldn8thmfnpy9c80000gp/T/agenter-mcp-acceptance-AqWGQW/project",
       "lifecycle": "running",
-      "lastStartedAt": "2026-05-17T20:18:22.133Z"
+      "lastStartedAt": "2026-06-06T17:23:25.938Z"
     }
   }
 }
@@ -258,7 +258,7 @@ stdin:
 
 ```json
 {
-  "projectPath": "/var/folders/tn/y_b12zxs2dldn8thmfnpy9c80000gp/T/agenter-mcp-acceptance-WDBTbL/project",
+  "projectPath": "/var/folders/tn/y_b12zxs2dldn8thmfnpy9c80000gp/T/agenter-mcp-acceptance-AqWGQW/project",
   "sql": "select name, enabled, lifecycle, server_name, tools_json from mcp_enabled where name = $name",
   "params": {
     "name": "thinking"
@@ -294,7 +294,7 @@ stdin:
 ```json
 {
   "name": "thinking",
-  "projectPath": "/var/folders/tn/y_b12zxs2dldn8thmfnpy9c80000gp/T/agenter-mcp-acceptance-WDBTbL/project"
+  "projectPath": "/var/folders/tn/y_b12zxs2dldn8thmfnpy9c80000gp/T/agenter-mcp-acceptance-AqWGQW/project"
 }
 ```
 
@@ -306,10 +306,10 @@ stdout summary:
   "result": {
     "instance": {
       "name": "thinking",
-      "projectPath": "/var/folders/tn/y_b12zxs2dldn8thmfnpy9c80000gp/T/agenter-mcp-acceptance-WDBTbL/project",
+      "projectPath": "/var/folders/tn/y_b12zxs2dldn8thmfnpy9c80000gp/T/agenter-mcp-acceptance-AqWGQW/project",
       "lifecycle": "stopped",
-      "lastStartedAt": "2026-05-17T20:18:22.133Z",
-      "lastStoppedAt": "2026-05-17T20:18:22.139Z"
+      "lastStartedAt": "2026-06-06T17:23:25.938Z",
+      "lastStoppedAt": "2026-06-06T17:23:25.945Z"
     }
   }
 }
@@ -324,7 +324,7 @@ stdin:
 ```json
 {
   "name": "thinking",
-  "projectPath": "/var/folders/tn/y_b12zxs2dldn8thmfnpy9c80000gp/T/agenter-mcp-acceptance-WDBTbL/project"
+  "projectPath": "/var/folders/tn/y_b12zxs2dldn8thmfnpy9c80000gp/T/agenter-mcp-acceptance-AqWGQW/project"
 }
 ```
 
@@ -336,20 +336,20 @@ stdout summary:
   "result": {
     "instance": {
       "name": "thinking",
-      "projectPath": "/var/folders/tn/y_b12zxs2dldn8thmfnpy9c80000gp/T/agenter-mcp-acceptance-WDBTbL/project",
+      "projectPath": "/var/folders/tn/y_b12zxs2dldn8thmfnpy9c80000gp/T/agenter-mcp-acceptance-AqWGQW/project",
       "lifecycle": "running",
-      "lastStartedAt": "2026-05-17T20:18:22.273Z",
-      "lastStoppedAt": "2026-05-17T20:18:22.144Z"
+      "lastStartedAt": "2026-06-06T17:23:26.088Z",
+      "lastStoppedAt": "2026-06-06T17:23:25.952Z"
     },
     "snapshot": {
       "name": "thinking",
-      "projectPath": "/var/folders/tn/y_b12zxs2dldn8thmfnpy9c80000gp/T/agenter-mcp-acceptance-WDBTbL/project",
+      "projectPath": "/var/folders/tn/y_b12zxs2dldn8thmfnpy9c80000gp/T/agenter-mcp-acceptance-AqWGQW/project",
       "serverName": "sequential-thinking-server",
       "serverVersion": "0.2.0",
       "toolNames": [
         "sequentialthinking"
       ],
-      "snapshotAt": "2026-05-17T20:18:22.273Z"
+      "snapshotAt": "2026-06-06T17:23:26.088Z"
     }
   }
 }
@@ -364,7 +364,7 @@ stdin:
 ```json
 {
   "name": "thinking",
-  "projectPath": "/var/folders/tn/y_b12zxs2dldn8thmfnpy9c80000gp/T/agenter-mcp-acceptance-WDBTbL/project"
+  "projectPath": "/var/folders/tn/y_b12zxs2dldn8thmfnpy9c80000gp/T/agenter-mcp-acceptance-AqWGQW/project"
 }
 ```
 
@@ -376,10 +376,10 @@ stdout summary:
   "result": {
     "instance": {
       "name": "thinking",
-      "projectPath": "/var/folders/tn/y_b12zxs2dldn8thmfnpy9c80000gp/T/agenter-mcp-acceptance-WDBTbL/project",
+      "projectPath": "/var/folders/tn/y_b12zxs2dldn8thmfnpy9c80000gp/T/agenter-mcp-acceptance-AqWGQW/project",
       "lifecycle": "stopped",
-      "lastStartedAt": "2026-05-17T20:18:22.273Z",
-      "lastStoppedAt": "2026-05-17T20:18:22.275Z"
+      "lastStartedAt": "2026-06-06T17:23:26.088Z",
+      "lastStoppedAt": "2026-06-06T17:23:26.092Z"
     }
   }
 }
@@ -397,7 +397,7 @@ stdin:
   "title": "SSE Echo",
   "transport": {
     "kind": "sse",
-    "url": "http://127.0.0.1:64188/sse"
+    "url": "http://127.0.0.1:56974/sse"
   }
 }
 ```
@@ -412,12 +412,12 @@ stdout summary:
     "title": "SSE Echo",
     "transport": {
       "kind": "sse",
-      "url": "http://127.0.0.1:64188/sse",
+      "url": "http://127.0.0.1:56974/sse",
       "headers": {}
     },
     "env": {},
-    "createdAt": "2026-05-17T20:18:22.279Z",
-    "updatedAt": "2026-05-17T20:18:22.279Z"
+    "createdAt": "2026-06-06T17:23:26.103Z",
+    "updatedAt": "2026-06-06T17:23:26.103Z"
   }
 }
 ```
@@ -431,7 +431,7 @@ stdin:
 ```json
 {
   "name": "sse-echo",
-  "projectPath": "/var/folders/tn/y_b12zxs2dldn8thmfnpy9c80000gp/T/agenter-mcp-acceptance-WDBTbL/project"
+  "projectPath": "/var/folders/tn/y_b12zxs2dldn8thmfnpy9c80000gp/T/agenter-mcp-acceptance-AqWGQW/project"
 }
 ```
 
@@ -442,11 +442,11 @@ stdout summary:
   "ok": true,
   "result": {
     "name": "sse-echo",
-    "projectPath": "/var/folders/tn/y_b12zxs2dldn8thmfnpy9c80000gp/T/agenter-mcp-acceptance-WDBTbL/project",
+    "projectPath": "/var/folders/tn/y_b12zxs2dldn8thmfnpy9c80000gp/T/agenter-mcp-acceptance-AqWGQW/project",
     "enabled": true,
-    "createdAt": "2026-05-17T20:18:22.280Z",
-    "updatedAt": "2026-05-17T20:18:22.280Z",
-    "enabledAt": "2026-05-17T20:18:22.280Z"
+    "createdAt": "2026-06-06T17:23:26.105Z",
+    "updatedAt": "2026-06-06T17:23:26.105Z",
+    "enabledAt": "2026-06-06T17:23:26.105Z"
   }
 }
 ```
@@ -460,7 +460,7 @@ stdin:
 ```json
 {
   "name": "sse-echo",
-  "projectPath": "/var/folders/tn/y_b12zxs2dldn8thmfnpy9c80000gp/T/agenter-mcp-acceptance-WDBTbL/project",
+  "projectPath": "/var/folders/tn/y_b12zxs2dldn8thmfnpy9c80000gp/T/agenter-mcp-acceptance-AqWGQW/project",
   "toolName": "echo",
   "arguments": {
     "message": "hello"
@@ -484,9 +484,9 @@ stdout summary:
     },
     "instance": {
       "name": "sse-echo",
-      "projectPath": "/var/folders/tn/y_b12zxs2dldn8thmfnpy9c80000gp/T/agenter-mcp-acceptance-WDBTbL/project",
+      "projectPath": "/var/folders/tn/y_b12zxs2dldn8thmfnpy9c80000gp/T/agenter-mcp-acceptance-AqWGQW/project",
       "lifecycle": "running",
-      "lastStartedAt": "2026-05-17T20:18:22.313Z"
+      "lastStartedAt": "2026-06-06T17:23:26.152Z"
     }
   }
 }
@@ -500,7 +500,7 @@ stdin:
 
 ```json
 {
-  "projectPath": "/var/folders/tn/y_b12zxs2dldn8thmfnpy9c80000gp/T/agenter-mcp-acceptance-WDBTbL/project",
+  "projectPath": "/var/folders/tn/y_b12zxs2dldn8thmfnpy9c80000gp/T/agenter-mcp-acceptance-AqWGQW/project",
   "sql": "select name, enabled, lifecycle, server_name, tools_json from mcp_enabled order by name"
 }
 ```
@@ -554,7 +554,7 @@ stdin:
 ```json
 {
   "name": "sse-echo",
-  "projectPath": "/var/folders/tn/y_b12zxs2dldn8thmfnpy9c80000gp/T/agenter-mcp-acceptance-WDBTbL/project"
+  "projectPath": "/var/folders/tn/y_b12zxs2dldn8thmfnpy9c80000gp/T/agenter-mcp-acceptance-AqWGQW/project"
 }
 ```
 
@@ -566,10 +566,10 @@ stdout summary:
   "result": {
     "instance": {
       "name": "sse-echo",
-      "projectPath": "/var/folders/tn/y_b12zxs2dldn8thmfnpy9c80000gp/T/agenter-mcp-acceptance-WDBTbL/project",
+      "projectPath": "/var/folders/tn/y_b12zxs2dldn8thmfnpy9c80000gp/T/agenter-mcp-acceptance-AqWGQW/project",
       "lifecycle": "stopped",
-      "lastStartedAt": "2026-05-17T20:18:22.313Z",
-      "lastStoppedAt": "2026-05-17T20:18:22.319Z"
+      "lastStartedAt": "2026-06-06T17:23:26.152Z",
+      "lastStoppedAt": "2026-06-06T17:23:26.158Z"
     }
   }
 }
@@ -582,7 +582,7 @@ stdout summary:
   {
     "action": "start",
     "name": "thinking",
-    "project_path": "/var/folders/tn/y_b12zxs2dldn8thmfnpy9c80000gp/T/agenter-mcp-acceptance-WDBTbL/project",
+    "project_path": "/var/folders/tn/y_b12zxs2dldn8thmfnpy9c80000gp/T/agenter-mcp-acceptance-AqWGQW/project",
     "tool_name": null,
     "auto_start": null,
     "auto_enable": null,
@@ -592,7 +592,7 @@ stdout summary:
   {
     "action": "call",
     "name": "thinking",
-    "project_path": "/var/folders/tn/y_b12zxs2dldn8thmfnpy9c80000gp/T/agenter-mcp-acceptance-WDBTbL/project",
+    "project_path": "/var/folders/tn/y_b12zxs2dldn8thmfnpy9c80000gp/T/agenter-mcp-acceptance-AqWGQW/project",
     "tool_name": "sequentialthinking",
     "auto_start": 1,
     "auto_enable": 0,
@@ -602,7 +602,7 @@ stdout summary:
   {
     "action": "stop",
     "name": "thinking",
-    "project_path": "/var/folders/tn/y_b12zxs2dldn8thmfnpy9c80000gp/T/agenter-mcp-acceptance-WDBTbL/project",
+    "project_path": "/var/folders/tn/y_b12zxs2dldn8thmfnpy9c80000gp/T/agenter-mcp-acceptance-AqWGQW/project",
     "tool_name": null,
     "auto_start": null,
     "auto_enable": null,
@@ -612,7 +612,7 @@ stdout summary:
   {
     "action": "stop",
     "name": "thinking",
-    "project_path": "/var/folders/tn/y_b12zxs2dldn8thmfnpy9c80000gp/T/agenter-mcp-acceptance-WDBTbL/project",
+    "project_path": "/var/folders/tn/y_b12zxs2dldn8thmfnpy9c80000gp/T/agenter-mcp-acceptance-AqWGQW/project",
     "tool_name": null,
     "auto_start": null,
     "auto_enable": null,
@@ -622,7 +622,7 @@ stdout summary:
   {
     "action": "start",
     "name": "thinking",
-    "project_path": "/var/folders/tn/y_b12zxs2dldn8thmfnpy9c80000gp/T/agenter-mcp-acceptance-WDBTbL/project",
+    "project_path": "/var/folders/tn/y_b12zxs2dldn8thmfnpy9c80000gp/T/agenter-mcp-acceptance-AqWGQW/project",
     "tool_name": null,
     "auto_start": null,
     "auto_enable": null,
@@ -632,7 +632,7 @@ stdout summary:
   {
     "action": "stop",
     "name": "thinking",
-    "project_path": "/var/folders/tn/y_b12zxs2dldn8thmfnpy9c80000gp/T/agenter-mcp-acceptance-WDBTbL/project",
+    "project_path": "/var/folders/tn/y_b12zxs2dldn8thmfnpy9c80000gp/T/agenter-mcp-acceptance-AqWGQW/project",
     "tool_name": null,
     "auto_start": null,
     "auto_enable": null,
@@ -642,7 +642,7 @@ stdout summary:
   {
     "action": "start",
     "name": "sse-echo",
-    "project_path": "/var/folders/tn/y_b12zxs2dldn8thmfnpy9c80000gp/T/agenter-mcp-acceptance-WDBTbL/project",
+    "project_path": "/var/folders/tn/y_b12zxs2dldn8thmfnpy9c80000gp/T/agenter-mcp-acceptance-AqWGQW/project",
     "tool_name": null,
     "auto_start": null,
     "auto_enable": null,
@@ -652,7 +652,7 @@ stdout summary:
   {
     "action": "call",
     "name": "sse-echo",
-    "project_path": "/var/folders/tn/y_b12zxs2dldn8thmfnpy9c80000gp/T/agenter-mcp-acceptance-WDBTbL/project",
+    "project_path": "/var/folders/tn/y_b12zxs2dldn8thmfnpy9c80000gp/T/agenter-mcp-acceptance-AqWGQW/project",
     "tool_name": "echo",
     "auto_start": 1,
     "auto_enable": 0,
@@ -662,7 +662,7 @@ stdout summary:
   {
     "action": "stop",
     "name": "sse-echo",
-    "project_path": "/var/folders/tn/y_b12zxs2dldn8thmfnpy9c80000gp/T/agenter-mcp-acceptance-WDBTbL/project",
+    "project_path": "/var/folders/tn/y_b12zxs2dldn8thmfnpy9c80000gp/T/agenter-mcp-acceptance-AqWGQW/project",
     "tool_name": null,
     "auto_start": null,
     "auto_enable": null,
