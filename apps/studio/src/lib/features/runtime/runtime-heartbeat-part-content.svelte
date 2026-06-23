@@ -1,12 +1,12 @@
 <script lang="ts">
 	import type { HeartbeatPartItem } from '@agenter/client-sdk';
+	import { MarkdownPreviewContent } from '@jixo/codemirror';
 
 	import {
 		Reasoning,
 		ReasoningContent,
 		ReasoningTrigger,
 	} from '$lib/components/ai-elements/reasoning/index.js';
-	import MarkdownDocument from '$lib/components/web-components/markdown-document.svelte';
 	import JSONViewer from '$lib/components/web-components/json-viewer.svelte';
 	import { Badge } from '$lib/components/ui/badge/index.js';
 
@@ -49,25 +49,17 @@
 		<Reasoning isStreaming={!part.isComplete} defaultOpen={shouldOpenReasoning}>
 			<ReasoningTrigger />
 			<ReasoningContent>
-				<MarkdownDocument
+				<MarkdownPreviewContent
 					value={text ?? ''}
-					mode="preview"
-					usage="chat"
-					surface="muted"
-					syntaxTone="accented"
-					padding="compact"
+					tone="viewer"
 					class="min-w-0 rounded-lg bg-background/70 px-2.5 py-2"
 				/>
 			</ReasoningContent>
 		</Reasoning>
 	{:else if text !== null}
-		<MarkdownDocument
+		<MarkdownPreviewContent
 			value={text}
-			mode="preview"
-			usage="chat"
-			surface="muted"
-			syntaxTone="accented"
-			padding="compact"
+			tone="viewer"
 			class="min-w-0 rounded-lg bg-background/70 px-2.5 py-2"
 		/>
 	{:else}

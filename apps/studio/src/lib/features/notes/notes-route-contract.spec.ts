@@ -164,6 +164,12 @@ describe("Feature: Studio Notes route contract", () => {
     expect(browseSource).toContain("items: notebooks");
     expect(browseSource).toContain("items: sections");
     expect(browseSource).toContain("items: pages");
+    expect(browseSource).toContain("loadingNotebooksWithoutData");
+    expect(browseSource).toContain("loadingSectionsWithoutData");
+    expect(browseSource).toContain("loadingPagesWithoutData");
+    expect(browseSource).toContain('data-testid={`notes-browse-${kind}-skeleton-row`}');
+    expect(browseSource).toContain('data-testid={`notes-browse-${kind}-skeleton`}');
+    expect(browseSource).toContain('Loading');
     expect(browseSource).toContain("shouldTriggerNotesScrollPaginationFromEvent");
     expect(browseSource).toContain("onViewportScroll={handleNotebookScroll}");
     expect(browseSource).toContain("onViewportScroll={handleSectionScroll}");
@@ -178,6 +184,7 @@ describe("Feature: Studio Notes route contract", () => {
     expect(browseSource).not.toContain("lg:grid-cols-[minmax(12rem,0.85fr)_minmax(12rem,0.9fr)_minmax(16rem,1.35fr)]");
     expect(browseSource).not.toContain("notebook.sections");
     expect(browseSource).not.toContain("section.pages");
+    expect(browseSource).not.toContain("Loading NoteSystem notebooks.");
   });
 
   test("Scenario: Given shared filePreviewer When Notes requests document projection Then Skills source preview remains available in the same iframe shell", () => {

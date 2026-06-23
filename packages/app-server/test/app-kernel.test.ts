@@ -510,8 +510,9 @@ describe("Feature: app kernel event replay", () => {
       JSON.parse(readFileSync(join(session.sessionRoot, "session.json"), "utf8")) as {
         session: Record<string, unknown>;
       };
-    expect("primaryRoomId" in readSessionDoc().session).toBeFalse();
-    expect("primaryRoomId" in (session as Record<string, unknown>)).toBeFalse();
+    const hasPrimaryRoomId = (value: object): boolean => Object.prototype.hasOwnProperty.call(value, "primaryRoomId");
+    expect(hasPrimaryRoomId(readSessionDoc().session)).toBeFalse();
+    expect(hasPrimaryRoomId(session)).toBeFalse();
     const room = await createSessionRoom(kernel, session.id, true);
     kernel.grantRuntimeWorkspace({
       runtimeId: session.id,
@@ -538,7 +539,7 @@ describe("Feature: app kernel event replay", () => {
 
     await kernel.stopSession(session.id);
 
-    expect("primaryRoomId" in readSessionDoc().session).toBeFalse();
+    expect(hasPrimaryRoomId(readSessionDoc().session)).toBeFalse();
     expect(kernel.listMessageChannels(session.id).some((entry) => entry.chatId === room.chatId)).toBeTrue();
     expect(
       kernel
@@ -560,8 +561,8 @@ describe("Feature: app kernel event replay", () => {
     const resumed = await kernel.startSession(session.id);
     const runtime = kernel.getSnapshot().runtimes[session.id];
 
-    expect("primaryRoomId" in readSessionDoc().session).toBeFalse();
-    expect("primaryRoomId" in (resumed as Record<string, unknown>)).toBeFalse();
+    expect(hasPrimaryRoomId(readSessionDoc().session)).toBeFalse();
+    expect(hasPrimaryRoomId(resumed)).toBeFalse();
     expect(resumed.status).toBe("running");
     expect(runtime?.messageChannels?.some((entry) => entry.chatId === room.chatId)).toBeTrue();
     expect(runtime?.terminals.some((entry) => entry.terminalId === "recovery-main")).toBeTrue();

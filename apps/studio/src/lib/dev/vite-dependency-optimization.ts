@@ -41,9 +41,9 @@ export const appOptimizeDepsInclude = [
 
 // Browser-based Vitest runs start from a fresh Vite server, so prebundling the
 // terminal-view workspace package there avoids mid-run optimize reloads without
-// reintroducing stale long-lived dev-host snapshots.
+// reintroducing stale long-lived dev-host snapshots. Workspace packages that
+// export Svelte source must still stay outside esbuild prebundling.
 export const appVitestOptimizeDepsInclude = [
   ...appOptimizeDepsInclude,
   TERMINAL_VIEW_WORKSPACE_PACKAGE,
-  WEB_HEARTBEAT_VIEW_WORKSPACE_PACKAGE,
 ];

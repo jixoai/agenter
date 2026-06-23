@@ -1,10 +1,11 @@
 <script lang="ts">
-import { getAppControllerContext } from '$lib/app/controller-context';
-import ProfileAvatar from '$lib/components/profile-avatar.svelte';
-import NoticeBanner from '$lib/components/ui/notice-banner.svelte';
-import { resolveAvatarDisplayName, resolveAvatarHandle } from '$lib/features/avatars/avatar-identity-presentation';
-import WorkbenchPageToolbar from '$lib/features/navigation/workbench-page-toolbar.svelte';
-import WorkbenchToolbar from '$lib/features/navigation/workbench-toolbar.svelte';
+	import { getAppControllerContext } from '$lib/app/controller-context';
+	import ProfileAvatar from '$lib/components/profile-avatar.svelte';
+	import NoticeBanner from '$lib/components/ui/notice-banner.svelte';
+	import { resolveAvatarDisplayName, resolveAvatarHandle } from '$lib/features/avatars/avatar-identity-presentation';
+	import AvatarLoadingSkeleton from '$lib/features/avatars/avatar-loading-skeleton.svelte';
+	import WorkbenchPageToolbar from '$lib/features/navigation/workbench-page-toolbar.svelte';
+	import WorkbenchToolbar from '$lib/features/navigation/workbench-toolbar.svelte';
 	import WorkbenchToolbarStatus from '$lib/features/navigation/workbench-toolbar-status.svelte';
 	import type { WorkbenchToolbarRenderState } from '$lib/features/navigation/workbench-toolbar.types';
 
@@ -27,6 +28,8 @@ import WorkbenchToolbar from '$lib/features/navigation/workbench-toolbar.svelte'
 	let error = $state<string | null>(null);
 
 	const selectedEntry = $derived(avatarItems.find((entry) => entry.nickname === avatarNickname) ?? null);
+	const loadingWithoutData = $derived(loading && avatarItems.length === 0);
+	const refreshingWithData = $derived(loading && avatarItems.length > 0);
 	const sections = $derived(
 		(selectedEntry?.groups ?? []).map((group) => ({
 			id: group.workspacePath,
@@ -72,15 +75,29 @@ import WorkbenchToolbar from '$lib/features/navigation/workbench-toolbar.svelte'
 {/snippet}
 
 {#snippet avatarToolbarStatus(toolbarState: WorkbenchToolbarRenderState)}
-	{#if selectedEntry}
-		<div class:justify-start={toolbarState.placement === 'overflow'} class="flex min-w-0 flex-wrap items-center gap-1">
+	<div class:justify-start={toolbarState.placement === 'overflow'} class="flex min-w-0 flex-wrap items-center gap-1">
+		{#if selectedEntry}
 			<WorkbenchToolbarStatus
 				placement={toolbarState.placement}
 				label={`${selectedEntry.groups.length} groups`}
 				title={`${selectedEntry.groups.length} visible workspace groups`}
 			/>
-		</div>
-	{/if}
+		{/if}
+		{#if refreshingWithData}
+			<WorkbenchToolbarStatus
+				placement={toolbarState.placement}
+				label="Refreshing"
+				title="Refreshing avatar skill browser"
+				tone="warning"
+			/>
+		{:else if loadingWithoutData}
+			<WorkbenchToolbarStatus
+				placement={toolbarState.placement}
+				label="Loading"
+				title="Loading avatar skill browser"
+			/>
+		{/if}
+	</div>
 {/snippet}
 
 <WorkbenchPageToolbar>
@@ -93,8 +110,8 @@ import WorkbenchToolbar from '$lib/features/navigation/workbench-toolbar.svelte'
 	/>
 </WorkbenchPageToolbar>
 
-{#if loading}
-	<div class="px-4 py-6 text-sm text-muted-foreground">Loading avatar skill browser…</div>
+{#if loadingWithoutData}
+	<AvatarLoadingSkeleton variant="skill-browser" />
 {:else if error}
 	<div class="px-4 py-6">
 		<NoticeBanner tone="warning" message={error} />

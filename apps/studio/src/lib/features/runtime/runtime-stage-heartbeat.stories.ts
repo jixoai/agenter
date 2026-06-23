@@ -1554,10 +1554,8 @@ export const LayoutActionSwitchesGroupPresentation = {
 
     await expect(compactGroup).toHaveAttribute("data-layout-mode", "detailed");
     await waitFor(() => {
-      const systemPromptMarkdown = systemPromptEntry.querySelector("agenter-markdown-document") as
-        | (HTMLElement & { value?: string })
-        | null;
-      expect(systemPromptMarkdown?.value).toContain(
+      const systemPromptMarkdown = systemPromptEntry.querySelector("[data-jixo-codemirror-markdown-preview]");
+      expect(systemPromptMarkdown?.textContent).toContain(
         "You are a Linux expert. Prefer bash and skills before asking for help.",
       );
     });
@@ -2556,8 +2554,9 @@ export const ColdLoadingShowsExplicitState = {
   },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
-    await expect(canvas.getByTestId("runtime-heartbeat-empty")).toBeInTheDocument();
-    await expect(canvas.getByText("Loading Heartbeat…")).toBeInTheDocument();
+    await expect(canvas.getByTestId("runtime-heartbeat-stage-skeleton")).toBeInTheDocument();
+    expect(canvas.queryByTestId("runtime-heartbeat-empty")).toBeNull();
+    expect(canvas.queryByText("Loading Heartbeat…")).toBeNull();
     expect(canvas.queryByText("No Heartbeat rows yet")).toBeNull();
     expect(canvas.queryByText(/groups$/)).toBeNull();
   },
@@ -2595,7 +2594,8 @@ export const AsyncInitialLoadPinsLatest = {
       throw new Error("Long stream fixtures are missing.");
     }
 
-    await expect(canvas.getByText("Loading Heartbeat…")).toBeInTheDocument();
+    await expect(canvas.getByTestId("runtime-heartbeat-stage-skeleton")).toBeInTheDocument();
+    expect(canvas.queryByText("Loading Heartbeat…")).toBeNull();
 
     await waitFor(() => {
       expect(canvas.queryByTestId(`runtime-heartbeat-entry-${lastEntry.id}`)).toBeInTheDocument();

@@ -18,6 +18,7 @@
 	import NoticeBanner from '$lib/components/ui/notice-banner.svelte';
 	import WorkbenchDetailDrawer from '$lib/features/navigation/workbench-detail-drawer.svelte';
 	import WorkbenchPageContent from '$lib/features/navigation/workbench-page-content.svelte';
+	import AvatarLoadingSkeleton from './avatar-loading-skeleton.svelte';
 	import { cn } from '$lib/utils.js';
 	import { buildAvatarCatalogHref, buildAvatarNewHref } from './avatar-workbench-location';
 	import { createAvatarCreateDraft } from './avatar-create-draft-resource';
@@ -42,6 +43,9 @@
 	const catalogState = $derived(controller.runtimeState.globalAvatarCatalog);
 	const avatars = $derived(catalogState.data);
 	const catalogCountLabel = $derived(`${avatars.length} installed`);
+	const catalogLoadingWithoutData = $derived(!catalogState.loaded && catalogState.loading && avatars.length === 0);
+	const catalogRefreshingWithData = $derived(catalogState.refreshing && avatars.length > 0);
+	const catalogEmpty = $derived(catalogState.loaded && avatars.length === 0);
 	const selectedEntry = $derived(
 		avatars.find((entry) => entry.nickname === selectedAvatar) ?? avatars[0] ?? null,
 	);
@@ -258,6 +262,16 @@
 							</Card.Description>
 						</div>
 
+						{#if catalogRefreshingWithData}
+							<div
+								class="inline-flex shrink-0 items-center gap-2 rounded-full border border-border/60 bg-background/72 px-2.5 py-1 text-[11px] font-medium text-muted-foreground"
+								data-testid="avatar-catalog-refreshing"
+							>
+								<span class="size-1.5 rounded-full bg-amber-500"></span>
+								Refreshing
+							</div>
+						{/if}
+
 						{#if detailCompact && selectedEntry}
 							<Button
 								variant="outline"
@@ -275,7 +289,11 @@
 				</Card.Header>
 
 				<Card.Content class="h-full p-0">
-					{#if avatars.length === 0}
+					{#if catalogLoadingWithoutData}
+						<ScrollView class="h-full">
+							<AvatarLoadingSkeleton variant="catalog-list" />
+						</ScrollView>
+					{:else if catalogEmpty}
 						<div class="grid h-full place-items-center p-6">
 							<div class="grid max-w-sm gap-2 text-center">
 								<div class="text-sm font-semibold">No avatars yet</div>
@@ -309,10 +327,12 @@
 			<WorkbenchDetailDrawer
 				tone={detailCompact ? 'page' : 'pane'}
 				title={selectedEntry ? selectedEntry.nickname : 'Selected avatar'}
-				description="Preview before runtime entry."
+				description={catalogRefreshingWithData ? 'Refreshing catalog facts.' : 'Preview before runtime entry.'}
 				summary={avatarDrawerSummary}
 			>
-				{#if !selectedEntry}
+				{#if catalogLoadingWithoutData}
+					<AvatarLoadingSkeleton variant="catalog-detail" />
+				{:else if !selectedEntry}
 					<div class="text-sm text-muted-foreground">Select one installed avatar from the list to inspect its runtime identity.</div>
 				{:else}
 					{#if runtimeError}

@@ -6,6 +6,7 @@
 	import { getAppControllerContext } from '$lib/app/controller-context';
 	import NoticeBanner from '$lib/components/ui/notice-banner.svelte';
 	import * as Card from '$lib/components/ui/card/index.js';
+	import * as Skeleton from '$lib/components/ui/skeleton/index.js';
 	import type { SettingsLayerFile } from '$lib/features/settings/settings-graph-types';
 	import WorkbenchPageToolbar from '$lib/features/navigation/workbench-page-toolbar.svelte';
 	import WorkbenchScaffold from '$lib/features/navigation/workbench-scaffold.svelte';
@@ -48,6 +49,11 @@
 	let heartbeatConfigSaving = $state(false);
 	let heartbeatConfigError = $state<string | null>(null);
 	let heartbeatCompactPending = $state(false);
+	let heartbeatRepairPending = $state(false);
+	let heartbeatRepairError = $state<string | null>(null);
+	let heartbeatClearPending = $state(false);
+	let heartbeatClearError = $state<string | null>(null);
+	let heartbeatRepairVersion = $state(0);
 	let heartbeatConfigGraph = $state<Awaited<ReturnType<typeof controller.runtimeStore.listRuntimeSettingsScope>> | null>(null);
 	let heartbeatConfigLayerFile = $state<SettingsLayerFile | null>(null);
 	let heartbeatConfigLoadVersion = 0;
@@ -94,6 +100,20 @@
 				tone: 'warning' as const,
 				title: 'Runtime action failed',
 				message: runtimeToggleError,
+			};
+		}
+		if (heartbeatRepairError) {
+			return {
+				tone: 'warning' as const,
+				title: 'Heartbeat repair failed',
+				message: heartbeatRepairError,
+			};
+		}
+		if (heartbeatClearError) {
+			return {
+				tone: 'warning' as const,
+				title: 'Heartbeat clear failed',
+				message: heartbeatClearError,
 			};
 		}
 		if (session?.status === 'error' && session.lastError) {
@@ -238,6 +258,38 @@
 		}
 	};
 
+	const repairHeartbeatRecordProjectionHealth = async (): Promise<void> => {
+		if (!session || heartbeatRepairPending) {
+			return;
+		}
+		heartbeatRepairPending = true;
+		heartbeatRepairError = null;
+		try {
+			await controller.runtimeStore.repairHeartbeatRecordProjectionHealth(session.id);
+			heartbeatRepairVersion += 1;
+		} catch (error) {
+			heartbeatRepairError = error instanceof Error ? error.message : 'Failed to repair Heartbeat projections.';
+		} finally {
+			heartbeatRepairPending = false;
+		}
+	};
+
+	const clearHeartbeatSession = async (): Promise<void> => {
+		if (!session || heartbeatClearPending || isRunning) {
+			return;
+		}
+		heartbeatClearPending = true;
+		heartbeatClearError = null;
+		try {
+			await controller.runtimeStore.clearHeartbeatSession(session.id);
+			heartbeatRepairVersion += 1;
+		} catch (error) {
+			heartbeatClearError = error instanceof Error ? error.message : 'Failed to clear Heartbeat Session.';
+		} finally {
+			heartbeatClearPending = false;
+		}
+	};
+
 	$effect(() => {
 		if (runtimeToggleSessionId === sessionId) {
 			return;
@@ -246,6 +298,11 @@
 		runtimeTogglePending = false;
 		runtimeToggleIntent = null;
 		runtimeToggleError = null;
+		heartbeatRepairPending = false;
+		heartbeatRepairError = null;
+		heartbeatClearPending = false;
+		heartbeatClearError = null;
+		heartbeatRepairVersion = 0;
 	});
 
 	$effect(() => {
@@ -316,30 +373,57 @@
 			{isRunning}
 			runtimeActionPending={runtimeTogglePending}
 			runtimeActionIntent={runtimeToggleIntent}
+			heartbeatRepairPending={heartbeatRepairPending}
+			heartbeatClearPending={heartbeatClearPending}
+			heartbeatClearDisabled={isRunning || runtimeTogglePending}
 			onToggleRuntime={toggleRuntime}
+			onRepairHeartbeatRecordProjectionHealth={repairHeartbeatRecordProjectionHealth}
+			onClearHeartbeatSession={clearHeartbeatSession}
 		/>
 	</WorkbenchPageToolbar>
 {/if}
 
 {#if !session}
 	<div class="flex h-full items-center justify-center p-6">
-		<Card.Root class="max-w-lg">
-			<Card.Header>
-				<Card.Title>{runtimeLoading ? 'Hydrating runtime facts' : 'Runtime unavailable'}</Card.Title>
-				<Card.Description>
-					{#if runtimeLoading}
-						Loading persisted Heartbeat, Attention, and Settings facts for this AvatarSession.
-					{:else}
+		{#if runtimeLoading}
+			<div
+				aria-hidden="true"
+				class="grid w-full max-w-3xl gap-4 rounded-[1rem] border border-border/60 bg-background/55 p-4 md:p-5"
+				data-testid="runtime-shell-skeleton"
+			>
+				<div class="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-3">
+					<Skeleton.Root class="size-12 rounded-xl" />
+					<div class="grid min-w-0 gap-2">
+						<Skeleton.Root class="h-5 w-44" />
+						<Skeleton.Root class="h-3 w-64 max-w-full" />
+					</div>
+				</div>
+				<div class="grid gap-2 sm:grid-cols-3">
+					<Skeleton.Root class="h-16 w-full rounded-xl" />
+					<Skeleton.Root class="h-16 w-full rounded-xl" />
+					<Skeleton.Root class="h-16 w-full rounded-xl" />
+				</div>
+				<div class="grid gap-3 rounded-[0.85rem] bg-muted/24 p-4">
+					<Skeleton.Root class="h-3 w-32" />
+					<Skeleton.Root class="h-4 w-full" />
+					<Skeleton.Root class="h-4 w-5/6" />
+				</div>
+			</div>
+		{:else}
+			<Card.Root class="max-w-lg">
+				<Card.Header>
+					<Card.Title>Runtime unavailable</Card.Title>
+					<Card.Description>
 						The selected AvatarSession no longer exists in the global runtime snapshot.
-					{/if}
-				</Card.Description>
-			</Card.Header>
-			{#if shellHydrationError}
-				<Card.Content class="pt-0 text-sm text-muted-foreground">
-					{shellHydrationError}
-				</Card.Content>
-			{/if}
-		</Card.Root>
+					</Card.Description>
+				</Card.Header>
+				{#if shellHydrationError}
+					<Card.Content class="pt-0 text-sm text-muted-foreground">
+						{shellHydrationError}
+					</Card.Content>
+				{/if}
+			</Card.Root>
+		{/if}
 	</div>
 {:else}
 	<WorkbenchScaffold tone="page" body="body" bodyClass="h-full" data-testid="runtime-shell">
@@ -373,6 +457,7 @@
 					heartbeatConfigError={heartbeatConfigError}
 					heartbeatCompactPending={heartbeatCompactPending}
 					heartbeatCompactDisabled={heartbeatCompactDisabled}
+					heartbeatRepairVersion={heartbeatRepairVersion}
 					{sessionIconUrl}
 					avatarLabel={session.avatar || session.name}
 					onOpenRoom={(chatId) => void openRoom(chatId)}

@@ -27,6 +27,7 @@
 		DropdownMenuTrigger,
 	} from '$lib/components/ui/dropdown-menu/index.js';
 	import NoticeBanner from '$lib/components/ui/notice-banner.svelte';
+	import * as Skeleton from '$lib/components/ui/skeleton/index.js';
 	import HelpHint from '$lib/components/web-components/help-hint.svelte';
 	import { cn } from '$lib/utils.js';
 	import { shouldTriggerNotesScrollPaginationFromEvent } from './notes-scroll-pagination';
@@ -114,6 +115,10 @@
 	const canLoadMoreNotebooks = $derived(Boolean(notebooksOutput?.nextCursor));
 	const canLoadMoreSections = $derived(Boolean(sectionsOutput?.nextCursor));
 	const canLoadMorePages = $derived(Boolean(pagesOutput?.nextCursor));
+	const loadingNotebooksWithoutData = $derived(loadingNotebooks && !notebooksOutput);
+	const loadingSectionsWithoutData = $derived(loadingSections && sections.length === 0);
+	const loadingPagesWithoutData = $derived(loadingPages && pages.length === 0);
+	const loadingRows = [0, 1, 2, 3, 4];
 
 	const formatUpdatedAt = (value: string): string => (value ? value.replace('T', ' ').slice(0, 16) : 'unknown');
 
@@ -175,6 +180,38 @@
 	</DropdownMenu>
 {/snippet}
 
+{#snippet browseSkeletonRow(kind: 'notebook' | 'section' | 'page')}
+	<div
+		class="grid gap-2 rounded-md border border-border/45 bg-background/55 px-3 py-3"
+		aria-hidden="true"
+		data-testid={`notes-browse-${kind}-skeleton-row`}
+	>
+		<div class="flex min-w-0 items-start justify-between gap-2">
+			<div class="grid min-w-0 flex-1 gap-1.5">
+				<Skeleton.Root class={kind === 'page' ? 'h-4 w-3/5' : 'h-4 w-2/5'} />
+				<Skeleton.Root class={kind === 'page' ? 'h-3 w-full' : 'h-3 w-1/2'} />
+			</div>
+			{#if kind === 'notebook'}
+				<div class="flex shrink-0 gap-1">
+					<Skeleton.Root class="h-5 w-16 rounded-full" />
+					<Skeleton.Root class="h-5 w-14 rounded-full" />
+				</div>
+			{/if}
+		</div>
+		{#if kind === 'page'}
+			<Skeleton.Root class="h-3 w-4/5" />
+		{/if}
+	</div>
+{/snippet}
+
+{#snippet browseSkeletonRows(kind: 'notebook' | 'section' | 'page')}
+	<div class="grid gap-2 p-2" aria-hidden="true" data-testid={`notes-browse-${kind}-skeleton`}>
+		{#each loadingRows as row (row)}
+			{@render browseSkeletonRow(kind)}
+		{/each}
+	</div>
+{/snippet}
+
 <section
 	class="grid h-full min-h-0 min-w-0 grid-rows-[auto_minmax(0,1fr)] gap-3 p-3 md:p-4"
 	aria-label="Notes browse"
@@ -183,8 +220,6 @@
 	<div class="grid min-w-0 gap-3">
 		{#if error}
 			<NoticeBanner tone="destructive" title="Notes unavailable" message={error} />
-		{:else if loadingNotebooks && !notebooksOutput}
-			<NoticeBanner tone="info" message="Loading NoteSystem notebooks." />
 		{:else if notebooksOutput && !capabilityAvailable}
 			<NoticeBanner
 				tone="warning"
@@ -196,7 +231,26 @@
 		{/if}
 	</div>
 
-	{#if notebooksOutput && capabilityAvailable && notebooksOutput.totalPages > 0}
+	{#if loadingNotebooksWithoutData}
+		<div
+			class="grid min-h-0 min-w-0 grid-rows-[auto_minmax(0,1fr)] rounded-lg border border-border/55 bg-background/50"
+			data-testid="notes-browse-list-pane"
+		>
+			<header class="flex min-w-0 items-center justify-between gap-2 border-b border-border/50 px-3 py-2.5">
+				<div class="inline-flex min-w-0 items-center gap-1.5">
+					<NotebookTextIcon class="size-4 shrink-0 text-muted-foreground" />
+					<div class="truncate text-sm font-semibold">Notebooks</div>
+				</div>
+				<div class="inline-flex shrink-0 items-center gap-2 rounded-full border border-border/60 bg-background/72 px-2.5 py-1 text-[11px] font-medium text-muted-foreground">
+					<span class="size-1.5 rounded-full bg-amber-500"></span>
+					Loading
+				</div>
+			</header>
+			<div class="min-h-0 min-w-0">
+				{@render browseSkeletonRows('notebook')}
+			</div>
+		</div>
+	{:else if notebooksOutput && capabilityAvailable && notebooksOutput.totalPages > 0}
 		<div
 			class="grid min-h-0 min-w-0 grid-rows-[auto_minmax(0,1fr)] rounded-lg border border-border/55 bg-background/50"
 			data-testid="notes-browse-list-pane"
@@ -274,7 +328,11 @@
 							}}
 						>
 							{#snippet empty()}
-								<div class="rounded-md bg-muted/24 px-3 py-4 text-sm text-muted-foreground">No notebooks.</div>
+								{#if loadingNotebooksWithoutData}
+									{@render browseSkeletonRows('notebook')}
+								{:else}
+									<div class="rounded-md bg-muted/24 px-3 py-4 text-sm text-muted-foreground">No notebooks.</div>
+								{/if}
 							{/snippet}
 
 							{#snippet item(notebook: NoteNotebookSummary)}
@@ -354,9 +412,13 @@
 								}}
 							>
 								{#snippet empty()}
-									<div class="rounded-md bg-muted/24 px-3 py-4 text-sm text-muted-foreground">
-										{loadingSections ? 'Loading sections.' : selectedNotebook ? 'No sections.' : 'Select a notebook.'}
-									</div>
+									{#if loadingSectionsWithoutData}
+										{@render browseSkeletonRows('section')}
+									{:else}
+										<div class="rounded-md bg-muted/24 px-3 py-4 text-sm text-muted-foreground">
+											{selectedNotebook ? 'No sections.' : 'Select a notebook.'}
+										</div>
+									{/if}
 								{/snippet}
 
 								{#snippet item(section: NoteSectionSummary)}
@@ -426,9 +488,13 @@
 								}}
 							>
 								{#snippet empty()}
-									<div class="rounded-md bg-muted/24 px-3 py-4 text-sm text-muted-foreground">
-										{loadingPages ? 'Loading pages.' : selectedSection ? 'No pages.' : 'Select a section.'}
-									</div>
+									{#if loadingPagesWithoutData}
+										{@render browseSkeletonRows('page')}
+									{:else}
+										<div class="rounded-md bg-muted/24 px-3 py-4 text-sm text-muted-foreground">
+											{selectedSection ? 'No pages.' : 'Select a section.'}
+										</div>
+									{/if}
 								{/snippet}
 
 								{#snippet item(notePage: NotePageSummary)}

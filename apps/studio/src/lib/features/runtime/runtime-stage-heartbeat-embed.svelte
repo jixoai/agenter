@@ -15,27 +15,43 @@
 	let {
 		sessionId,
 		avatarLabel = 'Avatar',
+		heartbeatRepairVersion = 0,
 	}: {
 		sessionId: string;
 		avatarLabel?: string;
+		heartbeatRepairVersion?: number;
 	} = $props();
 
 	let selectedRecordId = $state<number | null>(null);
 	let detailOpen = $state(true);
 	let detailCompact = $state(false);
-	let activeSessionId = $state(sessionId);
+	let activeSessionId = $state<string | null>(null);
 
-	const listUrl = $derived(buildHeartbeatListAppViewUrl(sessionId));
-	const detailUrl = $derived(buildHeartbeatDetailAppViewUrl({ runtimeId: sessionId, recordId: selectedRecordId }));
+	const listUrl = $derived(buildHeartbeatListAppViewUrl(sessionId, heartbeatRepairVersion));
+	const detailUrl = $derived(
+		buildHeartbeatDetailAppViewUrl({ runtimeId: sessionId, recordId: selectedRecordId, refreshVersion: heartbeatRepairVersion }),
+	);
 	const detailTitle = $derived(
 		selectedRecordId === null ? `${avatarLabel} Heartbeat detail` : `${avatarLabel} Heartbeat record ${selectedRecordId}`,
 	);
 
 	$effect(() => {
+		if (activeSessionId === null) {
+			activeSessionId = sessionId;
+			return;
+		}
 		if (activeSessionId === sessionId) {
 			return;
 		}
 		activeSessionId = sessionId;
+		selectedRecordId = null;
+		detailOpen = true;
+	});
+
+	$effect(() => {
+		if (heartbeatRepairVersion <= 0) {
+			return;
+		}
 		selectedRecordId = null;
 		detailOpen = true;
 	});

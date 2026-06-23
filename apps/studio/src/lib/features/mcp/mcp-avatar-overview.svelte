@@ -11,6 +11,7 @@
 	import WorkbenchPageContent from '$lib/features/navigation/workbench-page-content.svelte';
 	import { cn } from '$lib/utils.js';
 
+	import McpSkeletons from './mcp-skeletons.svelte';
 	import {
 		countDistinctMcpProjects,
 		countFailedMcpRows,
@@ -31,6 +32,7 @@
 		selectedAvatarNickname = $bindable(''),
 		configRowsByAvatar,
 		projectRowsByAvatar,
+		loading = false,
 		onOpenConfig,
 		onOpenProject,
 	}: {
@@ -38,6 +40,7 @@
 		selectedAvatarNickname?: string;
 		configRowsByAvatar: ReadonlyMap<string, readonly McpConfigCatalogRow[]>;
 		projectRowsByAvatar: ReadonlyMap<string, readonly McpWorkbenchRow[]>;
+		loading?: boolean;
 		onOpenConfig?: (row: McpConfigCatalogRow) => void;
 		onOpenProject?: (avatarNickname: string, row: McpWorkbenchRow) => void;
 	} = $props();
@@ -54,6 +57,8 @@
 	const selectedProjectRows = $derived(
 		selectedAvatar ? projectRowsByAvatar.get(selectedAvatar.nickname) ?? [] : ([] as readonly McpWorkbenchRow[]),
 	);
+	const loadingWithoutData = $derived(loading && avatars.length === 0);
+	const refreshingWithData = $derived(loading && avatars.length > 0);
 
 	$effect(() => {
 		if (!selectedAvatar && avatars[0]) {
@@ -86,6 +91,15 @@
 						<NetworkIcon class="size-4 text-muted-foreground" />
 						<h2 class="text-sm font-semibold">Avatar ownership</h2>
 					</div>
+					{#if refreshingWithData}
+						<div
+							class="inline-flex shrink-0 items-center gap-2 rounded-full border border-border/60 bg-background/72 px-2.5 py-1 text-[11px] font-medium text-muted-foreground"
+							data-testid="mcp-avatar-overview-refreshing"
+						>
+							<span class="size-1.5 rounded-full bg-amber-500"></span>
+							Refreshing
+						</div>
+					{/if}
 					{#if detailCompact && selectedAvatar}
 						<Button variant="outline" size="sm" onclick={() => (detailOpen = true)}>
 							<PanelRightOpenIcon class="size-4" />
@@ -95,43 +109,47 @@
 				</div>
 
 				<ScrollView class="h-full" contentClass="grid gap-0">
-					{#each avatars as avatar (avatar.nickname)}
-						{@const isSelected = selectedAvatar?.nickname === avatar.nickname}
-						{@const avatarConfigRows = configRowsByAvatar.get(avatar.nickname) ?? []}
-						{@const avatarProjectRows = projectRowsByAvatar.get(avatar.nickname) ?? []}
-						<button
-							type="button"
-							class={cn(
-								'grid w-full grid-cols-[auto_minmax(0,1fr)] items-start gap-3 border-b border-border/45 px-3 py-3 text-left transition-colors last:border-b-0 md:px-4',
-								isSelected ? 'bg-accent/45' : 'hover:bg-muted/22',
-							)}
-							aria-pressed={isSelected}
-							onclick={() => {
-								selectedAvatarNickname = avatar.nickname;
-								detailOpen = true;
-							}}
-						>
-							<div data-testid={`mcp-avatar-profile-${avatar.nickname}`}>
-								<ProfileAvatar label={avatar.label} src={avatar.iconUrl ?? null} class="size-10 rounded-xl" />
-							</div>
-							<div class="grid min-w-0 gap-1">
-								<div class="truncate text-sm font-semibold">{avatar.label}</div>
-								<div class="truncate text-[11px] leading-5 text-muted-foreground">
-									{resolveAvatarHandle(avatar)}
+					{#if loadingWithoutData}
+						<McpSkeletons rows={4} variant="avatar-list" data-testid="mcp-avatar-list-skeleton" />
+					{:else}
+						{#each avatars as avatar (avatar.nickname)}
+							{@const isSelected = selectedAvatar?.nickname === avatar.nickname}
+							{@const avatarConfigRows = configRowsByAvatar.get(avatar.nickname) ?? []}
+							{@const avatarProjectRows = projectRowsByAvatar.get(avatar.nickname) ?? []}
+							<button
+								type="button"
+								class={cn(
+									'grid w-full grid-cols-[auto_minmax(0,1fr)] items-start gap-3 border-b border-border/45 px-3 py-3 text-left transition-colors last:border-b-0 md:px-4',
+									isSelected ? 'bg-accent/45' : 'hover:bg-muted/22',
+								)}
+								aria-pressed={isSelected}
+								onclick={() => {
+									selectedAvatarNickname = avatar.nickname;
+									detailOpen = true;
+								}}
+							>
+								<div data-testid={`mcp-avatar-profile-${avatar.nickname}`}>
+									<ProfileAvatar label={avatar.label} src={avatar.iconUrl ?? null} class="size-10 rounded-xl" />
 								</div>
-								<div class="flex min-w-0 flex-wrap items-center gap-1.5">
-									<Badge variant="outline">{avatarConfigRows.length} configs</Badge>
-									<Badge variant="secondary">{countDistinctMcpProjects(avatarProjectRows)} projects</Badge>
-									<Badge variant={countRunningMcpRows(avatarProjectRows) > 0 ? 'outline' : 'secondary'}>
-										{countRunningMcpRows(avatarProjectRows)} running
-									</Badge>
-									{#if countFailedMcpRows(avatarProjectRows) > 0}
-										<Badge variant="destructive">{countFailedMcpRows(avatarProjectRows)} failed</Badge>
-									{/if}
+								<div class="grid min-w-0 gap-1">
+									<div class="truncate text-sm font-semibold">{avatar.label}</div>
+									<div class="truncate text-[11px] leading-5 text-muted-foreground">
+										{resolveAvatarHandle(avatar)}
+									</div>
+									<div class="flex min-w-0 flex-wrap items-center gap-1.5">
+										<Badge variant="outline">{avatarConfigRows.length} configs</Badge>
+										<Badge variant="secondary">{countDistinctMcpProjects(avatarProjectRows)} projects</Badge>
+										<Badge variant={countRunningMcpRows(avatarProjectRows) > 0 ? 'outline' : 'secondary'}>
+											{countRunningMcpRows(avatarProjectRows)} running
+										</Badge>
+										{#if countFailedMcpRows(avatarProjectRows) > 0}
+											<Badge variant="destructive">{countFailedMcpRows(avatarProjectRows)} failed</Badge>
+										{/if}
+									</div>
 								</div>
-							</div>
-						</button>
-					{/each}
+							</button>
+						{/each}
+					{/if}
 				</ScrollView>
 			</div>
 		{/snippet}
@@ -159,7 +177,9 @@
 					{/if}
 				{/snippet}
 
-				{#if !selectedAvatar}
+				{#if loadingWithoutData && !selectedAvatar}
+					<McpSkeletons rows={1} variant="detail" data-testid="mcp-avatar-detail-skeleton" />
+				{:else if !selectedAvatar}
 					<div class="text-sm text-muted-foreground">Select one Avatar to inspect its MCP ownership.</div>
 				{:else}
 					<section class="grid gap-3">

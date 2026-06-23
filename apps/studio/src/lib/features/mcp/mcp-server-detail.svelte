@@ -15,12 +15,14 @@
 	import WorkbenchDetailDrawer from '$lib/features/navigation/workbench-detail-drawer.svelte';
 
 	import McpHelpHint from './mcp-help-hint.svelte';
+	import McpSkeletons from './mcp-skeletons.svelte';
 	import type { McpProjectLifecycleAction, McpWorkbenchCapability, McpWorkbenchRow } from './mcp-workbench-state';
 
 	let {
 		row,
 		projectPath,
 		pending = false,
+		loading = false,
 		onEdit,
 		onEnable,
 		onDisable,
@@ -31,6 +33,7 @@
 		row: McpWorkbenchRow | null;
 		projectPath: string;
 		pending?: boolean;
+		loading?: boolean;
 		onEdit?: (row: McpWorkbenchRow) => void;
 		onEnable?: (row: McpWorkbenchRow) => Promise<void>;
 		onDisable?: (row: McpWorkbenchRow) => Promise<void>;
@@ -380,6 +383,10 @@
 			</Dialog.Footer>
 		</Dialog.Content>
 	</Dialog.Root>
+{:else if loading}
+	<WorkbenchDetailDrawer title="MCP detail" contentClass="p-0" data-testid="mcp-server-detail-empty">
+		<McpSkeletons rows={1} variant="detail" data-testid="mcp-server-detail-skeleton" />
+	</WorkbenchDetailDrawer>
 {:else}
 	<WorkbenchDetailDrawer title="MCP detail" contentClass="p-4" data-testid="mcp-server-detail-empty">
 		<div class="text-sm text-muted-foreground">Select a server row.</div>

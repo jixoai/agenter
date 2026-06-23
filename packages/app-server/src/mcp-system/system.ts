@@ -4,12 +4,6 @@ import { mkdirSync, unlinkSync, writeFileSync } from "node:fs";
 import { createServer } from "node:net";
 import { dirname, join, resolve } from "node:path";
 
-import { Client } from "@modelcontextprotocol/sdk/client/index.js";
-import { SSEClientTransport } from "@modelcontextprotocol/sdk/client/sse.js";
-import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
-import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
-import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
-import type { Tool } from "@modelcontextprotocol/sdk/types.js";
 import {
   getToolUiResourceUri,
   INITIALIZE_METHOD,
@@ -20,6 +14,12 @@ import {
   TOOL_INPUT_METHOD,
   TOOL_RESULT_METHOD,
 } from "@modelcontextprotocol/ext-apps/app-bridge";
+import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { SSEClientTransport } from "@modelcontextprotocol/sdk/client/sse.js";
+import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
+import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
+import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
+import type { Tool } from "@modelcontextprotocol/sdk/types.js";
 
 import { McpSystemStore } from "./store";
 import type {
@@ -67,6 +67,8 @@ export interface McpSystemOptions {
   clientVersion?: string;
   transportFactory?: (context: McpTransportStartContext) => Transport;
   inspectorSpawnFactory?: McpInspectorSpawnFactory;
+  discoverySettleMs?: number;
+  discoveryPollMs?: number;
 }
 
 export type McpInspectorSpawnFactory = (
@@ -147,6 +149,13 @@ interface McpAppServerSession {
   initialPayloadSent: boolean;
   closeRequested: boolean;
   leaseClaimTimer: ReturnType<typeof setTimeout> | null;
+}
+
+interface McpDiscoveredLists {
+  tools: unknown[];
+  resources: unknown[];
+  resourceTemplates: unknown[];
+  prompts: unknown[];
 }
 
 const actionError = (error: unknown): string => (error instanceof Error ? error.message : String(error));
@@ -276,15 +285,43 @@ export const createMcpSystemTransport = (context: McpTransportStartContext): Tra
   });
 };
 
-const safeList = async <T>(operation: () => Promise<{ [key: string]: unknown }>, key: string): Promise<T[]> => {
+const safePaginatedList = async <T>(
+  operation: (request: { cursor?: string } | undefined) => Promise<{ [key: string]: unknown; nextCursor?: unknown }>,
+  key: string,
+): Promise<T[]> => {
   try {
-    const result = await operation();
-    const value = result[key];
-    return Array.isArray(value) ? (value as T[]) : [];
+    const items: T[] = [];
+    let cursor: string | undefined;
+    while (true) {
+      const result = await operation(cursor ? { cursor } : {});
+      const value = result[key];
+      if (Array.isArray(value)) {
+        items.push(...(value as T[]));
+      }
+      const nextCursor =
+        typeof result.nextCursor === "string" && result.nextCursor.trim().length > 0 ? result.nextCursor.trim() : null;
+      if (!nextCursor) {
+        return items;
+      }
+      cursor = nextCursor;
+    }
   } catch {
     return [];
   }
 };
+
+const sleep = async (ms: number): Promise<void> => {
+  if (ms <= 0) {
+    return;
+  }
+  await new Promise((resolve) => setTimeout(resolve, ms));
+};
+
+const hasListGrowth = (previous: McpDiscoveredLists, next: McpDiscoveredLists): boolean =>
+  next.tools.length > previous.tools.length ||
+  next.resources.length > previous.resources.length ||
+  next.resourceTemplates.length > previous.resourceTemplates.length ||
+  next.prompts.length > previous.prompts.length;
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
@@ -367,7 +404,8 @@ const createJsonRpcNotification = (method: string, params: unknown): McpJsonObje
 const findNamedCapability = (items: unknown[], name: string): unknown | null =>
   items.find((item) => readString(item, "name") === name) ?? null;
 
-const isToolCallableFromApp = (tool: unknown): boolean => isRecord(tool) && !isToolVisibilityModelOnly(tool as Partial<Tool>);
+const isToolCallableFromApp = (tool: unknown): boolean =>
+  isRecord(tool) && !isToolVisibilityModelOnly(tool as Partial<Tool>);
 
 const readStringFromRecord = (value: Record<string, unknown>, key: string): string | null => {
   const candidate = value[key];
@@ -476,6 +514,8 @@ export class McpSystem {
   private readonly clientVersion: string;
   private readonly transportFactory: (context: McpTransportStartContext) => Transport;
   private readonly inspectorSpawnFactory: McpInspectorSpawnFactory;
+  private readonly discoverySettleMs: number;
+  private readonly discoveryPollMs: number;
   private readonly sessions = new Map<string, McpLiveSession>();
   private readonly probeSessions = new Map<string, McpProbeSession>();
   private readonly inspectorSessions = new Map<string, McpInspectorSession>();
@@ -496,6 +536,8 @@ export class McpSystem {
     this.clientVersion = options.clientVersion ?? "0.0.0";
     this.transportFactory = options.transportFactory ?? createMcpSystemTransport;
     this.inspectorSpawnFactory = options.inspectorSpawnFactory ?? spawn;
+    this.discoverySettleMs = Math.max(0, options.discoverySettleMs ?? 2_500);
+    this.discoveryPollMs = Math.max(25, options.discoveryPollMs ?? 150);
     this.store = new McpSystemStore(options.dbPath);
     this.store.recoverLiveInstancesAsStopped();
   }
@@ -1268,21 +1310,10 @@ export class McpSystem {
     transport: McpTransportConfig;
   }): Promise<McpCapabilitySnapshot> {
     const capabilities = input.client.getServerCapabilities();
-    const tools = capabilities?.tools
-      ? await safeList<unknown>(() => input.client.listTools(undefined, { timeout: 30_000 }), "tools")
-      : [];
-    const resources = capabilities?.resources
-      ? await safeList<unknown>(() => input.client.listResources(undefined, { timeout: 30_000 }), "resources")
-      : [];
-    const resourceTemplates = capabilities?.resources
-      ? await safeList<unknown>(
-          () => input.client.listResourceTemplates(undefined, { timeout: 30_000 }),
-          "resourceTemplates",
-        )
-      : [];
-    const prompts = capabilities?.prompts
-      ? await safeList<unknown>(() => input.client.listPrompts(undefined, { timeout: 30_000 }), "prompts")
-      : [];
+    const { tools, resources, resourceTemplates, prompts } = await this.discoverLists(
+      input.client,
+      Boolean(capabilities?.resources),
+    );
     const apps = extractMcpApps({ tools, resources, resourceTemplates });
     const server = input.client.getServerVersion();
     const snapshotAt = new Date().toISOString();
@@ -1306,6 +1337,61 @@ export class McpSystem {
       },
       snapshotAt,
     };
+  }
+
+  private async readDiscoveredLists(client: Client): Promise<McpDiscoveredLists> {
+    const tools = await safePaginatedList<unknown>(
+      (request) => client.listTools(request, { timeout: 30_000 }),
+      "tools",
+    );
+    const resources = await safePaginatedList<unknown>(
+      (request) => client.listResources(request, { timeout: 30_000 }),
+      "resources",
+    );
+    const resourceTemplates = await safePaginatedList<unknown>(
+      (request) => client.listResourceTemplates(request, { timeout: 30_000 }),
+      "resourceTemplates",
+    );
+    const prompts = await safePaginatedList<unknown>(
+      (request) => client.listPrompts(request, { timeout: 30_000 }),
+      "prompts",
+    );
+    return { tools, resources, resourceTemplates, prompts };
+  }
+
+  private async discoverLists(client: Client, shouldSettleResources: boolean): Promise<McpDiscoveredLists> {
+    let latest = await this.readDiscoveredLists(client);
+    const hasResourceSurface =
+      shouldSettleResources || latest.resources.length > 0 || latest.resourceTemplates.length > 0;
+    if (!hasResourceSurface || this.discoverySettleMs <= 0) {
+      return latest;
+    }
+
+    const deadline = Date.now() + this.discoverySettleMs;
+    let observedGrowth = false;
+    while (Date.now() < deadline) {
+      await sleep(Math.min(this.discoveryPollMs, Math.max(0, deadline - Date.now())));
+      const next = await this.readDiscoveredLists(client);
+      const merged: McpDiscoveredLists = {
+        tools: next.tools.length >= latest.tools.length ? next.tools : latest.tools,
+        resources: next.resources.length >= latest.resources.length ? next.resources : latest.resources,
+        resourceTemplates:
+          next.resourceTemplates.length >= latest.resourceTemplates.length
+            ? next.resourceTemplates
+            : latest.resourceTemplates,
+        prompts: next.prompts.length >= latest.prompts.length ? next.prompts : latest.prompts,
+      };
+      const grew = hasListGrowth(latest, merged);
+      latest = merged;
+      if (grew) {
+        observedGrowth = true;
+        continue;
+      }
+      if (observedGrowth) {
+        return latest;
+      }
+    }
+    return latest;
   }
 
   private async withInstanceLock<T>(name: string, projectPath: string, operation: () => Promise<T>): Promise<T> {
@@ -1369,7 +1455,7 @@ export class McpSystem {
   }
 
   private isInspectorTerminal(session: McpInspectorSession): boolean {
-    return session.state === "closed" || session.state === "exited" || session.state === "failed";
+    return session.state === "closed";
   }
 
   private armInspectorLeaseClaimTimer(session: McpInspectorSession): void {
@@ -1514,8 +1600,9 @@ export class McpSystem {
     const readResult = await input.client.readResource({ uri: resourceUri });
     const contents = readResourceContents(readResult);
     const content =
-      contents.find((item) => isRecord(item) && readString(item, "uri") === resourceUri && readMcpAppHtmlContent(item)) ??
-      contents.find((item) => readMcpAppHtmlContent(item));
+      contents.find(
+        (item) => isRecord(item) && readString(item, "uri") === resourceUri && readMcpAppHtmlContent(item),
+      ) ?? contents.find((item) => readMcpAppHtmlContent(item));
     const htmlContent = readMcpAppHtmlContent(content);
     if (!htmlContent) {
       throw new Error(`mcp resource is not an MCP App HTML resource: ${resourceUri}`);
@@ -1581,7 +1668,7 @@ export class McpSystem {
   }
 
   private isAppServerTerminal(session: McpAppServerSession): boolean {
-    return session.state === "closed" || session.state === "failed";
+    return session.state === "closed";
   }
 
   private armAppServerLeaseClaimTimer(session: McpAppServerSession): void {
@@ -1617,7 +1704,9 @@ export class McpSystem {
   }
 
   private emitAppServerEvent(event: McpAppServerEvent): void {
-    const listeners = this.appServerListeners.get(event.type === "snapshot" ? event.session.sessionId : event.sessionId);
+    const listeners = this.appServerListeners.get(
+      event.type === "snapshot" ? event.session.sessionId : event.sessionId,
+    );
     if (!listeners) {
       return;
     }
@@ -1700,8 +1789,9 @@ export class McpSystem {
     params: unknown,
   ): Promise<unknown> {
     if (method === INITIALIZE_METHOD) {
-      const tool =
-        session.toolName ? (findNamedCapability(session.snapshot.tools, session.toolName) as Tool | null) : null;
+      const tool = session.toolName
+        ? (findNamedCapability(session.snapshot.tools, session.toolName) as Tool | null)
+        : null;
       return {
         protocolVersion: APP_SERVER_PROTOCOL_VERSION,
         hostInfo: {

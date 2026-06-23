@@ -177,7 +177,7 @@ export const resolveCapabilityLabel = (value: unknown, fallback: string): string
 	if (!isRecord(value)) {
 		return fallback;
 	}
-	for (const key of ['name', 'title', 'uri'] as const) {
+	for (const key of ['title', 'name', 'uri'] as const) {
 		const candidate = value[key];
 		if (typeof candidate === 'string' && candidate.trim().length > 0) {
 			return candidate.trim();

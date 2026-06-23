@@ -6,6 +6,16 @@ import { describe, expect, test } from "vitest";
 const avatarCatalogRouteSource = readFileSync(resolve(import.meta.dirname, "avatar-catalog-route.svelte"), "utf8");
 
 describe("Feature: Avatar catalog shared list-detail contract", () => {
+  test("Scenario: Given Avatar catalog is loading When source data is absent Then Skeletons stand in only for missing data", () => {
+    expect(avatarCatalogRouteSource).toContain("import AvatarLoadingSkeleton from './avatar-loading-skeleton.svelte';");
+    expect(avatarCatalogRouteSource).toContain("const catalogLoadingWithoutData = $derived(!catalogState.loaded && catalogState.loading && avatars.length === 0)");
+    expect(avatarCatalogRouteSource).toContain("const catalogRefreshingWithData = $derived(catalogState.refreshing && avatars.length > 0)");
+    expect(avatarCatalogRouteSource).toContain('<AvatarLoadingSkeleton variant="catalog-list" />');
+    expect(avatarCatalogRouteSource).toContain('<AvatarLoadingSkeleton variant="catalog-detail" />');
+    expect(avatarCatalogRouteSource).toContain('data-testid="avatar-catalog-refreshing"');
+    expect(avatarCatalogRouteSource).not.toContain("Loading avatar catalog");
+  });
+
   test("Scenario: Given the avatars catalog is a list-detail page When reading the source Then it adopts the shared split-detail page-content primitive instead of a bespoke two-column shell", () => {
     expect(avatarCatalogRouteSource).toContain(
       "import WorkbenchPageContent from '$lib/features/navigation/workbench-page-content.svelte';",
@@ -65,7 +75,7 @@ describe("Feature: Avatar catalog shared list-detail contract", () => {
 
   test("Scenario: Given the detail pane is now a real drawer surface When reading the source Then selected avatar actions and runtime facts live inside one dedicated detail panel", () => {
     expect(avatarCatalogRouteSource).toContain("<WorkbenchDetailDrawer");
-    expect(avatarCatalogRouteSource).toContain('description="Preview before runtime entry."');
+    expect(avatarCatalogRouteSource).toContain("description={catalogRefreshingWithData ? 'Refreshing catalog facts.' : 'Preview before runtime entry.'}");
     expect(avatarCatalogRouteSource).toContain("Canonical runtime");
     expect(avatarCatalogRouteSource).toContain("Catalog state");
     expect(avatarCatalogRouteSource).toContain("Actions");

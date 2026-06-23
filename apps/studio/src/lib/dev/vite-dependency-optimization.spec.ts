@@ -29,8 +29,8 @@ describe("Feature: Studio Vite dependency optimization law", () => {
     expect(appOptimizeDepsInclude).toContain("@codemirror/lang-sql");
   });
 
-  test("Scenario: Given browser-based Vitest hosts When optimizeDeps are resolved Then terminal-view is prebundled up front to avoid mid-run optimize reloads", () => {
+  test("Scenario: Given browser-based Vitest hosts When optimizeDeps are resolved Then terminal-view is prebundled without Svelte-source workspace packages", () => {
     expect(appVitestOptimizeDepsInclude).toContain(TERMINAL_VIEW_WORKSPACE_PACKAGE);
-    expect(appVitestOptimizeDepsInclude).toContain(WEB_HEARTBEAT_VIEW_WORKSPACE_PACKAGE);
+    expect(appVitestOptimizeDepsInclude).not.toContain(WEB_HEARTBEAT_VIEW_WORKSPACE_PACKAGE);
   });
 });

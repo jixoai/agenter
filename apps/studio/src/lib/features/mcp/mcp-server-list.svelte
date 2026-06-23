@@ -3,15 +3,18 @@
 
 	import { Badge } from '$lib/components/ui/badge/index.js';
 	import { cn } from '$lib/utils.js';
+	import McpSkeletons from './mcp-skeletons.svelte';
 	import type { McpLifecycleState, McpProjectState, McpWorkbenchRow } from './mcp-workbench-state';
 
 	let {
 		rows,
 		selectedName,
+		loading = false,
 		onSelect,
 	}: {
 		rows: readonly McpWorkbenchRow[];
 		selectedName: string;
+		loading?: boolean;
 		onSelect: (name: string) => void;
 	} = $props();
 
@@ -43,57 +46,61 @@
 	</div>
 
 	<ScrollView class="h-full" contentClass="grid gap-0">
-		{#each rows as row (row.name)}
-			<button
-				type="button"
-				class={cn(
-					'grid w-full gap-3 border-b border-border/45 px-3 py-3 text-left transition-colors last:border-b-0 md:grid-cols-[minmax(13rem,0.95fr)_minmax(14rem,1fr)_minmax(11rem,0.75fr)] md:px-4',
-					selectedName === row.name ? 'bg-accent/45' : 'hover:bg-muted/22',
-				)}
-				aria-pressed={selectedName === row.name}
-				onclick={() => onSelect(row.name)}
-			>
-				<div class="grid min-w-0 gap-1">
-					<div class="flex min-w-0 items-center gap-2">
-						<div class="truncate text-sm font-semibold">{row.title}</div>
-						<Badge variant="secondary" class="shrink-0">{row.transport}</Badge>
+		{#if loading && rows.length === 0}
+			<McpSkeletons rows={5} variant="server-list" data-testid="mcp-server-list-skeleton" />
+		{:else}
+			{#each rows as row (row.name)}
+				<button
+					type="button"
+					class={cn(
+						'grid w-full gap-3 border-b border-border/45 px-3 py-3 text-left transition-colors last:border-b-0 md:grid-cols-[minmax(13rem,0.95fr)_minmax(14rem,1fr)_minmax(11rem,0.75fr)] md:px-4',
+						selectedName === row.name ? 'bg-accent/45' : 'hover:bg-muted/22',
+					)}
+					aria-pressed={selectedName === row.name}
+					onclick={() => onSelect(row.name)}
+				>
+					<div class="grid min-w-0 gap-1">
+						<div class="flex min-w-0 items-center gap-2">
+							<div class="truncate text-sm font-semibold">{row.title}</div>
+							<Badge variant="secondary" class="shrink-0">{row.transport}</Badge>
+						</div>
+						<div class="truncate text-xs text-muted-foreground">{row.description}</div>
+						<div class="flex min-w-0 flex-wrap items-center gap-1.5">
+							<Badge variant="secondary">installed</Badge>
+							<Badge variant="outline">{row.name}</Badge>
+						</div>
 					</div>
-					<div class="truncate text-xs text-muted-foreground">{row.description}</div>
-					<div class="flex min-w-0 flex-wrap items-center gap-1.5">
-						<Badge variant="secondary">installed</Badge>
-						<Badge variant="outline">{row.name}</Badge>
-					</div>
-				</div>
 
-				<div class="grid min-w-0 content-start gap-1">
-					<div class="flex min-w-0 flex-wrap items-center gap-1.5">
-						<Badge variant={row.projectState === 'enabled' ? 'outline' : 'secondary'}>
-							{projectStateLabel(row.projectState)}
+					<div class="grid min-w-0 content-start gap-1">
+						<div class="flex min-w-0 flex-wrap items-center gap-1.5">
+							<Badge variant={row.projectState === 'enabled' ? 'outline' : 'secondary'}>
+								{projectStateLabel(row.projectState)}
+							</Badge>
+							<Badge variant={lifecycleTone(row.lifecycle)}>{row.lifecycle}</Badge>
+							<Badge variant="outline">{row.tools.length} tools</Badge>
+							<Badge variant="secondary">{row.resources.length} resources</Badge>
+							<Badge variant="secondary">{row.prompts.length} prompts</Badge>
+							{#if row.latestError}
+								<Badge variant="destructive">error</Badge>
+							{/if}
+						</div>
+						<div class="truncate text-xs text-muted-foreground">
+							{row.snapshotAt ? `snapshot ${row.snapshotAt}` : 'no project-local snapshot'}
+						</div>
+					</div>
+
+					<div class="grid min-w-0 content-start gap-1 md:justify-items-end">
+						<Badge
+							variant={row.latestAction.status === 'failed' || row.latestAction.status === 'blocked'
+								? 'destructive'
+								: 'secondary'}
+						>
+							{row.latestAction.operation}
 						</Badge>
-						<Badge variant={lifecycleTone(row.lifecycle)}>{row.lifecycle}</Badge>
-						<Badge variant="outline">{row.tools.length} tools</Badge>
-						<Badge variant="secondary">{row.resources.length} resources</Badge>
-						<Badge variant="secondary">{row.prompts.length} prompts</Badge>
-						{#if row.latestError}
-							<Badge variant="destructive">error</Badge>
-						{/if}
+						<div class="max-w-full truncate text-xs text-muted-foreground">{row.latestAction.label}</div>
 					</div>
-					<div class="truncate text-xs text-muted-foreground">
-						{row.snapshotAt ? `snapshot ${row.snapshotAt}` : 'no project-local snapshot'}
-					</div>
-				</div>
-
-				<div class="grid min-w-0 content-start gap-1 md:justify-items-end">
-					<Badge
-						variant={row.latestAction.status === 'failed' || row.latestAction.status === 'blocked'
-							? 'destructive'
-							: 'secondary'}
-					>
-						{row.latestAction.operation}
-					</Badge>
-					<div class="max-w-full truncate text-xs text-muted-foreground">{row.latestAction.label}</div>
-				</div>
-			</button>
-		{/each}
+				</button>
+			{/each}
+		{/if}
 	</ScrollView>
 </div>

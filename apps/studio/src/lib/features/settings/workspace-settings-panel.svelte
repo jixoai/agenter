@@ -3,6 +3,7 @@
 
 	import { Badge } from '$lib/components/ui/badge/index.js';
 	import { Button } from '$lib/components/ui/button/index.js';
+	import * as Skeleton from '$lib/components/ui/skeleton/index.js';
 	import * as Tabs from '$lib/components/ui/tabs/index.js';
 	import WorkbenchScaffold from '$lib/features/navigation/workbench-scaffold.svelte';
 	import WorkbenchSplitDetailHost from '$lib/features/navigation/workbench-split-detail-host.svelte';
@@ -56,6 +57,8 @@
 	const selectedLayer = $derived(layers.find((layer) => layer.layerId === selectedLayerId) ?? null);
 	const effectiveValue = $derived(effective.value ?? tryParseJson(effective.content) ?? {});
 	const layerDraft = $derived(tryParseJson(layerContent));
+	const loadingWithoutData = $derived(loading && layers.length === 0 && !selectedLayerId);
+	const refreshingWithData = $derived(loading && !loadingWithoutData);
 
 	const openLayer = (layerId: string): void => {
 		focusedLayerPointer = null;
@@ -92,7 +95,7 @@
 				<h2 class="text-base font-semibold">{title}</h2>
 				<p class="text-sm text-muted-foreground">{description}</p>
 			</div>
-			<Badge variant="outline">{saving ? 'Saving…' : status}</Badge>
+			<Badge variant="outline">{saving ? 'Saving…' : refreshingWithData ? 'Refreshing…' : status}</Badge>
 		</div>
 
 		<Tabs.Root value={activeTab} onValueChange={(value) => (activeTab = value as 'effective' | 'layers')}>
@@ -103,9 +106,34 @@
 		</Tabs.Root>
 	{/snippet}
 
-	{#if loading}
-		<div class="flex h-full items-center justify-center rounded-2xl border border-dashed text-sm text-muted-foreground">
-			Loading workspace settings…
+	{#if loadingWithoutData}
+		<div
+			class="grid h-full content-start gap-4 rounded-2xl border border-border/60 bg-background/55 p-4"
+			aria-hidden="true"
+			data-testid="workspace-settings-skeleton"
+		>
+			<div class="grid gap-2">
+				<Skeleton.Root class="h-5 w-48" />
+				<Skeleton.Root class="h-3 w-72 max-w-full" />
+			</div>
+			<div class="grid gap-2 sm:grid-cols-2">
+				<Skeleton.Root class="h-10 w-full" />
+				<Skeleton.Root class="h-10 w-full" />
+			</div>
+			<div class="grid gap-2 rounded-xl bg-muted/24 p-3">
+				<Skeleton.Root class="h-3 w-28" />
+				<Skeleton.Root class="h-4 w-full" />
+				<Skeleton.Root class="h-4 w-11/12" />
+				<Skeleton.Root class="h-4 w-4/5" />
+			</div>
+			<div class="grid gap-2 md:grid-cols-[minmax(12rem,0.85fr)_minmax(0,1fr)]">
+				<div class="grid gap-2">
+					<Skeleton.Root class="h-12 w-full rounded-xl" />
+					<Skeleton.Root class="h-12 w-full rounded-xl" />
+					<Skeleton.Root class="h-12 w-full rounded-xl" />
+				</div>
+				<Skeleton.Root class="min-h-56 w-full rounded-xl" />
+			</div>
 		</div>
 	{:else if activeTab === 'effective'}
 		<div class="grid h-full grid-rows-[auto_minmax(0,1fr)] gap-3">

@@ -37,6 +37,7 @@
 		ConversationEmptyState,
 		VirtualConversation,
 	} from '$lib/components/ai-elements/conversation/index.js';
+	import * as Skeleton from '$lib/components/ui/skeleton/index.js';
 
 	import type {
 		RuntimeHeartbeatConfigBinding,
@@ -181,17 +182,12 @@
 		}
 		return null;
 	});
+	const loadingWithoutData = $derived(!groupsState.loaded && !groupsState.error && groups.length === 0);
 	const emptyState = $derived.by(() => {
 		if (groupsState.error && !groupsState.loaded) {
 			return {
 				title: 'Heartbeat failed to load',
 				description: groupsState.error,
-			};
-		}
-		if (!groupsState.loaded) {
-			return {
-				title: 'Loading Heartbeat…',
-				description: 'Replaying persisted prompt facts, attention inputs, and assistant output.',
 			};
 		}
 		return {
@@ -555,6 +551,29 @@
 	});
 </script>
 
+{#snippet heartbeatStageSkeleton()}
+	<div
+		class="grid content-start gap-3 px-3 py-12"
+		data-testid="runtime-heartbeat-stage-skeleton"
+		aria-hidden="true"
+	>
+		{#each [0, 1, 2, 3] as row (row)}
+			<div class="grid gap-3 rounded-3xl border border-border/60 bg-background/78 px-4 py-4 shadow-sm">
+				<div class="flex items-center justify-between gap-3">
+					<Skeleton.Root class="h-5 w-36" />
+					<Skeleton.Root class="h-5 w-16 rounded-full" />
+				</div>
+				<Skeleton.Root class="h-3 w-full" />
+				<Skeleton.Root class="h-3 w-5/6" />
+				<div class="flex gap-2">
+					<Skeleton.Root class="h-6 w-20 rounded-full" />
+					<Skeleton.Root class="h-6 w-24 rounded-full" />
+				</div>
+			</div>
+		{/each}
+	</div>
+{/snippet}
+
 <div
 	class="runtime-heartbeat-stage relative grid h-full min-w-0 grid-rows-[minmax(0,1fr)_auto] bg-[linear-gradient(180deg,color-mix(in_srgb,var(--card),white_6%)_0%,var(--card)_18%,color-mix(in_srgb,var(--background),var(--card)_42%)_100%)]"
 	data-testid="runtime-heartbeat-stage"
@@ -683,12 +702,16 @@
 		{/snippet}
 
 		{#snippet renderEmpty()}
-			<ConversationEmptyState
-				class="px-6 py-12"
-				data-testid="runtime-heartbeat-empty"
-				title={emptyState.title}
-				description={emptyState.description}
-			/>
+			{#if loadingWithoutData}
+				{@render heartbeatStageSkeleton()}
+			{:else}
+				<ConversationEmptyState
+					class="px-6 py-12"
+					data-testid="runtime-heartbeat-empty"
+					title={emptyState.title}
+					description={emptyState.description}
+				/>
+			{/if}
 		{/snippet}
 	</VirtualConversation>
 

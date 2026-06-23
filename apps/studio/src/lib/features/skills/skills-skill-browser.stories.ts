@@ -57,6 +57,90 @@ export const MediaSelectionUsesIsolatedPreviewer = {
 	},
 } satisfies Story;
 
+export const SplitDetailResizeShieldsIframePreview = {
+	name: 'Scenario: Given split detail contains an iframe When resizing crosses the preview Then drag ownership stays in the parent shell',
+	args: {
+		previewMode: 'image',
+		detailLeftMin: 160,
+		detailRightMin: 160,
+	},
+	play: async ({ canvasElement }) => {
+		const canvas = within(canvasElement);
+
+		canvas.getByRole('button', { name: /reviewer/i }).click();
+		await waitFor(() => {
+			expect(canvas.getByText('/preview.png')).toBeInTheDocument();
+		});
+		canvasElement.querySelector<HTMLElement>('[data-skill-tree-path="/preview.png"]')!.click();
+
+		const previewFrame = await waitFor(() => {
+			const frame = document.querySelector<HTMLIFrameElement>('iframe[title="preview.png preview"]');
+			expect(frame).toBeTruthy();
+			return frame!;
+		});
+		const splitRoot = await waitFor(() => {
+			const root = canvasElement.querySelector<HTMLElement>('[data-layout-role="workbench-split-detail-root"]');
+			expect(root).toBeTruthy();
+			expect(root?.dataset.compact).toBe('false');
+			return root!;
+		});
+		const handle = canvas.getByRole('separator', { name: 'Resize detail panel' });
+		const handleRect = handle.getBoundingClientRect();
+		const startX = Math.round(handleRect.left + handleRect.width / 2);
+		const startY = Math.round(handleRect.top + handleRect.height / 2);
+
+		handle.dispatchEvent(
+			new PointerEvent('pointerdown', {
+				bubbles: true,
+				cancelable: true,
+				button: 0,
+				clientX: startX,
+				clientY: startY,
+				pointerId: 17,
+				pointerType: 'mouse',
+			}),
+		);
+
+		const dragShield = await waitFor(() => {
+			const shield = document.querySelector<HTMLElement>(
+				'[data-layout-role="workbench-split-detail-drag-shield"]',
+			);
+			expect(shield).toBeTruthy();
+			return shield!;
+		});
+		await expect(splitRoot).toHaveAttribute('data-dragging', 'true');
+		await expect(dragShield).toHaveAttribute('data-slot', 'workbench-split-detail-drag-shield');
+		expect(getComputedStyle(previewFrame).pointerEvents).toBe('none');
+
+		document.dispatchEvent(
+			new PointerEvent('pointermove', {
+				bubbles: true,
+				cancelable: true,
+				clientX: startX + 72,
+				clientY: startY,
+				pointerId: 17,
+				pointerType: 'mouse',
+			}),
+		);
+		document.dispatchEvent(
+			new PointerEvent('pointerup', {
+				bubbles: true,
+				cancelable: true,
+				clientX: startX + 72,
+				clientY: startY,
+				pointerId: 17,
+				pointerType: 'mouse',
+			}),
+		);
+
+		await waitFor(() => {
+			expect(document.querySelector('[data-layout-role="workbench-split-detail-drag-shield"]')).toBeNull();
+			expect(splitRoot).toHaveAttribute('data-dragging', 'false');
+		});
+		expect(getComputedStyle(previewFrame).pointerEvents).not.toBe('none');
+	},
+} satisfies Story;
+
 export const CompactSelectionKeepsPreviewReachable = {
 	name: 'Scenario: Given a compact skills browser When a text file is selected Then filePreviewer still opens through the compact detail drawer law',
 	args: {

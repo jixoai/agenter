@@ -17,6 +17,8 @@
 	import McpConfigDetail from './mcp-config-detail.svelte';
 	import McpConfigList from './mcp-config-list.svelte';
 	import McpNewGlobalForm from './mcp-new-global-form.svelte';
+	import McpServerDetail from './mcp-server-detail.svelte';
+	import McpServerList from './mcp-server-list.svelte';
 	import {
 		buildMcpConfigSelectionKey,
 		buildMcpConfigCatalogRows,
@@ -36,13 +38,13 @@
 	};
 	type StoryInspectorSocket = {
 		close: (code?: number, reason?: string) => void;
-		addEventListener: <K extends keyof StoryInspectorSocketEventMap>(
-			type: K,
-			listener: (event: StoryInspectorSocketEventMap[K]) => void,
+		addEventListener: <Type extends keyof StoryInspectorSocketEventMap>(
+			type: Type,
+			listener: (event: StoryInspectorSocketEventMap[Type]) => void,
 		) => void;
-		removeEventListener: <K extends keyof StoryInspectorSocketEventMap>(
-			type: K,
-			listener: (event: StoryInspectorSocketEventMap[K]) => void,
+		removeEventListener: <Type extends keyof StoryInspectorSocketEventMap>(
+			type: Type,
+			listener: (event: StoryInspectorSocketEventMap[Type]) => void,
 		) => void;
 	};
 
@@ -51,13 +53,29 @@
 		| 'configs-new'
 		| 'config-detail'
 		| 'config-running'
-		| 'avatars-overview';
+		| 'avatars-overview'
+		| 'inspect-pending'
+		| 'loading-empty';
 
 	let {
 		scenario = 'config-detail',
 	}: {
 		scenario?: McpStoryScenario;
 	} = $props();
+	const iconEcho =
+		'data:image/svg+xml;utf8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2016%2016%22%3E%3Crect%20width%3D%2216%22%20height%3D%2216%22%20rx%3D%224%22%20fill%3D%22%23111827%22%2F%3E%3Ctext%20x%3D%228%22%20y%3D%2211%22%20font-size%3D%228%22%20text-anchor%3D%22middle%22%20fill%3D%22%23ffffff%22%20font-family%3D%22ui-sans-serif%2Csystem-ui%22%3EE%3C%2Ftext%3E%3C%2Fsvg%3E';
+	const iconWorkspace =
+		'data:image/svg+xml;utf8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2016%2016%22%3E%3Crect%20width%3D%2216%22%20height%3D%2216%22%20rx%3D%224%22%20fill%3D%22%230f172a%22%2F%3E%3Ctext%20x%3D%228%22%20y%3D%2211%22%20font-size%3D%228%22%20text-anchor%3D%22middle%22%20fill%3D%22%23ffffff%22%20font-family%3D%22ui-sans-serif%2Csystem-ui%22%3EW%3C%2Ftext%3E%3C%2Fsvg%3E';
+	const iconSection =
+		'data:image/svg+xml;utf8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2016%2016%22%3E%3Crect%20width%3D%2216%22%20height%3D%2216%22%20rx%3D%224%22%20fill%3D%22%237c3aed%22%2F%3E%3Ctext%20x%3D%228%22%20y%3D%2211%22%20font-size%3D%228%22%20text-anchor%3D%22middle%22%20fill%3D%22%23ffffff%22%20font-family%3D%22ui-sans-serif%2Csystem-ui%22%3ES%3C%2Ftext%3E%3C%2Fsvg%3E';
+	const iconPrompt =
+		'data:image/svg+xml;utf8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2016%2016%22%3E%3Crect%20width%3D%2216%22%20height%3D%2216%22%20rx%3D%224%22%20fill%3D%22%230f766e%22%2F%3E%3Ctext%20x%3D%228%22%20y%3D%2211%22%20font-size%3D%228%22%20text-anchor%3D%22middle%22%20fill%3D%22%23ffffff%22%20font-family%3D%22ui-sans-serif%2Csystem-ui%22%3EP%3C%2Ftext%3E%3C%2Fsvg%3E';
+	const iconApp =
+		'data:image/svg+xml;utf8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2016%2016%22%3E%3Crect%20width%3D%2216%22%20height%3D%2216%22%20rx%3D%224%22%20fill%3D%22%232563eb%22%2F%3E%3Ctext%20x%3D%228%22%20y%3D%2211%22%20font-size%3D%228%22%20text-anchor%3D%22middle%22%20fill%3D%22%23ffffff%22%20font-family%3D%22ui-sans-serif%2Csystem-ui%22%3EA%3C%2Ftext%3E%3C%2Fsvg%3E';
+	const iconTool =
+		'data:image/svg+xml;utf8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2016%2016%22%3E%3Crect%20width%3D%2216%22%20height%3D%2216%22%20rx%3D%224%22%20fill%3D%22%232563eb%22%2F%3E%3Ctext%20x%3D%228%22%20y%3D%2211%22%20font-size%3D%228%22%20text-anchor%3D%22middle%22%20fill%3D%22%23ffffff%22%20font-family%3D%22ui-sans-serif%2Csystem-ui%22%3ET%3C%2Ftext%3E%3C%2Fsvg%3E';
+	const iconResource =
+		'data:image/svg+xml;utf8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2016%2016%22%3E%3Crect%20width%3D%2216%22%20height%3D%2216%22%20rx%3D%224%22%20fill%3D%22%232563eb%22%2F%3E%3Ctext%20x%3D%228%22%20y%3D%2211%22%20font-size%3D%228%22%20text-anchor%3D%22middle%22%20fill%3D%22%23ffffff%22%20font-family%3D%22ui-sans-serif%2Csystem-ui%22%3ER%3C%2Ftext%3E%3C%2Fsvg%3E';
 
 	const avatarCatalog = [
 		{
@@ -160,11 +178,7 @@
 				description: 'Echo one message back through the fixture transport.',
 				icons: [
 					{
-						src: 'https://cdn.example.com/echo.png',
-						mimeType: 'image/png',
-					},
-					{
-						src: 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"><rect width="16" height="16" rx="4" fill="%23000"/><text x="8" y="11" font-size="8" text-anchor="middle" fill="%23fff">E</text></svg>',
+						src: iconEcho,
 						mimeType: 'image/svg+xml',
 					},
 				],
@@ -193,7 +207,40 @@
 				description: 'Fixture resource catalogue.',
 				icons: [
 					{
-						src: 'https://cdn.example.com/workspace.svg',
+						src: iconWorkspace,
+						mimeType: 'image/svg+xml',
+					},
+				],
+			},
+			{
+				uri: 'svelte:///docs/index.md',
+				title: 'Svelte Docs Index',
+				description: 'Entry point for the Svelte documentation catalog.',
+				icons: [
+					{
+						src: iconSection,
+						mimeType: 'image/svg+xml',
+					},
+				],
+			},
+			{
+				uri: 'svelte:///docs/guide.md',
+				title: 'Svelte Guide',
+				description: 'Core guide sections for Svelte.',
+				icons: [
+					{
+						src: iconSection,
+						mimeType: 'image/svg+xml',
+					},
+				],
+			},
+			{
+				uri: 'svelte:///docs/kit.md',
+				title: 'SvelteKit Guide',
+				description: 'Routing, data loading, and app shell guidance.',
+				icons: [
+					{
+						src: iconSection,
 						mimeType: 'image/svg+xml',
 					},
 				],
@@ -216,7 +263,7 @@
 				description: 'A single documentation section',
 				icons: [
 					{
-						src: 'https://cdn.example.com/svelte-doc-section.svg',
+						src: iconSection,
 						mimeType: 'image/svg+xml',
 					},
 				],
@@ -236,8 +283,8 @@
 				],
 				icons: [
 					{
-						src: 'https://cdn.example.com/summarize.webp',
-						mimeType: 'image/webp',
+						src: iconPrompt,
+						mimeType: 'image/svg+xml',
 					},
 				],
 			},
@@ -247,10 +294,22 @@
 				type: 'app',
 				toolName: 'playground-link',
 				resourceUri: 'ui://svelte/playground-link',
+				icons: [
+					{
+						src: iconApp,
+						mimeType: 'image/svg+xml',
+					},
+				],
 				tool: {
 					name: 'playground-link',
 					title: 'Playground Link UI',
 					description: 'Returns a UI resource for playground links.',
+					icons: [
+						{
+							src: iconTool,
+							mimeType: 'image/svg+xml',
+						},
+					],
 					_meta: {
 						'openai/outputTemplate': 'ui://svelte/playground-link',
 					},
@@ -259,6 +318,12 @@
 					uri: 'ui://svelte/playground-link',
 					title: 'UI resource for the Svelte Playground widget',
 					description: 'UI resource for the Svelte Playground widget.',
+					icons: [
+						{
+							src: iconResource,
+							mimeType: 'image/svg+xml',
+						},
+					],
 				},
 			},
 		],
@@ -345,6 +410,9 @@
 
 	const probeDraft = async (input: McpProbeInput): Promise<McpProbeOutput> => {
 		recordEvent(`probe:${input.action}:${'probeId' in input ? input.probeId : input.name ?? 'draft'}`);
+		if (scenario === 'inspect-pending' && input.action === 'open') {
+			return new Promise(() => undefined);
+		}
 		if (input.action === 'open') {
 			const transport =
 				input.transport.kind === 'stdio'
@@ -502,9 +570,9 @@
 			message: new Set<(event: MessageEvent<string>) => void>(),
 		};
 		let closed = false;
-		const dispatch = <K extends keyof StoryInspectorSocketEventMap>(
-			type: K,
-			event: StoryInspectorSocketEventMap[K],
+		const dispatch = (
+			type: keyof StoryInspectorSocketEventMap,
+			event: StoryInspectorSocketEventMap[keyof StoryInspectorSocketEventMap],
 		): void => {
 			for (const listener of listeners[type]) {
 				listener(event as never);
@@ -584,7 +652,7 @@
 				/>
 			</div>
 		</div>
-	{:else if scenario === 'configs-new'}
+	{:else if scenario === 'configs-new' || scenario === 'inspect-pending'}
 		<div class="grid min-w-0 gap-0 lg:grid-cols-[minmax(18rem,0.42fr)_minmax(0,1fr)]">
 			<div class="border-b border-border/50 lg:border-b-0 lg:border-r">
 				<McpConfigList
@@ -666,8 +734,71 @@
 				/>
 			</div>
 		</div>
+	{:else if scenario === 'loading-empty'}
+		<div class="grid min-h-0 min-w-0 grid-rows-[minmax(0,1fr)_minmax(0,1fr)]">
+			<div class="grid min-h-0 min-w-0 gap-0 border-b border-border/50 lg:grid-cols-[minmax(18rem,0.42fr)_minmax(0,1fr)]">
+				<div class="min-h-0 border-b border-border/50 lg:border-b-0 lg:border-r">
+					<McpConfigList
+						rows={[]}
+						selectedKey="__new__"
+						loading
+						onSelect={(key) => (selectedConfigKey = key as '__new__' | string)}
+						onOpenAvatar={(avatarNickname) => {
+							selectedAvatarNickname = avatarNickname;
+							recordEvent(`open-avatar:${avatarNickname}`);
+						}}
+					/>
+				</div>
+				<div class="min-h-0">
+					<McpConfigDetail
+						row={null}
+						initialRow={null}
+						avatarOptions={[]}
+						knownConfigRows={[]}
+						projectRows={[]}
+						loading
+						onSubmitGlobal={submitGlobal}
+						onProbe={probeDraft}
+						onAddProject={async (nextProjectPath) => {
+							selectedProjectPath = nextProjectPath;
+							recordEvent(`add-project:${nextProjectPath}`);
+						}}
+						onStartProject={async (row) => {
+							selectedProjectPath = row.projectPath;
+							recordEvent(`start:${row.projectPath ?? row.name}`);
+						}}
+						onStopProject={async (row) => {
+							selectedProjectPath = row.projectPath;
+							recordEvent(`stop:${row.projectPath ?? row.name}`);
+						}}
+						onRestartProject={async (row) => {
+							selectedProjectPath = row.projectPath;
+							recordEvent(`restart:${row.projectPath ?? row.name}`);
+						}}
+						onRemoveProject={async (row) => {
+							recordEvent(`remove-project:${row.projectPath ?? row.name}`);
+						}}
+					/>
+				</div>
+			</div>
+			<div class="grid min-h-0 min-w-0 gap-0 lg:grid-cols-[minmax(18rem,0.42fr)_minmax(0,1fr)]">
+				<div class="min-h-0 border-b border-border/50 lg:border-b-0 lg:border-r">
+					<McpServerList
+						rows={[]}
+						selectedName=""
+						loading
+						onSelect={(name) => {
+							recordEvent(`select-server:${name}`);
+						}}
+					/>
+				</div>
+				<div class="min-h-0">
+					<McpServerDetail row={null} projectPath="" loading />
+				</div>
+			</div>
+		</div>
 	{:else}
-		<div class="grid min-w-0 gap-0 lg:grid-cols-[minmax(18rem,0.42fr)_minmax(0,1fr)]">
+			<div class="grid min-w-0 gap-0 lg:grid-cols-[minmax(18rem,0.42fr)_minmax(0,1fr)]">
 			<div class="border-b border-border/50 lg:border-b-0 lg:border-r">
 				<McpConfigList
 					rows={catalogRows}

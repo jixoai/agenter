@@ -134,6 +134,15 @@
 		},
 	] satisfies WorkbenchPageTabItem[]);
 	const loadKey = $derived(`${avatarOptions.map((avatar) => avatar.nickname).join('|')}\u0000${refreshVersion}`);
+	const catalogLoadingWithoutData = $derived(
+		controller.runtimeState.globalAvatarCatalog.loading && controller.runtimeState.globalAvatarCatalog.data.length === 0,
+	);
+	const projectionLoadingWithoutData = $derived(loading && catalogRows.length === 0);
+	const mcpLoadingWithoutData = $derived(catalogLoadingWithoutData || projectionLoadingWithoutData);
+	const mcpLoading = $derived(
+		loading || controller.runtimeState.globalAvatarCatalog.loading || controller.runtimeState.globalAvatarCatalog.refreshing,
+	);
+	const mcpRefreshingWithData = $derived(mcpLoading && !mcpLoadingWithoutData);
 
 	const toErrorMessage = (error: unknown): string => (error instanceof Error ? error.message : String(error));
 
@@ -523,13 +532,21 @@
 		title="Failed project MCP rows"
 		tone={failedRows > 0 ? 'critical' : 'neutral'}
 	/>
-	<WorkbenchToolbarStatus
-		placement={toolbarState.placement}
-		label={`${enabledRows} enabled`}
-		title="Enabled project rows"
-		tone={enabledRows > 0 ? 'positive' : 'neutral'}
-	/>
-{/snippet}
+		<WorkbenchToolbarStatus
+			placement={toolbarState.placement}
+			label={`${enabledRows} enabled`}
+			title="Enabled project rows"
+			tone={enabledRows > 0 ? 'positive' : 'neutral'}
+		/>
+		{#if mcpRefreshingWithData}
+			<WorkbenchToolbarStatus
+				placement={toolbarState.placement}
+				label="refreshing"
+				title="Refreshing MCP projection with existing data visible"
+				tone="neutral"
+			/>
+		{/if}
+	{/snippet}
 
 <WorkbenchPageToolbar>
 	<WorkbenchToolbar
@@ -601,16 +618,13 @@
 								{/if}
 							</div>
 						{/if}
-					{#if loading && visibleCatalogRows.length === 0 && selectedConfigKey === '__new__'}
-						<div class="px-4 py-6 text-sm text-muted-foreground">Loading MCP projection.</div>
-					{:else}
-						<McpConfigList
-							rows={visibleCatalogRows}
-							selectedKey={selectedConfigKey}
-							onSelect={handleConfigSelect}
-							onOpenAvatar={(avatarNickname) => void handleOpenAvatar(avatarNickname)}
-						/>
-					{/if}
+					<McpConfigList
+						rows={visibleCatalogRows}
+						selectedKey={selectedConfigKey}
+						loading={mcpLoadingWithoutData}
+						onSelect={handleConfigSelect}
+						onOpenAvatar={(avatarNickname) => void handleOpenAvatar(avatarNickname)}
+					/>
 				</div>
 			{/snippet}
 
@@ -642,6 +656,7 @@
 						knownConfigRows={catalogRows}
 						projectRows={selectedConfigProjectRows}
 						pending={actionPending}
+						loading={mcpLoadingWithoutData}
 						{selectedProjectPath}
 						onOpenAvatar={(avatarNickname) => void handleOpenAvatar(avatarNickname)}
 						onRemoveConfig={handleRemoveConfig}
@@ -670,6 +685,7 @@
 			bind:selectedAvatarNickname
 			configRowsByAvatar={avatarConfigRowsByAvatar}
 			projectRowsByAvatar={projectRowsByAvatar}
+			loading={mcpLoading}
 			onOpenConfig={handleOpenAvatarConfig}
 			onOpenProject={handleOpenAvatarProject}
 		/>

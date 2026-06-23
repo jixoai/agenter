@@ -14,6 +14,7 @@
 	import { onMount } from 'svelte';
 
 	import { createAppController } from '$lib/app/app-controller.svelte';
+	import * as Skeleton from '$lib/components/ui/skeleton/index.js';
 
 	import { HEARTBEAT_RECORD_SELECT_MESSAGE_TYPE } from './runtime-heartbeat-app-view-url';
 
@@ -243,6 +244,28 @@
 
 </script>
 
+{#snippet heartbeatRecordLoadingSkeleton()}
+	<div
+		class="runtime-heartbeat-app-view__detail-skeleton"
+		data-testid="runtime-heartbeat-record-detail-skeleton"
+		aria-hidden="true"
+	>
+		<div class="grid gap-2">
+			<Skeleton.Root class="h-5 w-44" />
+			<Skeleton.Root class="h-3 w-28" />
+		</div>
+		<div class="grid gap-2">
+			<Skeleton.Root class="h-3 w-full" />
+			<Skeleton.Root class="h-3 w-11/12" />
+			<Skeleton.Root class="h-3 w-4/5" />
+		</div>
+		<div class="grid grid-cols-2 gap-2">
+			<Skeleton.Root class="h-9 w-full" />
+			<Skeleton.Root class="h-9 w-full" />
+		</div>
+	</div>
+{/snippet}
+
 <svelte:head>
 	<title>Heartbeat app-view</title>
 </svelte:head>
@@ -269,7 +292,7 @@
 			detailState={selectedDetailState}
 		/>
 	{:else if selectedDetailPending}
-		<div class="runtime-heartbeat-app-view__state">Loading Heartbeat record…</div>
+		{@render heartbeatRecordLoadingSkeleton()}
 	{:else}
 		<div class="runtime-heartbeat-app-view__state">Heartbeat record is not available.</div>
 	{/if}
@@ -290,8 +313,14 @@
 		overflow: hidden auto;
 	}
 
-	.runtime-heartbeat-app-view[data-surface='detail'] {
-		padding: 0.75rem;
+	:global(.ag-heartbeat-record-detail) {
+		border: none;
+		border-radius: 0;
+	}
+
+	:global(.ag-heartbeat-entry) {
+		border-left: none;
+		border-radius: 0;
 	}
 
 	.runtime-heartbeat-app-view__state {
@@ -306,5 +335,13 @@
 
 	.runtime-heartbeat-app-view__state--error {
 		color: var(--destructive, #dc2626);
+	}
+
+	.runtime-heartbeat-app-view__detail-skeleton {
+		display: grid;
+		align-content: start;
+		gap: 1rem;
+		min-block-size: 100%;
+		padding: 1rem;
 	}
 </style>

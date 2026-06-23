@@ -65,6 +65,9 @@ describe('Feature: MCP inspect schema helpers', () => {
 
 	test('Scenario: Given raw capability payloads When reading label description and schema Then inspect stays resilient to protocol variants', () => {
 		expect(resolveCapabilityLabel({ title: 'Read File' }, 'tool_1')).toBe('Read File');
+		expect(resolveCapabilityLabel({ name: 'read_file', title: 'Read File', description: 'Reads a file from disk' }, 'tool_1')).toBe(
+			'Read File',
+		);
 		expect(resolveCapabilityDescription({ description: 'Reads a file from disk' })).toBe('Reads a file from disk');
 		expect(resolveCapabilityDescription({ title: 'Read File' })).toBe('');
 		expect(resolveToolInputSchema({ inputSchema: { type: 'object' } })).toEqual({ type: 'object' });

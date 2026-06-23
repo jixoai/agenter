@@ -1,8 +1,13 @@
 <script lang="ts">
 	import FolderTreeIcon from '@lucide/svelte/icons/folder-tree';
+	import CircleEllipsisIcon from '@lucide/svelte/icons/circle-ellipsis';
 	import PlayIcon from '@lucide/svelte/icons/play';
 	import StopCircleIcon from '@lucide/svelte/icons/stop-circle';
+	import Trash2Icon from '@lucide/svelte/icons/trash-2';
+	import WrenchIcon from '@lucide/svelte/icons/wrench';
 
+	import { Button } from '$lib/components/ui/button/index.js';
+	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
 	import ProfileAvatar from '$lib/components/profile-avatar.svelte';
 	import WorkbenchToolbarAction from '$lib/features/navigation/workbench-toolbar-action.svelte';
 	import WorkbenchToolbarStatus from '$lib/features/navigation/workbench-toolbar-status.svelte';
@@ -25,7 +30,12 @@
 		isRunning,
 		runtimeActionPending = false,
 		runtimeActionIntent = null,
+		heartbeatRepairPending = false,
+		heartbeatClearPending = false,
+		heartbeatClearDisabled = false,
 		onToggleRuntime,
+		onRepairHeartbeatRecordProjectionHealth,
+		onClearHeartbeatSession,
 	}: {
 		sessionId: string;
 		title: string;
@@ -38,7 +48,12 @@
 		isRunning: boolean;
 		runtimeActionPending?: boolean;
 		runtimeActionIntent?: 'start' | 'stop' | null;
+		heartbeatRepairPending?: boolean;
+		heartbeatClearPending?: boolean;
+		heartbeatClearDisabled?: boolean;
 		onToggleRuntime: () => void | Promise<void>;
+		onRepairHeartbeatRecordProjectionHealth: () => void | Promise<void>;
+		onClearHeartbeatSession: () => void | Promise<void>;
 	} = $props();
 
 	const runtimeActionLabel = $derived.by(() => {
@@ -52,6 +67,7 @@
 	});
 
 	const runtimeActionTitle = $derived(runtimeActionLabel);
+	const heartbeatActionPending = $derived(heartbeatRepairPending || heartbeatClearPending);
 </script>
 
 {#snippet runtimeToolbarPageTabs(toolbarState: WorkbenchToolbarRenderState)}
@@ -121,6 +137,46 @@
 				<PlayIcon class="size-4" />
 			{/if}
 		</WorkbenchToolbarAction>
+		<DropdownMenu.Root>
+			<DropdownMenu.Trigger>
+				{#snippet child({ props })}
+					<Button
+						{...props}
+						type="button"
+						size="icon-sm"
+						variant="ghost"
+						class="rounded-full text-muted-foreground hover:text-foreground data-[state=open]:bg-accent"
+						disabled={heartbeatActionPending}
+						aria-label="More runtime actions"
+						title="More"
+					>
+						<CircleEllipsisIcon class="size-4" />
+					</Button>
+				{/snippet}
+			</DropdownMenu.Trigger>
+			<DropdownMenu.Content align="end" sideOffset={6}>
+				<DropdownMenu.Item
+					disabled={heartbeatActionPending}
+					onclick={() => void onRepairHeartbeatRecordProjectionHealth()}
+				>
+					<div class="flex items-center gap-2">
+						<WrenchIcon class="size-4" />
+						<span>{heartbeatRepairPending ? 'Repairing Heartbeat projections' : 'Repair Heartbeat projections'}</span>
+					</div>
+				</DropdownMenu.Item>
+				<DropdownMenu.Separator />
+				<DropdownMenu.Item
+					variant="destructive"
+					disabled={heartbeatActionPending || heartbeatClearDisabled}
+					onclick={() => void onClearHeartbeatSession()}
+				>
+					<div class="flex items-center gap-2">
+						<Trash2Icon class="size-4" />
+						<span>{heartbeatClearPending ? '正在清空 Heartbeat Session' : '清空 Heartbeat Session'}</span>
+					</div>
+				</DropdownMenu.Item>
+			</DropdownMenu.Content>
+		</DropdownMenu.Root>
 	</div>
 {/snippet}
 

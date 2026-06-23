@@ -27,6 +27,7 @@
 	import WorkbenchDetailDrawer from '$lib/features/navigation/workbench-detail-drawer.svelte';
 
 	import McpHelpHint from './mcp-help-hint.svelte';
+	import McpSkeletons from './mcp-skeletons.svelte';
 	import McpNewGlobalForm from './mcp-new-global-form.svelte';
 	import type {
 		McpAvatarCatalogOption,
@@ -42,6 +43,7 @@
 		knownConfigRows,
 		projectRows,
 		pending = false,
+		loading = false,
 		selectedProjectPath = null,
 		onOpenAvatar,
 		onRemoveConfig,
@@ -64,6 +66,7 @@
 		knownConfigRows: readonly McpConfigCatalogRow[];
 		projectRows: readonly McpWorkbenchRow[];
 		pending?: boolean;
+		loading?: boolean;
 		selectedProjectPath?: string | null;
 		onOpenAvatar?: (avatarNickname: string) => void;
 		onRemoveConfig?: (row: McpWorkbenchRow) => Promise<void>;
@@ -162,7 +165,9 @@
 				</div>
 			</div>
 
-			{#if projectRows.length === 0}
+			{#if loading && projectRows.length === 0}
+				<McpSkeletons rows={3} variant="config-list" data-testid="mcp-config-instances-skeleton" />
+			{:else if projectRows.length === 0}
 				<div class="text-sm text-muted-foreground">No exact-project rows exist yet.</div>
 			{:else}
 				<div class="divide-y divide-border/45">
@@ -298,6 +303,10 @@
 			</Dialog.Footer>
 		</Dialog.Content>
 	</Dialog.Root>
+{:else if loading}
+	<WorkbenchDetailDrawer title="Config detail" contentClass="p-0" data-testid="mcp-config-detail-empty">
+		<McpSkeletons rows={1} variant="detail" data-testid="mcp-config-detail-skeleton" />
+	</WorkbenchDetailDrawer>
 {:else}
 	<WorkbenchDetailDrawer title="Config detail" contentClass="p-4" data-testid="mcp-config-detail-empty">
 		<div class="text-sm text-muted-foreground">Select one config or start a new draft.</div>

@@ -48,6 +48,88 @@ const readStringArray = (value: unknown, label: string): string[] => {
   return value.map((entry) => entry.trim()).filter((entry) => entry.length > 0);
 };
 
+const readText = (value: unknown): string => (typeof value === "string" ? value.trim() : "");
+
+const stripMcpPackageNoise = (value: string): string => {
+  let next = value.trim().replace(/^['"]|['"]$/gu, "");
+  if (next.startsWith("@") && next.includes("/")) {
+    const [scopePart = "", packagePart = ""] = next.slice(1).split("/", 2);
+    const scope = scopePart.trim();
+    let packageName = packagePart.trim();
+    const versionIndex = packageName.lastIndexOf("@");
+    if (versionIndex > 0) {
+      packageName = packageName.slice(0, versionIndex);
+    }
+    next = packageName.length === 0 || packageName === "mcp" || packageName === "server" ? scope : packageName;
+  } else {
+    const versionIndex = next.lastIndexOf("@");
+    if (versionIndex > 0) {
+      next = next.slice(0, versionIndex);
+    }
+  }
+  let normalized = next.trim();
+  let previous = "";
+  while (normalized !== previous) {
+    previous = normalized;
+    normalized = normalized.replace(/^(?:server-|mcp-)/iu, "");
+  }
+  normalized = normalized.replace(/-(?:mcp|server|app)$/iu, "");
+  return normalized.trim();
+};
+
+const titleCaseMcpName = (value: string): string =>
+  value
+    .split(/[-_/]+/u)
+    .map((part) => {
+      const trimmed = part.trim();
+      if (!trimmed) {
+        return "";
+      }
+      return `${trimmed.slice(0, 1).toUpperCase()}${trimmed.slice(1).toLowerCase()}`;
+    })
+    .filter((part) => part.length > 0)
+    .join(" ");
+
+export const deriveMcpConfigIdentityFromArgs = (argsText: string): { name: string; title: string } | null => {
+  const launcherTokens = new Set([
+    "bun",
+    "bunx",
+    "deno",
+    "dlx",
+    "exec",
+    "node",
+    "npm",
+    "npx",
+    "pnpm",
+    "tsx",
+    "ts-node",
+    "yarn",
+  ]);
+  const token = argsText
+    .trim()
+    .split(/\s+/u)
+    .find((entry, index) => {
+      if (entry.length === 0 || entry.startsWith("-")) {
+        return false;
+      }
+      if (index === 0 && launcherTokens.has(entry.toLowerCase())) {
+        return false;
+      }
+      return !launcherTokens.has(entry.toLowerCase());
+    });
+  if (!token) {
+    return null;
+  }
+  const stripped = stripMcpPackageNoise(readText(token));
+  if (!stripped) {
+    return null;
+  }
+  return {
+    name: stripped,
+    title: titleCaseMcpName(stripped),
+  };
+};
+
 const parseTransport = (value: unknown): McpGlobalConfigDraftTransport => {
   if (!isRecord(value)) {
     throw new Error("transport must be an object");
@@ -56,7 +138,7 @@ const parseTransport = (value: unknown): McpGlobalConfigDraftTransport => {
   if (kind === "stdio") {
     return {
       kind,
-      command: readRequiredString(value.command, "transport.command"),
+      command: readOptionalString(value.command, "transport.command") ?? "",
       args: readStringArray(value.args, "transport.args"),
       env: readStringRecord(value.env, "transport.env"),
     };
@@ -64,7 +146,7 @@ const parseTransport = (value: unknown): McpGlobalConfigDraftTransport => {
   if (kind === "streamable-http" || kind === "sse") {
     return {
       kind,
-      url: readRequiredString(value.url, "transport.url"),
+      url: readOptionalString(value.url, "transport.url") ?? "",
       headers: readStringRecord(value.headers, "transport.headers"),
     };
   }
@@ -89,7 +171,7 @@ export const parseMcpDraftJson = (
 
   const draft: McpGlobalConfigDraft = {
     avatarNickname: readOptionalString(parsed.avatarNickname, "avatarNickname") ?? options.defaultAvatarNickname,
-    name: readRequiredString(parsed.name, "name"),
+    name: readOptionalString(parsed.name, "name") ?? "",
     title: readOptionalString(parsed.title, "title"),
     description: readOptionalString(parsed.description, "description"),
     transport: parseTransport(parsed.transport),

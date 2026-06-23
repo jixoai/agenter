@@ -95,6 +95,7 @@ export const createMockKernelHarness = async (
     globalSessionRoot: join(rootDir, "sessions"),
     archiveSessionRoot: join(rootDir, "archive", "sessions"),
     workspacesPath: join(rootDir, "workspaces.yaml"),
+    homeDir: join(rootDir, "home"),
     logger: input.logger,
   });
 

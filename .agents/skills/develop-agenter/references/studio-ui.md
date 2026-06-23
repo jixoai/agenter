@@ -32,6 +32,7 @@
 - Every major panel should have one explicit scroll owner.
 - Use shared primitives such as `ScrollView`, `ViewportMask`, and `ClipSurface` instead of hand-rolled clipping and scroll behavior.
 - If you remove clipping, verify the scroll owner still exists.
+- In list-detail surfaces where both sides can grow long, make the list and detail independent scroll owners so one side cannot push the other out of view.
 
 ## UI Architecture
 
@@ -47,6 +48,8 @@
 - Put explanations, caveats, and recovery notes behind `HelpHint`, tooltips, or focused empty/error states instead of persistent body copy.
 - Avoid nested cards and repeated borders; use the app shell, split-detail primitives, spacing, and lightweight dividers as the main structure.
 - If a line of text only explains the UI instead of changing a decision, state, or next action, remove it or collapse it into contextual help.
+- Use Skeleton only as a data-shaped placeholder when loading and no data exists yet. When existing data is refreshing or an action is pending, keep the data visible and use status signals, disabled controls, progress, or pending affordances instead.
+- For inspector/connect dialogs that open before their first snapshot, keep lifecycle state in the header signal and reserve the dialog body for a data-shaped Skeleton until the first snapshot or error arrives.
 
 ## Typography / Icon / Affordance Rules
 

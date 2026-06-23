@@ -28,7 +28,7 @@
 
 	import McpConfigInspectPanel from './mcp-config-inspect-panel.svelte';
 	import McpHelpHint from './mcp-help-hint.svelte';
-	import { parseMcpDraftJson, serializeMcpDraft } from './mcp-draft-codec';
+	import { deriveMcpConfigIdentityFromArgs, parseMcpDraftJson, serializeMcpDraft } from './mcp-draft-codec';
 	import type {
 		McpAvatarCatalogOption,
 		McpConfigCatalogRow,
@@ -96,20 +96,22 @@
 
 	const serializeArgs = (args: readonly string[] | undefined): string => (args ?? []).join(' ');
 
-	let name = $state('browser-tools');
-	let title = $state('Browser Tools');
-	let description = $state('Authenticated browser automation.');
+	let name = $state('');
+	let title = $state('');
+	let description = $state('');
 	let transport = $state<McpTransportKind>('stdio');
 	let command = $state('bunx');
-	let args = $state('@agent/browser-mcp');
-	let url = $state('https://mcp.example.com/messages');
+	let args = $state('');
+	let url = $state('');
 	let headers = $state('');
 	let globalEnv = $state('');
-	let transportEnv = $state('{\n  "BROWSER_PROFILE": "default"\n}');
+	let transportEnv = $state('');
 	let editorMode = $state<EditorMode>('form');
 	let codeText = $state('');
 	let formError = $state<string | null>(null);
 	let lastInitialName = $state<string | null>(null);
+	let nameTouched = $state(false);
+	let titleTouched = $state(false);
 	let overrideDialogOpen = $state(false);
 	let pendingOverrideDraft = $state<McpGlobalConfigDraft | null>(null);
 
@@ -166,28 +168,25 @@
 			command = draft.transport.command;
 			args = serializeArgs(draft.transport.args);
 			transportEnv = serializeRecord(draft.transport.env);
-			url = 'https://mcp.example.com/messages';
+			url = '';
 			headers = '';
 		} else {
 			url = draft.transport.url;
 			headers = serializeRecord(draft.transport.headers);
 			command = 'bunx';
-			args = '@agent/browser-mcp';
-			transportEnv = '{\n  "BROWSER_PROFILE": "default"\n}';
+			args = '';
+			transportEnv = '';
 		}
 		globalEnv = serializeRecord(draft.env);
 		codeText = serializeMcpDraft(draft);
+		nameTouched = draft.name.trim().length > 0;
+		titleTouched = typeof draft.title === 'string' && draft.title.trim().length > 0;
 	};
 
 	const buildFormDraft = (): McpGlobalConfigDraft => {
-		const trimmedName = name.trim();
-		if (!trimmedName) {
-			throw new Error('Name is required');
-		}
-
 		const draft: McpGlobalConfigDraft = {
 			avatarNickname: selectedOwnerAvatar.nickname,
-			name: trimmedName,
+			name: name.trim(),
 			title: title.trim() || undefined,
 			description: description.trim() || undefined,
 			transport:
@@ -209,14 +208,19 @@
 			env: parseOptionalStringRecord(globalEnv, 'Global env'),
 		};
 
-		if (draft.transport.kind === 'stdio' && !draft.transport.command) {
+		return draft;
+	};
+
+	const validateDraftForSubmit = (draft: McpGlobalConfigDraft): void => {
+		if (!draft.name.trim()) {
+			throw new Error('Name is required');
+		}
+		if (draft.transport.kind === 'stdio' && !draft.transport.command.trim()) {
 			throw new Error('Command is required for stdio transport');
 		}
-		if (draft.transport.kind !== 'stdio' && !draft.transport.url) {
+		if (draft.transport.kind !== 'stdio' && !draft.transport.url.trim()) {
 			throw new Error('URL is required for remote transport');
 		}
-
-		return draft;
 	};
 
 	const buildDraft = (): McpGlobalConfigDraft =>
@@ -259,16 +263,13 @@
 		if (!initialRow) {
 			applyDraft({
 				avatarNickname: avatarOptions[0]?.nickname ?? ownerAvatarNickname ?? 'default',
-				name: 'browser-tools',
-				title: 'Browser Tools',
-				description: 'Authenticated browser automation.',
+				name: '',
+				title: undefined,
+				description: undefined,
 				transport: {
 					kind: 'stdio',
 					command: 'bunx',
-					args: ['@agent/browser-mcp'],
-					env: {
-						BROWSER_PROFILE: 'default',
-					},
+					args: [],
 				},
 			});
 			return;
@@ -303,6 +304,22 @@
 		}
 	});
 
+	$effect(() => {
+		if (initialRow) {
+			return;
+		}
+		const identity = deriveMcpConfigIdentityFromArgs(args);
+		if (!identity) {
+			return;
+		}
+		if (!nameTouched || name.trim().length === 0) {
+			name = identity.name;
+		}
+		if (!titleTouched || title.trim().length === 0) {
+			title = identity.title;
+		}
+	});
+
 	const setEditorMode = (nextMode: EditorMode): void => {
 		if (nextMode === editorMode) {
 			return;
@@ -331,6 +348,7 @@
 	): Promise<void> => {
 		formError = null;
 		try {
+			validateDraftForSubmit(draft);
 			await onSubmit(draft, options);
 			overrideDialogOpen = false;
 			pendingOverrideDraft = null;
@@ -346,6 +364,12 @@
 
 	const submit = async (): Promise<void> => {
 		const draft = buildDraft();
+		try {
+			validateDraftForSubmit(draft);
+		} catch (error) {
+			formError = error instanceof Error ? error.message : String(error);
+			return;
+		}
 		if (initialRow) {
 			await performSubmit(draft, { override: true });
 			return;
@@ -477,12 +501,22 @@
 						class="h-8 text-sm text-foreground"
 						autocomplete="off"
 						disabled={Boolean(initialRow)}
+						oninput={() => {
+							nameTouched = true;
+						}}
 					/>
 				</label>
 
 				<label class="grid gap-1.5 text-xs text-muted-foreground">
 					Title
-					<Input bind:value={title} class="h-8 text-sm text-foreground" autocomplete="off" />
+					<Input
+						bind:value={title}
+						class="h-8 text-sm text-foreground"
+						autocomplete="off"
+						oninput={() => {
+							titleTouched = true;
+						}}
+					/>
 				</label>
 			</div>
 

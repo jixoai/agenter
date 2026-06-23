@@ -37,6 +37,7 @@
 		heartbeatConfigError?: string | null;
 		heartbeatCompactPending?: boolean;
 		heartbeatCompactDisabled?: boolean;
+		heartbeatRepairVersion?: number;
 		sessionIconUrl?: string | null;
 		avatarLabel?: string;
 		onOpenRoom: (chatId: string) => void | Promise<void>;
@@ -69,6 +70,7 @@
 		heartbeatConfigError = null,
 		heartbeatCompactPending = false,
 		heartbeatCompactDisabled = false,
+		heartbeatRepairVersion = 0,
 		sessionIconUrl = null,
 		avatarLabel = session.avatar || session.name,
 		onOpenRoom,
@@ -108,7 +110,7 @@
 					onSaveConfig={onSaveHeartbeatConfig}
 				/>
 			{:else}
-				<RuntimeStageHeartbeatEmbed sessionId={session.id} {avatarLabel} />
+				<RuntimeStageHeartbeatEmbed sessionId={session.id} {avatarLabel} {heartbeatRepairVersion} />
 			{/if}
 		{:else if tab === 'attention'}
 			<RuntimeStageAttention

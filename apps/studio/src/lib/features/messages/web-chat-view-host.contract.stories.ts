@@ -306,17 +306,52 @@ export const EmbeddedReadIndicatorsStayBounded = {
       );
       expect(indicators.length).toBeGreaterThan(0);
       for (const indicator of indicators.slice(0, 5)) {
+        const actionTrigger = indicator.closest<HTMLElement>("[data-message-actions-trigger]");
+        expect(actionTrigger).not.toBeNull();
+        const actionRect = actionTrigger!.getBoundingClientRect();
+        expect(actionRect.width).toBeGreaterThanOrEqual(22);
+        expect(actionRect.width).toBeLessThanOrEqual(28);
+        expect(actionRect.height).toBeGreaterThanOrEqual(22);
+        expect(actionRect.height).toBeLessThanOrEqual(28);
         const rect = indicator.getBoundingClientRect();
         expect(rect.width).toBeGreaterThanOrEqual(16);
-        expect(rect.width).toBeLessThanOrEqual(26);
+        expect(rect.width).toBeLessThanOrEqual(30);
         expect(rect.height).toBeGreaterThanOrEqual(16);
-        expect(rect.height).toBeLessThanOrEqual(26);
+        expect(rect.height).toBeLessThanOrEqual(30);
         const ring = indicator.querySelector<SVGElement>(".message-read-ring");
         expect(ring).not.toBeNull();
         const ringRect = ring!.getBoundingClientRect();
-        expect(ringRect.width).toBeLessThanOrEqual(26);
-        expect(ringRect.height).toBeLessThanOrEqual(26);
+        expect(ringRect.width).toBeLessThanOrEqual(30);
+        expect(ringRect.height).toBeLessThanOrEqual(30);
+        expect(getComputedStyle(indicator).color).toBe("rgb(15, 118, 110)");
       }
+    });
+
+    const trigger = canvasElement.querySelector<HTMLElement>("[data-message-actions-trigger]");
+    expect(trigger).not.toBeNull();
+    trigger!.focus();
+    await waitFor(() => {
+      expect(containsVisibleTextDeep(document.body, "Unread")).toBe(true);
+      expect(containsVisibleTextDeep(document.body, "Bootstrap admin")).toBe(true);
+    });
+    const disclosure = document.body.querySelector<HTMLElement>("[data-testid='message-read-disclosure']");
+    expect(disclosure).not.toBeNull();
+    expect(disclosure!.classList.contains("message-read-disclosure-fallback")).toBe(true);
+    const disclosureOwner = disclosure!.closest<HTMLElement>("[data-view-key]");
+    expect(disclosureOwner).not.toBeNull();
+    expect(disclosureOwner!.contains(trigger)).toBe(true);
+    const disclosureRect = disclosure!.getBoundingClientRect();
+    expect(disclosureRect.width).toBeLessThanOrEqual(320);
+    const actorText = Array.from(
+      disclosure!.querySelectorAll<HTMLElement>(".message-read-actor-label, .message-read-actor-subtitle"),
+    );
+    expect(actorText.length).toBeGreaterThan(0);
+    for (const item of actorText) {
+      expect(item.scrollWidth).toBeLessThanOrEqual(item.clientWidth + 1);
+    }
+    trigger!.blur();
+    await waitFor(() => {
+      expect(document.body.querySelector(".message-read-disclosure")).toBeNull();
     });
   },
 } satisfies Story;

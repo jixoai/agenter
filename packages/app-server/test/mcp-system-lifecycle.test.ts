@@ -7,7 +7,7 @@ import { join } from "node:path";
 import { PassThrough } from "node:stream";
 
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
-import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { McpServer, ResourceTemplate } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 
 import { McpSystemStore } from "../src/mcp-system/store";
@@ -28,6 +28,8 @@ const createSystem = (input: {
   rootWorkspacePath?: string;
   envProvider?: () => Record<string, string>;
   inspectorSpawnFactory?: McpInspectorSpawnFactory;
+  discoverySettleMs?: number;
+  discoveryPollMs?: number;
 }): McpSystem => {
   const root = mkdtempSync(join(tmpdir(), "agenter-mcp-system-lifecycle-"));
   tempRoots.push(root);
@@ -41,6 +43,8 @@ const createSystem = (input: {
     envProvider: input.envProvider,
     transportFactory: input.transportFactory,
     inspectorSpawnFactory: input.inspectorSpawnFactory,
+    discoverySettleMs: input.discoverySettleMs ?? 0,
+    discoveryPollMs: input.discoveryPollMs ?? 25,
   });
 };
 
@@ -172,6 +176,79 @@ const createFixtureTransportFactory = () => {
     return clientTransport;
   };
   return { factory, starts, servers };
+};
+
+const createDelayedResourceTransportFactory = () => {
+  const starts: McpTransportStartContext[] = [];
+  const servers: McpServer[] = [];
+  const timers: Array<ReturnType<typeof setTimeout>> = [];
+  const factory = (context: McpTransportStartContext): InMemoryTransport => {
+    starts.push(context);
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+    const server = new McpServer({
+      name: `delayed-${context.name}`,
+      version: "1.0.0",
+    });
+    server.registerResource(
+      "playground-link-ui",
+      "ui://fixture/playground-link",
+      {
+        title: "Fixture MCP App",
+        description: "Fixture MCP Apps resource",
+      },
+      async (uri) => ({
+        contents: [
+          {
+            uri: uri.href,
+            mimeType: "text/html;profile=mcp-app",
+            text: "<!doctype html><html><body><main>Fixture MCP App</main></body></html>",
+          },
+        ],
+      }),
+    );
+    timers.push(
+      setTimeout(() => {
+        server.registerResource(
+          "Fixture-Doc-Section",
+          new ResourceTemplate("fixture://{/slug*}.md", {
+            list: async () => ({
+              resources: [
+                {
+                  name: "docs/overview",
+                  title: "Overview",
+                  uri: "fixture://docs/overview.md",
+                  description: "Delayed fixture docs section",
+                },
+              ],
+            }),
+          }),
+          {
+            title: "A single fixture documentation section",
+            description: "Delayed fixture resource template",
+          },
+          async (uri) => ({
+            contents: [
+              {
+                uri: uri.href,
+                mimeType: "text/markdown",
+                text: "# Overview\n",
+              },
+            ],
+          }),
+        );
+      }, 40),
+    );
+    servers.push(server);
+    void server.connect(serverTransport);
+    return clientTransport;
+  };
+  const close = async (): Promise<void> => {
+    for (const timer of timers.splice(0)) {
+      clearTimeout(timer);
+    }
+    await Promise.all(servers.map((server) => server.close().catch(() => undefined)));
+  };
+  return { factory, starts, servers, close };
 };
 
 const createFakeInspectorProcess = (): ChildProcessWithoutNullStreams & {
@@ -434,6 +511,36 @@ describe("Feature: mcpSystem lifecycle", () => {
     }
   });
 
+  test("Scenario: Given delayed resource registration When probe opens Then discovery waits for a stable resource snapshot", async () => {
+    const fixture = createDelayedResourceTransportFactory();
+    const system = createSystem({
+      transportFactory: fixture.factory,
+      discoverySettleMs: 250,
+      discoveryPollMs: 25,
+    });
+    try {
+      const open = await system.probe({
+        action: "open",
+        name: "delayed-docs",
+        projectPath: "/repo/app",
+        transport: {
+          kind: "stdio",
+          command: "fixture",
+        },
+      });
+      const snapshot = readRecord(readRecord(open.parsed).snapshot);
+
+      expect(open.exitCode).toBe(0);
+      expect(JSON.stringify(snapshot.resources)).toContain("ui://fixture/playground-link");
+      expect(JSON.stringify(snapshot.resources)).toContain("fixture://docs/overview.md");
+      expect(JSON.stringify(snapshot.resourceTemplates)).toContain("fixture://{/slug*}.md");
+      expect(fixture.starts).toHaveLength(1);
+    } finally {
+      system.close();
+      await fixture.close();
+    }
+  });
+
   test("Scenario: Given an unsaved MCP draft When app-server hosts an MCP App resource Then the lease owns an isolated protocol session", async () => {
     const fixture = createFixtureTransportFactory();
     const system = createSystem({ transportFactory: fixture.factory });
@@ -615,6 +722,48 @@ describe("Feature: mcpSystem lifecycle", () => {
       expect(closed.state).toBe("closed");
       expect(fakeInspectorProcess.killedSignal).toBe("SIGTERM");
       expect(JSON.stringify(events)).toContain("snapshot");
+    } finally {
+      system.close();
+      await Promise.all(fixture.servers.map((server) => server.close().catch(() => undefined)));
+    }
+  });
+
+  test("Scenario: Given a failed inspector session When the lease is released Then the failed process still gets cleaned up", async () => {
+    const fixture = createFixtureTransportFactory();
+    const fakeInspectorProcess = createFakeInspectorProcess();
+    const system = createSystem({
+      transportFactory: fixture.factory,
+      inspectorSpawnFactory: () => fakeInspectorProcess,
+    });
+    try {
+      const started = await system.inspectorStart({
+        name: "memory",
+        projectPath: "/repo/app",
+        transport: {
+          kind: "stdio",
+          command: "fixture",
+          args: ["--stdio"],
+        },
+      });
+      const configIndex = started.args.indexOf("--config");
+      const configPath = started.args[configIndex + 1];
+      if (!configPath) {
+        throw new Error("expected inspector config path");
+      }
+
+      fakeInspectorProcess.emit("error", new Error("network closed"));
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(system.inspectorSnapshot({ sessionId: started.sessionId }).state).toBe("failed");
+
+      const releaseLease = system.attachInspectorLease(started.leaseId, () => undefined);
+      releaseLease();
+
+      await waitUntil(
+        () => system.inspectorSnapshot({ sessionId: started.sessionId }).state === "closed",
+        "expected failed inspector lease release to close session",
+      );
+      expect(fakeInspectorProcess.killedSignal).toBe("SIGTERM");
+      expect(existsSync(configPath)).toBe(false);
     } finally {
       system.close();
       await Promise.all(fixture.servers.map((server) => server.close().catch(() => undefined)));

@@ -10,6 +10,8 @@
 	import { Badge } from '$lib/components/ui/badge/index.js';
 	import NoticeBanner from '$lib/components/ui/notice-banner.svelte';
 
+	import McpSkeletons from './mcp-skeletons.svelte';
+
 	let {
 		startInput,
 		title = 'MCP App',
@@ -128,9 +130,7 @@
 				data-testid="mcp-config-inspect-app-iframe"
 			></iframe>
 		{:else}
-			<div class="flex min-h-[20rem] items-center justify-center text-xs text-muted-foreground">
-				Preparing preview
-			</div>
+			<McpSkeletons rows={1} variant="app-preview" data-testid="mcp-app-preview-skeleton" />
 		{/if}
 	</div>
 {/if}

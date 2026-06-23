@@ -6,8 +6,8 @@
 		RuntimeAttentionState,
 		RuntimeChatCycle,
 	} from '@agenter/client-sdk';
+	import { MarkdownPreviewContent } from '@jixo/codemirror';
 
-	import MarkdownDocument from '$lib/components/web-components/markdown-document.svelte';
 	import JSONViewer from '$lib/components/web-components/json-viewer.svelte';
 	import { Badge } from '$lib/components/ui/badge/index.js';
 	import * as Item from '$lib/components/ui/item/index.js';
@@ -531,11 +531,10 @@
 											System prompt
 										</div>
 										{#if selectedCycleDetail.modelConfig.systemPrompt.length > 0}
-											<MarkdownDocument
+											<MarkdownPreviewContent
 												value={selectedCycleDetail.modelConfig.systemPrompt}
-												usage="inspector"
-												surface="muted"
-												padding="none"
+												tone="viewer"
+												class="min-w-0"
 											/>
 										{:else}
 											<div class="text-sm text-muted-foreground">No system prompt snapshot was retained.</div>

@@ -1,13 +1,14 @@
 <script lang="ts">
-import PanelRightOpenIcon from '@lucide/svelte/icons/panel-right-open';
-import PlusIcon from '@lucide/svelte/icons/plus';
-import { ScrollView } from '@agenter/svelte-components';
+	import { ScrollView } from '@agenter/svelte-components';
+	import PanelRightOpenIcon from '@lucide/svelte/icons/panel-right-open';
+	import PlusIcon from '@lucide/svelte/icons/plus';
 
 	import { getAppControllerContext } from '$lib/app/controller-context';
 	import ProfileAvatar from '$lib/components/profile-avatar.svelte';
 	import { Badge } from '$lib/components/ui/badge/index.js';
 	import { Button } from '$lib/components/ui/button/index.js';
 	import NoticeBanner from '$lib/components/ui/notice-banner.svelte';
+	import AvatarLoadingSkeleton from '$lib/features/avatars/avatar-loading-skeleton.svelte';
 	import { resolveAvatarDisplayName, resolveAvatarHandle } from '$lib/features/avatars/avatar-identity-presentation';
 	import WorkbenchDetailDrawer from '$lib/features/navigation/workbench-detail-drawer.svelte';
 	import WorkbenchPageContent from '$lib/features/navigation/workbench-page-content.svelte';
@@ -35,6 +36,8 @@ import { ScrollView } from '@agenter/svelte-components';
 	const selectedEntry = $derived(
 		avatarItems.find((entry) => entry.nickname === selectedAvatarNickname) ?? avatarItems[0] ?? null,
 	);
+	const loadingWithoutData = $derived(loading && avatarItems.length === 0);
+	const refreshingWithData = $derived(loading && avatarItems.length > 0);
 
 	$effect(() => {
 		if (loading || avatarItems.length > 0 || error) {
@@ -98,6 +101,15 @@ import { ScrollView } from '@agenter/svelte-components';
 							Choose one avatar, inspect its workspace-grouped avatar-private skill roots, then open a dedicated avatar tab for full file browsing.
 						</p>
 					</div>
+					{#if refreshingWithData}
+						<div
+							class="inline-flex shrink-0 items-center gap-2 rounded-full border border-border/60 bg-background/72 px-2.5 py-1 text-[11px] font-medium text-muted-foreground"
+							data-testid="skills-avatar-overview-refreshing"
+						>
+							<span class="size-1.5 rounded-full bg-amber-500"></span>
+							Refreshing
+						</div>
+					{/if}
 					{#if detailCompact && selectedEntry}
 						<Button variant="outline" size="sm" onclick={() => (detailOpen = true)}>
 							<PanelRightOpenIcon class="size-4" />
@@ -107,8 +119,8 @@ import { ScrollView } from '@agenter/svelte-components';
 				</div>
 
 				<ScrollView class="h-full" contentClass="grid gap-0 border-y border-border/50">
-					{#if loading}
-						<div class="px-4 py-6 text-sm text-muted-foreground">Loading avatar catalog…</div>
+					{#if loadingWithoutData}
+						<AvatarLoadingSkeleton variant="catalog-list" />
 					{:else if error}
 						<div class="px-4 py-6">
 							<NoticeBanner tone="warning" message={error} />
@@ -167,7 +179,9 @@ import { ScrollView } from '@agenter/svelte-components';
 					{/if}
 				{/snippet}
 
-				{#if !selectedEntry}
+				{#if loadingWithoutData}
+					<AvatarLoadingSkeleton variant="catalog-detail" />
+				{:else if !selectedEntry}
 					<NoticeBanner tone="info" message="Select one avatar to inspect its skill groups." />
 				{:else}
 					<div class="grid gap-4">

@@ -55,6 +55,9 @@
 			iconUrl: viewer.iconUrl,
 		})),
 	);
+
+	const noopRepairHeartbeatProjections = (): void => {};
+	const noopClearHeartbeatSession = (): void => {};
 </script>
 
 <svelte:head>
@@ -92,6 +95,8 @@
 						onToggleRuntime={() => {
 							runtimeRunning = !runtimeRunning;
 						}}
+						onRepairHeartbeatRecordProjectionHealth={noopRepairHeartbeatProjections}
+						onClearHeartbeatSession={noopClearHeartbeatSession}
 					/>
 				</div>
 				<div class="toolbar-preview__body">
@@ -120,6 +125,8 @@
 						onToggleRuntime={() => {
 							runtimeRunning = !runtimeRunning;
 						}}
+						onRepairHeartbeatRecordProjectionHealth={noopRepairHeartbeatProjections}
+						onClearHeartbeatSession={noopClearHeartbeatSession}
 					/>
 				</div>
 				<div class="toolbar-preview__body">Click the overflow trigger to inspect the floated panel state.</div>

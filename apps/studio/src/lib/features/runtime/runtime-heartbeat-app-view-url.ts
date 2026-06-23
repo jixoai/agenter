@@ -8,12 +8,26 @@ export interface HeartbeatRecordSelectMessage {
 
 const encodePathSegment = (value: string | number): string => encodeURIComponent(String(value));
 
-export const buildHeartbeatListAppViewUrl = (runtimeId: string): string =>
-  `/heartbeat-view/${encodePathSegment(runtimeId)}`;
+const appendRefreshParam = (url: string, refreshVersion?: number): string => {
+  if (!refreshVersion) {
+    return url;
+  }
+  return `${url}?refresh=${encodeURIComponent(String(refreshVersion))}`;
+};
 
-export const buildHeartbeatDetailAppViewUrl = (input: { runtimeId: string; recordId: number | null }): string => {
+export const buildHeartbeatListAppViewUrl = (runtimeId: string, refreshVersion?: number): string =>
+  appendRefreshParam(`/heartbeat-view/${encodePathSegment(runtimeId)}`, refreshVersion);
+
+export const buildHeartbeatDetailAppViewUrl = (input: {
+  runtimeId: string;
+  recordId: number | null;
+  refreshVersion?: number;
+}): string => {
   const base = `/heartbeat-view/${encodePathSegment(input.runtimeId)}/records`;
-  return input.recordId === null ? base : `${base}/${encodePathSegment(input.recordId)}`;
+  return appendRefreshParam(
+    input.recordId === null ? base : `${base}/${encodePathSegment(input.recordId)}`,
+    input.refreshVersion,
+  );
 };
 
 export const isHeartbeatRecordSelectMessage = (value: unknown): value is HeartbeatRecordSelectMessage => {
