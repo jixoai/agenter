@@ -1,3 +1,4 @@
+import { Database } from "bun:sqlite";
 import { afterEach, describe, expect, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -7,11 +8,13 @@ import { SessionDb } from "../src/session-db";
 
 const tempDirs: string[] = [];
 
-const createDb = () => {
+const createDbFile = () => {
   const dir = mkdtempSync(join(tmpdir(), "agenter-session-db-"));
   tempDirs.push(dir);
-  return new SessionDb(join(dir, "session.db"));
+  return join(dir, "session.db");
 };
+
+const createDb = () => new SessionDb(createDbFile());
 
 afterEach(() => {
   while (tempDirs.length > 0) {
@@ -22,8 +25,8 @@ afterEach(() => {
   }
 });
 
-describe("Feature: session-system AI-call ledger persistence", () => {
-  test("Scenario: Given mixed message_part ai_call compact and config facts When heartbeat records rebuild Then record count ordering kind timestamps preview and source refs are deterministic", () => {
+describe("Feature: session-system persistence", () => {
+  test("Scenario: Given mixed message_part ai_call compact and config facts When heartbeat records refresh Then record count ordering kind timestamps preview and source refs are deterministic", () => {
     const db = createDb();
     try {
       db.upsertMessage({
@@ -105,7 +108,7 @@ describe("Feature: session-system AI-call ledger persistence", () => {
         responseMessageIds: ["compact-response-1"],
       });
 
-      db.rebuildHeartbeatRecords();
+      db.refreshHeartbeatRecords();
 
       const page = db.pageHeartbeatRecords({ pageSize: 10, anchor: { kind: "latest" } });
       expect(page.totalRecords).toBe(3);
@@ -138,7 +141,142 @@ describe("Feature: session-system AI-call ledger persistence", () => {
     }
   });
 
-  test("Scenario: Given heartbeat record projection exists When source facts are unchanged Then the record page reads the materialized table without forced rebuild", () => {
+  test("Scenario: Given 106 synthetic model compact and config facts When heartbeat records refresh Then the materialized projection stays append-stable and ordered by started_at asc id asc", () => {
+    const db = createDb();
+    try {
+      const seedCount = 106;
+      for (let index = 0; index < seedCount; index += 1) {
+        const startedAt = Date.UTC(2026, 0, 1) + index * 1_000;
+        const bucket = index % 3;
+
+        if (bucket === 0) {
+          const call = db.appendAiCall({
+            roundIndex: index + 1,
+            kind: "chat",
+            status: "done",
+            provider: "openai",
+            model: `gpt-test-${String(index).padStart(3, "0")}`,
+            requestUrl: "https://api.example.test/v1/responses",
+            requestBody: {
+              model: "gpt-test",
+              meta: { batch: Math.floor(index / 3), variant: "model_call" },
+            },
+            createdAt: startedAt,
+            updatedAt: startedAt + 900,
+            completedAt: startedAt + 900,
+            isComplete: true,
+          });
+          db.upsertMessage({
+            messageId: `seed-model-${index}-request`,
+            aiCallId: call.id,
+            roundIndex: index + 1,
+            scope: "heartbeat_part",
+            role: "user",
+            createdAt: startedAt,
+            updatedAt: startedAt + 20,
+            parts: [{ partType: "text", payload: { content: `request ${index}` } }],
+          });
+          db.upsertMessage({
+            messageId: `seed-model-${index}-response`,
+            aiCallId: call.id,
+            roundIndex: index + 1,
+            scope: "heartbeat_part",
+            role: "assistant",
+            createdAt: startedAt + 100,
+            updatedAt: startedAt + 900,
+            parts: [
+              { partType: "thinking", payload: { content: `thinking ${index}` } },
+              { partType: "tool_call", payload: { name: "workspace_read", arguments: { path: `docs/${index}.md` } } },
+              { partType: "text", payload: { content: `response ${index}` } },
+            ],
+          });
+          db.updateAiCall(call.id, {
+            requestMessageIds: [`seed-model-${index}-request`],
+            responseMessageIds: [`seed-model-${index}-response`],
+          });
+          continue;
+        }
+
+        if (bucket === 1) {
+          const call = db.appendAiCall({
+            roundIndex: index + 1,
+            kind: "compact",
+            status: "done",
+            provider: "openai",
+            model: `gpt-test-${String(index).padStart(3, "0")}`,
+            requestUrl: "https://api.example.test/v1/responses",
+            requestBody: {
+              model: "gpt-test",
+              compact: { batch: Math.floor(index / 3) },
+            },
+            createdAt: startedAt,
+            updatedAt: startedAt + 700,
+            completedAt: startedAt + 700,
+            isComplete: true,
+          });
+          db.upsertMessage({
+            messageId: `seed-compact-${index}-response`,
+            aiCallId: call.id,
+            roundIndex: index + 1,
+            scope: "heartbeat_part",
+            role: "assistant",
+            createdAt: startedAt + 400,
+            updatedAt: startedAt + 700,
+            parts: [
+              { partType: "compact", payload: { content: { batch: Math.floor(index / 3), kind: "compact" } } },
+              { partType: "text", payload: { content: `compact ${index}` } },
+            ],
+          });
+          db.updateAiCall(call.id, {
+            responseMessageIds: [`seed-compact-${index}-response`],
+          });
+          continue;
+        }
+
+        db.upsertMessage({
+          messageId: `seed-config-${index}`,
+          roundIndex: index + 1,
+          scope: "request_aux",
+          role: "config",
+          createdAt: startedAt,
+          updatedAt: startedAt + 50,
+          parts: [
+            {
+              partType: "config",
+              payload: {
+                thinking: index % 2 === 0,
+                maxToken: 4_096 + index,
+                topK: index % 5 === 0 ? 3 : 1,
+              },
+            },
+          ],
+        });
+      }
+
+      db.refreshHeartbeatRecords();
+      const page = db.pageHeartbeatRecords({ pageSize: 200, pageCount: 2, anchor: { kind: "latest" } });
+
+      expect(page.totalRecords).toBe(seedCount);
+      expect(page.latestRecordId).toBe(page.records.at(-1)?.id ?? null);
+      expect(page.records.map((record) => record.startedAt)).toEqual(
+        [...page.records.map((record) => record.startedAt)].sort((left, right) => left - right),
+      );
+      expect(page.records.slice(0, 6).map((record) => record.kind)).toEqual([
+        "model_call",
+        "compact",
+        "config",
+        "model_call",
+        "compact",
+        "config",
+      ]);
+      expect(page.records.at(-1)?.kind).toBe("model_call");
+      expect(page.records.at(-1)?.previewText).toBe(`response ${seedCount - 1}`);
+    } finally {
+      db.close();
+    }
+  });
+
+  test("Scenario: Given heartbeat record projection exists When source facts are unchanged Then the record page reads the materialized table without forced refresh", () => {
     const db = createDb();
     try {
       const call = db.appendAiCall({
@@ -237,7 +375,7 @@ describe("Feature: session-system AI-call ledger persistence", () => {
         });
         db.updateAiCall(call.id, { responseMessageIds: [`response-${index}`] });
       }
-      db.rebuildHeartbeatRecords();
+      db.refreshHeartbeatRecords();
 
       const latest = db.pageHeartbeatRecords({ pageSize: 2, anchor: { kind: "latest" } });
       expect(latest.pageIndex).toBe(2);
@@ -275,7 +413,7 @@ describe("Feature: session-system AI-call ledger persistence", () => {
         parts: [{ partType: "text", payload: { content: "record 6" } }],
       });
       db.updateAiCall(sixth.id, { responseMessageIds: ["response-6"] });
-      db.rebuildHeartbeatRecords();
+      db.refreshHeartbeatRecords();
 
       const fixedAfterInsert = db.pageHeartbeatRecords({
         pageSize: 2,
@@ -285,7 +423,385 @@ describe("Feature: session-system AI-call ledger persistence", () => {
       expect(fixedAfterInsert.newRecordsAvailable).toBe(true);
 
       const latestAfterInsert = db.pageHeartbeatRecords({ pageSize: 2, anchor: { kind: "latest" } });
-      expect(latestAfterInsert.records.map((record) => record.previewText)).toEqual(["record 3", "record 4", "record 5", "record 6"]);
+      expect(latestAfterInsert.records.map((record) => record.previewText)).toEqual([
+        "record 3",
+        "record 4",
+        "record 5",
+        "record 6",
+      ]);
+    } finally {
+      db.close();
+    }
+  });
+
+  test("Scenario: Given compact advances the prompt-window round When Heartbeat records refresh Then older AI-call facts remain inspectable", () => {
+    const db = createDb();
+    try {
+      for (let index = 0; index <= 2; index += 1) {
+        const call = db.appendAiCall({
+          roundIndex: index,
+          kind: index === 2 ? "compact" : "chat",
+          status: "done",
+          provider: "openai",
+          model: "gpt-5.1",
+          requestUrl: "https://api.example.test/v1/responses",
+          requestBody: { model: "gpt-5.1" },
+          createdAt: index * 100,
+          updatedAt: index * 100 + 20,
+          completedAt: index * 100 + 20,
+          isComplete: true,
+        });
+        db.upsertMessage({
+          messageId: `append-stable-response-${index}`,
+          aiCallId: call.id,
+          roundIndex: index,
+          scope: "heartbeat_part",
+          role: "assistant",
+          createdAt: index * 100 + 10,
+          updatedAt: index * 100 + 20,
+          parts: [{ partType: "text", payload: { content: `append stable ${index}` } }],
+        });
+        db.updateAiCall(call.id, { responseMessageIds: [`append-stable-response-${index}`] });
+      }
+
+      db.refreshHeartbeatRecords();
+      const beforeCompactRotation = db.pageHeartbeatRecords({ pageSize: 10, anchor: { kind: "latest" } });
+
+      const nextHead = db.bumpRound(500);
+      db.savePromptWindow({
+        createdAt: 500,
+        roundIndex: nextHead.currentRoundIndex,
+        messages: [{ role: "assistant", content: "compacted context" }],
+        setCurrent: true,
+      });
+      db.ensureHeartbeatRecordsFresh();
+
+      const afterCompactRotation = db.pageHeartbeatRecords({ pageSize: 10, anchor: { kind: "latest" } });
+      expect(db.listAiCalls().map((row) => row.roundIndex)).toEqual([0, 1, 2]);
+      expect(afterCompactRotation.totalRecords).toBe(3);
+      expect(afterCompactRotation.records.map((record) => record.previewText)).toEqual([
+        "append stable 0",
+        "append stable 1",
+        "append stable 2",
+      ]);
+      expect(afterCompactRotation.records.map((record) => record.id)).toEqual(
+        beforeCompactRotation.records.map((record) => record.id),
+      );
+
+      const oldestRecord = afterCompactRotation.records[0];
+      expect(oldestRecord).toBeDefined();
+      const oldestDetail = oldestRecord ? db.getHeartbeatRecordDetail(oldestRecord.id) : null;
+      expect(oldestDetail?.aiCalls.map((row) => row.roundIndex)).toEqual([0]);
+      expect(oldestDetail?.messages.map((row) => row.messageId)).toEqual(["append-stable-response-0"]);
+    } finally {
+      db.close();
+    }
+  });
+
+  test("Scenario: Given a stale Heartbeat projection row without source facts When records refresh Then normal refresh stays append-stable", () => {
+    const filePath = createDbFile();
+    let db: SessionDb | null = new SessionDb(filePath);
+    try {
+      const call = db.appendAiCall({
+        roundIndex: 0,
+        kind: "chat",
+        status: "done",
+        provider: "openai",
+        model: "gpt-5.1",
+        requestUrl: "https://api.example.test/v1/responses",
+        requestBody: { model: "gpt-5.1" },
+        createdAt: 100,
+        updatedAt: 120,
+        completedAt: 120,
+        isComplete: true,
+      });
+      db.upsertMessage({
+        messageId: "surviving-response",
+        aiCallId: call.id,
+        roundIndex: 0,
+        scope: "heartbeat_part",
+        role: "assistant",
+        createdAt: 110,
+        updatedAt: 120,
+        parts: [{ partType: "text", payload: { content: "surviving source fact" } }],
+      });
+      db.updateAiCall(call.id, { responseMessageIds: ["surviving-response"] });
+      db.refreshHeartbeatRecords();
+      db.close();
+      db = null;
+
+      const raw = new Database(filePath, { create: true, strict: true });
+      try {
+        raw
+          .query(
+            `insert into heartbeat_record (
+               record_key,
+               kind,
+               status,
+               primary_ai_call_id,
+               ai_call_ids_json,
+               source_refs_json,
+               feature_flags_json,
+               summary_json,
+               preview_text,
+               started_at,
+               updated_at,
+               completed_at,
+               is_complete
+             ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          )
+          .run(
+            "model_call:999999",
+            "model_call",
+            "completed",
+            999999,
+            JSON.stringify([999999]),
+            JSON.stringify([{ kind: "ai_call", id: 999999, role: "primary" }]),
+            JSON.stringify({}),
+            JSON.stringify({
+              provider: "ghost",
+              model: "ghost",
+              parts: [],
+              counts: { parts: 0, toolCalls: 0, toolResults: 0, errors: 0 },
+              firstFrameMs: null,
+              thinkingDurationMs: 0,
+            }),
+            "ghost projection",
+            50,
+            50,
+            50,
+            1,
+          );
+      } finally {
+        raw.close();
+      }
+
+      const reopened = new SessionDb(filePath);
+      try {
+        expect(reopened.pageHeartbeatRecords({ pageSize: 10, anchor: { kind: "latest" } }).totalRecords).toBe(2);
+        reopened.ensureHeartbeatRecordsFresh();
+
+        const page = reopened.pageHeartbeatRecords({ pageSize: 10, anchor: { kind: "latest" } });
+        expect(page.totalRecords).toBe(2);
+        expect(page.records.map((record) => record.previewText)).toEqual(["ghost projection", "surviving source fact"]);
+        expect(reopened.getAiCallById(999999)).toBeNull();
+      } finally {
+        reopened.close();
+      }
+    } finally {
+      db?.close();
+    }
+  });
+
+  test("Scenario: Given orphan Heartbeat projection rows When explicit projection repair runs Then only stale projection rows are deleted", () => {
+    const filePath = createDbFile();
+    let db: SessionDb | null = new SessionDb(filePath);
+    try {
+      const call = db.appendAiCall({
+        roundIndex: 0,
+        kind: "chat",
+        status: "done",
+        provider: "openai",
+        model: "gpt-5.1",
+        requestUrl: "https://api.example.test/v1/responses",
+        requestBody: { model: "gpt-5.1" },
+        createdAt: 100,
+        updatedAt: 120,
+        completedAt: 120,
+        isComplete: true,
+      });
+      db.upsertMessage({
+        messageId: "repair-surviving-response",
+        aiCallId: call.id,
+        roundIndex: 0,
+        scope: "heartbeat_part",
+        role: "assistant",
+        createdAt: 110,
+        updatedAt: 120,
+        parts: [{ partType: "text", payload: { content: "repair keeps source fact" } }],
+      });
+      db.updateAiCall(call.id, { responseMessageIds: ["repair-surviving-response"] });
+      db.refreshHeartbeatRecords();
+      db.close();
+      db = null;
+
+      const raw = new Database(filePath, { create: true, strict: true });
+      try {
+        raw
+          .query(
+            `insert into heartbeat_record (
+               record_key,
+               kind,
+               status,
+               primary_ai_call_id,
+               ai_call_ids_json,
+               source_refs_json,
+               feature_flags_json,
+               summary_json,
+               preview_text,
+               started_at,
+               updated_at,
+               completed_at,
+               is_complete
+             ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          )
+          .run(
+            "model_call:999999",
+            "model_call",
+            "completed",
+            999999,
+            JSON.stringify([999999]),
+            JSON.stringify([{ kind: "ai_call", id: 999999, role: "primary" }]),
+            JSON.stringify({}),
+            JSON.stringify({
+              provider: "ghost",
+              model: "ghost",
+              parts: [],
+              counts: { parts: 0, toolCalls: 0, toolResults: 0, errors: 0 },
+              firstFrameMs: null,
+              thinkingDurationMs: 0,
+            }),
+            "repair ghost projection",
+            50,
+            50,
+            50,
+            1,
+          );
+      } finally {
+        raw.close();
+      }
+
+      const reopened = new SessionDb(filePath);
+      try {
+        const before = reopened.inspectHeartbeatRecordProjectionHealth();
+        expect(before).toMatchObject({
+          totalRecords: 2,
+          missingPrimaryAiCallRecords: 1,
+        });
+        expect(before.orphanRecordIds).toHaveLength(1);
+
+        const result = reopened.repairHeartbeatRecordProjectionHealth();
+        expect(result.before).toEqual(before);
+        expect(result.deletedRecords).toBe(1);
+        expect(result.deletedRecordIds).toEqual(before.orphanRecordIds);
+        expect(result.after).toEqual({
+          totalRecords: 1,
+          missingPrimaryAiCallRecords: 0,
+          orphanRecordIds: [],
+        });
+        expect(reopened.getAiCallById(call.id)).not.toBeNull();
+        expect(reopened.getAiCallById(999999)).toBeNull();
+
+        const page = reopened.pageHeartbeatRecords({ pageSize: 10, anchor: { kind: "latest" } });
+        expect(page.records.map((record) => record.previewText)).toEqual(["repair keeps source fact"]);
+      } finally {
+        reopened.close();
+      }
+    } finally {
+      db?.close();
+    }
+  });
+
+  test("Scenario: Given Heartbeat source facts and prompt-window facts When clearHeartbeatSession runs Then session-local Heartbeat context facts are deleted", () => {
+    const db = createDb();
+    try {
+      db.setCurrentRoundIndex(7, 35);
+      db.savePromptWindow({
+        createdAt: 40,
+        roundIndex: 7,
+        messages: [{ role: "system", content: "old prompt window fact" }],
+        setCurrent: true,
+      });
+      db.upsertMessage({
+        messageId: "config-clear",
+        roundIndex: 1,
+        scope: "request_aux",
+        role: "config",
+        createdAt: 80,
+        updatedAt: 90,
+        parts: [{ partType: "config", payload: { content: { provider: "openai" } } }],
+      });
+      const call = db.appendAiCall({
+        roundIndex: 1,
+        kind: "chat",
+        status: "done",
+        provider: "openai",
+        model: "gpt-test",
+        requestUrl: "https://api.example.test/v1/responses",
+        requestBody: { model: "gpt-test" },
+        createdAt: 100,
+        updatedAt: 140,
+        completedAt: 140,
+        isComplete: true,
+      });
+      db.upsertMessage({
+        messageId: "clear-request",
+        aiCallId: call.id,
+        roundIndex: 1,
+        scope: "heartbeat_part",
+        role: "user",
+        createdAt: 100,
+        updatedAt: 105,
+        parts: [{ partType: "text", payload: { content: "clear request" } }],
+      });
+      db.upsertMessage({
+        messageId: "clear-response",
+        aiCallId: call.id,
+        roundIndex: 1,
+        scope: "heartbeat_part",
+        role: "assistant",
+        createdAt: 120,
+        updatedAt: 140,
+        parts: [{ partType: "text", payload: { content: "clear response" } }],
+      });
+      db.updateAiCall(call.id, {
+        requestMessageIds: ["clear-request"],
+        responseMessageIds: ["clear-response"],
+      });
+      db.appendEffectLedger({
+        effectId: "effect-clear-message",
+        actionId: "action-clear-message",
+        actionKind: "message_send",
+        actorId: "actor-clear",
+        cycleId: 7,
+        sessionModelCallId: call.id,
+        target: "room:clear",
+        effectKind: "message_row_created",
+        effectRecordId: "room:clear/1",
+        timestamp: 130,
+        meta: { chatId: "room:clear", messageId: 1 },
+      });
+      db.refreshHeartbeatRecords();
+
+      expect(db.pageHeartbeatRecords({ pageSize: 10, anchor: { kind: "latest" } }).totalRecords).toBe(2);
+
+      const result = db.clearHeartbeatSession();
+
+      expect(result).toEqual({
+        deletedAiCalls: 1,
+        deletedMessageParts: 4,
+        deletedHeartbeatMessageParts: 2,
+        deletedRequestAuxMessageParts: 1,
+        deletedPromptWindowMessageParts: 1,
+        deletedHeartbeatRecords: 2,
+        deletedAttentionDispatches: 0,
+        deletedAttentionReceipts: 0,
+        deletedEffectLedgerRecords: 1,
+        resetCurrentRoundIndex: true,
+        resetCurrentPromptWindow: true,
+        stoppedRuntime: false,
+        deletedAttentionFiles: 0,
+      });
+      expect(db.pageHeartbeatRecords({ pageSize: 10, anchor: { kind: "latest" } }).totalRecords).toBe(0);
+      expect(db.getAiCallById(call.id)).toBeNull();
+      expect(db.listMessagesByScope("heartbeat_part")).toEqual([]);
+      expect(db.listMessagesByScope("request_aux")).toEqual([]);
+      expect(db.listMessagesByScope("prompt_window")).toEqual([]);
+      expect(db.listEffectLedger()).toEqual([]);
+      expect(db.getHead()).toMatchObject({
+        currentRoundIndex: 0,
+        currentPromptWindowId: null,
+      });
     } finally {
       db.close();
     }
@@ -323,7 +839,7 @@ describe("Feature: session-system AI-call ledger persistence", () => {
     try {
       for (let index = 1; index <= 11; index += 1) {
         appendRecord(index);
-        db.rebuildHeartbeatRecords();
+        db.refreshHeartbeatRecords();
         if ([5, 6, 10, 11].includes(index)) {
           const page = db.pageHeartbeatRecords({ pageSize: 5, pageCount: 2, anchor: { kind: "latest" } });
           const expectedCount = index === 11 ? 6 : index;
@@ -416,7 +932,7 @@ describe("Feature: session-system AI-call ledger persistence", () => {
         responseMessageIds: ["second-response"],
       });
 
-      db.rebuildHeartbeatRecords();
+      db.refreshHeartbeatRecords();
 
       const page = db.pageHeartbeatRecords({ pageSize: 10, anchor: { kind: "latest" } });
       expect(page.records.map((record) => record.kind)).toEqual(["model_call", "model_call"]);
@@ -472,7 +988,7 @@ describe("Feature: session-system AI-call ledger persistence", () => {
         ],
       });
       db.updateAiCall(call.id, { responseMessageIds: ["tool-run"] });
-      db.rebuildHeartbeatRecords();
+      db.refreshHeartbeatRecords();
 
       const record = db.pageHeartbeatRecords({ pageSize: 1, anchor: { kind: "latest" } }).records[0]!;
       const detail = db.getHeartbeatRecordDetail(record.id);
@@ -500,8 +1016,8 @@ describe("Feature: session-system AI-call ledger persistence", () => {
         "provenance:",
         "  author: Gaubee",
         "  source: message",
-        "  src: \"room:walkthrough#8\"",
-        "summary: \"今天科技圈有什么新闻？\"",
+        '  src: "room:walkthrough#8"',
+        'summary: "今天科技圈有什么新闻？"',
         "change:",
         "  type: update",
         "  value: |",
@@ -548,7 +1064,7 @@ describe("Feature: session-system AI-call ledger persistence", () => {
         parts: [{ partType: "text", payload: { content: "Done." } }],
       });
       db.updateAiCall(call.id, { responseMessageIds: ["synthetic-response"] });
-      db.rebuildHeartbeatRecords();
+      db.refreshHeartbeatRecords();
 
       const record = db.pageHeartbeatRecords({ pageSize: 1, anchor: { kind: "latest" } }).records[0]!;
       const detail = db.getHeartbeatRecordDetail(record.id);
@@ -561,6 +1077,136 @@ describe("Feature: session-system AI-call ledger persistence", () => {
       expect(record.summary.parts[0]?.label).toBe(attentionItemsText);
     } finally {
       db.close();
+    }
+  });
+
+  test("Scenario: Given collected input older than the ai_call When heartbeat records refresh Then model-call list ordering starts at invocation time", () => {
+    const db = createDb();
+    try {
+      const call = db.appendAiCall({
+        roundIndex: 1,
+        kind: "chat",
+        status: "done",
+        provider: "openai",
+        model: "gpt-5.1",
+        requestUrl: "https://api.example.test/v1/responses",
+        requestBody: {
+          model: "gpt-5.1",
+          meta: {
+            collectedInputs: [
+              {
+                role: "user",
+                parts: [{ type: "text", text: "old prompt-window context" }],
+                meta: { createdAt: 100, updatedAt: 120 },
+              },
+            ],
+          },
+        },
+        createdAt: 1_000,
+        updatedAt: 1_180,
+        completedAt: 1_180,
+        isComplete: true,
+      });
+      db.upsertMessage({
+        messageId: "fresh-response",
+        aiCallId: call.id,
+        roundIndex: 1,
+        scope: "heartbeat_part",
+        role: "assistant",
+        createdAt: 1_120,
+        updatedAt: 1_180,
+        parts: [{ partType: "text", payload: { content: "fresh response" } }],
+      });
+      db.updateAiCall(call.id, { responseMessageIds: ["fresh-response"] });
+      db.refreshHeartbeatRecords();
+
+      const record = db.pageHeartbeatRecords({ pageSize: 10, anchor: { kind: "latest" } }).records[0]!;
+      expect(record.startedAt).toBe(call.createdAt);
+      expect(record.completedAt).toBe(call.completedAt);
+      expect(record.summary.firstFrameMs).toBe(120);
+      expect(record.summary.parts[0]).toMatchObject({
+        label: "old prompt-window context",
+        startedAt: 100,
+      });
+    } finally {
+      db.close();
+    }
+  });
+
+  test("Scenario: Given an existing model-call projection with old context start When heartbeat records are ensured fresh Then the row is updated without shrinking history", () => {
+    const filePath = createDbFile();
+    let db: SessionDb | null = new SessionDb(filePath);
+    try {
+      const call = db.appendAiCall({
+        roundIndex: 1,
+        kind: "chat",
+        status: "done",
+        provider: "openai",
+        model: "gpt-5.1",
+        requestUrl: "https://api.example.test/v1/responses",
+        requestBody: {
+          model: "gpt-5.1",
+          meta: {
+            collectedInputs: [
+              {
+                role: "user",
+                parts: [{ type: "text", text: "carried prompt-window fact" }],
+                meta: { createdAt: 100, updatedAt: 120 },
+              },
+            ],
+          },
+        },
+        createdAt: 1_000,
+        updatedAt: 1_180,
+        completedAt: 1_180,
+        isComplete: true,
+      });
+      db.upsertMessage({
+        messageId: "repair-start-response",
+        aiCallId: call.id,
+        roundIndex: 1,
+        scope: "heartbeat_part",
+        role: "assistant",
+        createdAt: 1_120,
+        updatedAt: 1_180,
+        parts: [{ partType: "text", payload: { content: "repaired response" } }],
+      });
+      db.updateAiCall(call.id, { responseMessageIds: ["repair-start-response"] });
+      db.refreshHeartbeatRecords();
+
+      const beforeRepair = db.pageHeartbeatRecords({ pageSize: 10, anchor: { kind: "latest" } }).records[0]!;
+      expect(beforeRepair.startedAt).toBe(1_000);
+      db.close();
+      db = null;
+
+      const raw = new Database(filePath, { create: true, strict: true });
+      try {
+        raw.query(`update heartbeat_record set started_at = ? where primary_ai_call_id = ?`).run(100, call.id);
+      } finally {
+        raw.close();
+      }
+
+      const reopened = new SessionDb(filePath);
+      try {
+        const dirty = reopened.pageHeartbeatRecords({ pageSize: 10, anchor: { kind: "latest" } }).records[0]!;
+        expect(dirty.id).toBe(beforeRepair.id);
+        expect(dirty.startedAt).toBe(100);
+
+        reopened.ensureHeartbeatRecordsFresh();
+
+        const repairedPage = reopened.pageHeartbeatRecords({ pageSize: 10, anchor: { kind: "latest" } });
+        expect(repairedPage.totalRecords).toBe(1);
+        expect(repairedPage.records[0]).toMatchObject({
+          id: beforeRepair.id,
+          primaryAiCallId: call.id,
+          startedAt: call.createdAt,
+          completedAt: call.completedAt,
+        });
+      } finally {
+        reopened.close();
+      }
+    } finally {
+      db?.close();
     }
   });
 
@@ -916,7 +1562,7 @@ describe("Feature: session-system AI-call ledger persistence", () => {
     }
   });
 
-  test("Scenario: Given AI calls across three rounds When pruning old rounds Then only current and previous rounds remain", () => {
+  test("Scenario: Given AI calls across multiple rounds When compact advances the prompt-window round Then all AI-call rows remain queryable", () => {
     const db = createDb();
     try {
       db.appendAiCall({
@@ -944,9 +1590,16 @@ describe("Feature: session-system AI-call ledger persistence", () => {
         requestBody: { round: 2 },
       });
 
-      db.pruneAiCallsBeforeRound(1);
+      const nextHead = db.bumpRound(300);
+      db.savePromptWindow({
+        createdAt: 300,
+        roundIndex: nextHead.currentRoundIndex,
+        messages: [{ role: "assistant", content: "compact seed" }],
+        setCurrent: true,
+      });
 
-      expect(db.listAiCalls().map((row) => row.roundIndex)).toEqual([1, 2]);
+      expect(db.getHead().currentRoundIndex).toBe(1);
+      expect(db.listAiCalls().map((row) => row.roundIndex)).toEqual([0, 1, 2]);
     } finally {
       db.close();
     }

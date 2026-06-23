@@ -216,6 +216,35 @@ export interface HeartbeatRecord {
   isComplete: boolean;
 }
 
+export interface HeartbeatRecordProjectionHealth {
+  totalRecords: number;
+  missingPrimaryAiCallRecords: number;
+  orphanRecordIds: number[];
+}
+
+export interface HeartbeatRecordProjectionRepairResult {
+  before: HeartbeatRecordProjectionHealth;
+  after: HeartbeatRecordProjectionHealth;
+  deletedRecordIds: number[];
+  deletedRecords: number;
+}
+
+export interface HeartbeatSessionClearResult {
+  deletedAiCalls: number;
+  deletedMessageParts: number;
+  deletedHeartbeatMessageParts: number;
+  deletedRequestAuxMessageParts: number;
+  deletedPromptWindowMessageParts: number;
+  deletedHeartbeatRecords: number;
+  deletedAttentionDispatches: number;
+  deletedAttentionReceipts: number;
+  deletedEffectLedgerRecords: number;
+  resetCurrentRoundIndex: boolean;
+  resetCurrentPromptWindow: boolean;
+  stoppedRuntime: boolean;
+  deletedAttentionFiles: number;
+}
+
 export type HeartbeatRecordPageAnchor =
   | { kind: "latest" }
   | { kind: "fixed"; pageIndex: number; latestRecordId?: number | null };

@@ -5,6 +5,7 @@ import {
   mkdirSync,
   readdirSync,
   readFileSync,
+  rmSync,
   statSync,
   watch,
   type FSWatcher,
@@ -99,6 +100,8 @@ import {
   type HeartbeatRecordDetail,
   type HeartbeatRecordPage,
   type HeartbeatRecordPageInput,
+  type HeartbeatRecordProjectionRepairResult,
+  type HeartbeatSessionClearResult,
   type ReversePage,
   type ReverseTimeCursor,
   type SessionAiCallRecord,
@@ -195,10 +198,10 @@ import type {
   McpAppServerStartInput,
   McpCallInput,
   McpDisableInput,
+  McpInspectInput,
   McpInspectorCloseInput,
   McpInspectorEvent,
   McpInspectorStartInput,
-  McpInspectInput,
   McpListInput,
   McpProbeInput,
   McpProjectInput,
@@ -3151,6 +3154,32 @@ export class AppKernel {
       return null;
     }
     return this.readHeartbeatRecordDetailFromDb(session.sessionRoot, recordId);
+  }
+
+  repairHeartbeatRecordProjectionHealth(sessionId: string): HeartbeatRecordProjectionRepairResult {
+    this.ensureSessionCatalogLoaded();
+    const session = this.sessions.get(sessionId);
+    if (!session) {
+      throw new Error(`session not found: ${sessionId}`);
+    }
+    return this.repairHeartbeatRecordProjectionHealthInDb(session.sessionRoot);
+  }
+
+  async clearHeartbeatSession(sessionId: string): Promise<HeartbeatSessionClearResult> {
+    this.ensureSessionCatalogLoaded();
+    const session = this.sessions.get(sessionId);
+    if (!session) {
+      throw new Error(`session not found: ${sessionId}`);
+    }
+    const runtime = this.runtimes.get(sessionId);
+    let stoppedRuntime = false;
+    if (runtime) {
+      await runtime.abort();
+      this.detachRuntime(sessionId);
+      this.sessions.update(sessionId, { status: "stopped", lastError: undefined });
+      stoppedRuntime = true;
+    }
+    return this.clearHeartbeatSessionInDb(session.sessionRoot, { stoppedRuntime });
   }
 
   pageRequestAuxMessages(
@@ -7097,6 +7126,75 @@ export class AppKernel {
     try {
       db.ensureHeartbeatRecordsFresh();
       return db.getHeartbeatRecordDetail(recordId);
+    } finally {
+      db.close();
+    }
+  }
+
+  private repairHeartbeatRecordProjectionHealthInDb(sessionRoot: string): HeartbeatRecordProjectionRepairResult {
+    const dbPath = join(sessionRoot, "session.db");
+    if (!existsSync(dbPath)) {
+      return {
+        before: { totalRecords: 0, missingPrimaryAiCallRecords: 0, orphanRecordIds: [] },
+        after: { totalRecords: 0, missingPrimaryAiCallRecords: 0, orphanRecordIds: [] },
+        deletedRecordIds: [],
+        deletedRecords: 0,
+      };
+    }
+    const db = new SessionDb(dbPath);
+    try {
+      return db.repairHeartbeatRecordProjectionHealth();
+    } finally {
+      db.close();
+    }
+  }
+
+  private countFilesUnderDir(dirPath: string): number {
+    if (!existsSync(dirPath)) {
+      return 0;
+    }
+    const stat = statSync(dirPath);
+    if (!stat.isDirectory()) {
+      return 1;
+    }
+    return readdirSync(dirPath).reduce((count, entry) => count + this.countFilesUnderDir(join(dirPath, entry)), 0);
+  }
+
+  private clearHeartbeatSessionInDb(
+    sessionRoot: string,
+    input: { stoppedRuntime?: boolean } = {},
+  ): HeartbeatSessionClearResult {
+    const dbPath = join(sessionRoot, "session.db");
+    const attentionRoot = join(sessionRoot, "attention-system");
+    const deletedAttentionFiles = this.countFilesUnderDir(attentionRoot);
+    if (deletedAttentionFiles > 0) {
+      rmSync(attentionRoot, { recursive: true, force: true });
+    }
+    if (!existsSync(dbPath)) {
+      return {
+        deletedAiCalls: 0,
+        deletedMessageParts: 0,
+        deletedHeartbeatMessageParts: 0,
+        deletedRequestAuxMessageParts: 0,
+        deletedPromptWindowMessageParts: 0,
+        deletedHeartbeatRecords: 0,
+        deletedAttentionDispatches: 0,
+        deletedAttentionReceipts: 0,
+        deletedEffectLedgerRecords: 0,
+        resetCurrentRoundIndex: false,
+        resetCurrentPromptWindow: false,
+        stoppedRuntime: input.stoppedRuntime ?? false,
+        deletedAttentionFiles,
+      };
+    }
+    const db = new SessionDb(dbPath);
+    try {
+      const result = db.clearHeartbeatSession();
+      return {
+        ...result,
+        stoppedRuntime: input.stoppedRuntime ?? false,
+        deletedAttentionFiles,
+      };
     } finally {
       db.close();
     }

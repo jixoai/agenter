@@ -1269,6 +1269,27 @@ const createMockClient = (input: {
     anchor?: HeartbeatRecordPageAnchorInput;
   }) => Promise<HeartbeatRecordsPageOutput>;
   heartbeatRecordDetailQuery?: (input: { sessionId: string; recordId: number }) => Promise<HeartbeatRecordDetailOutput>;
+  repairHeartbeatRecordProjectionHealthMutate?: (input: { sessionId: string }) => Promise<{
+    before: { totalRecords: number; missingPrimaryAiCallRecords: number; orphanRecordIds: number[] };
+    after: { totalRecords: number; missingPrimaryAiCallRecords: number; orphanRecordIds: number[] };
+    deletedRecordIds: number[];
+    deletedRecords: number;
+  }>;
+  clearHeartbeatSessionMutate?: (input: { sessionId: string }) => Promise<{
+    deletedAiCalls: number;
+    deletedMessageParts: number;
+    deletedHeartbeatMessageParts: number;
+    deletedRequestAuxMessageParts: number;
+    deletedPromptWindowMessageParts: number;
+    deletedHeartbeatRecords: number;
+    deletedAttentionDispatches: number;
+    deletedAttentionReceipts: number;
+    deletedEffectLedgerRecords: number;
+    resetCurrentRoundIndex: boolean;
+    resetCurrentPromptWindow: boolean;
+    stoppedRuntime: boolean;
+    deletedAttentionFiles: number;
+  }>;
   requestCompactMutate?: (input: { sessionId: string }) => Promise<{ ok: boolean }>;
   heartbeatPartsPageQuery?: (input: {
     sessionId: string;
@@ -1553,6 +1574,37 @@ const createMockClient = (input: {
         heartbeatRecordDetail: {
           query: async (payload: { sessionId: string; recordId: number }) =>
             input.heartbeatRecordDetailQuery ? await input.heartbeatRecordDetailQuery(payload) : null,
+        },
+        repairHeartbeatRecordProjectionHealth: {
+          mutate: async (payload: { sessionId: string }) =>
+            input.repairHeartbeatRecordProjectionHealthMutate
+              ? await input.repairHeartbeatRecordProjectionHealthMutate(payload)
+              : {
+                  before: { totalRecords: 0, missingPrimaryAiCallRecords: 0, orphanRecordIds: [] },
+                  after: { totalRecords: 0, missingPrimaryAiCallRecords: 0, orphanRecordIds: [] },
+                  deletedRecordIds: [],
+                  deletedRecords: 0,
+                },
+        },
+        clearHeartbeatSession: {
+          mutate: async (payload: { sessionId: string }) =>
+            input.clearHeartbeatSessionMutate
+              ? await input.clearHeartbeatSessionMutate(payload)
+              : {
+                  deletedAiCalls: 0,
+                  deletedMessageParts: 0,
+                  deletedHeartbeatMessageParts: 0,
+                  deletedRequestAuxMessageParts: 0,
+                  deletedPromptWindowMessageParts: 0,
+                  deletedHeartbeatRecords: 0,
+                  deletedAttentionDispatches: 0,
+                  deletedAttentionReceipts: 0,
+                  deletedEffectLedgerRecords: 0,
+                  resetCurrentRoundIndex: false,
+                  resetCurrentPromptWindow: false,
+                  stoppedRuntime: false,
+                  deletedAttentionFiles: 0,
+                },
         },
         heartbeatPartsPage: {
           query: async (payload: {
@@ -5475,6 +5527,253 @@ describe("Feature: runtime store synchronization", () => {
     });
   });
 
+  test("Scenario: Given orphan Heartbeat projection rows When explicit repair runs Then stale detail cache is cleared and latest records reload", async () => {
+    const retainedRecord = createHeartbeatRecord({
+      id: 710,
+      aiCallId: 71,
+      startedAt: 1_780_000_001_100,
+      updatedAt: 1_780_000_001_400,
+      previewText: "retained record",
+    });
+    const orphanRecord = createHeartbeatRecord({
+      id: 711,
+      aiCallId: 999_999,
+      startedAt: 1_780_000_001_500,
+      updatedAt: 1_780_000_001_800,
+      previewText: "orphan record",
+    });
+    const pageQueries: Array<{
+      sessionId: string;
+      pageSize?: number;
+      pageCount?: number;
+      anchor?: HeartbeatRecordPageAnchorInput;
+    }> = [];
+    const repairs: string[] = [];
+    const client = createMockClient({
+      snapshotQuery: async () => createSnapshot(795),
+      heartbeatRecordPageQuery: async (input) => {
+        pageQueries.push(input);
+        return createHeartbeatRecordPage([retainedRecord], {
+          pageSize: input.pageSize ?? 5,
+          pageCount: input.pageCount ?? 2,
+          totalRecords: 1,
+          latestRecordId: retainedRecord.id,
+          anchor: input.anchor ?? { kind: "latest" },
+        });
+      },
+      repairHeartbeatRecordProjectionHealthMutate: async (input) => {
+        repairs.push(input.sessionId);
+        return {
+          before: { totalRecords: 2, missingPrimaryAiCallRecords: 1, orphanRecordIds: [orphanRecord.id] },
+          after: { totalRecords: 1, missingPrimaryAiCallRecords: 0, orphanRecordIds: [] },
+          deletedRecordIds: [orphanRecord.id],
+          deletedRecords: 1,
+        };
+      },
+    });
+    const store = new RuntimeStore(client);
+    const state = store.getState();
+    state.heartbeatRecordsBySession["i-1"] = {
+      data: createHeartbeatRecordPage([retainedRecord, orphanRecord], {
+        totalRecords: 2,
+        latestRecordId: orphanRecord.id,
+        anchor: { kind: "fixed", pageIndex: 1, latestRecordId: orphanRecord.id },
+      }),
+      loaded: true,
+      loading: false,
+      refreshing: false,
+      error: null,
+      refreshedAt: 1_780_000_001_900,
+    };
+    state.heartbeatRecordDetailsBySession["i-1"] = {
+      [orphanRecord.id]: {
+        data: {
+          record: orphanRecord,
+          aiCalls: [],
+          messages: [],
+          sourceRefs: orphanRecord.sourceRefs,
+        },
+        loaded: true,
+        loading: false,
+        refreshing: false,
+        error: null,
+        refreshedAt: 1_780_000_002_000,
+      },
+    };
+
+    const result = await store.repairHeartbeatRecordProjectionHealth("i-1");
+
+    expect(result.deletedRecordIds).toEqual([orphanRecord.id]);
+    expect(repairs).toEqual(["i-1"]);
+    expect(pageQueries).toEqual([{ sessionId: "i-1", pageSize: 2, pageCount: 1, anchor: { kind: "latest" } }]);
+    expect(store.getState().heartbeatRecordDetailsBySession["i-1"]).toBeUndefined();
+    expect(store.getState().heartbeatRecordsBySession["i-1"]).toMatchObject({
+      loaded: true,
+      data: {
+        records: [retainedRecord],
+        totalRecords: 1,
+        latestRecordId: retainedRecord.id,
+        anchor: { kind: "latest" },
+      },
+    });
+  });
+
+  test("Scenario: Given cached Heartbeat facts When clearHeartbeatSession runs Then Heartbeat caches are dropped and latest records reload empty", async () => {
+    const retainedRecord = createHeartbeatRecord({
+      id: 810,
+      aiCallId: 81,
+      startedAt: 1_780_000_003_100,
+      updatedAt: 1_780_000_003_400,
+      previewText: "cached record",
+    });
+    const retainedGroup = createHeartbeatGroup({
+      id: 820,
+      groupId: "heartbeat-group:call:81",
+      aiCallId: 81,
+      createdAt: 1_780_000_003_100,
+      items: [
+        createHeartbeatEntry({
+          id: 821,
+          messageId: "heartbeat-part:cached",
+          aiCallId: 81,
+          createdAt: 1_780_000_003_100,
+          payload: { content: "cached heartbeat" },
+          text: "cached heartbeat",
+        }),
+      ],
+    });
+    const modelCall = createModelCallItem({
+      id: 81,
+      cycleId: 8,
+      status: "done",
+      provider: "openai",
+      model: "gpt-test",
+      createdAt: 1_780_000_003_100,
+      updatedAt: 1_780_000_003_400,
+    });
+    const pageQueries: Array<{
+      sessionId: string;
+      pageSize?: number;
+      pageCount?: number;
+      anchor?: HeartbeatRecordPageAnchorInput;
+    }> = [];
+    const clears: string[] = [];
+    const client = createMockClient({
+      snapshotQuery: async () => createSnapshot(796),
+      heartbeatRecordPageQuery: async (input) => {
+        pageQueries.push(input);
+        return createHeartbeatRecordPage([], {
+          pageSize: input.pageSize ?? 5,
+          pageCount: input.pageCount ?? 2,
+          totalRecords: 0,
+          latestRecordId: null,
+          anchor: input.anchor ?? { kind: "latest" },
+        });
+      },
+      clearHeartbeatSessionMutate: async (input) => {
+        clears.push(input.sessionId);
+        return {
+          deletedAiCalls: 1,
+          deletedMessageParts: 2,
+          deletedHeartbeatMessageParts: 1,
+          deletedRequestAuxMessageParts: 1,
+          deletedPromptWindowMessageParts: 0,
+          deletedHeartbeatRecords: 1,
+          deletedAttentionDispatches: 0,
+          deletedAttentionReceipts: 0,
+          deletedEffectLedgerRecords: 0,
+          resetCurrentRoundIndex: false,
+          resetCurrentPromptWindow: false,
+          stoppedRuntime: false,
+          deletedAttentionFiles: 0,
+        };
+      },
+    });
+    const store = new RuntimeStore(client);
+    const state = store.getState();
+    state.heartbeatGroupsBySession["i-1"] = {
+      data: [retainedGroup],
+      loaded: true,
+      loading: false,
+      refreshing: false,
+      error: null,
+      refreshedAt: 1_780_000_003_500,
+    };
+    state.heartbeatRecordsBySession["i-1"] = {
+      data: createHeartbeatRecordPage([retainedRecord], {
+        totalRecords: 1,
+        latestRecordId: retainedRecord.id,
+        anchor: { kind: "fixed", pageIndex: 0, latestRecordId: retainedRecord.id },
+      }),
+      loaded: true,
+      loading: false,
+      refreshing: false,
+      error: null,
+      refreshedAt: 1_780_000_003_600,
+    };
+    state.heartbeatRecordDetailsBySession["i-1"] = {
+      [retainedRecord.id]: {
+        data: {
+          record: retainedRecord,
+          aiCalls: [modelCall],
+          messages: [],
+          sourceRefs: retainedRecord.sourceRefs,
+        },
+        loaded: true,
+        loading: false,
+        refreshing: false,
+        error: null,
+        refreshedAt: 1_780_000_003_700,
+      },
+    };
+    state.modelCallsBySession["i-1"] = [modelCall];
+    state.requestAuxBySession["i-1"] = [
+      createHeartbeatEntry({
+        id: 822,
+        messageId: "request_aux:config:cached",
+        scope: "request_aux",
+        role: "config",
+        partType: "config",
+        createdAt: 1_780_000_003_000,
+        payload: { content: { provider: "openai" } },
+        text: "provider config",
+      }),
+    ];
+
+    const result = await store.clearHeartbeatSession("i-1");
+
+    expect(result).toEqual({
+      deletedAiCalls: 1,
+      deletedMessageParts: 2,
+      deletedHeartbeatMessageParts: 1,
+      deletedRequestAuxMessageParts: 1,
+      deletedPromptWindowMessageParts: 0,
+      deletedHeartbeatRecords: 1,
+      deletedAttentionDispatches: 0,
+      deletedAttentionReceipts: 0,
+      deletedEffectLedgerRecords: 0,
+      resetCurrentRoundIndex: false,
+      resetCurrentPromptWindow: false,
+      stoppedRuntime: false,
+      deletedAttentionFiles: 0,
+    });
+    expect(clears).toEqual(["i-1"]);
+    expect(pageQueries).toEqual([{ sessionId: "i-1", pageSize: 5, pageCount: 2, anchor: { kind: "latest" } }]);
+    expect(store.getState().heartbeatGroupsBySession["i-1"]).toBeUndefined();
+    expect(store.getState().heartbeatRecordDetailsBySession["i-1"]).toBeUndefined();
+    expect(store.getState().modelCallsBySession["i-1"]).toBeUndefined();
+    expect(store.getState().requestAuxBySession["i-1"]).toBeUndefined();
+    expect(store.getState().heartbeatRecordsBySession["i-1"]).toMatchObject({
+      loaded: true,
+      data: {
+        records: [],
+        totalRecords: 0,
+        latestRecordId: null,
+        anchor: { kind: "latest" },
+      },
+    });
+  });
+
   test("Scenario: Given grouped Heartbeat pages and live invalidation events When the store hydrates and reloads Then the Heartbeat groups stay ordered and refresh through the query path", async () => {
     let onData: ((event: unknown) => void) | undefined;
     const heartbeatCalls: Array<{ before?: { beforeTimeMs: number; beforeId: number }; limit?: number }> = [];
@@ -6811,7 +7110,12 @@ describe("Feature: runtime store synchronization", () => {
         },
       ]);
 
-      await store.sendFocusedMessageChannel("i-1", "review attachment", uploaded.map((item) => item.assetId), uploaded);
+      await store.sendFocusedMessageChannel(
+        "i-1",
+        "review attachment",
+        uploaded.map((item) => item.assetId),
+        uploaded,
+      );
 
       expect(sentPayloads).toHaveLength(1);
       expect(sentPayloads[0]?.sessionId).toBe("i-1");

@@ -1,3 +1,4 @@
+import { Database } from "bun:sqlite";
 import { afterEach, describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -16,9 +17,11 @@ import {
   type TerminalControlPlane,
 } from "@agenter/terminal-system";
 import { AppKernel, SessionDb, appRouter, createTrpcContext } from "../src";
+import type { AnyRuntimeEvent } from "../src/realtime-types";
 import { UsageAnalyticsDb } from "../src/usage-analytics-db";
 import { resolveUsageAnalyticsDbPathFromAvatarRoot } from "../src/usage-analytics-paths";
 import { GLOBAL_WORKSPACE_PATH } from "../src/workspace-target";
+import { createMockKernelHarness } from "../test-support/mock-kernel-harness";
 
 const tempDirs: string[] = [];
 const settleFilesystem = async (): Promise<void> => {
@@ -127,10 +130,264 @@ const createWalletAuthCaller = async (kernel: AppKernel) => {
   };
 };
 
+const seedHeartbeatRecords = (input: {
+  dbPath: string;
+  startAt: number;
+  recordCount: number;
+}): {
+  recordKeys: string[];
+} => {
+  const db = new SessionDb(input.dbPath);
+  try {
+    const recordKeys: string[] = [];
+    for (let index = 0; index < input.recordCount; index += 1) {
+      const kindIndex = index % 3;
+      if (kindIndex === 0) {
+        const call = db.appendAiCall({
+          roundIndex: index + 1,
+          kind: "chat",
+          status: "done",
+          provider: "openai",
+          model: `gpt-test-${String(index).padStart(3, "0")}`,
+          requestUrl: "https://api.example.test/v1/responses",
+          requestBody: {
+            model: "gpt-test",
+            meta: {
+              batch: Math.floor(index / 3),
+              flags: {
+                compact: false,
+                config: index % 9 === 0,
+              },
+            },
+          },
+          createdAt: input.startAt + index * 1_000,
+          updatedAt: input.startAt + index * 1_000 + 900,
+          completedAt: input.startAt + index * 1_000 + 900,
+          isComplete: true,
+        });
+        const requestMessageId = `seed-${index}-request`;
+        const responseMessageId = `seed-${index}-response`;
+        db.upsertMessage({
+          messageId: requestMessageId,
+          aiCallId: call.id,
+          roundIndex: index + 1,
+          scope: "heartbeat_part",
+          role: "user",
+          createdAt: input.startAt + index * 1_000,
+          updatedAt: input.startAt + index * 1_000 + 30,
+          parts: [
+            {
+              partType: "text",
+              payload: {
+                type: "text",
+                content: `structured request ${index}`,
+              },
+            },
+          ],
+        });
+        db.upsertMessage({
+          messageId: responseMessageId,
+          aiCallId: call.id,
+          roundIndex: index + 1,
+          scope: "heartbeat_part",
+          role: "assistant",
+          createdAt: input.startAt + index * 1_000 + 100,
+          updatedAt: input.startAt + index * 1_000 + 900,
+          parts: [
+            {
+              partType: "thinking",
+              payload: {
+                type: "thinking",
+                content: `reasoning block ${index}`,
+              },
+            },
+            {
+              partType: "tool_call",
+              payload: {
+                name: "workspace_read",
+                arguments: { path: `docs/${index}.md` },
+              },
+            },
+            {
+              partType: "text",
+              payload: {
+                type: "text",
+                content: `structured response ${index}`,
+              },
+            },
+          ],
+        });
+        db.updateAiCall(call.id, {
+          requestMessageIds: [requestMessageId],
+          responseMessageIds: [responseMessageId],
+        });
+        recordKeys.push(`heartbeat-record:model_call:${call.id}`);
+        continue;
+      }
+      if (kindIndex === 1) {
+        const call = db.appendAiCall({
+          roundIndex: index + 1,
+          kind: "compact",
+          status: "done",
+          provider: "openai",
+          model: `gpt-test-${String(index).padStart(3, "0")}`,
+          requestUrl: "https://api.example.test/v1/responses",
+          requestBody: {
+            model: "gpt-test",
+            compact: { mode: "bulk", batch: Math.floor(index / 3) },
+          },
+          createdAt: input.startAt + index * 1_000,
+          updatedAt: input.startAt + index * 1_000 + 700,
+          completedAt: input.startAt + index * 1_000 + 700,
+          isComplete: true,
+        });
+        const responseMessageId = `seed-${index}-compact-response`;
+        db.upsertMessage({
+          messageId: responseMessageId,
+          aiCallId: call.id,
+          roundIndex: index + 1,
+          scope: "heartbeat_part",
+          role: "assistant",
+          createdAt: input.startAt + index * 1_000 + 400,
+          updatedAt: input.startAt + index * 1_000 + 700,
+          parts: [
+            {
+              partType: "compact",
+              payload: {
+                type: "compact",
+                content: {
+                  before: [`seed-${index - 1}`],
+                  after: [`seed-${index}`],
+                },
+              },
+            },
+            {
+              partType: "text",
+              payload: {
+                type: "text",
+                content: `compact summary ${index}`,
+              },
+            },
+          ],
+        });
+        db.updateAiCall(call.id, {
+          responseMessageIds: [responseMessageId],
+        });
+        recordKeys.push(`heartbeat-record:compact:${call.id}`);
+        continue;
+      }
+
+      const messageId = `seed-config-${index}`;
+      db.upsertMessage({
+        messageId,
+        roundIndex: index + 1,
+        scope: "request_aux",
+        role: "config",
+        createdAt: input.startAt + index * 1_000,
+        updatedAt: input.startAt + index * 1_000 + 50,
+        parts: [
+          {
+            partType: "config",
+            payload: {
+              thinking: index % 2 === 0,
+              maxToken: 4_096 + index,
+              topK: index % 5 === 0 ? 3 : 1,
+            },
+          },
+        ],
+      });
+      recordKeys.push(`heartbeat-record:config:${messageId}`);
+    }
+    db.refreshHeartbeatRecords();
+    return { recordKeys };
+  } finally {
+    db.close();
+  }
+};
+
+const readHeartbeatRecordRows = (
+  dbPath: string,
+): Array<{
+  id: number;
+  recordKey: string;
+  kind: string;
+  startedAt: number;
+  updatedAt: number;
+  completedAt: number | null;
+  previewText: string | null;
+  sourceRefsJson: string;
+  summaryJson: string;
+  isComplete: number;
+}> => {
+  const db = new Database(dbPath, { strict: true });
+  try {
+    const rows = db
+      .query(
+        `select id,
+                record_key,
+                kind,
+                started_at,
+                updated_at,
+                completed_at,
+                preview_text,
+                source_refs_json,
+                summary_json,
+                is_complete
+         from heartbeat_record
+         order by started_at asc, id asc`,
+      )
+      .all() as Array<{
+      id: number;
+      record_key: string;
+      kind: string;
+      started_at: number;
+      updated_at: number;
+      completed_at: number | null;
+      preview_text: string | null;
+      source_refs_json: string;
+      summary_json: string;
+      is_complete: number;
+    }>;
+    return rows.map((row) => ({
+      id: row.id,
+      recordKey: row.record_key,
+      kind: row.kind,
+      startedAt: row.started_at,
+      updatedAt: row.updated_at,
+      completedAt: row.completed_at,
+      previewText: row.preview_text,
+      sourceRefsJson: row.source_refs_json,
+      summaryJson: row.summary_json,
+      isComplete: row.is_complete,
+    }));
+  } finally {
+    db.close();
+  }
+};
+
 type TestObservable<T> = {
   subscribe(observer: { next?: (value: T) => void; error?: (error: unknown) => void; complete?: () => void }): {
     unsubscribe(): void;
   };
+};
+
+const waitForEvent = async <T>(
+  read: () => T | Promise<T | null> | null,
+  input: {
+    label: string;
+    timeoutMs?: number;
+  },
+): Promise<T> => {
+  const timeoutMs = input.timeoutMs ?? 30_000;
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const value = await read();
+    if (value !== null) {
+      return value;
+    }
+    await new Promise<void>((resolve) => setTimeout(resolve, 25));
+  }
+  throw new Error(`timed out waiting for ${input.label}`);
 };
 
 describe("Feature: app-server trpc procedures", () => {
@@ -2465,6 +2722,499 @@ describe("Feature: app-server trpc procedures", () => {
     expect(page.items[2]?.items.map((row) => row.messageId)).toEqual(["config-2"]);
 
     await kernel.stop();
+  });
+
+  test("Scenario: Given mixed materialized Heartbeat facts When runtime heartbeatRecordPage is queried Then records stay ascending and latest is the tail row", async () => {
+    const root = makeTempDir();
+    const kernel = new AppKernel({
+      globalSessionRoot: join(root, "sessions"),
+      archiveSessionRoot: join(root, "archive", "sessions"),
+      workspacesPath: join(root, "workspaces.yaml"),
+      homeDir: join(root, "home"),
+    });
+    await kernel.start();
+    const { caller } = await createRootSuperadminCaller(kernel);
+
+    const created = await caller.session.create({
+      cwd: root,
+      name: "heartbeat-records",
+      autoStart: false,
+    });
+    const db = new SessionDb(join(created.session.sessionRoot, "session.db"));
+    try {
+      db.upsertMessage({
+        messageId: "record-config-1",
+        roundIndex: 1,
+        scope: "request_aux",
+        role: "config",
+        createdAt: 80,
+        updatedAt: 82,
+        parts: [{ partType: "config", payload: { temperature: 0.2 }, isComplete: true }],
+      });
+
+      const modelCall = db.appendAiCall({
+        roundIndex: 1,
+        kind: "chat",
+        status: "done",
+        provider: "openai",
+        model: "gpt-test",
+        requestUrl: "https://example.test/v1/responses",
+        requestBody: { model: "gpt-test" },
+        createdAt: 100,
+        updatedAt: 130,
+        completedAt: 130,
+        isComplete: true,
+      });
+      db.upsertMessage({
+        messageId: "record-model-response-1",
+        aiCallId: modelCall.id,
+        roundIndex: 1,
+        scope: "heartbeat_part",
+        role: "assistant",
+        createdAt: 120,
+        updatedAt: 130,
+        parts: [{ partType: "text", payload: { content: "model response" }, isComplete: true }],
+      });
+      db.updateAiCall(modelCall.id, { responseMessageIds: ["record-model-response-1"] });
+
+      const compactCall = db.appendAiCall({
+        roundIndex: 2,
+        kind: "compact",
+        status: "done",
+        provider: "openai",
+        model: "gpt-test",
+        requestUrl: "https://example.test/v1/responses",
+        requestBody: { model: "gpt-test" },
+        createdAt: 150,
+        updatedAt: 180,
+        completedAt: 180,
+        isComplete: true,
+      });
+      db.upsertMessage({
+        messageId: "record-compact-response-1",
+        aiCallId: compactCall.id,
+        roundIndex: 2,
+        scope: "heartbeat_part",
+        role: "assistant",
+        createdAt: 160,
+        updatedAt: 180,
+        parts: [{ partType: "text", payload: { content: "compact response" }, isComplete: true }],
+      });
+      db.updateAiCall(compactCall.id, { responseMessageIds: ["record-compact-response-1"] });
+    } finally {
+      db.close();
+    }
+
+    const page = await caller.runtime.heartbeatRecordPage({
+      sessionId: created.session.id,
+      pageSize: 5,
+      pageCount: 1,
+      anchor: { kind: "latest" },
+    });
+
+    expect(page.records.map((record) => record.kind)).toEqual(["config", "model_call", "compact"]);
+    expect(page.records.map((record) => record.startedAt)).toEqual([80, 100, 150]);
+    expect(page.latestRecordId).toBe(page.records.at(-1)?.id ?? null);
+    expect(page.totalRecords).toBe(3);
+
+    await kernel.stop();
+  });
+
+  test("Scenario: Given orphan Heartbeat projection rows When runtime repairHeartbeatRecordProjectionHealth is invoked Then only damaged projection rows are deleted", async () => {
+    const root = makeTempDir();
+    const kernel = new AppKernel({
+      globalSessionRoot: join(root, "sessions"),
+      archiveSessionRoot: join(root, "archive", "sessions"),
+      workspacesPath: join(root, "workspaces.yaml"),
+      homeDir: join(root, "home"),
+    });
+    await kernel.start();
+    try {
+      const { caller } = await createRootSuperadminCaller(kernel);
+      const created = await caller.session.create({
+        cwd: root,
+        name: "heartbeat-record-repair",
+        autoStart: false,
+      });
+      const dbPath = join(created.session.sessionRoot, "session.db");
+      const db = new SessionDb(dbPath);
+      try {
+        const modelCall = db.appendAiCall({
+          roundIndex: 1,
+          kind: "chat",
+          status: "done",
+          provider: "openai",
+          model: "gpt-test",
+          requestUrl: "https://example.test/v1/responses",
+          requestBody: { model: "gpt-test" },
+          createdAt: 100,
+          updatedAt: 130,
+          completedAt: 130,
+          isComplete: true,
+        });
+        db.upsertMessage({
+          messageId: "repair-model-response-1",
+          aiCallId: modelCall.id,
+          roundIndex: 1,
+          scope: "heartbeat_part",
+          role: "assistant",
+          createdAt: 120,
+          updatedAt: 130,
+          parts: [{ partType: "text", payload: { content: "surviving source fact" }, isComplete: true }],
+        });
+        db.updateAiCall(modelCall.id, { responseMessageIds: ["repair-model-response-1"] });
+        db.refreshHeartbeatRecords();
+      } finally {
+        db.close();
+      }
+
+      const raw = new Database(dbPath, { strict: true });
+      try {
+        raw
+          .query(
+            `insert into heartbeat_record (
+               record_key,
+               kind,
+               status,
+               primary_ai_call_id,
+               ai_call_ids_json,
+               source_refs_json,
+               feature_flags_json,
+               summary_json,
+               preview_text,
+               started_at,
+               updated_at,
+               completed_at,
+               is_complete
+             ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          )
+          .run(
+            "heartbeat-record:model_call:999999",
+            "model_call",
+            "completed",
+            999999,
+            JSON.stringify([999999]),
+            JSON.stringify([{ kind: "ai_call", id: 999999, role: "primary" }]),
+            JSON.stringify({}),
+            JSON.stringify({
+              provider: "ghost",
+              model: "ghost",
+              parts: [],
+              counts: { parts: 0, toolCalls: 0, toolResults: 0, errors: 0 },
+              firstFrameMs: null,
+              thinkingDurationMs: 0,
+            }),
+            "orphan projection",
+            140,
+            145,
+            145,
+            1,
+          );
+      } finally {
+        raw.close();
+      }
+
+      const result = await caller.runtime.repairHeartbeatRecordProjectionHealth({ sessionId: created.session.id });
+
+      expect(result.before).toMatchObject({
+        totalRecords: 2,
+        missingPrimaryAiCallRecords: 1,
+      });
+      expect(result.deletedRecords).toBe(1);
+      expect(result.deletedRecordIds).toEqual(result.before.orphanRecordIds);
+      expect(result.after).toEqual({
+        totalRecords: 1,
+        missingPrimaryAiCallRecords: 0,
+        orphanRecordIds: [],
+      });
+
+      const page = await caller.runtime.heartbeatRecordPage({
+        sessionId: created.session.id,
+        pageSize: 5,
+        pageCount: 1,
+        anchor: { kind: "latest" },
+      });
+      expect(page.totalRecords).toBe(1);
+      expect(page.records.map((record) => record.previewText)).toEqual(["surviving source fact"]);
+    } finally {
+      await kernel.stop();
+    }
+  });
+
+  test("Scenario: Given Heartbeat source facts prompt-window facts and attention files When runtime clearHeartbeatSession is invoked Then session-local Heartbeat context facts are deleted", async () => {
+    const root = makeTempDir();
+    const kernel = new AppKernel({
+      globalSessionRoot: join(root, "sessions"),
+      archiveSessionRoot: join(root, "archive", "sessions"),
+      workspacesPath: join(root, "workspaces.yaml"),
+      homeDir: join(root, "home"),
+    });
+    await kernel.start();
+    try {
+      const { caller } = await createRootSuperadminCaller(kernel);
+      const created = await caller.session.create({
+        cwd: root,
+        name: "heartbeat-session-clear",
+        autoStart: false,
+      });
+      const dbPath = join(created.session.sessionRoot, "session.db");
+      const attentionRoot = join(created.session.sessionRoot, "attention-system");
+      mkdirSync(attentionRoot, { recursive: true });
+      writeFileSync(join(attentionRoot, "state.json"), JSON.stringify({ version: 8, contexts: [] }));
+      writeFileSync(join(attentionRoot, "hash-aliases.json"), JSON.stringify({ version: 1, aliases: [] }));
+      const db = new SessionDb(dbPath);
+      try {
+        db.setCurrentRoundIndex(7, 35);
+        db.savePromptWindow({
+          createdAt: 40,
+          roundIndex: 7,
+          messages: [{ role: "system", content: "old prompt window fact" }],
+          setCurrent: true,
+        });
+        db.upsertMessage({
+          messageId: "clear-config-1",
+          roundIndex: 1,
+          scope: "request_aux",
+          role: "config",
+          createdAt: 80,
+          updatedAt: 90,
+          parts: [{ partType: "config", payload: { content: { provider: "openai" } }, isComplete: true }],
+        });
+        const modelCall = db.appendAiCall({
+          roundIndex: 1,
+          kind: "chat",
+          status: "done",
+          provider: "openai",
+          model: "gpt-test",
+          requestUrl: "https://example.test/v1/responses",
+          requestBody: { model: "gpt-test" },
+          createdAt: 100,
+          updatedAt: 140,
+          completedAt: 140,
+          isComplete: true,
+        });
+        db.upsertMessage({
+          messageId: "clear-model-request-1",
+          aiCallId: modelCall.id,
+          roundIndex: 1,
+          scope: "heartbeat_part",
+          role: "user",
+          createdAt: 100,
+          updatedAt: 105,
+          parts: [{ partType: "text", payload: { content: "clear request" }, isComplete: true }],
+        });
+        db.upsertMessage({
+          messageId: "clear-model-response-1",
+          aiCallId: modelCall.id,
+          roundIndex: 1,
+          scope: "heartbeat_part",
+          role: "assistant",
+          createdAt: 120,
+          updatedAt: 140,
+          parts: [{ partType: "text", payload: { content: "clear response" }, isComplete: true }],
+        });
+        db.updateAiCall(modelCall.id, {
+          requestMessageIds: ["clear-model-request-1"],
+          responseMessageIds: ["clear-model-response-1"],
+        });
+        db.appendEffectLedger({
+          effectId: "effect-clear-message",
+          actionId: "action-clear-message",
+          actionKind: "message_send",
+          actorId: "actor-clear",
+          cycleId: 7,
+          sessionModelCallId: modelCall.id,
+          target: "room:clear",
+          effectKind: "message_row_created",
+          effectRecordId: "room:clear/1",
+          timestamp: 130,
+          meta: { chatId: "room:clear", messageId: 1 },
+        });
+        db.refreshHeartbeatRecords();
+      } finally {
+        db.close();
+      }
+
+      const beforePage = await caller.runtime.heartbeatRecordPage({
+        sessionId: created.session.id,
+        pageSize: 5,
+        pageCount: 1,
+        anchor: { kind: "latest" },
+      });
+      expect(beforePage.totalRecords).toBe(2);
+
+      const result = await caller.runtime.clearHeartbeatSession({ sessionId: created.session.id });
+
+      expect(result).toEqual({
+        deletedAiCalls: 1,
+        deletedMessageParts: 4,
+        deletedHeartbeatMessageParts: 2,
+        deletedRequestAuxMessageParts: 1,
+        deletedPromptWindowMessageParts: 1,
+        deletedHeartbeatRecords: 2,
+        deletedAttentionDispatches: 0,
+        deletedAttentionReceipts: 0,
+        deletedEffectLedgerRecords: 1,
+        resetCurrentRoundIndex: true,
+        resetCurrentPromptWindow: true,
+        stoppedRuntime: false,
+        deletedAttentionFiles: 2,
+      });
+      const afterPage = await caller.runtime.heartbeatRecordPage({
+        sessionId: created.session.id,
+        pageSize: 5,
+        pageCount: 1,
+        anchor: { kind: "latest" },
+      });
+      expect(afterPage.totalRecords).toBe(0);
+      expect(afterPage.records).toEqual([]);
+
+      const reopened = new SessionDb(dbPath);
+      try {
+        expect(reopened.listAiCalls()).toEqual([]);
+        expect(reopened.listMessagesByScope("heartbeat_part")).toEqual([]);
+        expect(reopened.listMessagesByScope("request_aux")).toEqual([]);
+        expect(reopened.listMessagesByScope("prompt_window")).toEqual([]);
+        expect(reopened.listEffectLedger()).toEqual([]);
+        expect(reopened.getHead()).toMatchObject({
+          currentRoundIndex: 0,
+          currentPromptWindowId: null,
+        });
+        expect(existsSync(attentionRoot)).toBe(false);
+      } finally {
+        reopened.close();
+      }
+    } finally {
+      await kernel.stop();
+    }
+  });
+
+  test("Scenario: Given 100+ synthetic AI facts and one real runtime turn When runtime events subscribe and heartbeatRecordPage are queried Then the live push arrives and the materialized projection stays ordered", async () => {
+    const liveHarness = await createMockKernelHarness({ sessionName: "heartbeat-live-push" });
+
+    if (!liveHarness) {
+      throw new Error("expected mock kernel harness");
+    }
+
+    try {
+      const { caller } = await createRootSuperadminCaller(liveHarness.kernel);
+      const sessionRoot = liveHarness.session.sessionRoot;
+      const sessionId = liveHarness.session.id;
+      const beforeSeedPage = await caller.runtime.heartbeatRecordPage({
+        sessionId,
+        pageSize: 20,
+        pageCount: 2,
+        anchor: { kind: "latest" },
+      });
+      const seeded = seedHeartbeatRecords({
+        dbPath: join(sessionRoot, "session.db"),
+        startAt: Date.UTC(2026, 0, 1, 0, 0, 0),
+        recordCount: 106,
+      });
+      expect(seeded.recordKeys).toHaveLength(106);
+
+      const liveEvents: AnyRuntimeEvent[] = [];
+      const subscription = (await caller.runtime.events({ afterEventId: 0 })).subscribe({
+        next: (event) => {
+          liveEvents.push(event);
+        },
+      });
+
+      try {
+        const initialPage = await caller.runtime.heartbeatRecordPage({
+          sessionId,
+          pageSize: 20,
+          pageCount: 2,
+          anchor: { kind: "latest" },
+        });
+        expect(initialPage.totalRecords).toBeGreaterThan(beforeSeedPage.totalRecords);
+        expect(initialPage.records.map((record) => record.startedAt)).toEqual(
+          [...initialPage.records.map((record) => record.startedAt)].sort((left, right) => left - right),
+        );
+        expect(initialPage.latestRecordId).toBe(initialPage.records.at(-1)?.id ?? null);
+
+        const pinnedOlderAnchor = {
+          kind: "fixed" as const,
+          pageIndex: Math.max(0, initialPage.pageIndex - initialPage.pageCount),
+          latestRecordId: initialPage.latestRecordId,
+        };
+        const pinnedBefore = await caller.runtime.heartbeatRecordPage({
+          sessionId,
+          pageSize: 20,
+          pageCount: 2,
+          anchor: pinnedOlderAnchor,
+        });
+
+        const sent = await liveHarness.kernel.pushUserRoomMessage({
+          sessionId,
+          chatId: liveHarness.room.chatId,
+          text: "heartbeat live push please",
+        });
+        expect(sent.ok).toBe(true);
+
+        const liveEvent = await waitForEvent(
+          async () =>
+            liveEvents.find((event) => event.type === "runtime.heartbeatPart" && event.sessionId === sessionId) ?? null,
+          { label: "runtime heartbeat part event" },
+        );
+        expect(liveEvent.type).toBe("runtime.heartbeatPart");
+
+        const latestPage = await waitForEvent(
+          async () => {
+            const page = await caller.runtime.heartbeatRecordPage({
+              sessionId,
+              pageSize: 20,
+              pageCount: 2,
+              anchor: { kind: "latest" },
+            });
+            return page.totalRecords > initialPage.totalRecords ? page : null;
+          },
+          { label: "updated heartbeat record page" },
+        );
+
+        expect(latestPage.totalRecords).toBeGreaterThan(initialPage.totalRecords);
+        expect(latestPage.latestRecordId).toBe(latestPage.records.at(-1)?.id ?? null);
+        expect(latestPage.records.map((record) => record.startedAt)).toEqual(
+          [...latestPage.records.map((record) => record.startedAt)].sort((left, right) => left - right),
+        );
+        expect(latestPage.records.at(-1)?.id).not.toBe(initialPage.records.at(-1)?.id);
+
+        const pinnedAfter = await caller.runtime.heartbeatRecordPage({
+          sessionId,
+          pageSize: 20,
+          pageCount: 2,
+          anchor: pinnedOlderAnchor,
+        });
+        expect(pinnedAfter.records.map((record) => record.id)).toEqual(pinnedBefore.records.map((record) => record.id));
+        expect(pinnedAfter.records.map((record) => record.startedAt)).toEqual(
+          pinnedBefore.records.map((record) => record.startedAt),
+        );
+        expect(pinnedAfter.newRecordsAvailable).toBe(true);
+
+        const rows = readHeartbeatRecordRows(join(sessionRoot, "session.db"));
+        expect(rows.length).toBe(latestPage.totalRecords);
+        expect(rows.map((row) => row.startedAt)).toEqual(
+          [...rows.map((row) => row.startedAt)].sort((left, right) => left - right),
+        );
+        expect(rows.slice(0, seeded.recordKeys.length).map((row) => row.recordKey)).toEqual(seeded.recordKeys);
+        expect(rows.at(-1)?.recordKey.startsWith("heartbeat-record:")).toBe(true);
+        expect(rows.at(-1)?.startedAt).toBe(latestPage.records.at(-1)?.startedAt);
+        expect(rows.at(-1)?.kind).toBe(latestPage.records.at(-1)?.kind);
+        expect(JSON.parse(rows.at(0)?.summaryJson ?? "{}")).toMatchObject({
+          counts: { parts: 4, toolCalls: 1, toolResults: 0, errors: 0 },
+        });
+        const configRow = rows.find((row) => row.kind === "config");
+        expect(configRow).toBeDefined();
+        expect(JSON.parse(configRow?.sourceRefsJson ?? "[]")[0]).toMatchObject({
+          kind: "message_part",
+          role: "config",
+        });
+      } finally {
+        subscription.unsubscribe();
+      }
+    } finally {
+      await liveHarness.stop();
+    }
   });
 
   test("Scenario: Given authenticated actors When they use kv procedures Then each actor only sees private Studio memory facts", async () => {

@@ -9,12 +9,14 @@ import type {
   HeartbeatRecordKind,
   HeartbeatRecordPage,
   HeartbeatRecordPageInput,
+  HeartbeatRecordProjectionHealth,
+  HeartbeatRecordProjectionRepairResult,
   HeartbeatRecordSourceRef,
   HeartbeatRecordStatus,
   HeartbeatRecordSummary,
+  HeartbeatSessionClearResult,
   ReversePage,
   ReverseTimeCursor,
-  SessionCollectedInput,
   SessionAiCallInsert,
   SessionAiCallRecord,
   SessionAiCallUpdate,
@@ -26,6 +28,7 @@ import type {
   SessionAttentionReceiptProviderEventKind,
   SessionAttentionReceiptRecord,
   SessionAttentionReceiptStatus,
+  SessionCollectedInput,
   SessionEffectLedgerInsert,
   SessionEffectLedgerRecord,
   SessionHeadRecord,
@@ -747,10 +750,6 @@ export class SessionDb {
         : null,
       hasMoreBefore,
     };
-  }
-
-  pruneAiCallsBeforeRound(minRoundIndex: number): void {
-    this.db.query(`delete from ai_call where round_index < ?`).run(minRoundIndex);
   }
 
   appendAttentionDispatch(input: SessionAttentionDispatchInsert): SessionAttentionDispatchRecord {
@@ -1563,21 +1562,20 @@ export class SessionDb {
     return row ? this.getMessageById(row.message_id) : null;
   }
 
-  rebuildHeartbeatRecords(): void {
+  /**
+   * Appends or updates the materialized Heartbeat record projection from objective facts.
+   *
+   * The source ontology remains ai_call/message_part. heartbeat_record is a
+   * countable, append-stable page index over source-backed projections. Normal
+   * runtime refresh must not shrink history; damaged historical projections are
+   * handled only through the explicit repair API.
+   */
+  refreshHeartbeatRecords(): void {
     const projections = this.buildHeartbeatRecordProjections();
-    const nextKeys = new Set(projections.map((record) => record.recordKey));
     this.db.exec("begin immediate");
     try {
       for (const record of projections) {
         this.upsertHeartbeatRecordProjection(record);
-      }
-      const storedKeys = this.db.query(`select record_key from heartbeat_record`).all() as Array<{
-        record_key: string;
-      }>;
-      for (const row of storedKeys) {
-        if (!nextKeys.has(row.record_key)) {
-          this.db.query(`delete from heartbeat_record where record_key = ?`).run(row.record_key);
-        }
       }
       this.db.exec("commit");
     } catch (error) {
@@ -1590,10 +1588,90 @@ export class SessionDb {
     const source = this.getHeartbeatRecordSourceFreshness();
     const projection = this.getHeartbeatRecordProjectionFreshness();
     if (
-      projection.count !== source.count ||
-      (source.maxUpdatedAt !== null && (projection.maxUpdatedAt === null || projection.maxUpdatedAt < source.maxUpdatedAt))
+      projection.count < source.count ||
+      (source.maxUpdatedAt !== null &&
+        (projection.maxUpdatedAt === null || projection.maxUpdatedAt < source.maxUpdatedAt)) ||
+      projection.aiCallStartedAtDriftCount > 0
     ) {
-      this.rebuildHeartbeatRecords();
+      this.refreshHeartbeatRecords();
+    }
+  }
+
+  inspectHeartbeatRecordProjectionHealth(): HeartbeatRecordProjectionHealth {
+    const orphanRows = this.db
+      .query(
+        `select heartbeat_record.id
+         from heartbeat_record
+         left join ai_call on heartbeat_record.primary_ai_call_id = ai_call.id
+         where heartbeat_record.primary_ai_call_id is not null
+           and ai_call.id is null
+         order by heartbeat_record.id asc`,
+      )
+      .all() as Array<{ id: number }>;
+    const orphanRecordIds = orphanRows.map((row) => row.id);
+    return {
+      totalRecords: this.countHeartbeatRecords(),
+      missingPrimaryAiCallRecords: orphanRecordIds.length,
+      orphanRecordIds,
+    };
+  }
+
+  repairHeartbeatRecordProjectionHealth(): HeartbeatRecordProjectionRepairResult {
+    const before = this.inspectHeartbeatRecordProjectionHealth();
+    if (before.orphanRecordIds.length > 0) {
+      const placeholders = before.orphanRecordIds.map(() => "?").join(",");
+      this.db.query(`delete from heartbeat_record where id in (${placeholders})`).run(...before.orphanRecordIds);
+    }
+    const after = this.inspectHeartbeatRecordProjectionHealth();
+    return {
+      before,
+      after,
+      deletedRecordIds: before.orphanRecordIds,
+      deletedRecords: before.orphanRecordIds.length,
+    };
+  }
+
+  clearHeartbeatSession(): HeartbeatSessionClearResult {
+    this.db.exec("begin immediate");
+    try {
+      const beforeHead = this.getHead();
+      const countMessagePartsByScope = this.db.query(`select count(*) as count from message_part where scope = ?`);
+      const deletedHeartbeatMessageParts =
+        (countMessagePartsByScope.get("heartbeat_part") as { count: number } | null)?.count ?? 0;
+      const deletedRequestAuxMessageParts =
+        (countMessagePartsByScope.get("request_aux") as { count: number } | null)?.count ?? 0;
+      const deletedPromptWindowMessageParts =
+        (countMessagePartsByScope.get("prompt_window") as { count: number } | null)?.count ?? 0;
+      const deletedHeartbeatRecords = this.db.query(`delete from heartbeat_record`).run().changes;
+      const deletedMessageParts = this.db.query(`delete from message_part`).run().changes;
+      const deletedAiCalls = this.db.query(`delete from ai_call`).run().changes;
+      const deletedAttentionReceipts = this.db.query(`delete from attention_receipt`).run().changes;
+      const deletedAttentionDispatches = this.db.query(`delete from attention_dispatch`).run().changes;
+      const deletedEffectLedgerRecords = this.db.query(`delete from effect_ledger`).run().changes;
+      this.db
+        .query(
+          `update session_head set current_round_index = 0, current_prompt_window_id = null, updated_at = ? where id = 1`,
+        )
+        .run(Date.now());
+      this.db.exec("commit");
+      return {
+        deletedAiCalls,
+        deletedMessageParts,
+        deletedHeartbeatMessageParts,
+        deletedRequestAuxMessageParts,
+        deletedPromptWindowMessageParts,
+        deletedHeartbeatRecords,
+        deletedAttentionDispatches,
+        deletedAttentionReceipts,
+        deletedEffectLedgerRecords,
+        resetCurrentRoundIndex: beforeHead.currentRoundIndex !== 0,
+        resetCurrentPromptWindow: beforeHead.currentPromptWindowId !== null,
+        stoppedRuntime: false,
+        deletedAttentionFiles: 0,
+      };
+    } catch (error) {
+      this.db.exec("rollback");
+      throw error;
     }
   }
 
@@ -1655,18 +1733,16 @@ export class SessionDb {
     const messages =
       record.kind === "model_call"
         ? aiCalls.flatMap((call) => this.buildModelCallHeartbeatDetailMessages(call))
-        : this.listMessagesByIds(
-            [
-              ...new Set(
-                record.sourceRefs.flatMap((ref) => {
-                  if (ref.kind !== "message_part") {
-                    return [];
-                  }
-                  return [ref.messageId];
-                }),
-              ),
-            ],
-          );
+        : this.listMessagesByIds([
+            ...new Set(
+              record.sourceRefs.flatMap((ref) => {
+                if (ref.kind !== "message_part") {
+                  return [];
+                }
+                return [ref.messageId];
+              }),
+            ),
+          ]);
     return {
       record,
       aiCalls,
@@ -1717,13 +1793,27 @@ export class SessionDb {
     };
   }
 
-  private getHeartbeatRecordProjectionFreshness(): { count: number; maxUpdatedAt: number | null } {
+  private getHeartbeatRecordProjectionFreshness(): {
+    count: number;
+    maxUpdatedAt: number | null;
+    aiCallStartedAtDriftCount: number;
+  } {
     const row = this.db
-      .query(`select count(*) as count, max(updated_at) as max_updated_at from heartbeat_record`)
-      .get() as { count: number; max_updated_at: number | null } | null;
+      .query(
+        `select
+           count(*) as count,
+           max(updated_at) as max_updated_at,
+           (select count(*)
+              from heartbeat_record
+              join ai_call on heartbeat_record.primary_ai_call_id = ai_call.id
+              where heartbeat_record.started_at != ai_call.created_at) as ai_call_started_at_drift_count
+         from heartbeat_record`,
+      )
+      .get() as { count: number; max_updated_at: number | null; ai_call_started_at_drift_count: number } | null;
     return {
       count: row?.count ?? 0,
       maxUpdatedAt: row?.max_updated_at ?? null,
+      aiCallStartedAtDriftCount: row?.ai_call_started_at_drift_count ?? 0,
     };
   }
 
@@ -1735,15 +1825,15 @@ export class SessionDb {
         ? this.listHeartbeatMessagesForAiCall(call, kind)
         : this.buildModelCallHeartbeatSummaryMessages(call);
     const status = this.toHeartbeatRecordStatus(call.status);
-    const inputProjection = kind === "compact" ? { sourceRefs: [] as HeartbeatRecordSourceRef[] } : this.buildModelCallInputProjection(call);
+    const inputProjection =
+      kind === "compact" ? { sourceRefs: [] as HeartbeatRecordSourceRef[] } : this.buildModelCallInputProjection(call);
     const responseMessages = this.listMessagesByIds(call.responseMessageIds);
     const sourceRefs: HeartbeatRecordSourceRef[] = [
       { kind: "ai_call", id: call.id, role: "primary" },
       ...inputProjection.sourceRefs,
       ...this.buildMessagePartSourceRefs(responseMessages),
     ];
-    const messageStartedAt = this.minMessageCreatedAt(messages);
-    const recordStartedAt = Math.min(call.createdAt, messageStartedAt ?? call.createdAt);
+    const recordStartedAt = call.createdAt;
     const summary = this.buildHeartbeatRecordSummary({
       provider: call.provider,
       model: call.model,
@@ -1769,7 +1859,7 @@ export class SessionDb {
       },
       summary,
       previewText: this.pickAssistantPreviewText(messages),
-      startedAt: Math.min(call.createdAt, messageStartedAt ?? call.createdAt),
+      startedAt: recordStartedAt,
       updatedAt: activityUpdatedAt,
       completedAt: isComplete ? (call.completedAt ?? activityUpdatedAt) : null,
       isComplete,
@@ -1828,7 +1918,7 @@ export class SessionDb {
     const updatedAt = this.readHeartbeatTimestamp(input.meta?.updatedAt) ?? createdAt;
     const messageId = `heartbeat-part:ai-call:${call.id}:input:${index}`;
     const parts: SessionMessagePartRecord[] = input.parts.map((part, partIndex) => ({
-      partId: -((call.id * 1000) + index * 10 + partIndex + 1),
+      partId: -(call.id * 1000 + index * 10 + partIndex + 1),
       partIndex,
       messageId,
       windowId: null,
@@ -1853,7 +1943,7 @@ export class SessionDb {
       isComplete: true,
     }));
     return {
-      id: -((call.id * 1000) + index + 1),
+      id: -(call.id * 1000 + index + 1),
       messageId,
       windowId: null,
       aiCallId: call.id,
@@ -2363,7 +2453,7 @@ export class SessionDb {
   private migrate(): void {
     const currentVersion =
       (this.db.query(`pragma user_version`).get() as { user_version?: number } | null)?.user_version ?? 0;
-    const shouldRebuildHeartbeatRecords = currentVersion < SESSION_DB_SCHEMA_VERSION;
+    const shouldRefreshHeartbeatRecords = currentVersion < SESSION_DB_SCHEMA_VERSION;
     if (currentVersion < 1) {
       this.db.exec(`
         create table if not exists session_head (
@@ -2590,8 +2680,8 @@ export class SessionDb {
       `);
     }
     this.db.exec(`pragma user_version = ${SESSION_DB_SCHEMA_VERSION}`);
-    if (shouldRebuildHeartbeatRecords) {
-      this.rebuildHeartbeatRecords();
+    if (shouldRefreshHeartbeatRecords) {
+      this.refreshHeartbeatRecords();
     }
   }
 }
