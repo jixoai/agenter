@@ -1624,6 +1624,150 @@ describe("Feature: web-chat-view package", () => {
     expect(document.body.querySelector("[data-testid='message-read-disclosure']")).toBeTruthy();
   });
 
+  test("Scenario: Given an open room websocket When a read delta arrives Then the visible read indicator updates without a full snapshot refresh", async () => {
+    mountHost({
+      socketFactory,
+      channel: {
+        chatId: "chat-main",
+        kind: "room",
+        title: "Room",
+        owner: "jane",
+        participants: [
+          { id: "session:jane", label: "jane" },
+          { id: "auth:user", label: "User" },
+        ],
+        createdAt: 1,
+        updatedAt: 1,
+        focused: true,
+        accessRole: "admin",
+        accessToken: "msgtok_admin",
+        transportUrl: "ws://localhost:7777/room/chat-main?token=msgtok_admin",
+      },
+      initialSnapshotResolved: true,
+      initialMessages: [
+        {
+          rowId: 1,
+          viewKey: "msg-read",
+          messageId: 1,
+          chatId: "chat-main",
+          sourceSystemId: TEST_SYSTEM_ID,
+          senderContactId: "auth:user",
+          from: "User",
+          kind: "text",
+          content: "read me",
+          createdAt: 100,
+          updatedAt: 100,
+          visibleAt: 100,
+          readContactIds: [],
+          unreadContactIds: ["auth:user", "session:jane"],
+          metadata: {},
+          attachments: [],
+        },
+      ],
+    });
+
+    await vi.waitFor(() => {
+      expect(WebSocketMock.instances).toHaveLength(1);
+    });
+    const socket = WebSocketMock.instances[0]!;
+    socket.open();
+    socket.message(
+      JSON.stringify({
+        type: "snapshot",
+        chatId: "chat-main",
+        snapshot: {
+          channel: {
+            chatId: "chat-main",
+            kind: "room",
+            title: "Room",
+            owner: "jane",
+            superKey: TEST_SYSTEM_ID,
+            createdBySystemId: TEST_SYSTEM_ID,
+            participants: [
+              { id: "session:jane", label: "jane" },
+              { id: "auth:user", label: "User" },
+            ],
+            createdAt: 1,
+            updatedAt: 1,
+            focused: true,
+            accessRole: "admin",
+            accessToken: "msgtok_admin",
+            participantId: "auth:user",
+            currentAdmin: false,
+            transportUrl: "ws://localhost:7777/room/chat-main?token=msgtok_admin",
+            roomRevision: "1",
+            transcriptRevision: "1",
+          },
+          items: [
+            {
+              rowId: 1,
+              messageId: 1,
+              chatId: "chat-main",
+              sourceSystemId: TEST_SYSTEM_ID,
+              senderContactId: "auth:user",
+              from: "User",
+              kind: "text",
+              content: "read me",
+              createdAt: 100,
+              updatedAt: 100,
+              visibleAt: 100,
+              readContactIds: [],
+              unreadContactIds: ["auth:user", "session:jane"],
+              metadata: {},
+              attachments: [],
+            },
+          ],
+          nextBefore: null,
+          hasMoreBefore: false,
+          roomRevision: "1",
+          transcriptRevision: "1",
+          headVersion: "1",
+        },
+      }),
+    );
+    flushSync();
+    await settleLitUpdates();
+
+    const beforeIndicator = document.body.querySelector<HTMLElement>("[data-testid='message-read-indicator']");
+    expect(beforeIndicator).toBeTruthy();
+    expect(beforeIndicator?.getAttribute("data-complete")).toBe("false");
+
+    socket.message(
+      JSON.stringify({
+        type: "messages",
+        chatId: "chat-main",
+        items: [
+          {
+            rowId: 1,
+            messageId: 1,
+            chatId: "chat-main",
+            sourceSystemId: TEST_SYSTEM_ID,
+            senderContactId: "auth:user",
+            from: "User",
+            kind: "text",
+            content: "read me",
+            createdAt: 100,
+            updatedAt: 100,
+            visibleAt: 100,
+            readContactIds: ["auth:user", "session:jane"],
+            unreadContactIds: [],
+            metadata: {},
+            attachments: [],
+          },
+        ],
+        roomRevision: "2",
+        transcriptRevision: "1",
+        headVersion: "2",
+      }),
+    );
+    flushSync();
+    await settleLitUpdates();
+
+    const afterIndicator = document.body.querySelector<HTMLElement>("[data-testid='message-read-indicator']");
+    expect(afterIndicator).toBeTruthy();
+    expect(afterIndicator?.getAttribute("data-complete")).toBe("true");
+  });
+
   test("Scenario: Given a read-enabled message has menu actions When the explicit menu trigger opens Then the read panel closes and the action menu remains reachable", async () => {
     mountHost({
       channel: {

@@ -172,6 +172,7 @@ interface MessageChannelChangePayload {
   roomRevision: string;
   transcriptRevision: string;
   contactId?: MessageContactId;
+  items?: MessageRecord[];
 }
 
 const TRUSTED_BOOTSTRAP_LABEL = "Trusted bootstrap";
@@ -1160,6 +1161,7 @@ export class MessageControlPlane {
         builtIn: this.isBuiltInChannelMetadata(channel.metadata),
         ...revisions,
         contactId: grant.participantId as MessageContactId,
+        items: result.items,
       });
     }
 
@@ -2090,6 +2092,23 @@ export class MessageControlPlane {
                   type: "messages",
                   chatId,
                   items: [message],
+                  ...revisions,
+                  headVersion: this.getHeadVersion(),
+                } satisfies MessageTransportServerMessage),
+              );
+            }),
+          );
+          cleanup.push(
+            this.onChannelChanged(({ chatId: changedChatId, reason, items }) => {
+              if (changedChatId !== chatId || reason !== "read" || !items || items.length === 0) {
+                return;
+              }
+              const revisions = this.db.getRoomRevisionVector(chatId);
+              socket.send(
+                JSON.stringify({
+                  type: "messages",
+                  chatId,
+                  items,
                   ...revisions,
                   headVersion: this.getHeadVersion(),
                 } satisfies MessageTransportServerMessage),

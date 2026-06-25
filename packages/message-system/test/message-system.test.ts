@@ -1072,6 +1072,64 @@ describe("Feature: message-chat-control-plane", () => {
     expect(plane.listUnreadRoomSummaries("auth:viewer")).toHaveLength(0);
   });
 
+  test("Scenario: Given a room websocket is open When a viewer marks history as read Then the transport pushes the updated row membership", async () => {
+    const plane = createPlane();
+    await plane.startTransport({ port: 0 });
+    const room = createRoom(plane, { chatId: createRoomId() });
+    const ownerRoom = plane.getChannelForContact(room.chatId, "auth:owner", {
+      includeArchived: true,
+      touchPresence: false,
+    });
+    const historical = plane.sendAuthorized({
+      chatId: room.chatId,
+      accessToken: ownerRoom?.accessToken ?? "",
+      senderContactId: "auth:owner",
+      from: "owner",
+      content: "history that will be read",
+    });
+    const viewer = plane.issueChannelGrantAuthorized({
+      chatId: room.chatId,
+      accessToken: room.accessToken,
+      role: "readonly",
+      label: "Viewer",
+      participantId: "auth:viewer",
+    });
+    const endpoint = plane.getTransportEndpoint(room.chatId, viewer.accessToken);
+    if (!endpoint) {
+      throw new Error("missing transport endpoint");
+    }
+
+    const socket = new WebSocket(endpoint.url);
+    try {
+      const snapshotOutcome = await waitForSocketOutcome(socket);
+      expect(snapshotOutcome.type).toBe("message");
+      if (snapshotOutcome.type === "message") {
+        expect(snapshotOutcome.payload.type).toBe("snapshot");
+      }
+
+      plane.markChannelReadAuthorized({
+        chatId: room.chatId,
+        accessToken: viewer.accessToken,
+        messageId: historical.messageId,
+      });
+
+      const readOutcome = await waitForSocketOutcome(socket);
+      expect(readOutcome.type).toBe("message");
+      if (readOutcome.type === "message") {
+        expect(readOutcome.payload.type).toBe("messages");
+        if (readOutcome.payload.type === "messages") {
+          expect(readOutcome.payload.items).toHaveLength(1);
+          expect(readOutcome.payload.items[0]?.messageId).toBe(historical.messageId);
+          expect(readOutcome.payload.items[0]?.readContactIds).toContain("auth:viewer");
+          expect(readOutcome.payload.items[0]?.unreadContactIds).not.toContain("auth:viewer");
+        }
+      }
+    } finally {
+      socket.close();
+      plane.stopTransport();
+    }
+  });
+
   test("Scenario: Given a sender edits their own durable room message When the edit is authorized Then content changes but delivery membership stays intact", () => {
     const plane = createPlane();
     const room = createRoom(plane, { chatId: createRoomId() });

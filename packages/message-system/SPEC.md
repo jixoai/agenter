@@ -16,6 +16,7 @@
 - `superKey` cannot send chat messages unless it also receives a normal participant seat.
 - Room transcript rows and room-side lifecycle/admin events must persist source provenance by `systemId`.
 - One room-management backend must be able to persist transcript truth from multiple message-system instances.
+- Room websocket transport must re-publish mutated message rows when durable read/unread truth changes so connected clients can reconcile row-level state without forcing a fresh snapshot.
 
 ## 3. Message-System Instance Identity
 

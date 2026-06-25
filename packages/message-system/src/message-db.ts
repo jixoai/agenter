@@ -2105,10 +2105,11 @@ export class MessageDb {
 
   markMessagesReadUpTo(input: { chatId: string; contactId: MessageContactId; targetRowId: number }): {
     changed: boolean;
+    items: MessageRecord[];
   } {
     const roomDb = this.getRoomDb(input.chatId, false);
     if (!roomDb) {
-      return { changed: false };
+      return { changed: false, items: [] };
     }
     const rows = roomDb
       .query(
@@ -2120,12 +2121,13 @@ export class MessageDb {
       )
       .all(input.targetRowId) as StoredRoomMessageRow[];
     if (rows.length === 0) {
-      return { changed: false };
+      return { changed: false, items: [] };
     }
 
     const markRead = this.db.transaction(() => {
       let changed = false;
       let removedUnreadCount = 0;
+      const changedRows: StoredRoomMessageRow[] = [];
       for (const row of rows) {
         const message = mapMessage(input.chatId, row);
         const hasReadContact = message.readContactIds.includes(input.contactId);
@@ -2159,15 +2161,23 @@ export class MessageDb {
           removedUnreadCount += 1;
         }
         changed = true;
+        changedRows.push({
+          ...row,
+          read_contact_ids_json: toJson(nextReadContactIds),
+          unread_contact_ids_json: toJson(nextUnreadContactIds),
+        });
       }
-      return changed || removedUnreadCount > 0;
+      return {
+        changed: changed || removedUnreadCount > 0,
+        items: changedRows.map((row) => mapMessage(input.chatId, row)),
+      };
     });
-    const changed = markRead();
-    if (changed) {
+    const result = markRead();
+    if (result.changed) {
       const visibleMessages = this.listActiveVisibleMessages(input.chatId);
       this.reconcileContactRoomStateFromMessages(input.chatId, input.contactId, visibleMessages);
     }
-    return { changed };
+    return result;
   }
 
   private listContactRoomStatesByChat(chatId: string): MessageContactRoomStateRecord[] {
