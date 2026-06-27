@@ -33,6 +33,46 @@ ${closingText}
 
 const validIssue = issueFixture("Broken footnote link", "open");
 
+const richIssueFixture = (
+  title: string,
+  state: "open" | "resolved" | "closed",
+  options: {
+    type?: "bug" | "task" | "decision" | "risk" | "question";
+    group?: string;
+    labels?: string[];
+    dependsOn?: string[];
+  } = {},
+): string => {
+  const githubIssueStatus = state === "open" ? "open" : "closed";
+  const closingSection = state === "open" ? "## Recommendation" : "## Resolution";
+  const labels = options.labels ?? [];
+  const dependsOn = options.dependsOn ?? [];
+  return `---
+title: ${title}
+state: ${state}
+github_issue_status: ${githubIssueStatus}
+type: ${options.type ?? "task"}
+group: ${options.group ?? "general"}
+labels:${labels.length === 0 ? " []" : `\n${labels.map((label) => `  - ${label}`).join("\n")}`}
+depends_on:${dependsOn.length === 0 ? " []" : `\n${dependsOn.map((issueId) => `  - ${issueId}`).join("\n")}`}
+blocks: []
+priority: medium
+---
+
+## Summary
+${title}
+
+## Impact
+${title}
+
+## Evidence
+${title}
+
+${closingSection}
+${state === "open" ? "Act on it." : "Resolved."}
+`;
+};
+
 const runBun = async (
   args: string[],
   cwd: string,
@@ -53,7 +93,10 @@ const runBun = async (
   return { exitCode, stdout, stderr };
 };
 
-const runCommand = async (cmd: string[], cwd: string): Promise<{ exitCode: number; stdout: string; stderr: string }> => {
+const runCommand = async (
+  cmd: string[],
+  cwd: string,
+): Promise<{ exitCode: number; stdout: string; stderr: string }> => {
   const proc = Bun.spawn({
     cmd,
     cwd,
@@ -82,10 +125,7 @@ const createFakeOpenspec = async (
   const logPath = join(tmpRoot, "openspec.log");
   await mkdir(binDir, { recursive: true });
   const scriptPath = join(binDir, "openspec");
-  writeFileSync(
-    scriptPath,
-    ["#!/bin/sh", "printf '%s\\n' \"$*\" >> \"$VISION_TEST_LOG\"", "exit 0", ""].join("\n"),
-  );
+  writeFileSync(scriptPath, ["#!/bin/sh", 'printf \'%s\\n\' "$*" >> "$VISION_TEST_LOG"', "exit 0", ""].join("\n"));
   chmodSync(scriptPath, 0o755);
   return {
     env: { ...process.env, PATH: `${binDir}:${process.env.PATH ?? ""}`, VISION_TEST_LOG: logPath },
@@ -119,7 +159,9 @@ const seedChange = async (tmpRoot: string, change = "demo-change"): Promise<stri
   await writeFile(join(changeDir, "specs", "core", "spec.md"), "## ADDED Requirements\n");
   await writeFile(
     join(changeDir, "toc.md"),
-    ["# TOC", "", "[^interview]: interview_plan.md", "[^tasks]: tasks.md", "[^core]: specs/core/spec.md", ""].join("\n"),
+    ["# TOC", "", "[^interview]: interview_plan.md", "[^tasks]: tasks.md", "[^core]: specs/core/spec.md", ""].join(
+      "\n",
+    ),
   );
   return changeDir;
 };
@@ -127,10 +169,12 @@ const seedChange = async (tmpRoot: string, change = "demo-change"): Promise<stri
 describe("Feature: vision2 OpenSpec workflow contract", () => {
   test("Scenario: Given the project schema files When inspecting them Then interview, specs, tasks, close form the enforced workflow", () => {
     const schema = readRepoFile("openspec/schemas/vision2/schema.yaml");
+    const config = readRepoFile("openspec/config.yaml");
     const interviewTemplate = readRepoFile("openspec/schemas/vision2/templates/interview_plan.md");
     const tasksTemplate = readRepoFile("openspec/schemas/vision2/templates/tasks.md");
     const tocTemplate = readRepoFile("openspec/schemas/vision2/templates/toc.md");
 
+    expect(config).toMatch(/^schema: vision2$/m);
     expect(schema).toContain("name: vision2");
     expect(schema).toContain("id: interview");
     expect(schema).toContain("generates: interview_plan.md");
@@ -151,10 +195,18 @@ describe("Feature: vision2 OpenSpec workflow contract", () => {
     expect(interviewTemplate).toContain("## Q&A Ledger");
     expect(interviewTemplate).toContain("## Original User Input");
     expect(tasksTemplate).toContain("bun run openspec:vision2 -- validate <change>");
-    expect(tasksTemplate).toContain("issues/NNN-slug.md");
+    expect(tasksTemplate).toContain("--new <bug|task|decision|risk|question>");
     expect(tasksTemplate).toContain("bun run openspec:vision2 -- check <change>");
     expect(tocTemplate).toContain("[^capability]: specs/capability/spec.md");
     expect(tocTemplate).toContain("## Footnote References");
+    expect(schema).toContain("templates/issues/*.md");
+    expect(schema).toContain("--new <bug|task|decision|risk|question>");
+    expect(schema).toContain("depends_on");
+    expect(readRepoFile("openspec/schemas/vision2/templates/issues/bug.md")).toContain("type: bug");
+    expect(readRepoFile("openspec/schemas/vision2/templates/issues/decision.md")).toContain("type: decision");
+    expect(readRepoFile("openspec/schemas/vision2/templates/issues/question.md")).toContain("type: question");
+    expect(readRepoFile("openspec/schemas/vision2/templates/issues/risk.md")).toContain("type: risk");
+    expect(readRepoFile("openspec/schemas/vision2/templates/issues/task.md")).toContain("type: task");
     // Offline self-interview mode (added after dogfooding).
     expect(schema).toContain("Interactive vs. offline mode");
     expect(schema).toContain("ASSUMPTION");
@@ -374,13 +426,7 @@ describe("Feature: vision2 OpenSpec workflow contract", () => {
       // toc cites specs/core/spec.md AND a dangling specs/ghost/spec.md
       await writeFile(
         join(changeDir, "toc.md"),
-        [
-          "# TOC",
-          "",
-          "[^core]: specs/core/spec.md",
-          "[^ghost]: specs/ghost/spec.md",
-          "",
-        ].join("\n"),
+        ["# TOC", "", "[^core]: specs/core/spec.md", "[^ghost]: specs/ghost/spec.md", ""].join("\n"),
       );
 
       const result = await runBun(
@@ -434,6 +480,147 @@ describe("Feature: vision2 OpenSpec workflow contract", () => {
       expect(result.exitCode).toBe(1);
       expect(result.stdout).toContain("issues/002-bad.md");
       expect(result.stdout).toContain("github_issue_status");
+    } finally {
+      rmSync(tmpRoot, { recursive: true, force: true });
+    }
+  });
+
+  test("Scenario: Given an existing issue When issues --new creates a bug Then the issue is rendered from the typed template", async () => {
+    const tmpRoot = mkdtempSync(join(tmpdir(), "vision2-"));
+    try {
+      await copyVision2Schema(tmpRoot);
+      const changeDir = await seedChange(tmpRoot);
+      writeFileSync(join(changeDir, "issues", "001-base.md"), issueFixture("Base issue", "open"));
+
+      const result = await runBun(
+        [
+          join(repoRoot, "scripts", "openspec", "vision2-driven.ts"),
+          "issues",
+          "demo-change",
+          "--new",
+          "bug",
+          "--title",
+          "Broken terminal focus",
+          "--group",
+          "runtime",
+          "--label",
+          "attention",
+          "--depends-on",
+          "001-base",
+          "--priority",
+          "high",
+          "--owner",
+          "platform",
+        ],
+        tmpRoot,
+      );
+      const parsed = JSON.parse(result.stdout) as {
+        created: { relativePath: string; issueId: string; labels: string[]; dependsOn: string[] };
+      };
+      const issuePath = join(changeDir, "issues", "002-broken-terminal-focus.md");
+      const issue = readFileSync(issuePath, "utf8");
+
+      expect(result.exitCode).toBe(0);
+      expect(parsed.created.relativePath).toBe("issues/002-broken-terminal-focus.md");
+      expect(parsed.created.issueId).toBe("002-broken-terminal-focus");
+      expect(parsed.created.labels).toEqual(["attention", "bug"]);
+      expect(parsed.created.dependsOn).toEqual(["001-base"]);
+      expect(issue).toContain("type: bug");
+      expect(issue).toContain('group: "runtime"');
+      expect(issue).toContain('  - "attention"');
+      expect(issue).toContain('  - "bug"');
+      expect(issue).toContain('  - "001-base"');
+      expect(issue).toContain("priority: high");
+      expect(issue).toContain('owner: "platform"');
+
+      const validateResult = await runBun(
+        [join(repoRoot, "scripts", "openspec", "vision2-driven.ts"), "issues", "demo-change", "--validate"],
+        tmpRoot,
+      );
+      expect(validateResult.exitCode).toBe(0);
+    } finally {
+      rmSync(tmpRoot, { recursive: true, force: true });
+    }
+  });
+
+  test("Scenario: Given typed issues When issues groups by label Then one issue can appear in multiple label groups", async () => {
+    const tmpRoot = mkdtempSync(join(tmpdir(), "vision2-"));
+    try {
+      const changeDir = await seedChange(tmpRoot);
+      await writeFile(
+        join(changeDir, "issues", "001-runtime-bug.md"),
+        richIssueFixture("Runtime bug", "open", {
+          type: "bug",
+          group: "runtime",
+          labels: ["attention", "regression"],
+        }),
+      );
+
+      const result = await runBun(
+        [join(repoRoot, "scripts", "openspec", "vision2-driven.ts"), "issues", "demo-change", "--group-by", "label"],
+        tmpRoot,
+      );
+      const parsed = JSON.parse(result.stdout) as {
+        groups: Array<{ key: string; issues: Array<{ issueId: string }> }>;
+      };
+      const labels = parsed.groups.map((group) => group.key);
+
+      expect(result.exitCode).toBe(0);
+      expect(labels).toContain("attention");
+      expect(labels).toContain("regression");
+      expect(parsed.groups.find((group) => group.key === "attention")?.issues).toEqual([
+        expect.objectContaining({ issueId: "001-runtime-bug" }),
+      ]);
+      expect(parsed.groups.find((group) => group.key === "regression")?.issues).toEqual([
+        expect.objectContaining({ issueId: "001-runtime-bug" }),
+      ]);
+    } finally {
+      rmSync(tmpRoot, { recursive: true, force: true });
+    }
+  });
+
+  test("Scenario: Given an issue references a missing dependency When issues validates Then the missing dependency is reported", async () => {
+    const tmpRoot = mkdtempSync(join(tmpdir(), "vision2-"));
+    try {
+      const changeDir = await seedChange(tmpRoot);
+      await writeFile(
+        join(changeDir, "issues", "001-missing-dependency.md"),
+        richIssueFixture("Missing dependency", "open", { dependsOn: ["999-missing"] }),
+      );
+
+      const result = await runBun(
+        [join(repoRoot, "scripts", "openspec", "vision2-driven.ts"), "issues", "demo-change", "--validate"],
+        tmpRoot,
+      );
+
+      expect(result.exitCode).toBe(1);
+      expect(result.stdout).toContain("depends_on references unknown issue: 999-missing");
+    } finally {
+      rmSync(tmpRoot, { recursive: true, force: true });
+    }
+  });
+
+  test("Scenario: Given active issues form a dependency cycle When issues validates Then the cycle is rejected", async () => {
+    const tmpRoot = mkdtempSync(join(tmpdir(), "vision2-"));
+    try {
+      const changeDir = await seedChange(tmpRoot);
+      await writeFile(
+        join(changeDir, "issues", "001-first.md"),
+        richIssueFixture("First", "open", { dependsOn: ["002-second"] }),
+      );
+      await writeFile(
+        join(changeDir, "issues", "002-second.md"),
+        richIssueFixture("Second", "open", { dependsOn: ["001-first"] }),
+      );
+
+      const result = await runBun(
+        [join(repoRoot, "scripts", "openspec", "vision2-driven.ts"), "issues", "demo-change", "--validate"],
+        tmpRoot,
+      );
+
+      expect(result.exitCode).toBe(1);
+      expect(result.stdout).toContain("dependency cycle detected");
+      expect(result.stdout).toContain("001-first -> 002-second -> 001-first");
     } finally {
       rmSync(tmpRoot, { recursive: true, force: true });
     }
@@ -574,12 +761,9 @@ describe("Feature: vision2 OpenSpec workflow contract", () => {
         [
           "bash",
           "-lc",
-          [
-            `bun ${scriptPath} handoff demo-change <<'END'`,
-            "# Manual Handoff",
-            "Exact operator content.",
-            "END",
-          ].join("\n"),
+          [`bun ${scriptPath} handoff demo-change <<'END'`, "# Manual Handoff", "Exact operator content.", "END"].join(
+            "\n",
+          ),
         ],
         tmpRoot,
       );

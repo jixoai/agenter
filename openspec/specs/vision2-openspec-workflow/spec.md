@@ -4,9 +4,9 @@
 
 Define Agenter's simplified project-local OpenSpec workflow where an interview
 record is the intent source of truth, specs and tasks drive implementation,
-GitHub-style issue files drive iteration, and a footnote-indexed toc closes the
-change. vision2 coexists with the original `vision-driven` schema and does not
-rewrite existing changes.
+typed GitHub-style issue files drive iteration, and a footnote-indexed toc
+closes the change. vision2 is the default workflow for new changes while
+existing changes continue to resolve through their own schema declarations.
 
 ## Requirements
 
@@ -55,17 +55,36 @@ SHALL include BDD work that traces back to `interview_plan.md`.
 The `vision2` workflow SHALL record problems discovered during implementation or
 verification as one file per finding under `issues/`, named `NNN-slug.md`, with
 YAML front matter containing at least `title`, `state`, and
-`github_issue_status`, and a body containing `## Summary`, `## Impact`,
-`## Evidence`, plus `## Recommendation` or `## Resolution`. Closed or resolved
-issues SHALL be archived under `issues/closed/`. The workflow SHALL NOT use a
-`review/` directory.
+`github_issue_status`. New issue records SHALL be created from typed templates
+for `bug`, `task`, `decision`, `risk`, and `question`. Issue front matter SHALL
+support `type`, `group`, `labels`, `depends_on`, `blocks`, `priority`, `owner`,
+and `source` as the issue-management ontology. The body SHALL contain
+`## Summary`, `## Impact`, `## Evidence`, plus `## Recommendation` or
+`## Resolution`. Closed or resolved issues SHALL be archived under
+`issues/closed/`. The workflow SHALL NOT use a `review/` directory.
 
 #### Scenario: A new problem surfaces during implementation
 
 - **GIVEN** a problem not covered by the original plan is found during apply
 - **WHEN** the agent records the finding
-- **THEN** it is written as `issues/NNN-slug.md` with the required front matter and sections
+- **THEN** it is created through `bun run openspec:vision2 -- issues <change> --new <bug|task|decision|risk|question> --title "<title>"`
+- **AND** it is written as `issues/NNN-slug.md` with the required front matter and sections
 - **AND** no `review/` directory or `review/self-review.md` file is created
+
+#### Scenario: Issues can be grouped and labeled for triage
+
+- **GIVEN** a `vision2` change has typed issue files with `group` and `labels` front matter
+- **WHEN** the controller lists issues with `--group-by group`, `--group-by label`, `--group-by state`, or `--group-by type`
+- **THEN** the output groups issues by the requested projection
+- **AND** an issue with multiple labels may appear in multiple label groups
+
+#### Scenario: Issue dependencies are validated
+
+- **GIVEN** a `vision2` change has active issue files with `depends_on` or `blocks` front matter
+- **WHEN** `issues --validate` or `check` runs
+- **THEN** every dependency reference points to an existing active or archived issue id
+- **AND** dependency references do not point to the issue itself
+- **AND** active `depends_on` relationships do not form a cycle
 
 ### Requirement: The close artifact SHALL index every spec file with Markdown footnotes
 
@@ -103,10 +122,12 @@ mechanics. The controller SHALL provide schema-scoped wrappers for creating a
 strictly validating a change. The controller SHALL support commit-evidence
 checks for the `interview`, `apply`, `close`, and `archive` phases, writing
 abnormal-exit handoff evidence with `vN.HANDOFF.md` versioning, safely renaming
-active changes, listing and validating issue files, and the final `check` proof
-gate. The `check` command SHALL validate `interview_plan.md`, `tasks.md`,
-`toc.md`, toc footnote coverage of every spec, footnote target existence, issue
-file structure, and open-issue convergence.
+active changes, creating issue files from typed templates, listing and
+validating issue files, grouping issue list output, archiving closed/resolved
+issues, and the final `check` proof gate. The `check` command SHALL validate
+`interview_plan.md`, `tasks.md`, `toc.md`, toc footnote coverage of every spec,
+footnote target existence, issue file structure, issue dependency structure, and
+open-issue convergence.
 
 #### Scenario: Open issues keep the workflow iterating
 
@@ -143,12 +164,21 @@ operator-authored content via Here Document stdin.
 - **THEN** `openspec/changes/<change>/HANDOFF.md` exists
 - **AND** any previous handoff is preserved as `vN.HANDOFF.md`
 
-### Requirement: vision2 SHALL coexist with vision-driven and spec-driven changes
+### Requirement: vision2 SHALL be the default while legacy schemas remain explicit
 
-Introducing the `vision2` schema SHALL NOT alter the project default schema,
-SHALL NOT rewrite existing `vision-driven` or `spec-driven` changes, and SHALL
-NOT remove the `vision-driven` schema or its controller. Each change is resolved
-by its own `.openspec.yaml` schema declaration.
+The project default schema SHALL be `vision2` for future generic OpenSpec change
+creation. Introducing `vision2` as default SHALL NOT rewrite existing
+`vision-driven` or `spec-driven` changes, and SHALL NOT remove the
+`vision-driven` schema or its controller. Each existing change is resolved by its
+own `.openspec.yaml` schema declaration, and `bun run openspec:vision -- ...`
+remains available only for existing `schema: vision-driven` changes or explicit
+legacy requests.
+
+#### Scenario: New generic changes default to vision2
+
+- **GIVEN** the project OpenSpec config is loaded
+- **WHEN** a new change is created without an explicit schema override
+- **THEN** OpenSpec uses `schema: vision2`
 
 #### Scenario: Existing schemas keep working
 

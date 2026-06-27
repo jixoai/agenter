@@ -66,7 +66,10 @@ const runBun = async (
   return { exitCode, stdout, stderr };
 };
 
-const runCommand = async (cmd: string[], cwd: string): Promise<{ exitCode: number; stdout: string; stderr: string }> => {
+const runCommand = async (
+  cmd: string[],
+  cwd: string,
+): Promise<{ exitCode: number; stdout: string; stderr: string }> => {
   const proc = Bun.spawn({
     cmd,
     cwd,
@@ -88,15 +91,7 @@ const createFakeOpenspec = async (
   const logPath = join(tmpRoot, "openspec.log");
   await mkdir(binDir, { recursive: true });
   const scriptPath = join(binDir, "openspec");
-  writeFileSync(
-    scriptPath,
-    [
-      "#!/bin/sh",
-      "printf '%s\\n' \"$*\" >> \"$VISION_TEST_LOG\"",
-      "exit 0",
-      "",
-    ].join("\n"),
-  );
+  writeFileSync(scriptPath, ["#!/bin/sh", 'printf \'%s\\n\' "$*" >> "$VISION_TEST_LOG"', "exit 0", ""].join("\n"));
   chmodSync(scriptPath, 0o755);
   return {
     env: {
@@ -117,12 +112,10 @@ const readLoggedCommands = (logPath: string): string[] =>
 describe("Feature: vision-driven OpenSpec workflow contract", () => {
   test("Scenario: Given the project schema is loaded When inspecting the schema Then intent, specs, tasks, and self-review form the enforced workflow", () => {
     const schema = readRepoFile("openspec/schemas/vision-driven/schema.yaml");
-    const config = readRepoFile("openspec/config.yaml");
     const researchPlanTemplate = readRepoFile("openspec/schemas/vision-driven/templates/research-plan.md");
     const selfReviewTemplate = readRepoFile("openspec/schemas/vision-driven/templates/self-review.md");
     const tasksTemplate = readRepoFile("openspec/schemas/vision-driven/templates/tasks.md");
 
-    expect(config).toMatch(/^schema: vision-driven$/m);
     expect(schema).toContain("name: vision-driven");
     expect(schema).toContain("id: research-plan");
     expect(schema).toContain("generates: plans/plan.md");
@@ -247,7 +240,9 @@ describe("Feature: vision-driven OpenSpec workflow contract", () => {
       expect(result.exitCode).toBe(0);
       expect(parsed.phase).toBe("research-plan");
       expect(parsed.changePaths.join("\n")).toContain("openspec/changes/demo-change/");
-      expect(parsed.suggestedCommands.join("\n")).toContain('git commit -m "docs(spec): prepare demo-change for apply"');
+      expect(parsed.suggestedCommands.join("\n")).toContain(
+        'git commit -m "docs(spec): prepare demo-change for apply"',
+      );
       expect(existsSync(join(tmpRoot, ".git"))).toBe(true);
     } finally {
       rmSync(tmpRoot, { recursive: true, force: true });
@@ -286,8 +281,16 @@ describe("Feature: vision-driven OpenSpec workflow contract", () => {
       writeFileSync(join(changeDir, "plans", "plan.md"), "# Intent\n\nBuild the thing.\n");
       writeFileSync(join(changeDir, "tasks.md"), "- [ ] 1.1 Continue the thing\n");
 
-      const first = await runBun([join(repoRoot, "scripts", "openspec", "vision-driven.ts"), "handoff", "demo-change"], tmpRoot, env);
-      const second = await runBun([join(repoRoot, "scripts", "openspec", "vision-driven.ts"), "handoff", "demo-change"], tmpRoot, env);
+      const first = await runBun(
+        [join(repoRoot, "scripts", "openspec", "vision-driven.ts"), "handoff", "demo-change"],
+        tmpRoot,
+        env,
+      );
+      const second = await runBun(
+        [join(repoRoot, "scripts", "openspec", "vision-driven.ts"), "handoff", "demo-change"],
+        tmpRoot,
+        env,
+      );
       const handoff = readFileSync(join(changeDir, "HANDOFF.md"), "utf8");
 
       expect(first.exitCode).toBe(0);
@@ -316,12 +319,9 @@ describe("Feature: vision-driven OpenSpec workflow contract", () => {
         [
           "bash",
           "-lc",
-          [
-            `bun ${scriptPath} handoff demo-change <<'END'`,
-            "# Manual Handoff",
-            "Exact operator content.",
-            "END",
-          ].join("\n"),
+          [`bun ${scriptPath} handoff demo-change <<'END'`, "# Manual Handoff", "Exact operator content.", "END"].join(
+            "\n",
+          ),
         ],
         tmpRoot,
       );
@@ -338,8 +338,14 @@ describe("Feature: vision-driven OpenSpec workflow contract", () => {
 
   test("Scenario: Given handoff files are workflow evidence When Git ignore rules are checked Then change-local handoffs stay commit-ready", async () => {
     const rootHandoff = await runCommand(["git", "check-ignore", "HANDOFF.md"], repoRoot);
-    const currentHandoff = await runCommand(["git", "check-ignore", "openspec/changes/demo-change/HANDOFF.md"], repoRoot);
-    const versionedHandoff = await runCommand(["git", "check-ignore", "openspec/changes/demo-change/v1.HANDOFF.md"], repoRoot);
+    const currentHandoff = await runCommand(
+      ["git", "check-ignore", "openspec/changes/demo-change/HANDOFF.md"],
+      repoRoot,
+    );
+    const versionedHandoff = await runCommand(
+      ["git", "check-ignore", "openspec/changes/demo-change/v1.HANDOFF.md"],
+      repoRoot,
+    );
     const ignoreRules = readRepoFile(".gitignore");
 
     expect(rootHandoff.exitCode).toBe(0);
@@ -374,7 +380,9 @@ describe("Feature: vision-driven OpenSpec workflow contract", () => {
         [join(repoRoot, "scripts", "openspec", "vision-driven.ts"), "rename", "old-change", "new-change"],
         tmpRoot,
       );
-      const state = JSON.parse(readFileSync(join(tmpRoot, "openspec", "changes", "new-change", "review", "state.json"), "utf8")) as {
+      const state = JSON.parse(
+        readFileSync(join(tmpRoot, "openspec", "changes", "new-change", "review", "state.json"), "utf8"),
+      ) as {
         change: string;
       };
 

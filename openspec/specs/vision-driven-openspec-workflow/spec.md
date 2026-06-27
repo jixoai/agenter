@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Define Agenter's project-local OpenSpec workflow where visible/app intent drives specs, BDD tasks, implementation, and self-review loops.
+Define Agenter's legacy project-local OpenSpec workflow where visible/app intent drives specs, BDD tasks, implementation, and self-review loops. The workflow remains available for existing `schema: vision-driven` changes and explicit legacy requests.
 
 ## Requirements
 
@@ -10,11 +10,11 @@ Define Agenter's project-local OpenSpec workflow where visible/app intent drives
 
 The project SHALL provide a project-local OpenSpec schema named `vision-driven`. Its first artifact SHALL be `research-plan`, and that artifact SHALL generate `plans/plan.md` as the single current Intent Document. The research-plan artifact SHALL keep the canonical project-local workflow commands visible inside the template so the operator can recover the schema-scoped path from SSOT after the initial CLI output is gone. The research-plan stage MAY use change-local demo/spike code under `demos/` to collapse vague requirements before specs are hardened.
 
-#### Scenario: New change starts from intent
+#### Scenario: Explicit legacy change starts from intent
 
-- **GIVEN** the project default OpenSpec schema is `vision-driven`
-- **WHEN** a new change is created without an explicit schema override
-- **THEN** OpenSpec assigns schema `vision-driven`
+- **GIVEN** an operator explicitly creates a change with schema `vision-driven`
+- **WHEN** OpenSpec reports artifact status
+- **THEN** the assigned schema is `vision-driven`
 - **AND** the first ready artifact is `research-plan`
 - **AND** the output path for that artifact is `plans/plan.md`
 - **AND** any demo/spike code used during intent research remains change-local under `demos/`
@@ -161,13 +161,14 @@ The controller SHALL provide a safe rename operation for active `vision-driven` 
 - **AND** `review/state.json` is updated when it exists
 - **AND** existing plan, specs, tasks, review, and handoff evidence remain inside the renamed change
 
-### Requirement: Existing spec-driven changes SHALL remain valid
+### Requirement: Existing spec-driven and vision-driven changes SHALL remain valid
 
-Changing the project default schema to `vision-driven` SHALL NOT rewrite existing changes that explicitly declare `schema: spec-driven` in `.openspec.yaml`.
+Changing the project default schema to `vision2` SHALL NOT rewrite existing changes that explicitly declare `schema: spec-driven` or `schema: vision-driven` in `.openspec.yaml`.
 
 #### Scenario: Existing change metadata keeps old workflow
 
-- **GIVEN** an existing change has `.openspec.yaml` with `schema: spec-driven`
+- **GIVEN** an existing change has `.openspec.yaml` with `schema: spec-driven` or `schema: vision-driven`
 - **WHEN** OpenSpec loads status for that change after the default schema changes
-- **THEN** it resolves the change through `spec-driven`
-- **AND** it does not require `plans/plan.md`, `review/self-review.md`, or `review/self-review.html`
+- **THEN** it resolves the change through its declared schema
+- **AND** a `spec-driven` change does not require `plans/plan.md`, `review/self-review.md`, or `review/self-review.html`
+- **AND** a `vision-driven` change does not require `interview_plan.md` or `toc.md`

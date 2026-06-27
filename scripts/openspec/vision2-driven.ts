@@ -3,23 +3,38 @@
 /**
  * vision2 OpenSpec workflow controller.
  *
- * Simplified vision workflow: the interview record is the intent source of
- * truth (no plans/plan.md), specs/tasks drive implementation, issues/*.md
- * capture iteration findings (no review/ directory), and toc.md closes the
- * change with Markdown-footnote references enforced by `check`.
+ * Default new-change workflow for this repo: the interview record is the
+ * intent source of truth, specs/tasks drive implementation, issues/*.md
+ * capture iteration findings, and toc.md closes the change with
+ * Markdown-footnote references enforced by `check`.
  *
  * Generic mechanics (run/paths/versioned-doc/handoff/rename/commit-check) live
  * in ./utils and are shared with vision-driven.ts.
  */
 
 import { existsSync } from "node:fs";
-import { copyFile, mkdir, readFile, readdir, rename, unlink } from "node:fs/promises";
+import { copyFile, mkdir, readFile, readdir, rename, unlink, writeFile } from "node:fs/promises";
 import { basename, join, relative } from "node:path";
 
 import { assertChangeExists, changeDirOf, requireArtifact, requireChange } from "./utils/change-paths";
 import { checkCommitEvidence } from "./utils/commit-check";
 import { renameChange, writeHandoff } from "./utils/handoff";
-import { ISSUE_FILE_RE, collectIssues, validateIssueFile, validateIssues } from "./utils/issues";
+import {
+  ISSUE_FILE_RE,
+  collectIssueIds,
+  collectIssues,
+  isIssueGroupBy,
+  isIssuePriority,
+  isIssueType,
+  normalizeIssueReference,
+  slugifyIssueTitle,
+  validateIssueFile,
+  validateIssues,
+  type IssueGroupBy,
+  type IssuePriority,
+  type IssueRecord,
+  type IssueType,
+} from "./utils/issues";
 import { runOpenspec } from "./utils/run";
 
 type Command =
@@ -48,10 +63,11 @@ const usage = (): string =>
     "  bun run openspec:vision2 -- instructions <artifact> <change>",
     "  bun run openspec:vision2 -- validate <change>",
     "  bun run openspec:vision2 -- issues <change> --archive",
+    "  bun run openspec:vision2 -- issues <change> --new <bug|task|decision|risk|question> --title <title>",
     "  bun run openspec:vision2 -- commit-check <change> --phase <interview|apply|close|archive>",
     "  bun run openspec:vision2 -- handoff <change>",
     "  bun run openspec:vision2 -- rename <old-change> <new-change>",
-    "  bun run openspec:vision2 -- issues <change> [--validate]",
+    "  bun run openspec:vision2 -- issues <change> [--validate|--group-by <group|label|state|type>]",
     "  bun run openspec:vision2 -- check <change>",
   ].join("\n");
 
@@ -63,6 +79,42 @@ const handoffPathOf = (change: string): string => join(changeDirOf(projectRoot, 
 interface ArchivedIssueMove {
   from: string;
   to: string;
+}
+
+interface IssueCreateOptions {
+  type: IssueType;
+  title: string;
+  group: string;
+  labels: string[];
+  dependsOn: string[];
+  blocks: string[];
+  priority: IssuePriority;
+  owner: string | null;
+  source: string;
+}
+
+interface IssueListEntry {
+  relativePath: string;
+  issueId: string;
+  title: string;
+  state: IssueRecord["state"];
+  githubIssueStatus: IssueRecord["githubIssueStatus"];
+  type: IssueRecord["type"];
+  group: string;
+  labels: string[];
+  dependsOn: string[];
+  blocks: string[];
+  priority: IssueRecord["priority"];
+  owner: string | null;
+  source: string | null;
+}
+
+interface IssueListGroup {
+  key: string;
+  total: number;
+  open: number;
+  closed: number;
+  issues: IssueListEntry[];
 }
 
 const isCrossDeviceRenameError = (error: unknown): boolean =>
@@ -94,6 +146,235 @@ const commitMessageFor = (change: string, phase: CommitPhase): string => {
     return `docs(spec): close ${change} with toc`;
   }
   return `docs(spec): archive ${change}`;
+};
+
+const readOptionValue = (args: string[], name: string): string | null => {
+  const index = args.indexOf(name);
+  if (index < 0) {
+    return null;
+  }
+  const value = args[index + 1];
+  if (!value || value.startsWith("--")) {
+    throw new Error(`${name} requires a value.`);
+  }
+  return value;
+};
+
+const readOptionValues = (args: string[], name: string): string[] => {
+  const values: string[] = [];
+  for (let index = 0; index < args.length; index += 1) {
+    if (args[index] !== name) {
+      continue;
+    }
+    const value = args[index + 1];
+    if (!value || value.startsWith("--")) {
+      throw new Error(`${name} requires a value.`);
+    }
+    values.push(value);
+  }
+  return values;
+};
+
+const readCommaOptionValues = (args: string[], name: string): string[] =>
+  readOptionValues(args, name).flatMap((value) =>
+    value
+      .split(",")
+      .map((item) => item.trim())
+      .filter((item) => item.length > 0),
+  );
+
+const quoteYamlScalar = (value: string): string => JSON.stringify(value);
+
+const renderYamlList = (values: string[]): string => {
+  if (values.length === 0) {
+    return " []";
+  }
+  return `\n${values.map((value) => `  - ${quoteYamlScalar(value)}`).join("\n")}`;
+};
+
+const issueListEntryOf = (record: IssueRecord): IssueListEntry => ({
+  relativePath: record.relativePath,
+  issueId: record.issueId,
+  title: record.title,
+  state: record.state,
+  githubIssueStatus: record.githubIssueStatus,
+  type: record.type,
+  group: record.group,
+  labels: record.labels,
+  dependsOn: record.dependsOn,
+  blocks: record.blocks,
+  priority: record.priority,
+  owner: record.owner,
+  source: record.source,
+});
+
+const groupIssueRecords = (records: IssueRecord[], groupBy: IssueGroupBy): IssueListGroup[] => {
+  const groups = new Map<string, IssueRecord[]>();
+  const add = (key: string, record: IssueRecord): void => {
+    const existing = groups.get(key) ?? [];
+    existing.push(record);
+    groups.set(key, existing);
+  };
+
+  for (const record of records) {
+    if (groupBy === "group") {
+      add(record.group, record);
+      continue;
+    }
+    if (groupBy === "state") {
+      add(record.state, record);
+      continue;
+    }
+    if (groupBy === "type") {
+      add(record.type ?? "(none)", record);
+      continue;
+    }
+    const labels = record.labels.length > 0 ? record.labels : ["(none)"];
+    for (const label of labels) {
+      add(label, record);
+    }
+  }
+
+  return [...groups.entries()]
+    .map(([key, entries]) => {
+      const issues = entries.map(issueListEntryOf);
+      return {
+        key,
+        total: entries.length,
+        open: entries.filter((entry) => entry.state === "open").length,
+        closed: entries.filter((entry) => entry.state !== "open").length,
+        issues,
+      };
+    })
+    .sort((a, b) => a.key.localeCompare(b.key));
+};
+
+const normalizeCreateReferences = (
+  fieldName: "depends_on" | "blocks",
+  values: string[],
+  knownIssueIds: Set<string>,
+): string[] => {
+  const references: string[] = [];
+  for (const value of values) {
+    const reference = normalizeIssueReference(value);
+    if (!reference) {
+      throw new Error(`${fieldName} contains invalid issue reference: ${value}`);
+    }
+    if (!knownIssueIds.has(reference)) {
+      throw new Error(`${fieldName} references unknown issue: ${reference}`);
+    }
+    references.push(reference);
+  }
+  return [...new Set(references)];
+};
+
+const nextIssueFilename = async (changeDir: string, title: string): Promise<string> => {
+  const ids = await collectIssueIds(changeDir, true);
+  const max = [...ids].reduce((highest, issueId) => {
+    const numericPrefix = Number.parseInt(issueId.split("-")[0] ?? "0", 10);
+    return Number.isFinite(numericPrefix) && numericPrefix > highest ? numericPrefix : highest;
+  }, 0);
+  return `${String(max + 1).padStart(3, "0")}-${slugifyIssueTitle(title)}.md`;
+};
+
+const renderIssueTemplate = (template: string, values: Record<string, string>): string =>
+  template.replace(/\{\{([a-z_]+)\}\}/gu, (token, key: string) => values[key] ?? token);
+
+const createIssueFromTemplate = async (change: string, changeDir: string, args: string[]): Promise<void> => {
+  const typeValue = readOptionValue(args, "--new") ?? readOptionValue(args, "--template");
+  if (!typeValue) {
+    throw new Error("issue creation requires --new <bug|task|decision|risk|question>.");
+  }
+  if (!isIssueType(typeValue)) {
+    throw new Error(`--new must be bug|task|decision|risk|question, got: ${typeValue}`);
+  }
+
+  const title = readOptionValue(args, "--title")?.trim();
+  if (!title) {
+    throw new Error("issue creation requires --title <title>.");
+  }
+
+  const priorityValue = readOptionValue(args, "--priority") ?? "medium";
+  if (!isIssuePriority(priorityValue)) {
+    throw new Error(`--priority must be low|medium|high|critical, got: ${priorityValue}`);
+  }
+
+  const knownIssueIds = await collectIssueIds(changeDir, true);
+  const labels = [...readOptionValues(args, "--label"), ...readCommaOptionValues(args, "--labels"), typeValue].filter(
+    (value) => value.length > 0,
+  );
+  const dependsOn = normalizeCreateReferences(
+    "depends_on",
+    [...readOptionValues(args, "--depends-on"), ...readOptionValues(args, "--depends_on")],
+    knownIssueIds,
+  );
+  const blocks = normalizeCreateReferences("blocks", readOptionValues(args, "--blocks"), knownIssueIds);
+  const group = readOptionValue(args, "--group") ?? "general";
+  const owner = readOptionValue(args, "--owner");
+  const source =
+    readOptionValue(args, "--source") ?? `bun run openspec:vision2 -- ${["issues", change, ...args].join(" ")}`;
+
+  const options: IssueCreateOptions = {
+    type: typeValue,
+    title,
+    group,
+    labels: [...new Set(labels)],
+    dependsOn,
+    blocks,
+    priority: priorityValue,
+    owner,
+    source,
+  };
+  const templatePath = join(projectRoot, "openspec", "schemas", SCHEMA, "templates", "issues", `${options.type}.md`);
+  if (!existsSync(templatePath)) {
+    throw new Error(`missing issue template: ${relative(projectRoot, templatePath)}`);
+  }
+
+  const filename = await nextIssueFilename(changeDir, options.title);
+  const issueId = filename.slice(0, -".md".length);
+  const issuePath = join(changeDir, "issues", filename);
+  await mkdir(join(changeDir, "issues"), { recursive: true });
+  const template = await readFile(templatePath, "utf-8");
+  const content = renderIssueTemplate(template, {
+    title_yaml: quoteYamlScalar(options.title),
+    type: options.type,
+    group_yaml: quoteYamlScalar(options.group),
+    labels_yaml: renderYamlList(options.labels),
+    depends_on_yaml: renderYamlList(options.dependsOn),
+    blocks_yaml: renderYamlList(options.blocks),
+    priority: options.priority,
+    owner_yaml: options.owner ? quoteYamlScalar(options.owner) : '""',
+    source_yaml: quoteYamlScalar(options.source),
+    summary: options.title,
+  });
+  const issueIdsWithNewIssue = new Set([...knownIssueIds, issueId]);
+  const validation = validateIssueFile(content, filename, issueIdsWithNewIssue);
+  if (validation.errors.length > 0) {
+    throw new Error(`generated issue is invalid: ${validation.errors.join("; ")}`);
+  }
+  await writeFile(issuePath, content);
+  console.log(
+    JSON.stringify(
+      {
+        ok: true,
+        change,
+        created: {
+          relativePath: relative(changeDir, issuePath),
+          issueId,
+          template: options.type,
+          title: options.title,
+          group: options.group,
+          labels: options.labels,
+          dependsOn: options.dependsOn,
+          blocks: options.blocks,
+          priority: options.priority,
+          owner: options.owner,
+        },
+      },
+      null,
+      2,
+    ),
+  );
 };
 
 /**
@@ -178,8 +459,14 @@ const listOrValidateIssues = async (change: string, args: string[]): Promise<voi
   const changeDir = assertChangeExists(projectRoot, change);
   const validateOnly = args.includes("--validate");
   const archiveOnly = args.includes("--archive");
-  if (validateOnly && archiveOnly) {
-    throw new Error("Use either --validate or --archive, not both.");
+  const createIssue = args.includes("--new") || args.includes("--template");
+  const requestedModes = [validateOnly, archiveOnly, createIssue].filter(Boolean).length;
+  if (requestedModes > 1) {
+    throw new Error("Use only one of --new, --validate, or --archive.");
+  }
+  if (createIssue) {
+    await createIssueFromTemplate(change, changeDir, args);
+    return;
   }
   if (archiveOnly) {
     const issuesDir = join(changeDir, "issues");
@@ -266,20 +553,21 @@ const listOrValidateIssues = async (change: string, args: string[]): Promise<voi
   const records = await collectIssues(changeDir);
   const open = records.filter((r) => r.state === "open");
   const closed = records.filter((r) => r.state !== "open");
+  const groupByValue = readOptionValue(args, "--group-by");
+  if (groupByValue && !isIssueGroupBy(groupByValue)) {
+    throw new Error(`--group-by must be group|label|state|type, got: ${groupByValue}`);
+  }
   console.log(
     JSON.stringify(
       {
         ok: true,
         change,
+        groupBy: groupByValue,
         total: records.length,
         open: open.length,
         closed: closed.length,
-        issues: records.map((r) => ({
-          relativePath: r.relativePath,
-          title: r.title,
-          state: r.state,
-          githubIssueStatus: r.githubIssueStatus,
-        })),
+        issues: records.map(issueListEntryOf),
+        groups: groupByValue ? groupIssueRecords(records, groupByValue) : undefined,
       },
       null,
       2,
@@ -358,9 +646,7 @@ const checkChange = async (change: string): Promise<void> => {
       const orphanSpecs = specFiles.filter((spec) => !refs.has(spec));
       if (orphanSpecs.length > 0) {
         result.orphanSpecs = orphanSpecs;
-        result.issues.push(
-          `toc.md does not cite ${orphanSpecs.length} spec file(s): ${orphanSpecs.join(", ")}`,
-        );
+        result.issues.push(`toc.md does not cite ${orphanSpecs.length} spec file(s): ${orphanSpecs.join(", ")}`);
       }
       // Footnote targets: every cited path must exist.
       const danglingFootnotes = [...refs].filter((ref) => !existsSync(join(changeDir, ref)));

@@ -8,9 +8,11 @@
 
 Interview one question at a time. Before each question, give your recommended answer with reasoning. If a question can be answered from the codebase or existing OpenSpec changes/specs, explore it yourself instead of asking.
 
+Default law: this repository uses `vision2` for new OpenSpec changes. Do not switch to `vision-driven` unless the user explicitly asks for the legacy workflow or the existing change already declares it.
+
 | Turn | Speaker | Objective record | Impact on intent |
-| ---- | ------- | ----------------- | ---------------- |
-| 1    | User    |                   |                  |
+| ---- | ------- | ---------------- | ---------------- |
+| 1    | User    |                  |                  |
 
 ## Evidence Read
 
@@ -37,6 +39,10 @@ The deeper app/architecture pressure inferred from the user's language, prior de
 ### Final Visible Effect
 
 Describe what the operator will see, trust, or stop worrying about when this change is correct. For backend-only work, describe the external proof surface.
+
+### Workflow Fit
+
+Confirm this is a new `vision2` change, or record the explicit reason it must use a legacy workflow.
 
 ## Open Questions
 

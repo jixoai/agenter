@@ -1,6 +1,6 @@
 name: vision2
 version: 1
-description: Simplified vision workflow - interview record is the intent source of truth; specs and tasks drive implementation; issues drive iteration; toc closes.
+description: Default new-change workflow for this repo - interview record is the intent source of truth; specs and tasks drive implementation; typed issues drive iteration; toc closes.
 artifacts:
   - id: interview
     generates: interview_plan.md
@@ -8,6 +8,11 @@ artifacts:
     template: interview_plan.md
     instruction: |
       Interview the user to build the intent source of truth for this change.
+
+      Default workflow law:
+      - vision2 is the default new-change workflow for this repository.
+      - Do not switch to vision-driven unless the user explicitly asks for the legacy workflow or the existing change already declares `schema: vision-driven`.
+      - Do not create legacy plan or review artifact families for a vision2 change.
 
       Interview method (grilling): interview the user relentlessly about every aspect of this requirement until you reach shared understanding. Walk down each branch of the design tree, resolving dependencies between decisions one by one. For each question, provide your recommended answer first.
 
@@ -79,6 +84,8 @@ artifacts:
       Persona: John Carmack. Be mechanical, precise, and edge-case obsessed. Each task must have a visible completion condition.
 
       Mandatory content:
+      - Treat `bun run openspec:vision2 -- ...` as the controller surface for this change.
+      - Treat `issues/*.md` as the iteration ledger for new findings. Issues are typed Markdown records stored as `issues/NNN-slug.md`, created from `openspec/schemas/vision2/templates/issues/*.md`, with front matter for `type`, `group`, `labels`, `depends_on`, `blocks`, `priority`, and source attribution.
       - Start with alignment / investigation tasks when the intent still needs confirmation or repo truth still needs to be read.
       - Include BDD tasks before implementation tasks.
       - BDD scenarios must trace back to `interview_plan.md` and the relevant spec requirement.
@@ -90,7 +97,10 @@ artifacts:
       - Use checkbox format exactly: `- [ ] X.Y Task description`.
 
       Iteration finding rule:
-      - When implementation or verification discovers a NEW problem that is not in the original plan, record it as an issue file under `issues/NNN-slug.md` instead of silently editing tasks. The issue standard is enforced by `bun run openspec:vision2 -- check <change>`.
+      - When implementation or verification discovers a NEW problem that is not in the original plan, record it with `bun run openspec:vision2 -- issues <change> --new <bug|task|decision|risk|question> --title "<title>"` instead of silently editing tasks.
+      - Use `--group`, repeated `--label`, `--depends-on`, `--blocks`, `--priority`, and `--owner` when they change how the issue should be triaged.
+      - The issue standard is enforced by `bun run openspec:vision2 -- issues <change> --validate` and `bun run openspec:vision2 -- check <change>`.
+      - Do not introduce the legacy plan-backup or self-review loop artifacts into vision2 tasks.
 
       Keep tasks atomic. If a task cannot be verified, split it.
     requires:
@@ -127,6 +137,7 @@ artifacts:
 
       Issue convergence:
       - Before this artifact can pass `check`, every active issue under `issues/*.md` must have `state: closed` or `state: resolved` (with a `## Resolution` section naming the fix). Any `state: open` issue keeps the workflow in the iteration loop.
+      - Issue front matter must remain valid: dependency references must point to existing active or archived issue ids, and active dependency cycles are structural errors.
       - If an issue cannot be closed, leave it open and write the reason in the toc preface so the next iteration knows what blocks exit.
 
       Do not reduce toc.md to a mechanical file listing. The preface is the human judgment layer; the footnotes are the structural invariant.
@@ -138,4 +149,4 @@ apply:
     - tasks
   tracks: tasks.md
   instruction: |
-    Implement pending tasks with BDD-first discipline. Keep `interview_plan.md` as the intent source of truth. Before app-code work starts, run `bun run openspec:vision2 -- commit-check <change> --phase apply` and make sure OpenSpec artifacts have been committed. Update only task checkboxes completed and verified in the current working context, commit task updates with matching implementation/BDD evidence, and run `bun run openspec:vision2 -- check <change>` before claiming the workflow is complete. When a new problem surfaces during implementation, record it as `issues/NNN-slug.md` rather than silently editing the plan.
+    Implement pending tasks with BDD-first discipline. Keep `interview_plan.md` as the intent source of truth. Before app-code work starts, run `bun run openspec:vision2 -- commit-check <change> --phase apply` and make sure OpenSpec artifacts have been committed. Update only task checkboxes completed and verified in the current working context, commit task updates with matching implementation/BDD evidence, and run `bun run openspec:vision2 -- check <change>` before claiming the workflow is complete. When a new problem surfaces during implementation, create a typed issue through `bun run openspec:vision2 -- issues <change> --new ...` rather than silently editing the plan.

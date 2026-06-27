@@ -160,8 +160,8 @@ Agenter 是一个 attention-first 的 Agent runtime platform。
 - 任何改变平台法则、系统边界、durable contract 的实现，在 archive OpenSpec change 之前必须同步更新 `SPEC.md` 或对应包级 `SPEC.md`。
 - `SPEC.md` 保持精简，不记录短期任务、阶段性收口状态、执行流水账。
 - 若 `openspec/changes/*` 与 durable spec 不一致，以“先补 durable spec，再 archive”为强制流程。
-- 新的 OpenSpec change 默认使用 project-local `vision-driven` schema：先以 `plans/plan.md` 作为 Intent Document SSOT 收敛用户意图与最终可见效果，再生成 specs、BDD tasks、实现与 `review/self-review.md`。`review/self-review.md` 是宏观复盘与判断记录；`review/self-review.html` 是单独的截图、交互、结构化证据展示报告。`plans/plan.md` 发生实质修订前必须备份为 `plans/plan-vN.md`；连续 2 轮 self-review 未解决的问题必须回到 research-plan/specs 阶段，而不是在实现层继续打补丁。既有 `schema: spec-driven` change 保持原 schema 解析。
-- 可选 schema `vision2`（通过 `--schema vision2` 显式启用，默认不变）：以 `interview_plan.md` 作为意图真源（采访记录本身保留版本过程，无 `plans/plan-vN.md`），specs/tasks 驱动实现，迭代发现写成 `issues/NNN-slug.md`（GitHub 风格，front matter + Summary/Impact/Evidence/Resolution），`toc.md` 收口并用 Markdown 脚注 `[^id]: <path>` 引用每个 spec 文件。`bun run openspec:vision2 -- check <change>` 强制：每个 `specs/**/*.md` 都被脚注引用（孤儿即残留或不完善），每个脚注指向真实文件（断链即错误），所有 `issues/*.md` 的 `state` 为 closed/resolved 才允许出口（有 open issue 则 exit code 2 继续迭代）。vision2 与 vision-driven、spec-driven 三者并存，互不重写。
+- 新的 OpenSpec change 默认使用 project-local `vision2` schema：以 `interview_plan.md` 作为意图真源（采访记录本身保留版本过程，不再走 `plans/plan-vN.md` 修订链），specs/tasks 驱动实现，迭代发现通过 `bun run openspec:vision2 -- issues <change> --new <bug|task|decision|risk|question> --title "<title>"` 创建为 `issues/NNN-slug.md`。issue front matter 是迭代本体，支持 `type`、`group`、`labels`、`depends_on`、`blocks`、`priority`、`owner`、`source`；正文保留 Summary/Impact/Evidence/Recommendation 或 Resolution。`toc.md` 收口并用 Markdown 脚注 `[^id]: <path>` 引用每个 spec 文件。`bun run openspec:vision2 -- check <change>` 强制：每个 `specs/**/*.md` 都被脚注引用（孤儿即残留或不完善），每个脚注指向真实文件（断链即错误），所有活跃 `issues/*.md` 的 `state` 为 closed/resolved 才允许出口（有 open issue 则 exit code 2 继续迭代），issue 依赖引用必须存在且活跃依赖图不得成环。
+- `vision-driven` schema 与 `openspec:vision` 工具仍保留，但只用于已有 `schema: vision-driven` change 或用户明确要求的 legacy workflow；不得把它当作新 change 的默认路径。既有 `schema: spec-driven` change 保持原 schema 解析。
 
 ## 8. 发布法则
 

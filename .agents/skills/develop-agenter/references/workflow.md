@@ -15,6 +15,9 @@
 
 - `openspec/changes/*` is for active change artifacts.
 - `openspec/specs/*` and `SPEC.md` files are durable truth.
+- New OpenSpec work defaults to `vision2`: start with `bun run openspec:vision2 -- new <change>`, keep intent in `interview_plan.md`, track iteration findings as typed issues with `bun run openspec:vision2 -- issues <change> --new ...`, and close with `toc.md`.
+- `vision2` issues are the iteration ledger: use `type`, `group`, `labels`, `depends_on`, `blocks`, `priority`, and `source` front matter for triage and dependency law; use `issues --validate`, `issues --group-by <group|label|state|type>`, and `check` for proof.
+- `bun run openspec:vision -- ...` is retained only for existing `schema: vision-driven` changes or explicit legacy requests.
 - Archive only after:
   - implementation is done
   - main specs are synced
