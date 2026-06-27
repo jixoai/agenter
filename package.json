@@ -84,6 +84,7 @@
     "homebrew:generate-formula": "bun run scripts/homebrew/generate-formula.ts",
     "npm:bootstrap-package": "bun run scripts/npm/bootstrap-package.ts",
     "openspec:vision": "bun run scripts/openspec/vision-driven.ts",
+    "openspec:vision2": "bun run scripts/openspec/vision2-driven.ts",
     "release:build-bundles": "bun run scripts/release/build-bundles.ts",
     "release:build-bundles:host-smoke": "bun run scripts/release/build-bundles.ts --host-only-smoke",
     "release:build-native-cli:all-targets": "bun run scripts/binaries/build-agenter-cli.ts --all-targets",
