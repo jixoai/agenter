@@ -96,13 +96,14 @@ Sent-message resource presentation SHALL be driven from the same serialized sour
 
 ### Requirement: Resource activation SHALL be parity across token and tile
 
-Resource detail behavior SHALL be keyed by the resolved resource itself, not by where the operator clicked it from.
+Resource detail behavior SHALL be keyed by the resolved resource itself, not by where the operator clicked it from. Token and tile entrypoints SHALL expose stable accessible names so route-level proof can open them without relying on brittle Markdown text matching.
 
 #### Scenario: Token and bar tile open the same detail surface
 
 - **WHEN** the operator opens a resource from an inline token or from the in-bubble aggregated resource bar
 - **THEN** both entry points resolve the same resource id
 - **AND** they open the same preview or detail surface for that resource kind
+- **AND** each entrypoint exposes a stable accessible activation label for route-level screenshot automation
 
 #### Scenario: Resource kind selects the official viewer family
 

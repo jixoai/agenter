@@ -176,3 +176,18 @@ Cli-shell managed mode SHALL create or refresh a app-scoped AttentionItem for th
 - **THEN** it may wake or keep scheduling the Avatar
 - **AND** it does not by itself authorize terminal writes
 - **AND** terminal writes still require TerminalSystem-native writer authority, guard approval, or an active terminal write lease with Avatar actor provenance
+
+### Requirement: Shell-assistant SHALL keep guard approval terminal-local in cli-shell
+
+The default shell-assistant prompt guidance SHALL keep cli-shell MessageRoom work focused on the bound TerminalSystem terminal. Guard approval, denial, expiry, and timeout SHALL be treated as terminal-local authorization outcomes rather than reasons to perform equivalent bound-terminal work through another execution surface.
+
+#### Scenario: Shell-assistant targets the bound terminal
+- **WHEN** shell-assistant handles a cli-shell MessageRoom request to run, type, inspect, or continue terminal work
+- **THEN** it treats the bound TerminalSystem terminal as the target
+- **AND** if implementation-internal terminals exist, the prompt keeps them out of the default conversation model
+- **AND** it does not satisfy that bound-terminal request by running an equivalent command in `root_bash` or `workspace_bash`
+
+#### Scenario: Guard approval remains terminal-local
+- **WHEN** shell-assistant receives a guard approval request from TerminalSystem
+- **THEN** the prompt guidance treats it as pending work on the bound terminal
+- **AND** denial, expiry, or timeout does not authorize the Avatar to perform the same bound-terminal action through another execution surface

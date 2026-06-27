@@ -288,6 +288,13 @@ Descriptor-backed runtime terminal CLI and loopback-local API routes SHALL expos
 - **THEN** the loopback-local API route, shell CLI subcommand, and `--help` output are all derived from the same descriptor entry
 - **AND** the runtime does not maintain a second hand-written parser or mutation surface for the same payload
 
+#### Scenario: Terminal create and set-config expose backend launch truth
+
+- **WHEN** the AI inspects `terminal create --help`, `terminal set-config --help`, or the generated descriptor schemas
+- **THEN** the input schema includes the explicit terminal `backend` launch-truth field where creation or config mutation accepts it
+- **AND** that field reuses the shared terminal backend enum law instead of a descriptor-local string alias
+- **AND** generated help keeps backend selection in launch truth instead of conflating it with renderer preference
+
 #### Scenario: Terminal set-config omits renderer and theme ownership
 
 - **WHEN** the AI inspects or uses the public runtime `terminal set-config` command
@@ -323,3 +330,20 @@ Descriptor-backed runtime terminal CLI and loopback-local API routes SHALL expos
 - **THEN** the shared descriptor registry validates and dispatches that request through the runtime-local API
 - **AND** the command archives the history instance without pretending it is deleted
 
+### Requirement: Runtime terminal descriptors SHALL distinguish live bootstrap from killed recovery
+Descriptor-backed terminal lifecycle commands SHALL distinguish ordinary live `not_started` bootstrap from killed-history recovery. Generated help and descriptor metadata MUST NOT teach killed-history bootstrap as the normal way to continue work after terminal death.
+
+#### Scenario: Bootstrap help prefers live not-started terminals
+- **WHEN** the AI runs `terminal bootstrap --help`
+- **THEN** the help describes bootstrap as the normal lifecycle edge for live `not_started` terminals
+- **AND** it does not describe killed-history bootstrap as an ordinary resume path
+
+#### Scenario: Killed recovery requires explicit descriptor intent
+- **WHEN** the AI invokes a descriptor-backed lifecycle command for a killed terminal
+- **THEN** the descriptor validates an explicit killed-history recovery intent before dispatch
+- **AND** a request without that intent fails before silently reviving the terminal
+
+#### Scenario: Terminal list help remains live-only
+- **WHEN** the AI runs `terminal list --help`
+- **THEN** the help states that `terminal list` returns live terminals only
+- **AND** it points killed inspection to explicit history or index commands

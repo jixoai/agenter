@@ -162,6 +162,57 @@ Cli-shell SHALL treat room-message send success and follow-up snapshot refresh f
 - **AND** it preserves the successful send result
 - **AND** it surfaces refresh failure as a separate recoverable notice
 
+### Requirement: Cli-shell Chat SHALL keep transcript scrolling as a projection over MessageRoom truth
+
+Cli-shell Chat SHALL render the active Room transcript through host-native scroll container semantics while reading durable room history through MessageRoom snapshot, page, and incremental update contracts. Chat scroll state SHALL remain view state owned by the host surface, not durable message truth and not a second transcript store.
+
+#### Scenario: Chat reads from backend room truth
+
+- **WHEN** the Chat Room surface is open for an app binding
+- **THEN** it renders messages from the durable bound MessageRoom
+- **AND** it does not keep a separate local transcript as authoritative truth
+
+#### Scenario: Chat uses host-native scroll mechanics
+
+- **WHEN** native cli-shell renders Chat messages
+- **THEN** the message list uses an OpenTUI `ScrollBox` or equivalent explicit host-native scroll primitive
+- **AND** scrolling down moves toward newer lower content
+- **AND** scrolling up moves toward older upper content
+
+#### Scenario: Chat scroll state is not distance-from-bottom truth
+
+- **WHEN** native cli-shell tracks Chat list position
+- **THEN** it derives visible state from the host scroll container, loaded message window, and anchor metadata
+- **AND** it does not expose `dialogueScrollOffset` or any equivalent distance-from-bottom row counter as Chat scroll authority
+
+#### Scenario: Chat near-top scroll loads older room messages
+
+- **GIVEN** the loaded Chat message window has `hasMoreBefore = true`
+- **WHEN** the user scrolls near the older-history edge
+- **THEN** cli-shell requests an older page from MessageRoom history using the current `nextBefore` cursor
+- **AND** the returned messages are prepended into the loaded Chat window without creating another transcript store
+
+#### Scenario: Chat prepend preserves visible anchor
+
+- **GIVEN** the user is reading a visible Chat message `M`
+- **WHEN** older messages are prepended before `M`
+- **THEN** message `M` remains at the same visual row in the Chat viewport after layout settles
+- **AND** the viewport does not jump to the top or bottom as a side effect of pagination
+
+#### Scenario: Chat follows latest content only when bottom-pinned
+
+- **GIVEN** the Chat message list is pinned to bottom
+- **WHEN** new room messages or streaming message updates arrive
+- **THEN** the host scroll container follows the latest rendered content
+- **AND** if the user has scrolled upward, cli-shell preserves the user's visible anchor instead of forcing the viewport to bottom
+
+#### Scenario: Successful Chat send returns to bottom-pinned mode
+
+- **WHEN** the user sends a message from the Chat composer
+- **THEN** cli-shell clears the draft
+- **AND** the Chat list returns to bottom-pinned mode
+- **AND** the Chat surface remains governed by the singleton Chat layout state
+
 ### Requirement: Cli-shell shell-pane cursor projection SHALL keep native offset law
 
 Cli-shell shell-pane projection SHALL keep cursor truth in 0-based viewport-local cells until the final native cursor commit. The required `+1` conversion for native terminal coordinates SHALL happen only at the native cursor commit site so the historical `(-1,-1)` drift does not return through intermediate projection layers.
@@ -441,3 +492,107 @@ Cli-shell SHALL convert renderable-local geometry into screen-coordinate hit reg
 - **WHEN** the operator clicks the row at its visible screen position
 - **THEN** the generated hit region resolves that click to the intended logical item
 - **AND** the row is not offset by the parent's border in one coordinate space but not the other
+
+### Requirement: Shell-next SHALL own terminal-room lifecycle reaction in app code
+
+Shell-next SHALL own the application-specific binding between its terminal instance and room instance. Core systems SHALL expose lifecycle events and owner APIs, but shell-next SHALL implement the reaction `bound terminal killed -> archive bound room` in shell-next app code through public API/event contracts. The core app-extension runtime SHALL NOT contain a shell-next-specific lifecycle reaction host.
+
+#### Scenario: Bound terminal death archives the shell-next room
+
+- **GIVEN** shell-next has a app binding that names a terminal instance and a room instance
+- **WHEN** shell-next observes through public terminal lifecycle events that the bound terminal is killed
+- **THEN** shell-next calls the public room archive API for the bound room
+- **AND** the room archive lifecycle then triggers the normal kernel law that mutes the room attention context
+
+#### Scenario: Unrelated terminal death does not archive the shell-next room
+
+- **GIVEN** shell-next has a app binding that names terminal `A` and room `R`
+- **WHEN** terminal `B` is killed
+- **THEN** shell-next does not archive room `R`
+- **AND** the app reaction is scoped only to the bound terminal instance
+
+#### Scenario: App reaction uses public APIs rather than core imports
+
+- **WHEN** shell-next implements terminal killed -> archive bound room
+- **THEN** it subscribes to terminal lifecycle and calls room archive through public SDK/control-plane contracts
+- **AND** it does not import TerminalSystem, RoomManagement, MessageSystem, or AttentionSystem internals to implement the reaction
+- **AND** core modules do not import shell-next app code
+
+#### Scenario: App binding does not define semantic conversation routing
+
+- **GIVEN** shell-next exposes bound terminal and room references as app facts
+- **WHEN** a user or Avatar chooses where to discuss work
+- **THEN** app code treats the binding as lifecycle state only
+- **AND** semantic routing remains governed by user instruction and AGENTER.mdx / Avatar reasoning
+
+### Requirement: Cli-shell replaceable host law SHALL admit shell-next
+
+The cli-shell app architecture SHALL allow shell-next to replace tmux as the local host/compositor without changing TerminalSystem, MessageSystem, AvatarRuntime, AttentionSystem, or app binding truth. During incubation, the stable cli-shell implementation SHALL remain available until shell-next passes explicit user acceptance.
+
+#### Scenario: Shell-next exercises replaceable host truth
+
+- **WHEN** shell-next attaches to a app shell session
+- **THEN** the bound TerminalSystem terminal id remains shell truth
+- **AND** the bound MessageSystem room id remains room truth
+- **AND** AvatarRuntime and attention contexts remain selected through app bootstrap
+- **AND** tmux is not required as the shell-next presentation host
+
+#### Scenario: Stable cli-shell remains available during incubation
+
+- **WHEN** shell-next is still under `shell2`
+- **THEN** the existing tmux-backed `cli-shell` remains the implementation behind `agenter shell`
+
+### Requirement: Stable cli-shell SHALL remain the shell command during shell-next incubation
+
+The existing cli-shell app SHALL remain the implementation behind the stable `shell` command while shell-next is incubated. Shell-next SHALL use `shell2` as a separate local command until a later acceptance and rename change explicitly promotes it.
+
+#### Scenario: Shell-next does not replace shell during incubation
+- **WHEN** shell-next code exists under `apps/shell-next`
+- **THEN** `bun agenter shell` still starts the existing cli-shell app
+- **AND** `bun agenter shell2` starts shell-next
+- **AND** no current cli-shell package name, bin name, or stable command is renamed by this change
+
+#### Scenario: Legacy rename waits for later acceptance
+- **WHEN** shell-next reaches an implementation milestone
+- **THEN** the existing `apps/cli-shell` directory remains in place
+- **AND** it is not renamed to shell-legacy until a later change explicitly performs the migration
+- **AND** the later migration must preserve a rollback path to the current cli-shell implementation
+
+### Requirement: Cli-shell startup navigation SHALL list only live terminal bindings
+Cli-shell startup navigation SHALL list only live cli-shell terminal bindings as selectable Shells. Killed cli-shell bindings MAY be read from history or index only for non-selection purposes such as avoiding app resource-key reuse or explaining historical evidence.
+
+Selectable Shells SHALL be a app-level projection, not a direct alias for the TerminalSystem live projection. A selectable existing Shell MUST be a canonical cli-shell Shell root, such as `shell-N`, and MUST have a running TerminalSystem instance. Terminal rows that are live from the platform perspective but are `not_started`, legacy sub-bindings such as `shell-N:terminal-M`, archived, killed, or non-canonical verification/test resource keys MUST NOT be shown as existing Shell choices.
+
+#### Scenario: Killed cli-shell binding is not selectable
+- **GIVEN** a cli-shell app binding exists for `shell-5`
+- **AND** its TerminalSystem terminal has completed the killed flow
+- **WHEN** the user opens cli-shell startup navigation
+- **THEN** `shell-5` is not listed as a selectable live Shell
+- **AND** selecting an existing Shell cannot target that killed terminal id
+
+#### Scenario: Killed history may reserve resource numbering
+- **GIVEN** killed cli-shell bindings exist for `shell-1` and `shell-2`
+- **AND** live cli-shell binding exists for `shell-3`
+- **WHEN** cli-shell offers a new Shell action
+- **THEN** it may choose the next unused app resource key such as `shell-4`
+- **AND** it still does not list killed bindings as reusable live Shells
+
+#### Scenario: Dirty platform-live rows are not selectable Shells
+- **GIVEN** TerminalSystem live projection contains a cli-shell row with `processPhase=not_started`
+- **AND** it contains an old cli-shell resource key like `shell-3:terminal-1`
+- **AND** it contains a non-canonical verification resource key like `shell-verify-shell-frame`
+- **AND** it contains a running canonical resource key like `shell-14`
+- **WHEN** cli-shell builds startup navigation
+- **THEN** only `shell-14` is listed as a selectable existing Shell
+- **AND** the non-selectable known root `shell-3` may still reserve numbering so the New Shell action does not reuse it
+
+#### Scenario: Re-entering killed session creates clean terminal binding
+- **GIVEN** the last app resource key points only to a killed terminal binding
+- **WHEN** the user re-enters that cli-shell session for normal work
+- **THEN** cli-shell creates or binds a clean live TerminalSystem terminal for that app resource
+- **AND** it does not silently bootstrap the killed terminal unless an explicit killed-history recovery action is used
+
+#### Scenario: Startup chooser uses core projections only
+- **WHEN** cli-shell builds the startup Shell list
+- **THEN** it consumes client-sdk live/history/index projection APIs
+- **AND** it does not scan tmux panes, route-local caches, or all terminal records as substitute lifecycle truth

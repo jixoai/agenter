@@ -152,12 +152,12 @@ The terminal control plane SHALL keep durable `processPhase` and transient `life
 
 ### Requirement: Terminal control plane SHALL expose durable config inspection and mutation
 
-The terminal control plane SHALL expose canonical config read/write operations for durable terminal launch truth after creation.
+The terminal control plane SHALL expose canonical config read/write operations for durable terminal launch truth after creation. The explicit terminal `backend` field is part of this durable launch truth and is separate from renderer preference, resolved renderer, and runtime-observed identity.
 
 #### Scenario: Get-config returns durable launch truth separately from runtime observations
 
 - **WHEN** a caller requests terminal config for an existing terminal
-- **THEN** the result includes durable launch truth such as `command`, `launchCwd`, `processKind`, profile fields, and metadata
+- **THEN** the result includes durable launch truth such as `command`, `launchCwd`, `processKind`, `backend`, profile fields, and metadata
 - **AND** it may include `processPhase` and `lifecycleTransition` as lifecycle summary fields
 - **AND** it does not replace durable config fields with runtime-observed `currentPath` or `currentTitle`
 
@@ -166,6 +166,19 @@ The terminal control plane SHALL expose canonical config read/write operations f
 - **WHEN** a caller updates terminal config such as default launch cwd, command, title, or metadata
 - **THEN** the durable terminal record is updated without changing the terminal id
 - **AND** later bootstrap uses the updated durable launch truth
+
+#### Scenario: Backend selection is persisted as launch truth
+
+- **WHEN** an authorized caller creates or updates a terminal with `backend = ghostty-native`
+- **THEN** the control plane persists `ghostty-native` as durable launch truth
+- **AND** list, create acknowledgement, get-config, and set-config projections expose that same `backend` value
+- **AND** unknown backend values are rejected explicitly
+
+#### Scenario: Running backend mutation applies on next bootstrap
+
+- **WHEN** a caller updates the durable backend field for a running terminal
+- **THEN** the running PTY keeps its current live backend session
+- **AND** the updated backend takes effect only on the next bootstrap
 
 #### Scenario: Geometry config may apply live and durably
 
@@ -395,3 +408,42 @@ The terminal control plane SHALL expose live, history, archive, and all/index pr
 - **WHEN** the caller requests the default history/index projection
 - **THEN** the archived terminal is absent
 - **AND** it remains available only through the archive projection until delete
+
+### Requirement: Daemon recovery killed flow SHALL be observable and idempotent
+The terminal control plane SHALL replay stale-running daemon recovery through the same killed flow used by explicit stop and natural PTY exit. Recovery MUST emit lifecycle-class consequences that downstream runtime and projection consumers can observe, and it MUST be idempotent for a terminal that has already completed the killed flow.
+
+#### Scenario: Cold start replays stale running terminal death
+- **WHEN** daemon startup detects a durable terminal record with `processPhase = running` but no live PTY can exist for it
+- **THEN** the control plane routes that terminal through the shared killed flow with reason `daemon_recovery_killed`
+- **AND** the resulting publication is lifecycle-class rather than a generic update
+- **AND** downstream consumers can run the same post-workflow as explicit terminal death
+
+#### Scenario: Recovery does not emit duplicate killed effects
+- **GIVEN** a terminal already completed the killed flow with reason `daemon_recovery_killed`
+- **WHEN** recovery replay is invoked again for the same terminal without a new live bootstrap
+- **THEN** the terminal remains killed
+- **AND** the control plane does not emit duplicate lifecycle effects for the same killed transition
+
+#### Scenario: Recovered killed terminal leaves live projection
+- **WHEN** recovery completes the killed flow for a stale running terminal
+- **THEN** the live projection excludes that terminal
+- **AND** the killed history projection includes that terminal until archive or delete
+
+### Requirement: Killed terminal bootstrap SHALL require explicit history recovery intent
+The terminal control plane SHALL treat bootstrap of a killed terminal as an explicit history recovery operation, not as the default path for app reconnection. Live `not_started` bootstrap and killed-history recovery MUST be distinguishable at the API boundary.
+
+#### Scenario: Live not-started bootstrap remains normal
+- **WHEN** a live non-archived terminal has `processPhase = not_started`
+- **THEN** an authorized bootstrap starts its PTY through the normal live lifecycle path
+- **AND** the terminal remains part of the live projection after bootstrap succeeds
+
+#### Scenario: Killed bootstrap requires recovery intent
+- **WHEN** a terminal has completed the killed flow
+- **AND** a caller invokes bootstrap without explicit killed-history recovery intent
+- **THEN** the control plane rejects the request with a clear lifecycle error
+- **AND** the terminal remains in killed history
+
+#### Scenario: Explicit killed recovery is auditable
+- **WHEN** an authorized caller explicitly recovers a killed-history terminal
+- **THEN** the control plane records that recovery as a lifecycle transition distinct from ordinary live bootstrap
+- **AND** the recovered terminal re-enters live projection only after that explicit recovery succeeds

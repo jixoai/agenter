@@ -73,12 +73,18 @@ The message control plane SHALL expose authorized unread summary reads and actor
 
 ### Requirement: Room lifecycle SHALL distinguish archive from dissolve
 
-Room lifecycle APIs SHALL expose archive as a reversible visibility action and dissolve/delete as a destructive removal action, and room provenance metadata such as `builtIn` SHALL NOT by itself suppress global cleanup affordances.
+Room lifecycle APIs SHALL expose archive as a reversible visibility action and dissolve/delete as a destructive removal action. Room-backed `AttentionContext` lifecycle MAY become one of the canonical causes that drives a room into that archived state, and room provenance metadata such as `builtIn` SHALL NOT by itself suppress global cleanup affordances.
 
 #### Scenario: Admin dissolves a legacy bootstrap room
 - **WHEN** an admin deletes a room that still carries legacy bootstrap provenance metadata
 - **THEN** the room can still be dissolved through the normal room lifecycle API
 - **AND** the room's provenance metadata does not by itself block destructive cleanup
+
+#### Scenario: Companion muted context archives the room without dissolving it
+- **WHEN** a room-backed `AttentionContext` enters `muted`
+- **THEN** message-system may mark the companion room as `archived`
+- **AND** the room remains readable, addressable, and durable
+- **AND** the room is not dissolved or deleted by that lifecycle change
 
 ### Requirement: Room participant membership SHALL not encode actor-kind identity roles
 
@@ -163,7 +169,7 @@ Room actor validation SHALL accept raw principal ids for new runtimes and authen
 
 ### Requirement: Chat transport SHALL expose snapshot and incremental messages
 
-A room transport endpoint SHALL deliver an initial room snapshot followed by incremental message updates for that global room, regardless of whether any session runtime is currently active.
+A room transport endpoint SHALL deliver an initial room snapshot followed by incremental message updates for that global room, regardless of whether any session runtime is currently active. Authorized room page reads SHALL remain available as the stable source for loading older transcript windows in app views such as cli-shell Chat.
 
 #### Scenario: Web client connects to a room endpoint
 - **WHEN** a websocket client connects to an authorized room transport endpoint
@@ -179,6 +185,13 @@ A room transport endpoint SHALL deliver an initial room snapshot followed by inc
 - **WHEN** a room message is later edited, recalled, or marked as attention-loaded
 - **THEN** the transport pushes the updated message record with the same `messageId`
 - **AND** the client can update transcript placement and lifecycle state without reloading the whole channel
+
+#### Scenario: App transcript views page older history from room truth
+- **GIVEN** a app transcript view has loaded a recent room snapshot with `nextBefore` and `hasMoreBefore`
+- **WHEN** the app needs older messages before the current window
+- **THEN** it reads an authorized room page using `before = nextBefore`
+- **AND** the returned page updates `nextBefore` and `hasMoreBefore`
+- **AND** the app does not create a second durable transcript store to support incremental loading
 
 ### Requirement: Durable room messages SHALL support sender-authored recall
 
@@ -277,13 +290,20 @@ The message control plane SHALL expose an optional numeric `ref` on durable room
 
 ### Requirement: Model-facing room sends SHALL keep follow-up reminder intent out of durable room truth
 
-Model-facing room sends MAY include an optional `followUpAfterMs` reminder intent for the sending runtime. When present, the control plane SHALL bind that reminder to the successfully sent durable `messageId`, but it SHALL keep the reminder in sender-private runtime scheduling state rather than in the durable room message row, room snapshot payloads, or incremental room transport updates. That reminder SHALL remain eligible only while the anchored message is still the latest visible room message in the room.
+Model-facing room sends MAY include an optional `followUpAfterMs` reminder intent for the sending runtime. When present, the control plane SHALL bind that reminder to the successfully sent durable `messageId`, persist one message-system follow-up task outside the durable room message row, and keep follow-up scheduling fields out of room snapshot payloads and incremental room transport updates. That reminder SHALL remain eligible only while the anchored message is still the latest visible room message in the room.
 
 #### Scenario: Send with a follow-up reminder still persists a normal durable room message
 
 - **WHEN** an authorized runtime sends a room message with `followUpAfterMs`
 - **THEN** the durable room message is appended normally with the same visible room fields other readers expect
-- **AND** the reminder intent is bound privately to that sent `messageId` instead of being serialized into shared room truth
+- **AND** one follow-up task is bound to that sent `messageId` in message-system local durability instead of being serialized into shared room truth
+
+#### Scenario: Room durability reloads pending follow-up tasks
+
+- **GIVEN** a room message already persisted a follow-up task
+- **WHEN** message-system runtime starts again before the task is due
+- **THEN** message-system reloads that task from room durability
+- **AND** it re-arms the due timer without requiring session-runtime to restore a legacy runtime watch
 
 #### Scenario: Room transport does not leak sender-private reminder state
 

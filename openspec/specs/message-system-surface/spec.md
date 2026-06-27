@@ -3,9 +3,7 @@
 ## Purpose
 
 Define the durable operator-facing contract for the standalone message-system route, including shared room transcript rendering, actor-scoped sending, auth-backed access management, read progress, room assets, and live room updates.
-
 ## Requirements
-
 ### Requirement: Message-system SHALL present rooms as a standalone app surface
 
 The WebUI SHALL expose a dedicated message-system route that lists global rooms, renders one selected room transcript through the shared chat surface, and keeps the room transcript/composer workflow as the primary operator task. The route shell and room-management dialogs SHALL use the shared scaffold-family primitives so the transcript, management rail, and dialog detail stage no longer repeat their own stretch-layout contracts. The selected room view SHALL support explicit viewer selection, while room membership, metadata, and access administration move into a dedicated management surface instead of a permanently expanded inline rail. Studio SHALL embed the Web Chat app-view through an iframe boundary for chat mode so the app-view owns Framework7 chat topology and backend room synchronization while Studio keeps room tabs, assets, search, and superadmin controls outside that island.
@@ -321,6 +319,22 @@ The selected room transcript SHALL present canonical avatars, improved message b
 - **THEN** the transcript renders those attachments with kind-appropriate preview or file affordances
 - **THEN** the operator can inspect the same room history without re-uploading the assets
 
+### Requirement: Message-system route SHALL separate active and archived room catalogs
+
+Once room archive becomes a meaningful lifecycle projection, room catalogs SHALL stop flattening archived rooms into the default active list and SHALL provide an explicit archived-room entrypoint instead.
+
+#### Scenario: Default catalog shows active rooms first
+
+- **WHEN** the operator opens the default room catalog
+- **THEN** non-archived rooms appear in the active room list
+- **AND** archived rooms do not disappear from durability just because they are hidden from that default list
+
+#### Scenario: Archived rooms remain reachable through a dedicated entrypoint
+
+- **WHEN** the operator opens the archived room entrypoint
+- **THEN** archived rooms can still be browsed and reopened
+- **AND** the surface does not require the operator to guess that those rooms vanished or were deleted
+
 #### Scenario: Local transcript search navigates loaded room messages
 
 - **WHEN** the operator invokes `search-messages` from the room toolbar
@@ -332,3 +346,41 @@ The selected room transcript SHALL present canonical avatars, improved message b
 - **THEN** the same search dialog reopens immediately
 - **THEN** the page does not remain inert behind stale dialog body-lock state
 - **THEN** search navigation uses transcript row anchors instead of requiring a second route-local message renderer
+
+### Requirement: Room detail surface SHALL separate room control from room participation
+Frontend room surfaces SHALL present room control capability and room participation capability as separate concepts.
+
+#### Scenario: Control-only operator can manage and read but not send
+- **GIVEN** the operator holds room `superKey` control
+- **AND** the operator does not hold any participant seat in that room
+- **WHEN** the room detail surface is opened
+- **THEN** the transcript remains readable
+- **AND** room management actions remain available
+- **AND** the message composer remains unavailable for sending
+- **AND** the UI does not mislabel the operator as a member/admin participant
+
+### Requirement: Room surface SHALL not hide room provenance behind one implicit local system
+Frontend room and workbench surfaces SHALL be able to expose room provenance and later multi-system participation without assuming all rooms belong to one unnamed local message-system.
+
+#### Scenario: Room detail can expose instance/system provenance
+- **WHEN** room detail or related diagnostics render room metadata
+- **THEN** the surface may expose the controlling `superKey` identity and relevant `systemId` provenance
+- **AND** it does not rely on the old assumption that one implicit local message-system owns the room by default
+
+### Requirement: Studio SHALL keep room domain/source metadata available but low-emphasis
+Studio is the superadmin-facing app, so it SHALL keep room `superKey` / domain / source metadata available, but it SHALL avoid turning that metadata into the primary chat focus path.
+
+#### Scenario: Low-frequency room authority stays in a secondary panel
+- **GIVEN** a Studio room detail view
+- **WHEN** the operator is reading or sending chat messages
+- **THEN** the primary focus remains the embedded chat/transcript surface
+- **AND** room domain/source metadata is still reachable through manage/metadata surfaces
+- **AND** that metadata is not rendered as a loud always-on primary banner by default
+
+### Requirement: Embedded chat surface SHALL remain ordinary-user-focused
+The reusable chat surface embedded inside Studio SHALL stay focused on transcript/composer behavior instead of absorbing superadmin-only room-management chrome.
+
+#### Scenario: Studio wraps chat without polluting the chat app
+- **WHEN** Studio embeds the reusable chat surface for a room
+- **THEN** transcript, composer, read-state, and message actions remain owned by that chat surface
+- **AND** superadmin-only room domain/source controls remain in Studio wrapper surfaces around it

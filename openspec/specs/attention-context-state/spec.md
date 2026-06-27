@@ -74,7 +74,7 @@ The attention system SHALL interpret unresolved push scores through the context 
 - **AND** the push still remains in durable history for later inspection
 
 ### Requirement: Terminal death SHALL mute the bound attention context through durable lifecycle consequence
-When a terminal instance that owns or anchors an attention context dies through the terminal killed flow, the system SHALL move the bound attention context to `muted` as a durable consequence of that lifecycle event rather than as an ad hoc app-side patch.
+When a terminal instance that owns or anchors an attention context dies through the terminal killed flow, the system SHALL move the bound attention context to `muted` as a durable consequence of that lifecycle event rather than as an ad hoc app-side patch. The lifecycle attention ingress or equivalent committed terminal-death fact SHALL be the auditable cause of the mute effect.
 
 #### Scenario: Killed terminal mutes its bound attention context
 - **WHEN** a terminal instance completes the killed flow
@@ -82,9 +82,62 @@ When a terminal instance that owns or anchors an attention context dies through 
 - **THEN** the bound attention context is moved to `muted`
 - **AND** later runtime scheduling treats that context according to normal muted law
 
+#### Scenario: Lifecycle commit is the cause of terminal mute
+- **WHEN** terminal death is applied to a bound attention context
+- **THEN** the runtime first records or consumes a terminal lifecycle attention ingress for that death
+- **AND** the focus-state change to `muted` is attributable to that committed lifecycle fact
+- **AND** the system does not silently flip focus state as a app-local side effect before any auditable cause exists
+
+#### Scenario: Cold-start killed replay mutes the same context
+- **WHEN** daemon recovery replays killed flow for a stale running terminal
+- **AND** that terminal is bound to an attention context
+- **THEN** the same terminal-death attention consequence mutes the bound context
+- **AND** the context is not left `focused` merely because the PTY died while the daemon was offline
+
 #### Scenario: Unrelated attention contexts stay unchanged
 - **WHEN** one terminal instance completes the killed flow
 - **AND** other attention contexts are not bound to that terminal instance
 - **THEN** those unrelated contexts keep their current focus state
 - **AND** terminal death does not globally mute unrelated work
 
+### Requirement: Room archive SHALL mute the bound attention context
+
+When a room instance is archived through the room-management lifecycle, the runtime/attention adapter SHALL move the bound room attention context to `muted` as a durable lifecycle consequence. This consequence belongs to the kernel lifecycle law and SHALL NOT be implemented by shell-next directly mutating AttentionSystem focus state.
+
+#### Scenario: Archived room mutes its bound attention context
+
+- **GIVEN** a room-backed attention context is `focused` or `background`
+- **WHEN** the room-management lifecycle archives that room
+- **THEN** the bound attention context is moved to `muted`
+- **AND** later LoopBus scheduling treats that context according to normal muted law
+
+#### Scenario: Built-in protected room context is not archived by app policy
+
+- **GIVEN** a room or context is protected by built-in/default room policy
+- **WHEN** shell-next reacts to a bound terminal death
+- **THEN** shell-next SHALL NOT archive that protected room as a app cleanup side effect
+- **AND** unrelated protected attention contexts keep their current focus state
+
+#### Scenario: Room archive does not rewrite context summary
+
+- **GIVEN** a room attention context contains Avatar-authored summary content
+- **WHEN** the room is archived and the context focus state becomes `muted`
+- **THEN** the context content and unresolved score history remain governed by normal attention commit law
+- **AND** the lifecycle consequence changes focus state rather than replacing the Avatar-authored summary
+
+### Requirement: Room-backed muted contexts SHALL be able to drive companion archive projection
+
+When a room-backed `AttentionContext` is explicitly moved to `muted`, the system SHALL preserve that context's durable history while allowing the bound room surface to project into `archived` lifecycle state.
+
+#### Scenario: Muting a room-backed context archives the companion room
+
+- **WHEN** a room-backed `AttentionContext` is explicitly changed to `muted`
+- **THEN** the context remains durable and queryable
+- **AND** the bound room may transition to `archived`
+- **AND** that transition does not delete room history
+
+#### Scenario: Archive projection does not erase room capability
+
+- **WHEN** a room is archived because its companion context became `muted`
+- **THEN** the room still keeps its durable transcript and identity
+- **AND** archive is treated as lifecycle/visibility state rather than implicit delete or send prohibition

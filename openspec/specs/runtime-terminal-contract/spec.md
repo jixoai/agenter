@@ -218,25 +218,31 @@ Runtime snapshots and terminal realtime publications SHALL expose durable `proce
 
 ### Requirement: Runtime terminal config surfaces SHALL expose durable launch truth
 
-Runtime-local terminal config reads and writes SHALL expose durable terminal launch/config truth, including backend selection or backend profile, independently from runtime observed identity truth and viewport renderer fact.
+Runtime-local terminal config reads and writes SHALL expose durable terminal launch/config truth, including the explicit `backend` field and any future backend-specific profile fields, independently from runtime observed identity truth and viewport renderer fact.
 
 #### Scenario: Runtime get-config returns launch truth
 
 - **WHEN** the AI runs `terminal get-config`
-- **THEN** the runtime returns durable launch truth such as `command`, `launchCwd`, `processKind`, backend selection/profile fields, and metadata
+- **THEN** the runtime returns durable launch truth such as `command`, `launchCwd`, `processKind`, `backend`, profile fields, and metadata
 - **AND** the caller does not need to infer durable config from `terminal list` or `terminal read`
 
 #### Scenario: Runtime set-config preserves observed identity separation
 
 - **WHEN** the AI updates terminal config while the running PTY later reports a different current path or current title
-- **THEN** runtime projections preserve the updated durable config
+- **THEN** runtime projections preserve the updated durable config, including `backend` when it was changed
 - **AND** they continue to publish runtime-observed identity separately
 
 #### Scenario: Browser renderer fact does not rewrite backend launch truth
 
-- **WHEN** a terminal launches through the official xterm backend and a browser surface later resolves `resolvedRenderer = xterm`
+- **WHEN** a terminal launches through an official backend such as `xterm` or `ghostty-native` and a browser surface later resolves `resolvedRenderer = xterm`
 - **THEN** runtime terminal config continues to expose backend launch truth separately from renderer fact
 - **AND** runtime code does not collapse backend selection into browser renderer naming
+
+#### Scenario: Runtime terminal catalog carries backend truth
+
+- **WHEN** a caller reads runtime terminal catalog projection through `terminal list`
+- **THEN** each projected terminal includes explicit `backend`
+- **AND** callers do not need route-local defaulting to hydrate client state
 
 ### Requirement: Runtime terminal truth SHALL derive render, durable change log, and observation from one backend source
 Whenever runtime publishes terminal state, renderable terminal state, durable terminal change-log truth, and LoopBus terminal observation ingress SHALL all originate from the same backend terminal truth rather than from client-local reconstructions. Dead-instance history projections SHALL remain backend-owned evidence and SHALL NOT be reconstructed from runtime caches.
@@ -387,3 +393,36 @@ Runtime recovery SHALL treat stale previously-running terminals as dead history 
 - **WHEN** runtime recovery encounters a terminal that daemon compensation moved through the killed flow
 - **THEN** runtime terminal publications do not reattach or republish that terminal as part of the live focused or attached set
 - **AND** callers must use explicit history surfaces to inspect it
+
+### Requirement: Runtime recovery SHALL consume terminal killed replay after subscriptions are active
+The runtime SHALL not rely on constructor-time terminal storage normalization as the source of terminal death consequences. After terminal-system event bindings are active, runtime recovery SHALL consume or request terminal-owned killed replay for stale running terminals and apply the same attachment, publication, and attention consequences as live-observed terminal death.
+
+#### Scenario: Runtime observes daemon recovery killed flow
+- **WHEN** app-server starts and terminal-system identifies stale running terminal records
+- **THEN** runtime recovery observes a lifecycle-class killed consequence for each recovered terminal
+- **AND** the runtime removes those terminals from live attached and focused sets
+- **AND** the runtime does not republish those terminals as live after recovery
+
+#### Scenario: Runtime recovery mutes bound terminal context
+- **WHEN** runtime recovery consumes a recovered killed terminal that is bound to an attention context
+- **THEN** the runtime applies the terminal-death attention consequence for that context
+- **AND** the context becomes `muted` through the same path as explicit terminal death
+
+#### Scenario: Runtime recovery invalidates terminal projections
+- **WHEN** runtime recovery completes killed post-workflow for one or more terminals
+- **THEN** runtime terminal publications invalidate live and history/index terminal projections
+- **AND** clients do not have to infer the catalog change from terminal status or snapshot ticks
+
+### Requirement: Runtime terminal recovery SHALL not resurrect dead terminals from caches
+Runtime-local terminal caches, focused-terminal refs, and attachment facts SHALL be reconciled against terminal-system live projection after killed recovery. A killed terminal MAY remain queryable through history/index surfaces, but runtime live state MUST NOT resurrect it from stale caches.
+
+#### Scenario: Stale focused terminal ref is removed
+- **GIVEN** runtime state contains a focused terminal id from before daemon restart
+- **WHEN** terminal-system recovery moves that terminal to killed history
+- **THEN** runtime focused terminal refs drop that id
+- **AND** the runtime snapshot no longer lists it as a live terminal
+
+#### Scenario: History inspection does not reattach terminal
+- **WHEN** a caller inspects a killed terminal through history or index
+- **THEN** runtime does not create a live attachment for that terminal
+- **AND** the caller must use explicit killed-history recovery intent to bring it back to live state
